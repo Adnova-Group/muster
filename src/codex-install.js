@@ -1259,6 +1259,7 @@ async function publishConfigCandidate(path, expected, bytes) {
   const staged = await writePrivateSibling(path, "candidate", bytes);
   const stagedSnapshot = await exactFileSnapshot(staged);
   const recovery = expected.exists ? await writePrivateSibling(path, "publication-recovery", expected.bytes) : null;
+  const recoverySnapshot = recovery ? await exactFileSnapshot(recovery) : { exists: false, bytes: null, dev: null, ino: null };
   let retired = null;
   try {
     if (expected.exists) {
@@ -1310,6 +1311,30 @@ async function publishConfigCandidate(path, expected, bytes) {
         if (restoreError.code !== "EEXIST") {
           if (displaced) await restoreRetiredName(path, displaced);
           throw restoreError;
+        }
+      }
+    }
+    if (displaced && !sameExactFileSnapshot(stagedSnapshot, await exactFileSnapshot(displaced))) {
+      // A delayed writer held the candidate inode open across rename. If the
+      // live name is still our recovery baseline, atomically retire that
+      // baseline and link the writer-owned inode back before deleting aliases.
+      const live = await exactFileSnapshot(path);
+      if (sameExactFileSnapshot(recoverySnapshot, live)) {
+        const baseline = live.exists
+          ? join(dirname(path), `.${basename(path)}.muster-failed-baseline-${process.pid}-${randomUUID()}`)
+          : null;
+        if (baseline) {
+          await rename(path, baseline);
+          if (!sameExactFileSnapshot(recoverySnapshot, await exactFileSnapshot(baseline))) {
+            await restoreRetiredName(path, baseline);
+          } else {
+            try { await link(displaced, path); }
+            catch (linkError) { if (linkError.code !== "EEXIST") throw linkError; }
+          }
+          await unlink(baseline);
+        } else {
+          try { await link(displaced, path); }
+          catch (linkError) { if (linkError.code !== "EEXIST") throw linkError; }
         }
       }
     }
@@ -1409,20 +1434,24 @@ async function existingMusterMarketplace(execFile, repoRoot, runtimeIdentity) {
 // site; the old `registerPlugin(execFile, true, root)` did not.
 async function registerPlugin(execFile, repoRoot, { dryRun, runtimeIdentity, afterRegister }) {
   if (dryRun) return [`codex plugin marketplace add ${repoRoot}`, `codex plugin add ${CODEX_PLUGIN}`];
-  let marketplaceAdded = false, pluginAdded = false;
+  let marketplaceAdded = false, pluginAdded = false, pluginPreviouslyInstalled = false;
   try {
     const marketplace = await existingMusterMarketplace(execFile, repoRoot, runtimeIdentity);
     if (!marketplace) {
       await run(execFile, ["plugin", "marketplace", "add", repoRoot], runtimeIdentity);
       marketplaceAdded = true;
     }
-    await runJson(execFile, ["plugin", "list", "--available", "--json"], runtimeIdentity);
+    const inventory = await runJson(execFile, ["plugin", "list", "--available", "--json"], runtimeIdentity);
+    pluginPreviouslyInstalled = Array.isArray(inventory?.installed) && inventory.installed.some(plugin =>
+      plugin === CODEX_PLUGIN || plugin?.pluginId === CODEX_PLUGIN
+        || (plugin?.name === "muster" && (plugin?.marketplace === "muster" || plugin?.source?.marketplace === "muster"))
+    );
     await run(execFile, ["plugin", "add", CODEX_PLUGIN], runtimeIdentity);
     pluginAdded = true;
     await afterRegister?.();
     return [];
   } catch (error) {
-    if (pluginAdded) try { await run(execFile, ["plugin", "remove", CODEX_PLUGIN], runtimeIdentity); } catch { /* best-effort transaction rollback */ }
+    if (pluginAdded && !pluginPreviouslyInstalled) try { await run(execFile, ["plugin", "remove", CODEX_PLUGIN], runtimeIdentity); } catch { /* best-effort transaction rollback */ }
     if (marketplaceAdded) try { await run(execFile, ["plugin", "marketplace", "remove", "muster"], runtimeIdentity); } catch { /* best-effort transaction rollback */ }
     throw error;
   }

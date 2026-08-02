@@ -346,6 +346,28 @@ test("strict config: a writer during plugin registration aborts and registration
   assert.ok(calls.includes("plugin marketplace remove muster"));
 });
 
+test("strict config: registration conflict never removes a previously installed plugin", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-strict-existing-plugin-"));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), projectPath = join(cwd, ".codex", "config.toml");
+  const calls = [];
+  await mkdir(join(cwd, ".codex"), { recursive: true });
+  await writeFile(projectPath, "model = \"before\"\n");
+  const executor = async (_bin, args) => {
+    calls.push(args.join(" "));
+    if (args[0] === "--version") return { stdout: "codex-cli test" };
+    if (args.slice(0, 3).join(" ") === "plugin marketplace list") return { stdout: JSON.stringify({ marketplaces: [] }) };
+    if (args.slice(0, 3).join(" ") === "plugin marketplace add") return { stdout: "" };
+    if (args.slice(0, 3).join(" ") === "plugin list --available") return { stdout: JSON.stringify({ installed: [{ pluginId: "muster@muster", installed: true }] }) };
+    if (args.slice(0, 2).join(" ") === "plugin add") { await writeFile(projectPath, "unknown_refresh_writer = true\n"); return { stdout: "" }; }
+    if (args.slice(0, 3).join(" ") === "plugin marketplace remove") return { stdout: "" };
+    throw new Error(`unexpected command: ${args.join(" ")}`);
+  };
+  await assert.rejects(runCodexInstall({ cwd, home, repoRoot, execFile: executor,
+    strictConfigRunner: async () => ({ ok: true, modelTurnEvents: 0 }) }), /config changed during plugin registration/);
+  assert.equal(calls.includes("plugin remove muster@muster"), false);
+  assert.ok(calls.includes("plugin marketplace remove muster"));
+});
+
 test("strict config: doctor reports the same non-billable parser boundary", async () => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-strict-doctor-"));
   const cwd = join(tmp, "project"), codexHome = join(tmp, "codex-home");

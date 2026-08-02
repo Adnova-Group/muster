@@ -91,10 +91,29 @@ instruction seeds.
    at the baseline and Claude Code creates `CLAUDE.md`, move that generated
    policy text intact to `AGENTS.md`, then replace the newly created
    `CLAUDE.md` with the pointer above. When Codex creates `AGENTS.md`, add the
-   pointer as the missing `CLAUDE.md`. If either file existed at the baseline
-   and prevents this pattern, do not overwrite it: leave a HUMAN-HOLD asking the
-   user to consolidate the files. Normalization is part of native initialization
-   and must happen before completion evidence is submitted.
+   pointer as the missing `CLAUDE.md`.
+
+   Codex has one additional attended recovery for a native `/init` no-op. When
+   `AGENTS.md` existed at the baseline, `CLAUDE.md` was absent, and native
+   `/init` produces no artifact delta, show the exact pointer above and request
+   explicit user approval to create only the missing `CLAUDE.md`. On approval,
+   first recheck that `AGENTS.md` is still a non-empty regular file, contains no
+   import of `CLAUDE.md`, and is unchanged from the stored baseline; also recheck
+   that `CLAUDE.md` is still absent. If every check passes, create `CLAUDE.md`
+   with the exact pointer bytes. The approved pointer is positive artifact-delta
+   evidence: run
+   `$MUSTER_CLI init transition "$TARGET" --to completed --evidence artifact-delta`
+   and, only when that receipt reports `nativeInit.state: "completed"`, run
+   `$MUSTER_CLI init finalize "$TARGET"`. Never create or replace either file
+   without that approval.
+
+   When both files existed at the baseline and already form the canonical pair,
+   use the explicit `preexisting-confirmed` path in step 4. If either baseline
+   file contains independent instructions, the reverse import exists, either
+   file changed before an approved write, or an existing file otherwise
+   prevents the exact pattern, do not overwrite it: leave a **HUMAN-HOLD** asking
+   the user to consolidate the files. Normalization is part of native
+   initialization and must happen before completion evidence is submitted.
 
 4. **Resume only from evidence or acknowledgement.**
 

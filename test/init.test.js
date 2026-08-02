@@ -147,6 +147,25 @@ test("paired instruction artifact-delta requires the canonical authority pair", 
   }
 });
 
+test("an approved missing Claude pointer completes an AGENTS-only Codex no-op handoff", async () => {
+  const dir = await tmp();
+  await writeFile(join(dir, "AGENTS.md"), "# Existing policy\n");
+  await initializeProject(dir);
+  await transitionNativeInit(dir, {
+    to: "handoff", reason: "not-callable", expectedArtifacts: ["AGENTS.md", "CLAUDE.md"],
+  });
+
+  assert.equal((await observeNativeInit(dir)).observedNativeEvidence, null, "native /init no-op");
+  await writeFile(join(dir, "CLAUDE.md"), CLAUDE_POINTER); // attended workflow approval
+
+  const completed = await transitionNativeInit(dir, {
+    to: "completed", evidenceKind: "artifact-delta",
+  });
+  assert.equal(completed.receipt.nativeInit.state, "completed");
+  assert.deepEqual(completed.receipt.nativeInit.evidence.artifacts.map(({ path }) => path), ["CLAUDE.md"]);
+  assert.equal((await finalizeInitialization(dir)).receipt.phase, "finalized");
+});
+
 test("paired pre-existing confirmation requires both canonical instruction artifacts", async () => {
   const cases = [
     { name: "partial", agents: "# Policy\n", claude: null, artifacts: ["AGENTS.md"], ok: false },

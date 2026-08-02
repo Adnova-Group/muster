@@ -30,6 +30,21 @@ test("init command makes native harness work a HUMAN-HOLD and never treats invoc
   assert.match(text, /--to completed --evidence call-result --evidence-file/);
 });
 
+test("Codex AGENTS-only no-op offers an approved canonical pointer recovery", async () => {
+  const text = await read("plugin/commands/init.md");
+
+  assert.match(text, /Codex[\s\S]*?`AGENTS\.md` existed at the baseline[\s\S]*?`CLAUDE\.md` was absent/i);
+  assert.match(text, /native `\/init`[\s\S]*?(?:no-op|no artifact delta)/i);
+  assert.match(text, /explicit user approval[\s\S]*?create[\s\S]*?missing `CLAUDE\.md`/i);
+  assert.match(text, /# Claude Code\n\s*\n\s*@AGENTS\.md/);
+  assert.match(
+    text,
+    /approved pointer[\s\S]*?--to completed --evidence artifact-delta[\s\S]*?init finalize/i,
+  );
+  assert.match(text, /both files existed at the baseline[\s\S]*?preexisting-confirmed/i);
+  assert.match(text, /independent instructions[\s\S]*?HUMAN-HOLD/i);
+});
+
 test("init command preserves the cloned-repository trust boundary", async () => {
   const text = await read("plugin/commands/init.md");
 

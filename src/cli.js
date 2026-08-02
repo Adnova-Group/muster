@@ -470,7 +470,7 @@ async function main() {
         await client.close({
           threadId: launched?.threadId,
           turnId: launched?.turnId,
-          interrupt: launched?.status === "started" && !turnFinished,
+          interrupt: Boolean(launched?.threadId && launched?.turnId && !turnFinished),
         });
       }
     } else if (cmd === "receipt-verify") {

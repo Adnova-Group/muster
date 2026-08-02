@@ -179,6 +179,8 @@ export function fallbackPlanLaunch(outcome, error) {
 
 export async function launchCodexPlan({ client, clientFactory = createCodexAppServerClient, cwd, outcome = "" } = {}) {
   let control = client;
+  let threadId;
+  let turnId;
   try {
     control ??= await clientFactory({ cwd });
     await control.request("initialize", {
@@ -191,7 +193,7 @@ export async function launchCodexPlan({ client, clientFactory = createCodexAppSe
       control.request("skills/list", { cwds: [cwd], forceReload: true }),
       control.request("thread/start", { cwd }),
     ]);
-    const threadId = thread?.thread?.id;
+    threadId = thread?.thread?.id;
     if (typeof threadId !== "string" || !threadId.trim())
       throw new Error("thread/start did not return a valid thread id");
     const collaborationMode = buildPlanCollaborationMode(presets.data, thread);
@@ -203,7 +205,7 @@ export async function launchCodexPlan({ client, clientFactory = createCodexAppSe
       collaborationMode,
     });
     const started = await control.request("turn/start", params);
-    const turnId = started?.turn?.id;
+    turnId = started?.turn?.id;
     if (typeof turnId !== "string" || !turnId.trim())
       throw new Error("turn/start did not return a valid turn id");
     const settings = await control.waitForNotification(
@@ -222,8 +224,11 @@ export async function launchCodexPlan({ client, clientFactory = createCodexAppSe
       turnId,
     };
   } catch (error) {
-    if (!client) await control?.close?.().catch(() => {});
-    return fallbackPlanLaunch(outcome, error);
+    if (!client) await control?.close?.({ threadId, turnId, interrupt: Boolean(threadId && turnId) }).catch(() => {});
+    return {
+      ...fallbackPlanLaunch(outcome, error),
+      ...(threadId && turnId ? { threadId, turnId } : {}),
+    };
   }
 }
 
@@ -257,9 +262,12 @@ class JsonRpcLineClient {
     this.waiters = [];
     this.buffer = "";
     this.closed = false;
+    this.closing = false;
     this.userInput = userInput;
     this.onNotification = onNotification;
     this.inputControllers = new Set();
+    this.activeThreadId = null;
+    this.activeTurnId = null;
     this.exitPromise = new Promise(resolveExit => child.once("exit", resolveExit));
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", chunk => this.#consume(chunk));
@@ -270,14 +278,15 @@ class JsonRpcLineClient {
   }
 
   request(method, params = {}) {
-    if (this.closed) return Promise.reject(new Error("codex app-server control is closed"));
+    if (this.closed || (this.closing && method !== "turn/interrupt"))
+      return Promise.reject(new Error("codex app-server control is closed"));
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new Error(`${method} timed out after ${this.timeoutMs}ms`));
       }, this.timeoutMs);
-      this.pending.set(id, { resolve, reject, timer, method });
+      this.pending.set(id, { resolve, reject, timer, method, params });
       if (!this.#write({ jsonrpc: "2.0", id, method, params }))
         this.#terminate(new Error("codex app-server control write failed"));
     });
@@ -309,8 +318,10 @@ class JsonRpcLineClient {
   }
 
   async close({ threadId, turnId, interrupt = false } = {}) {
+    this.closing = true;
     this.#abortInputs();
     if (interrupt) await this.interruptTurn(threadId, turnId);
+    this.#abortInputs();
     if (!this.closed) {
       this.closed = true;
       this.#failAll(new Error("codex app-server control closed"));
@@ -364,7 +375,15 @@ class JsonRpcLineClient {
         clearTimeout(pending.timer);
         this.pending.delete(message.id);
         if (message.error) pending.reject(new Error(`${pending.method} failed: ${message.error.message ?? "unknown error"}`));
-        else pending.resolve(message.result);
+        else {
+          if (pending.method === "turn/start"
+            && typeof pending.params?.threadId === "string" && pending.params.threadId
+            && typeof message.result?.turn?.id === "string" && message.result.turn.id) {
+            this.activeThreadId = pending.params.threadId;
+            this.activeTurnId = message.result.turn.id;
+          }
+          pending.resolve(message.result);
+        }
         continue;
       }
       if (Object.hasOwn(message, "id")) {
@@ -372,6 +391,15 @@ class JsonRpcLineClient {
         // Any request that could authorize an action is declined, visibly, rather
         // than being auto-approved or silently inherited as an unsafe default.
         if (message.method === "item/tool/requestUserInput") {
+          if (this.closing
+            || message.params?.threadId !== this.activeThreadId
+            || message.params?.turnId !== this.activeTurnId) {
+            this.#write({ jsonrpc: "2.0", id: message.id, error: {
+              code: -32000,
+              message: "Muster's Plan launcher cannot answer input outside its active turn; resume with /plan for interactive input",
+            } });
+            continue;
+          }
           const inputController = new AbortController();
           this.inputControllers.add(inputController);
           const ask = typeof this.userInput === "function"
@@ -437,6 +465,7 @@ class JsonRpcLineClient {
 
   #terminate(error, kill = true) {
     if (this.closed) return;
+    this.closing = true;
     this.closed = true;
     this.buffer = "";
     this.#abortInputs(error);

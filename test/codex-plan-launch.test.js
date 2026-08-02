@@ -250,6 +250,12 @@ test("native launch requires exact nonempty thread and turn receipt correlation"
     return method === "turn/start" ? { turn: {} } : response;
   } };
   assert.equal((await launchCodexPlan({ client: missingTurn, cwd: "/repo" })).status, "fallback");
+
+  const timedOut = { ...client, waitForNotification: async () => { throw new Error("settings confirmation timed out"); } };
+  const fallback = await launchCodexPlan({ client: timedOut, cwd: "/repo" });
+  assert.equal(fallback.status, "fallback");
+  assert.equal(fallback.threadId, "thread-1");
+  assert.equal(fallback.turnId, "turn-1");
 });
 
 test("skills/list must match the requested cwd exactly", async () => {
@@ -344,6 +350,9 @@ test("close, child exit, and transport error abort active secret input", async (
       userInput: (_question, _options, timeoutMs, signal) =>
         readSecretTerminalInput({ input, output: { write() {} }, timeoutMs, signal }),
     });
+    const started = client.request("turn/start", { threadId: "thread-1" });
+    child.stdout.write(`${JSON.stringify({ id: 1, result: { turn: { id: "turn-1" } } })}\n`);
+    await started;
     child.stdout.write(`${JSON.stringify({ id: 12, method: "item/tool/requestUserInput", params: {
       threadId: "thread-1",
       turnId: "turn-1",
@@ -358,6 +367,70 @@ test("close, child exit, and transport error abort active secret input", async (
     assert.equal(input.isRaw, false);
     assert.equal(input.listenerCount("data"), 0);
   }
+});
+
+test("closing client refuses a new secret prompt during turn interruption", async () => {
+  const child = fakeAppServerProcess();
+  const written = [];
+  child.stdin.setEncoding("utf8");
+  child.stdin.on("data", chunk => written.push(...chunk.trim().split("\n").filter(Boolean).map(JSON.parse)));
+  const input = new EventEmitter();
+  input.isTTY = true;
+  input.isRaw = false;
+  input.setRawMode = value => { input.isRaw = value; };
+  input.resume = () => {};
+  const client = await createCodexAppServerClient({
+    cwd: "/repo",
+    spawnProcess: () => child,
+    timeoutMs: 100,
+    userInput: (_question, _options, timeoutMs, signal) =>
+      readSecretTerminalInput({ input, output: { write() {} }, timeoutMs, signal }),
+  });
+  const started = client.request("turn/start", { threadId: "thread-1" });
+  child.stdout.write(`${JSON.stringify({ id: 1, result: { turn: { id: "turn-1" } } })}\n`);
+  await started;
+  const closing = client.close({ threadId: "thread-1", turnId: "turn-1", interrupt: true });
+  await new Promise(resolve => setImmediate(resolve));
+  child.stdout.write(`${JSON.stringify({ id: 44, method: "item/tool/requestUserInput", params: {
+    threadId: "thread-1", turnId: "turn-1", itemId: "item-1",
+    questions: [{ id: "secret", header: "Secret", question: "Token?", isSecret: true }],
+  } })}\n`);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(input.isRaw, false);
+  assert.equal(input.listenerCount("data"), 0);
+  const interrupt = written.find(message => message.method === "turn/interrupt");
+  child.stdout.write(`${JSON.stringify({ id: interrupt.id, result: {} })}\n`);
+  await closing;
+});
+
+test("request_user_input is bound to the exact active thread and turn", async () => {
+  const child = fakeAppServerProcess();
+  const written = [];
+  child.stdin.setEncoding("utf8");
+  child.stdin.on("data", chunk => written.push(...chunk.trim().split("\n").filter(Boolean).map(JSON.parse)));
+  let prompted = false;
+  const client = await createCodexAppServerClient({
+    cwd: "/repo",
+    spawnProcess: () => child,
+    timeoutMs: 100,
+    userInput: async () => { prompted = true; return "Approve"; },
+  });
+  const started = client.request("turn/start", { threadId: "thread-1" });
+  child.stdout.write(`${JSON.stringify({ id: 1, result: { turn: { id: "turn-1" } } })}\n`);
+  await started;
+  child.stdout.write(`${JSON.stringify({ id: 51, method: "item/tool/requestUserInput", params: {
+    threadId: "wrong-thread", turnId: "turn-1", itemId: "item-1",
+    questions: [{ id: "gate", header: "Gate", question: "Approve?" }],
+  } })}\n`);
+  child.stdout.write(`${JSON.stringify({ id: 52, method: "item/tool/requestUserInput", params: {
+    threadId: "thread-1", turnId: "wrong-turn", itemId: "item-2",
+    questions: [{ id: "gate", header: "Gate", question: "Approve?" }],
+  } })}\n`);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(prompted, false);
+  assert.equal(written.find(message => message.id === 51)?.error?.code, -32000);
+  assert.equal(written.find(message => message.id === 52)?.error?.code, -32000);
+  await client.close();
 });
 
 test("unavailable App Server control fails safely with explicit /plan guidance", async () => {

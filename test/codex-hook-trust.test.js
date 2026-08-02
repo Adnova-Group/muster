@@ -2,7 +2,7 @@
 // trusted_hash exactly matches the hook's current normalized content hash.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rename, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -183,6 +183,74 @@ test("musterHookTrustGaps never certifies header-shaped text inside TOML multili
 const inventoryFor = (cwd, hooksJsonPath, results) => ({ ok: true, data: [{ cwd, warnings: [], errors: [], hooks: results.map(result => ({
   key: `${hooksJsonPath}:${result.key}`, enabled: true, trustStatus: "trusted", currentHash: result.currentHash
 })) }] });
+
+const currentCodexInventoryHook = ({ key, currentHash, overrides = {} }) => ({
+  key,
+  eventName: "stop",
+  handlerType: "command",
+  matcher: null,
+  command: "'/usr/bin/node' '/repo/.codex/muster/hooks/muster-hook.mjs'",
+  timeoutSec: 600,
+  statusMessage: null,
+  additionalContextLimit: null,
+  sourcePath: key.slice(0, key.lastIndexOf(":stop:")),
+  source: "project",
+  pluginId: null,
+  displayOrder: 0,
+  enabled: true,
+  isManaged: false,
+  currentHash,
+  trustStatus: "trusted",
+  ...overrides
+});
+
+test("effectiveHookTrust accepts Codex 0.146 full hook records without relaxing their schema", () => {
+  const cwd = "/repo", hooksJsonPath = "/repo/.codex/hooks.json";
+  const currentHash = `sha256:${"a".repeat(64)}`;
+  const results = [{ key: "stop:0:0", currentHash, trustedHash: currentHash, enabled: true, status: "trusted" }];
+  const hook = currentCodexInventoryHook({ key: `${hooksJsonPath}:stop:0:0`, currentHash });
+  const inventory = { ok: true, data: [{ cwd, warnings: [], errors: [], hooks: [hook] }] };
+  assert.equal(effectiveHookTrust(inventory, cwd, hooksJsonPath, results, { knownKeys: ["stop:0:0"] }).ok, true);
+
+  for (const malformed of [
+    { ...hook, sourcePath: "/foreign/hooks.json" },
+    { ...hook, displayOrder: -1 },
+    { ...hook, timeoutSec: "600" },
+    { ...hook, pluginId: 42 },
+    { ...hook, extra: true }
+  ]) {
+    assert.equal(effectiveHookTrust({ ...inventory, data: [{ ...inventory.data[0], hooks: [malformed] }] }, cwd, hooksJsonPath, results, { knownKeys: ["stop:0:0"] }).ok, false);
+  }
+});
+
+test("install and doctor reject hooks/list proofs when activation files change during inventory", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-inventory-snapshot-"));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), hooksJsonPath = join(cwd, ".codex", "hooks.json");
+  await mkdir(cwd, { recursive: true });
+  const first = await runCodexInstall({ cwd, home, repoRoot, execFile: absentCodex });
+  const configPath = join(cwd, ".codex", "config.toml");
+  await writeFile(configPath, `${await readFile(configPath, "utf8")}\n${first.hookTrust.results
+    .map(result => state(result.key, { trustedHash: result.currentHash })).join("")}`);
+  const active = () => inventoryFor(cwd, hooksJsonPath, first.hookTrust.results);
+
+  const replacingInventory = async () => {
+    const replacement = `${hooksJsonPath}.replacement`;
+    await writeFile(replacement, await readFile(hooksJsonPath));
+    await rename(replacement, hooksJsonPath);
+    return active();
+  };
+  const installed = await runCodexInstall({ cwd, home, repoRoot, execFile: absentCodex, hookInventory: replacingInventory });
+  assert.equal(installed.ok, false);
+  assert.match(installed.hookTrust.effective.error, /activation state changed/);
+
+  const changingInventory = async () => {
+    await writeFile(configPath, `${await readFile(configPath, "utf8")}\n# concurrent edit\n`);
+    return active();
+  };
+  const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome: join(home, ".codex"), execFile: absentCodex, hookInventory: changingInventory });
+  assert.equal(report.checks.find(check => check.name === "codex-hook-trust")?.ok, false);
+  assert.match(report.checks.find(check => check.name === "codex-hook-trust")?.detail || "", /activation state changed/);
+});
 
 test("effectiveHookTrust rejects duplicate scope and managed hook inventory records", () => {
   const cwd = "/repo", hooksJsonPath = "/repo/.codex/hooks.json";

@@ -10,7 +10,7 @@ import { codexAvailable, readCodexInventory } from "./codex-inventory.js";
 import { codexVersionMatches, resolveCodexRuntimeIdentity, runCodexCommand } from "./codex-runtime-identity.js";
 import { exists } from "./fs-util.js";
 import { parseAgentProfileToml, resolveCodexPlugin } from "./codex-release.js";
-import { codexHookStateKeys, effectiveHookTrust, expectedCodexHookInstall, hasMusterHookCommandAlias, isMusterHookCommand, musterHookTrustGaps, parseHookCommand, readCodexHookInventory, reconcileConfigTomlHookState, reconcileScopeRegistryEntries } from "./codex-install.js";
+import { codexHookStateKeys, effectiveHookTrust, expectedCodexHookInstall, hasMusterHookCommandAlias, hookActivationSnapshot, isMusterHookCommand, musterHookTrustGaps, parseHookCommand, readCodexHookInventory, reconcileConfigTomlHookState, reconcileScopeRegistryEntries, sameHookActivationSnapshot } from "./codex-install.js";
 import { readNoFollowRegular } from "./fs-safe.js";
 import {
   CODEX_THREAD_LIMIT_REMEDIATION,
@@ -1231,11 +1231,16 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
     }
   }
   const inventoryCwds = [...new Set(effectiveTargets.map(target => target.cwd))];
+  const activationBefore = effectiveTargets.length ? await hookActivationSnapshot({ cwd, userCodexHome }) : null;
   const inventory = effectiveTargets.length ? await inventoryReader({ runtimeIdentity: identity, cwds: inventoryCwds, env: { ...env, CODEX_HOME: userCodexHome } }) : null;
+  const activationAfter = effectiveTargets.length ? await hookActivationSnapshot({ cwd, userCodexHome }) : null;
+  const activationStable = !effectiveTargets.length || sameHookActivationSnapshot(activationBefore, activationAfter);
   const effectiveFailures = effectiveTargets.map(target => ({
     dir: target.dir,
     cwd: target.cwd,
-    effective: effectiveHookTrust(inventory, target.cwd, target.configPath, target.results, { knownKeys: target.knownKeys })
+    effective: activationStable
+      ? effectiveHookTrust(inventory, target.cwd, target.configPath, target.results, { knownKeys: target.knownKeys })
+      : { verified: true, ok: false, error: "Codex hook activation state changed during hooks/list verification", results: [] }
   })).filter(item => !item.effective.ok);
   const untrustedCount = hookTrustGaps.reduce((total, item) => total + item.results.length + item.stale.length, 0)
     + effectiveFailures.reduce((total, item) => total + Math.max(1, item.effective.results.filter(result => result.status !== "active").length), 0);

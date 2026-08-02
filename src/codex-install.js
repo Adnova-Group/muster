@@ -76,6 +76,26 @@ async function ownershipFileSnapshot(path) {
   if (!(await regularFileState(path))) return { exists: false, bytes: null };
   return { exists: true, bytes: await readFile(path) };
 }
+async function physicalFileSnapshot(path) {
+  await ordinaryDirectoryPath(dirname(path));
+  let handle;
+  try { handle = await open(path, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0)); }
+  catch (error) { if (error.code === "ENOENT") return { exists: false, dev: null, ino: null, bytes: null }; throw error; }
+  try {
+    const before = await handle.stat();
+    if (!before.isFile()) throw new Error(`Codex configuration target must be a regular file: ${path}`);
+    const bytes = await handle.readFile();
+    const after = await handle.stat();
+    if (before.dev !== after.dev || before.ino !== after.ino || before.size !== after.size) {
+      throw new Error(`Codex hook activation file changed while being read: ${path}`);
+    }
+    return { exists: true, dev: String(after.dev), ino: String(after.ino), bytes };
+  } finally { await handle.close(); }
+}
+function samePhysicalFile(left, right) {
+  return left.exists === right.exists && left.dev === right.dev && left.ino === right.ino
+    && (!left.exists || left.bytes.equals(right.bytes));
+}
 async function declarationOwnershipSnapshot(manifestPath, configPath) {
   const [manifest, config] = await Promise.all([
     ownershipFileSnapshot(manifestPath),
@@ -108,10 +128,7 @@ const readJson = async path => { try { return JSON.parse(await readSafe(path, "u
   return null;
 } };
 
-async function readScopeRegistry(home) {
-  const path = scopeRegistryPath(home), present = await safeExists(path);
-  if (!present) return { path, present: false, entries: [] };
-  const registry = await readJson(path);
+function validateScopeRegistry(path, registry) {
   if (registry?.format !== 1 || registry.owner !== "muster" || !Array.isArray(registry.entries)) {
     throw new Error(`Codex managed-scope registry ownership is invalid: ${path}`);
   }
@@ -124,7 +141,44 @@ async function readScopeRegistry(home) {
     if (seen.has(key)) throw new Error(`Codex managed-scope registry has a duplicate entry: ${path}`);
     seen.add(key); entries.push({ scope: entry.scope, configDir: entry.configDir });
   }
-  return { path, present: true, entries };
+  return entries;
+}
+
+async function readScopeRegistry(home) {
+  const path = scopeRegistryPath(home), present = await safeExists(path);
+  if (!present) return { path, present: false, entries: [] };
+  const registry = await readJson(path);
+  return { path, present: true, entries: validateScopeRegistry(path, registry) };
+}
+
+export async function hookActivationSnapshot({ home, cwd, userCodexHome = codexHome(home) }) {
+  const registryPath = join(userCodexHome, "muster", "install-scopes.json");
+  const registryFile = await physicalFileSnapshot(registryPath);
+  let entries = [];
+  if (registryFile.exists) {
+    let registry;
+    try { registry = JSON.parse(registryFile.bytes.toString("utf8")); }
+    catch { throw new Error(`Codex managed-scope registry ownership is invalid: ${registryPath}`); }
+    entries = validateScopeRegistry(registryPath, registry);
+  }
+  const dirs = new Set([userCodexHome, join(cwd, ".codex"), ...entries.map(entry => resolve(entry.configDir))]);
+  const paths = [registryPath];
+  for (const dir of dirs) paths.push(
+    join(dir, "hooks.json"),
+    join(dir, "config.toml"),
+    join(dir, "muster", MANIFEST),
+    join(dir, "muster", "hooks", "muster-hook.mjs"),
+    join(dir, "muster", "hooks", "action-guard.mjs")
+  );
+  const files = new Map([[registryPath, registryFile]]);
+  for (const path of [...new Set(paths)].sort()) if (path !== registryPath) files.set(path, await physicalFileSnapshot(path));
+  return files;
+}
+
+export function sameHookActivationSnapshot(left, right) {
+  if (left.size !== right.size) return false;
+  for (const [path, file] of left) if (!right.has(path) || !samePhysicalFile(file, right.get(path))) return false;
+  return true;
 }
 
 async function liveManagedHookScripts(home, extraConfigDirs = []) {
@@ -135,6 +189,7 @@ async function liveManagedHookScripts(home, extraConfigDirs = []) {
 
 async function validateManagedHookAliasGraph({ home, cwd, entries, currentDir, currentConfig }) {
   const currentProjectDir = join(cwd, ".codex");
+  const registeredDirs = new Set(entries.map(entry => resolve(entry.configDir)));
   const scopes = [
     { scope: "user", configDir: codexHome(home) },
     { scope: "project", configDir: currentProjectDir },
@@ -155,6 +210,12 @@ async function validateManagedHookAliasGraph({ home, cwd, entries, currentDir, c
       }
     }
     const cwds = entry.scope === "user" ? [...new Set([cwd, ...projectCwds])] : [dirname(entry.configDir)];
+    const unownedCurrentProject = entry.configDir === resolve(currentProjectDir)
+      && entry.configDir !== resolve(currentDir || "") && !registeredDirs.has(entry.configDir);
+    if (unownedCurrentProject && Object.values(config.hooks || {}).some(groups => Array.isArray(groups)
+      && groups.some(group => groupCommands(group).some(isMusterHookCommand)))) {
+      throw new Error(`Codex hook conflict: ${configPath} contains an unmanaged Muster hook in the unregistered current project.`);
+    }
     if (await hasMusterHookCommandAlias(config, runtimeScripts, { cwds })) {
       throw new Error(`Codex hook conflict: ${configPath} contains a command aliased to a live managed Muster runtime.`);
     }
@@ -697,11 +758,32 @@ function validHookInventoryRecord(entry) {
     || !denseArray(entry.warnings) || !entry.warnings.every(item => typeof item === "string")
     || !denseArray(entry.errors) || !entry.errors.every(item => typeof item === "string")
     || !denseArray(entry.hooks)) return false;
-  return entry.hooks.every(hook => exactObject(hook, ["key", "enabled", "trustStatus", "currentHash"])
-    && parseHookInventoryKey(hook.key) !== null
+  return entry.hooks.every(hook => {
+    const parsed = parseHookInventoryKey(hook?.key);
+    const legacyShape = exactObject(hook, ["key", "enabled", "trustStatus", "currentHash"]);
+    const currentShape = exactObject(hook, [
+      "key", "eventName", "handlerType", "matcher", "command", "timeoutSec", "statusMessage",
+      "additionalContextLimit", "sourcePath", "source", "pluginId", "displayOrder", "enabled",
+      "isManaged", "currentHash", "trustStatus"
+    ])
+      && typeof hook.eventName === "string" && hook.eventName.length > 0 && !HOOK_INVENTORY_CONTROLS.test(hook.eventName)
+      && hook.handlerType === "command"
+      && (hook.matcher === null || typeof hook.matcher === "string")
+      && typeof hook.command === "string" && hook.command.length > 0
+      && Number.isSafeInteger(hook.timeoutSec) && hook.timeoutSec > 0
+      && (hook.statusMessage === null || typeof hook.statusMessage === "string")
+      && (hook.additionalContextLimit === null || (Number.isSafeInteger(hook.additionalContextLimit) && hook.additionalContextLimit >= 0))
+      && validCanonicalHookPath(hook.sourcePath) && hook.sourcePath === parsed?.path
+      && typeof hook.source === "string" && hook.source.length > 0 && !HOOK_INVENTORY_CONTROLS.test(hook.source)
+      && (hook.pluginId === null || (typeof hook.pluginId === "string" && hook.pluginId.length > 0 && !HOOK_INVENTORY_CONTROLS.test(hook.pluginId)))
+      && Number.isSafeInteger(hook.displayOrder) && hook.displayOrder >= 0
+      && typeof hook.isManaged === "boolean";
+    return (legacyShape || currentShape)
+    && parsed !== null
     && typeof hook.enabled === "boolean"
     && typeof hook.trustStatus === "string" && hook.trustStatus.length > 0 && !HOOK_INVENTORY_CONTROLS.test(hook.trustStatus)
-    && typeof hook.currentHash === "string" && HOOK_CONTENT_HASH.test(hook.currentHash));
+    && typeof hook.currentHash === "string" && HOOK_CONTENT_HASH.test(hook.currentHash);
+  });
 }
 
 export function effectiveHookTrust(inventory, cwd, hooksJsonPath, results, { knownKeys } = {}) {
@@ -1094,16 +1176,23 @@ async function withScopeRegistryTransaction(home, action, lockOptions) {
 // rename. Temp naming is preserved verbatim.
 async function atomicWriteSafe(path, content) {
   const parent = dirname(path);
+  let stagedIdentity = null;
   await ordinaryDirectoryPath(parent, { create: true });
   await regularFileState(path);
   await atomicWrite(path, content, {
     tempName: (targetPath) => join(parent, `.${basename(targetPath)}.muster-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.tmp`),
     beforeRename: async (temporary) => {
-      await regularFileState(temporary);
+      const staged = await regularFileState(temporary);
+      stagedIdentity = { dev: String(staged.dev), ino: String(staged.ino) };
       await ordinaryDirectoryPath(parent);
       await regularFileState(path);
     },
   });
+  const published = await physicalFileSnapshot(path);
+  if (!published.exists || published.dev !== stagedIdentity?.dev || published.ino !== stagedIdentity?.ino) {
+    throw new Error(`Codex configuration target changed immediately after Muster wrote it: ${path}`);
+  }
+  return published;
 }
 
 async function removeSafe(path) {
@@ -1403,10 +1492,17 @@ function shellPathCandidates(command) {
   return [...candidates].filter(value => value && !value.startsWith("-"));
 }
 
+async function physicalHookIdentity(path) {
+  const canonical = await realpath(path);
+  const metadata = await stat(canonical);
+  if (metadata.ino !== 0) return `inode:${metadata.dev}:${metadata.ino}`;
+  return `path:${process.platform === "win32" ? canonical.toLowerCase() : canonical}`;
+}
+
 export async function hasMusterHookCommandAlias(config, expectedScripts, { cwds = [] } = {}) {
   const expectedIdentities = new Set();
   for (const expectedScript of Array.isArray(expectedScripts) ? expectedScripts : [expectedScripts]) {
-    try { expectedIdentities.add(await realpath(expectedScript)); } catch { /* absent managed runtimes cannot be alias targets */ }
+    try { expectedIdentities.add(await physicalHookIdentity(expectedScript)); } catch { /* absent managed runtimes cannot be alias targets */ }
   }
   if (!expectedIdentities.size) return false;
   for (const groups of Object.values(config?.hooks || {})) {
@@ -1418,7 +1514,7 @@ export async function hasMusterHookCommandAlias(config, expectedScripts, { cwds 
           ? [candidate]
           : cwds.map(cwd => resolve(cwd, candidate));
         for (const path of paths) try {
-          if (expectedIdentities.has(await realpath(path))) return true;
+          if (expectedIdentities.has(await physicalHookIdentity(path))) return true;
         } catch { /* missing and foreign scripts are not managed aliases */ }
       }
     }
@@ -1705,6 +1801,7 @@ async function inspectUserScopeHooks({ home, packageVersion, expected, cwd }) {
 async function inspectEffectiveUserScopeHooks({ home, packageVersion, expected, cwd, runtimeIdentity, hookInventory }) {
   const before = await inspectUserScopeHooks({ home, packageVersion, expected, cwd });
   if (!before || before.gaps.untrusted.length || before.gaps.stale.length) return null;
+  const activationBefore = await hookActivationSnapshot({ home, cwd });
   const inventoryReader = hookInventory || readCodexHookInventory;
   const inventory = await inventoryReader({
     runtimeIdentity,
@@ -1712,8 +1809,10 @@ async function inspectEffectiveUserScopeHooks({ home, packageVersion, expected, 
     env: { ...process.env, CODEX_HOME: codexHome(home) }
   });
   const inspected = await inspectUserScopeHooks({ home, packageVersion, expected, cwd });
+  const activationAfter = await hookActivationSnapshot({ home, cwd });
   if (!inspected || inspected.snapshot !== before.snapshot || inspected.gaps.untrusted.length || inspected.gaps.stale.length
-    || inspected.gaps.results.length !== expected.hookCount) return null;
+    || inspected.gaps.results.length !== expected.hookCount
+    || !sameHookActivationSnapshot(activationBefore, activationAfter)) return null;
   const effective = effectiveHookTrust(inventory, cwd, inspected.configPath, inspected.gaps.results, { knownKeys: inspected.knownKeys });
   return effective.ok ? { ...inspected, effective } : null;
 }
@@ -1804,8 +1903,19 @@ async function snapshot(originals, changed, path) {
   changed.push(path);
 }
 
-async function restoreFilesystem(originals, changed) {
+async function transactionWrite(written, path, content) {
+  written.set(path, await atomicWriteSafe(path, content));
+}
+
+async function transactionRemove(written, path) {
+  await removeSafe(path);
+  written.set(path, { exists: false, dev: null, ino: null, bytes: null });
+}
+
+async function restoreFilesystem(originals, changed, written) {
   for (const destination of [...changed].reverse()) {
+    const expected = written.get(destination);
+    if (!expected || !samePhysicalFile(expected, await physicalFileSnapshot(destination))) continue;
     if (originals.get(destination) === null) await removeSafe(destination);
     else await atomicWriteSafe(destination, originals.get(destination));
   }
@@ -2003,12 +2113,12 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
   if (!identity && !execFile) try { identity = resolveCodexRuntimeIdentity({ nodeExecPath }); } catch { /* Codex absent: local install still proceeds without PATH probing */ }
   const { files, profileContents, declarations, distributionRoot, dir, manifestPath, declarationConfigPath, declarationOwnership, threadLimitConfigPath, threadLimitManifestPath, packageVersion, canonicalUserExpected, hooks, staleFiles, present, planned } =
     await prepareCodexInstall({ scope, dryRun, cwd, home, repoRoot, execFile: executor, runtimeIdentity: identity, hookInventory, allowInjected: Boolean(execFile), nodeExecPath });
-  let originals, changed;
+  let originals, changed, written;
   let actions = [];
   let canonicalUserTrust = null;
   const prunedScopes = [], prunedHookState = [], prunedProjectTrust = [];
   if (!dryRun) {
-    originals = new Map(); changed = [];
+    originals = new Map(); changed = []; written = new Map();
     await withScopeRegistryTransaction(home, async registry => {
       const checkedOwnership = await verifyDeclarationOwnershipSnapshot(
         declarationOwnership, manifestPath, declarationConfigPath
@@ -2045,16 +2155,16 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
           candidateScopeEntries,
           { onPrune: pruned => prunedScopes.push(pruned) }
         );
-        await atomicWriteSafe(registry.path, registryText(reconciled));
+        await transactionWrite(written, registry.path, registryText(reconciled));
         for (const file of files) {
           const destination = join(dir, file);
           await snapshot(originals, changed, destination);
-          await atomicWriteSafe(destination, profileContents.get(file));
+          await transactionWrite(written, destination, profileContents.get(file));
         }
         for (const file of staleFiles) {
           const destination = join(dir, file);
           await snapshot(originals, changed, destination);
-          await removeSafe(destination);
+          await transactionRemove(written, destination);
         }
         const declarationConfigCreated = manifestExists && manifest.declarationConfigCreated !== undefined
           ? manifest.declarationConfigCreated
@@ -2062,17 +2172,17 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
         for (const [file, sourcePath] of hooks.sourceFiles) {
           const destination = join(hooks.runtimeDir, file);
           await snapshot(originals, changed, destination);
-          await atomicWriteSafe(destination, await readFile(sourcePath, "utf8"));
+          await transactionWrite(written, destination, await readFile(sourcePath, "utf8"));
         }
         for (const file of hooks.staleFiles) {
           const destination = join(hooks.runtimeDir, file);
           await snapshot(originals, changed, destination);
-          await removeSafe(destination);
+          await transactionRemove(written, destination);
         }
         await snapshot(originals, changed, hooks.configPath);
-        await atomicWriteSafe(hooks.configPath, JSON.stringify(hooks.config, null, 2) + "\n");
+        await transactionWrite(written, hooks.configPath, JSON.stringify(hooks.config, null, 2) + "\n");
         await snapshot(originals, changed, hooks.manifestPath);
-        await atomicWriteSafe(hooks.manifestPath, JSON.stringify(hooks.manifest, null, 2) + "\n");
+        await transactionWrite(written, hooks.manifestPath, JSON.stringify(hooks.manifest, null, 2) + "\n");
         try {
           const configExistedBefore = await safeExists(threadLimitConfigPath);
           const existingConfigText = configExistedBefore ? await readSafe(threadLimitConfigPath) : "";
@@ -2145,9 +2255,9 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
             ? previousManifest.configCreated
             : !(scope === "user" ? declarationConfigExists : configExistedBefore);
           await snapshot(originals, changed, threadLimitConfigPath);
-          await atomicWriteSafe(threadLimitConfigPath, threadLimits.text);
+          await transactionWrite(written, threadLimitConfigPath, threadLimits.text);
           await snapshot(originals, changed, threadLimitManifestPath);
-          await atomicWriteSafe(threadLimitManifestPath, JSON.stringify({
+          await transactionWrite(written, threadLimitManifestPath, JSON.stringify({
             format: 1, owner: "muster", configPath: threadLimitConfigPath,
             before, installed,
             sectionCreated, configCreated
@@ -2170,9 +2280,9 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
           }
         );
         await snapshot(originals, changed, declarationConfigPath);
-        await atomicWriteSafe(declarationConfigPath, declarationReconcile.text);
+        await transactionWrite(written, declarationConfigPath, declarationReconcile.text);
         await snapshot(originals, changed, manifestPath);
-        await atomicWriteSafe(manifestPath, JSON.stringify({
+        await transactionWrite(written, manifestPath, JSON.stringify({
           format: 1, owner: "muster", files, packageVersion,
           declarationConfigCreated,
           declarationSeparatorAdded: declarationReconcile.separatorAdded,
@@ -2190,7 +2300,7 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
         }
         actions = present ? await registerPlugin(executor, distributionRoot, { dryRun: false, runtimeIdentity: identity }) : [];
       } catch (error) {
-        await restoreFilesystem(originals, changed);
+        await restoreFilesystem(originals, changed, written);
         throw error;
       }
     }, scopeLockOptions);
@@ -2216,14 +2326,18 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
     };
     const gaps = trustTarget?.gaps ?? { results: [], untrusted: ["canonical-scope-invalid"], stale: [] };
     const inventoryReader = hookInventory || readCodexHookInventory;
+    const activationBefore = hooks.skipped ? null : await hookActivationSnapshot({ home, cwd });
     const inventory = hooks.skipped ? null : await inventoryReader({
       runtimeIdentity: identity,
       cwds: [cwd],
       env: { ...process.env, CODEX_HOME: codexHome(home) }
     });
+    const activationAfter = hooks.skipped ? null : await hookActivationSnapshot({ home, cwd });
     const effective = hooks.skipped
       ? canonicalUserTrust.effective
-      : effectiveHookTrust(inventory, cwd, trustTarget.configPath, gaps.results, { knownKeys: trustTarget.knownKeys });
+      : !sameHookActivationSnapshot(activationBefore, activationAfter)
+        ? { verified: true, ok: false, error: "Codex hook activation state changed during hooks/list verification", results: [] }
+        : effectiveHookTrust(inventory, cwd, trustTarget.configPath, gaps.results, { knownKeys: trustTarget.knownKeys });
     const persistedOk = gaps.untrusted.length === 0 && gaps.stale.length === 0;
     hookTrust = {
       ok: persistedOk && effective.ok,
@@ -2369,23 +2483,23 @@ export async function runCodexUninstall({ scope = "project", dryRun = false, cwd
     removePlugin = present && ownsScope && ownershipCertain && liveScopes.length === 0;
     restoreThreadLimits = Boolean(threadLimitManifest) && ownershipCertain && liveScopes.length === 0;
     if (dryRun) return;
-    const originals = new Map(), changed = [];
+    const originals = new Map(), changed = [], written = new Map();
     try {
       await snapshot(originals, changed, registry.path);
-      await atomicWriteSafe(registry.path, registryText(liveScopes));
-      for (const file of files) { await snapshot(originals, changed, file); await removeSafe(file); }
-      if (manifestExists) { await snapshot(originals, changed, manifestPath); await removeSafe(manifestPath); }
+      await transactionWrite(written, registry.path, registryText(liveScopes));
+      for (const file of files) { await snapshot(originals, changed, file); await transactionRemove(written, file); }
+      if (manifestExists) { await snapshot(originals, changed, manifestPath); await transactionRemove(written, manifestPath); }
       if (manifestExists && declarationConfigExists) {
         await snapshot(originals, changed, declarationConfigPath);
-        if (removeDeclarationConfig) await removeSafe(declarationConfigPath);
-        else await atomicWriteSafe(declarationConfigPath, declarationConfig);
+        if (removeDeclarationConfig) await transactionRemove(written, declarationConfigPath);
+        else await transactionWrite(written, declarationConfigPath, declarationConfig);
       }
-      for (const file of hookFiles) { await snapshot(originals, changed, file); await removeSafe(file); }
-      if (hookManifestExists) { await snapshot(originals, changed, hookManifestPath); await removeSafe(hookManifestPath); }
+      for (const file of hookFiles) { await snapshot(originals, changed, file); await transactionRemove(written, file); }
+      if (hookManifestExists) { await snapshot(originals, changed, hookManifestPath); await transactionRemove(written, hookManifestPath); }
       if (hookManifest) {
         await snapshot(originals, changed, hookConfigPath);
-        if (removeHookConfig) await removeSafe(hookConfigPath);
-        else await atomicWriteSafe(hookConfigPath, JSON.stringify(hookConfig, null, 2) + "\n");
+        if (removeHookConfig) await transactionRemove(written, hookConfigPath);
+        else await transactionWrite(written, hookConfigPath, JSON.stringify(hookConfig, null, 2) + "\n");
       }
       // Fix for codex-hook-bombardment: the scope being uninstalled just had
       // its OWN hooks.json rewritten/removed above, so its config.toml
@@ -2419,11 +2533,11 @@ export async function runCodexUninstall({ scope = "project", dryRun = false, cwd
           currentConfigText = hookStateReconcile.text;
           if (restoreThreadLimits) currentConfigText = restoreCodexThreadLimits(currentConfigText, threadLimitManifest);
           removeThreadLimitConfig = restoreThreadLimits && threadLimitManifest.configCreated && currentConfigText.trim() === "";
-          if (removeThreadLimitConfig) await removeSafe(threadLimitConfigPath);
-          else await atomicWriteSafe(threadLimitConfigPath, currentConfigText);
+          if (removeThreadLimitConfig) await transactionRemove(written, threadLimitConfigPath);
+          else await transactionWrite(written, threadLimitConfigPath, currentConfigText);
           if (restoreThreadLimits) {
             await snapshot(originals, changed, threadLimitManifestPath);
-            await removeSafe(threadLimitManifestPath);
+            await transactionRemove(written, threadLimitManifestPath);
           }
         } catch (error) {
           throw new Error(`Codex config.toml hook-state/thread-limit reconciliation could not complete at ${threadLimitConfigPath}: ${error.message}. ${CODEX_THREAD_LIMIT_REMEDIATION}`);
@@ -2431,7 +2545,7 @@ export async function runCodexUninstall({ scope = "project", dryRun = false, cwd
       }
       if (removePlugin) await run(executor, ["plugin", "remove", CODEX_PLUGIN], identity);
     } catch (error) {
-      await restoreFilesystem(originals, changed);
+      await restoreFilesystem(originals, changed, written);
       throw error;
     }
     for (const empty of [join(hookRuntimeDir, "hooks"), hookRuntimeDir]) try {

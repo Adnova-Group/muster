@@ -7,7 +7,7 @@
 // hook scope. See prepareHooks' userScopeHooksHealthy in src/codex-install.js.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { link, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CODEX_COUNTS } from "../src/codex.js";
@@ -412,6 +412,32 @@ test("Codex install and doctor reject a symlink alias to the Muster runtime comm
   );
 });
 
+test("Codex install and doctor reject a hard-link alias to the Muster runtime command", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-scope-collapse-command-hardlink-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), codexHome = join(home, ".codex");
+  const userResult = await installTrustedUser({ cwd, home });
+  const hooksPath = join(codexHome, "hooks.json");
+  const runtimePath = join(codexHome, "muster", "hooks", "muster-hook.mjs");
+  const aliasPath = join(tmp, "foreign-hard-link.mjs");
+  await link(runtimePath, aliasPath);
+  const config = JSON.parse(await readFile(hooksPath, "utf8"));
+  const alias = structuredClone(config.hooks.Stop[0]);
+  for (const hook of alias.hooks) {
+    hook.command = `'/usr/bin/node' '${aliasPath}'`;
+    delete hook.commandWindows;
+  }
+  config.hooks.Stop.push(alias);
+  await writeFile(hooksPath, JSON.stringify(config, null, 2));
+
+  const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absentCodex });
+  assert.equal(report.checks.find(check => check.name === "codex-hooks")?.ok, false);
+  await assert.rejects(
+    () => runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absentCodex, hookInventory: userResult.hookInventory }),
+    /aliased Muster hook|live managed Muster runtime/
+  );
+});
+
 test("a skipped project cannot hide a symlink command to the canonical user runtime", async t => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-scope-collapse-cross-scope-alias-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));
@@ -493,6 +519,24 @@ test("user install scans an unregistered current project before and after creati
   assert.equal(report.checks.find(check => check.name === "codex-hooks")?.ok, false);
 });
 
+test("user install rejects a direct unmanaged Muster command in the unregistered current project", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-unregistered-current-direct-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), codexHome = join(home, ".codex");
+  await mkdir(join(cwd, ".codex"), { recursive: true });
+  const projectHooksPath = join(cwd, ".codex", "hooks.json");
+  const command = `node '${join(codexHome, "muster", "hooks", "muster-hook.mjs")}'`;
+  const original = JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command }] }] } }, null, 2);
+  await writeFile(projectHooksPath, original);
+
+  await assert.rejects(
+    () => runCodexInstall({ scope: "user", cwd, home, repoRoot, execFile: absentCodex }),
+    /unmanaged Muster hook|hook conflict/i
+  );
+  assert.equal(await readFile(projectHooksPath, "utf8"), original);
+  await assert.rejects(() => readFile(join(codexHome, "muster", "hooks", "muster-hook.mjs"), "utf8"));
+});
+
 test("registry acquisition revalidates the prepared hooks.json snapshot before overwrite", async t => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-config-lock-snapshot-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));
@@ -565,6 +609,34 @@ test("Codex install adversarial: a failed transaction mid-migration restores the
   assert.equal(await readFile(projectHooksJsonPath, "utf8"), beforeHooksJson, "project hooks.json is restored byte-identically");
   assert.equal(await readFile(projectManifestPath, "utf8"), beforeManifest, "project hook manifest is restored byte-identically");
   assert.equal(await readFile(projectRuntimePath, "utf8"), beforeRuntime, "project hook runtime is restored byte-identically");
+});
+
+test("Codex install rollback preserves an external edit made after Muster's transaction write", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-rollback-external-edit-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const cwd = join(tmp, "project"), home = join(tmp, "home");
+  await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absentCodex });
+  const userResult = await installTrustedUser({ cwd, home });
+  const hooksPath = join(cwd, ".codex", "hooks.json");
+  const external = JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: "node /external/hook.mjs" }] }] } }, null, 2) + "\n";
+  const failingExecFile = async (_bin, args) => {
+    if (args[0] === "--version") return { stdout: "codex-cli test" };
+    if (args.slice(0, 3).join(" ") === "plugin marketplace list") return { stdout: JSON.stringify({ marketplaces: [] }) };
+    if (args.slice(0, 3).join(" ") === "plugin marketplace add") return { stdout: "" };
+    if (args.slice(0, 3).join(" ") === "plugin list --available") return { stdout: JSON.stringify({ installed: [], available: [] }) };
+    if (args.slice(0, 2).join(" ") === "plugin add") {
+      await writeFile(hooksPath, external);
+      throw new Error("registration failed after external edit");
+    }
+    if (args.slice(0, 3).join(" ") === "plugin marketplace remove") return { stdout: "" };
+    throw new Error(`unexpected command: ${args.join(" ")}`);
+  };
+
+  await assert.rejects(
+    () => runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: failingExecFile, hookInventory: userResult.hookInventory }),
+    /registration failed after external edit/
+  );
+  assert.equal(await readFile(hooksPath, "utf8"), external);
 });
 
 test("Codex uninstall: a canonical-scope-skipped project scope uninstalls cleanly as a no-op on hooks (agents still removed)", async t => {

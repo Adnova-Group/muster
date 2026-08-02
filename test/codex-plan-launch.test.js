@@ -469,6 +469,37 @@ test("only one interactive form can own terminal raw mode", async () => {
   assert.equal(input.listenerCount("data"), 0);
 });
 
+test("duplicate active server request ids terminate and clean the prompt", async () => {
+  const child = fakeAppServerProcess();
+  const input = new EventEmitter();
+  input.isTTY = true;
+  input.isRaw = false;
+  input.setRawMode = value => { input.isRaw = value; };
+  input.resume = () => {};
+  const client = await createCodexAppServerClient({
+    cwd: "/repo",
+    spawnProcess: () => child,
+    timeoutMs: 100,
+    userInput: (_question, _options, timeoutMs, signal) =>
+      readSecretTerminalInput({ input, output: { write() {} }, timeoutMs, signal }),
+  });
+  const started = client.request("turn/start", { threadId: "thread-1" });
+  child.stdout.write(`${JSON.stringify({ id: 1, result: { turn: { id: "turn-1" } } })}\n`);
+  await started;
+  const form = { id: 71, method: "item/tool/requestUserInput", params: {
+    threadId: "thread-1", turnId: "turn-1", itemId: "item-71",
+    questions: [{ id: "secret", header: "Secret", question: "Token?", isSecret: true }],
+  } };
+  child.stdout.write(`${JSON.stringify(form)}\n`);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(input.isRaw, true);
+  child.stdout.write(`${JSON.stringify(form)}\n`);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(child.killed, true);
+  assert.equal(input.isRaw, false);
+  assert.equal(input.listenerCount("data"), 0);
+});
+
 test("unavailable App Server control fails safely with explicit /plan guidance", async () => {
   const result = await launchCodexPlan({
     cwd: "/repo",

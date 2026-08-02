@@ -266,6 +266,7 @@ class JsonRpcLineClient {
     this.userInput = userInput;
     this.onNotification = onNotification;
     this.inputControllers = new Set();
+    this.activeServerRequestIds = new Set();
     this.activeThreadId = null;
     this.activeTurnId = null;
     this.exitPromise = new Promise(resolveExit => child.once("exit", resolveExit));
@@ -391,6 +392,10 @@ class JsonRpcLineClient {
         // Any request that could authorize an action is declined, visibly, rather
         // than being auto-approved or silently inherited as an unsafe default.
         if (message.method === "item/tool/requestUserInput") {
+          if (this.activeServerRequestIds.has(message.id)) {
+            this.#terminate(new Error("codex app-server reused an active JSON-RPC request id"));
+            return;
+          }
           if (this.closing
             || this.inputControllers.size > 0
             || message.params?.threadId !== this.activeThreadId
@@ -407,6 +412,7 @@ class JsonRpcLineClient {
           }
           const inputController = new AbortController();
           this.inputControllers.add(inputController);
+          this.activeServerRequestIds.add(message.id);
           const ask = typeof this.userInput === "function"
             ? (question, options, timeoutMs) => this.userInput(question, options, timeoutMs, inputController.signal)
             : undefined;
@@ -416,7 +422,10 @@ class JsonRpcLineClient {
               code: -32000,
               message: error.message,
             } }))
-            .finally(() => this.inputControllers.delete(inputController));
+            .finally(() => {
+              this.inputControllers.delete(inputController);
+              this.activeServerRequestIds.delete(message.id);
+            });
         } else if (["item/commandExecution/requestApproval", "item/fileChange/requestApproval"].includes(message.method)) {
           this.#write({ jsonrpc: "2.0", id: message.id, result: { decision: "decline" } });
           process.stderr.write(`muster: declined App Server request ${sanitizeTerminalText(message.method)}; approval was not bypassed\n`);

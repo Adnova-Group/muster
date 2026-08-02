@@ -10,7 +10,7 @@ import { codexAvailable, readCodexInventory } from "./codex-inventory.js";
 import { codexVersionMatches, resolveCodexRuntimeIdentity, runCodexCommand } from "./codex-runtime-identity.js";
 import { exists } from "./fs-util.js";
 import { parseAgentProfileToml, resolveCodexPlugin } from "./codex-release.js";
-import { effectiveHookTrust, expectedCodexHookInstall, musterHookTrustGaps, parseHookCommand, readCodexHookInventory, reconcileConfigTomlHookState, reconcileScopeRegistryEntries } from "./codex-install.js";
+import { codexHookStateKeys, effectiveHookTrust, expectedCodexHookInstall, musterHookTrustGaps, parseHookCommand, readCodexHookInventory, reconcileConfigTomlHookState, reconcileScopeRegistryEntries } from "./codex-install.js";
 import { readNoFollowRegular } from "./fs-safe.js";
 import {
   CODEX_THREAD_LIMIT_REMEDIATION,
@@ -1109,7 +1109,8 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
           dir,
           cwd: dir === userCodexHome ? cwd : dirname(dir),
           configPath,
-          results: gaps.results
+          results: gaps.results,
+          knownKeys: codexHookStateKeys(config)
         });
         if (blocked.length || gaps.stale.length) hookTrustGaps.push({ dir, results: blocked, stale: gaps.stale });
       } else {
@@ -1208,7 +1209,7 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   const effectiveFailures = effectiveTargets.map(target => ({
     dir: target.dir,
     cwd: target.cwd,
-    effective: effectiveHookTrust(inventory, target.cwd, target.configPath, target.results)
+    effective: effectiveHookTrust(inventory, target.cwd, target.configPath, target.results, { knownKeys: target.knownKeys })
   })).filter(item => !item.effective.ok);
   const untrustedCount = hookTrustGaps.reduce((total, item) => total + item.results.length + item.stale.length, 0)
     + effectiveFailures.reduce((total, item) => total + Math.max(1, item.effective.results.filter(result => result.status !== "active").length), 0);

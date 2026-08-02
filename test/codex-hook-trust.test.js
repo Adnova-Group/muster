@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { musterHookTrustGaps, runCodexInstall } from "../src/codex-install.js";
+import { effectiveHookTrust, musterHookTrustGaps, runCodexInstall } from "../src/codex-install.js";
 import { runCodexDoctor } from "../src/codex-doctor.js";
 import { repoRoot } from "../test-support/codex-helpers.js";
 
@@ -183,6 +183,44 @@ test("musterHookTrustGaps never certifies header-shaped text inside TOML multili
 const inventoryFor = (cwd, hooksJsonPath, results) => ({ ok: true, data: [{ cwd, warnings: [], errors: [], hooks: results.map(result => ({
   key: `${hooksJsonPath}:${result.key}`, enabled: true, trustStatus: "trusted", currentHash: result.currentHash
 })) }] });
+
+test("effectiveHookTrust rejects duplicate scope and managed hook inventory records", () => {
+  const cwd = "/repo", hooksJsonPath = "/repo/.codex/hooks.json";
+  const results = [{ key: "stop:0:0", currentHash: "sha256:exact" }];
+  const record = { cwd, warnings: [], errors: [], hooks: [{
+    key: `${hooksJsonPath}:stop:0:0`, enabled: true, trustStatus: "trusted", currentHash: "sha256:exact"
+  }] };
+  assert.equal(effectiveHookTrust({ ok: true, data: [record, structuredClone(record)] }, cwd, hooksJsonPath, results, { knownKeys: ["stop:0:0"] }).ok, false);
+  const duplicateHook = structuredClone(record);
+  duplicateHook.hooks.push(structuredClone(duplicateHook.hooks[0]));
+  assert.equal(effectiveHookTrust({ ok: true, data: [duplicateHook] }, cwd, hooksJsonPath, results, { knownKeys: ["stop:0:0"] }).ok, false);
+});
+
+test("ordinary project/user install and doctor reject unexpected active positions", async t => {
+  for (const scope of ["project", "user"]) await t.test(scope, async () => {
+    const tmp = await mkdtemp(join(tmpdir(), `muster-codex-hook-extra-effective-${scope}-`));
+    const cwd = join(tmp, "project"), home = join(tmp, "home");
+    const hooksJsonPath = scope === "user" ? join(home, ".codex", "hooks.json") : join(cwd, ".codex", "hooks.json");
+    const first = await runCodexInstall({ scope, cwd, home, repoRoot, execFile: absentCodex });
+    const configPath = join(home, ".codex", "config.toml");
+    const trustText = first.hookTrust.results.map(result =>
+      `[hooks.state."${hooksJsonPath}:${result.key}"]\ntrusted_hash = "${result.currentHash}"\nenabled = true\n`
+    ).join("\n");
+    await writeFile(configPath, `${await readFile(configPath, "utf8")}\n${trustText}`);
+    const inventory = inventoryFor(cwd, hooksJsonPath, first.hookTrust.results);
+    inventory.data[0].hooks.push({
+      key: `${hooksJsonPath}:session_end:99:0`, enabled: true, trustStatus: "trusted", currentHash: `sha256:${"a".repeat(64)}`
+    });
+    const hookInventory = async () => structuredClone(inventory);
+    const installed = await runCodexInstall({ scope, cwd, home, repoRoot, execFile: absentCodex, hookInventory });
+    assert.equal(installed.ok, false, `${scope} install must reject the unexpected active position`);
+    assert.match(installed.hookTrust.effective.error || "", /unexpected active hook position/i);
+    const doctor = await runCodexDoctor({ root: repoRoot, cwd, codexHome: join(home, ".codex"), execFile: absentCodex, hookInventory });
+    const trust = doctor.checks.find(check => check.name === "codex-hook-trust");
+    assert.equal(trust?.ok, false, `${scope} doctor must reject the unexpected active position`);
+    assert.match(trust?.detail || "", /unexpected active hook position/i);
+  });
+});
 
 test("Codex install blocks on untrusted writes and clears only after exact persisted and effective trust", async () => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-install-hook-trust-"));

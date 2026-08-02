@@ -635,11 +635,20 @@ export async function readCodexHookInventory({ runtimeIdentity, cwds, env = proc
 export function effectiveHookTrust(inventory, cwd, hooksJsonPath, results, { knownKeys } = {}) {
   if (!inventory?.ok) return { verified: false, ok: false, error: inventory?.error || "Codex hooks/list unavailable", results: [] };
   if (!Array.isArray(results) || results.length === 0) return { verified: true, ok: false, error: "no expected Muster hooks were supplied for activation verification", results: [] };
-  const scope = inventory.data.find(entry => resolve(entry?.cwd || "") === resolve(cwd));
-  if (!scope || (Array.isArray(scope.errors) && scope.errors.length)) {
+  const scopes = (Array.isArray(inventory.data) ? inventory.data : []).filter(entry =>
+    typeof entry?.cwd === "string" && entry.cwd.length > 0 && resolve(entry.cwd) === resolve(cwd));
+  if (scopes.length !== 1) {
+    return { verified: true, ok: false, error: scopes.length ? `Codex hooks/list returned duplicate records for ${cwd}` : "Codex hooks/list omitted the requested scope", results: [] };
+  }
+  const scope = scopes[0];
+  if (Array.isArray(scope.errors) && scope.errors.length) {
     return { verified: true, ok: false, error: scope?.errors?.join("; ") || "Codex hooks/list omitted the requested scope", results: [] };
   }
   const hooks = Array.isArray(scope.hooks) ? scope.hooks : [];
+  const managedKeys = hooks.filter(hook => typeof hook?.key === "string" && hook.key.startsWith(`${hooksJsonPath}:`)).map(hook => hook.key);
+  if (new Set(managedKeys).size !== managedKeys.length) {
+    return { verified: true, ok: false, error: `Codex hooks/list returned duplicate hook positions for ${hooksJsonPath}`, results: [] };
+  }
   if (knownKeys) {
     const known = new Set(knownKeys.map(key => `${hooksJsonPath}:${key}`));
     const unexpected = hooks.find(hook => typeof hook?.key === "string" && hook.key.startsWith(`${hooksJsonPath}:`) && !known.has(hook.key));
@@ -1291,7 +1300,7 @@ function exactMusterHookGroups(config, expectedHookGroups) {
   return actual.length === 0;
 }
 
-function allHookStateKeys(config) {
+export function codexHookStateKeys(config) {
   const keys = [];
   for (const [event, groups] of Object.entries(config?.hooks || {})) {
     if (!Array.isArray(groups)) continue;
@@ -1522,7 +1531,7 @@ async function inspectUserScopeHooks({ home, packageVersion, expected }) {
   const configTomlText = await safeExists(configTomlPath) ? await readSafe(configTomlPath) : "";
   const gaps = musterHookTrustGaps({ configTomlText, hooksJsonPath: configPath, config, hookGroups: manifest.hookGroups });
   snapshotHash.update("config\0").update(configText).update("\0toml\0").update(configTomlText);
-  return { dir, configPath, config, hookGroups: manifest.hookGroups, gaps, knownKeys: allHookStateKeys(config), snapshot: snapshotHash.digest("hex") };
+  return { dir, configPath, config, hookGroups: manifest.hookGroups, gaps, knownKeys: codexHookStateKeys(config), snapshot: snapshotHash.digest("hex") };
 }
 
 async function inspectEffectiveUserScopeHooks({ home, packageVersion, expected, cwd, runtimeIdentity, hookInventory }) {
@@ -2014,6 +2023,7 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
       configPath: hooks.configPath,
       config: hooks.config,
       hookGroups: hooks.manifest.hookGroups,
+      knownKeys: codexHookStateKeys(hooks.config),
       gaps: musterHookTrustGaps({
         configTomlText: await readSafe(threadLimitConfigPath),
         hooksJsonPath: hooks.configPath,
@@ -2030,7 +2040,7 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
     });
     const effective = hooks.skipped
       ? canonicalUserTrust.effective
-      : effectiveHookTrust(inventory, cwd, trustTarget.configPath, gaps.results);
+      : effectiveHookTrust(inventory, cwd, trustTarget.configPath, gaps.results, { knownKeys: trustTarget.knownKeys });
     const persistedOk = gaps.untrusted.length === 0 && gaps.stale.length === 0;
     hookTrust = {
       ok: persistedOk && effective.ok,

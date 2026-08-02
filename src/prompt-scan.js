@@ -3,7 +3,7 @@
 // Extracted from cli.js so it is independently importable and unit-testable.
 // Bounded (skip vendored/build dirs, text extensions only, per-file + total caps)
 // so it stays fast and safe to run on any tree. Deterministic — the lint is no-LLM.
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { join, relative, extname } from "node:path";
 import { lintPrompt } from "./prompt-lint.js";
 import { discoverPrompts } from "./prompt-discover.js";
@@ -14,32 +14,89 @@ export const SCAN_TEXT_EXT = new Set([".js", ".mjs", ".cjs", ".ts", ".tsx", ".js
   ".go", ".java", ".md", ".txt", ".prompt", ".tmpl", ".json", ".yaml", ".yml"]);
 export const SCAN_MAX_FILE = 256 * 1024;
 export const SCAN_MAX_FILES = 5000;
+export const SCAN_MAX_INCOMPLETE_EVIDENCE = 100;
 
-export async function collectScanFiles(root) {
+async function collectScanEvidence(root, io = {}) {
+  const readdirFn = io.readdir ?? readdir;
+  const readFileFn = io.readFile ?? readFile;
+  const statFn = io.stat ?? stat;
   const files = [];
+  const incompleteEvidence = [];
+  let fileLimitWitnessFound = false;
+  let incompleteEvidenceTruncated = false;
+  const shouldStop = () => fileLimitWitnessFound || incompleteEvidenceTruncated;
+  const recordIncomplete = (file, reason) => {
+    incompleteEvidence.push({ file, reason });
+    if (incompleteEvidence.length >= SCAN_MAX_INCOMPLETE_EVIDENCE) {
+      incompleteEvidenceTruncated = true;
+    }
+  };
   async function walk(dir) {
-    if (files.length >= SCAN_MAX_FILES) return;
+    if (shouldStop()) return;
     let ents;
-    try { ents = await readdir(dir, { withFileTypes: true }); } catch { return; }
+    try { ents = await readdirFn(dir, { withFileTypes: true }); } catch {
+      recordIncomplete(relative(root, dir) || ".", "directory-read-failure");
+      return;
+    }
+    ents.sort((a, b) => a.name.localeCompare(b.name));
     for (const e of ents) {
-      if (files.length >= SCAN_MAX_FILES) return;
       const full = join(dir, e.name);
-      if (e.isDirectory()) { if (!SCAN_SKIP_DIRS.has(e.name)) await walk(full); continue; }
-      if (!e.isFile()) continue;
+      if (e.isDirectory()) {
+        if (!SCAN_SKIP_DIRS.has(e.name)) await walk(full);
+        if (shouldStop()) return;
+        continue;
+      }
       const isPromptName = /\.(prompt|tmpl)$/i.test(e.name);
       if (!SCAN_TEXT_EXT.has(extname(e.name).toLowerCase()) && !isPromptName) continue;
-      let content;
-      try { content = await readFile(full, "utf8"); } catch { continue; }
-      if (content.length > SCAN_MAX_FILE) continue;
-      files.push({ path: relative(root, full), content });
+      const path = relative(root, full);
+      if (e.isSymbolicLink()) {
+        recordIncomplete(path, "symlink");
+        if (shouldStop()) return;
+        continue;
+      }
+      if (!e.isFile()) continue;
+      if (files.length >= SCAN_MAX_FILES) {
+        recordIncomplete(path, "file-limit");
+        fileLimitWitnessFound = true;
+        return;
+      }
+      let fileStat;
+      try { fileStat = await statFn(full); } catch {
+        recordIncomplete(path, "read-failure");
+        if (shouldStop()) return;
+        continue;
+      }
+      if (fileStat.size > SCAN_MAX_FILE) {
+        recordIncomplete(path, "size-limit");
+        if (shouldStop()) return;
+        continue;
+      }
+      let raw;
+      try { raw = await readFileFn(full); } catch {
+        recordIncomplete(path, "read-failure");
+        if (shouldStop()) return;
+        continue;
+      }
+      const bytes = Buffer.isBuffer(raw) ? raw : Buffer.from(String(raw));
+      if (bytes.byteLength > SCAN_MAX_FILE) {
+        recordIncomplete(path, "size-limit");
+        if (shouldStop()) return;
+        continue;
+      }
+      files.push({ path, content: bytes.toString("utf8") });
     }
   }
   await walk(root);
+  return { files, incompleteEvidence, incompleteEvidenceTruncated };
+}
+
+export async function collectScanFiles(root, io) {
+  const { files } = await collectScanEvidence(root, io);
   return files;
 }
 
-export async function scanRepoPrompts(root) {
-  const files = await collectScanFiles(root);
+export async function scanRepoPrompts(root, io) {
+  const { files, incompleteEvidence, incompleteEvidenceTruncated } = await collectScanEvidence(root, io);
   const reviewed = discoverPrompts(files).map((p) => {
     // Discovered prompt docs and system/instruction code-prompts are the system genre;
     // dedicated prompt files (.prompt/.tmpl/templates) are task prompts.
@@ -54,12 +111,17 @@ export async function scanRepoPrompts(root) {
     };
   });
   const failing = reviewed.filter(r => !r.passing);
+  const complete = incompleteEvidence.length === 0;
   return {
     scannedFiles: files.length,
     promptCount: reviewed.length,
     passing: reviewed.length - failing.length,
     failing: failing.length,
-    truncated: files.length >= SCAN_MAX_FILES,
+    complete,
+    clean: complete && failing.length === 0,
+    truncated: incompleteEvidence.some(({ reason }) => reason === "file-limit"),
+    incompleteEvidence,
+    incompleteEvidenceTruncated,
     prompts: reviewed,
   };
 }

@@ -1601,7 +1601,8 @@ const hasUnresolvedShellExpansion = command => typeof command === "string"
   && (/(^|[^\\])(?:\$[({A-Za-z_]|`)/.test(command)
     || /![^!\r\n]+!|%[^%\r\n]+%|%[0-9*~]/.test(command)
     || /(^|[\s=])~(?:[\\/]|$)|[*?]|\[[^\]\r\n]*\]/.test(command)
-    || /(?:^|[;&|('"\s])(?:cd|chdir|pushd|popd)(?:\s|$)/i.test(command));
+    || /(?:^|[;&|('"\s])(?:cd|chdir|pushd|popd)(?:\s|$)/i.test(command)
+    || /(?:^|[;&|('"\s])(?:node|nodejs|bun|deno)(?:\.exe)?\s+(?:-e|--eval(?:=|\s)|-p|--print(?:=|\s))/i.test(command));
 
 async function physicalHookIdentity(path) {
   const canonical = await realpath(path);

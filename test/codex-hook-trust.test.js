@@ -228,7 +228,7 @@ test("effectiveHookTrust accepts Codex 0.146 full hook records without relaxing 
     }
   });
   assert.equal(effectiveHookTrust({ ...inventory, data: [{ ...inventory.data[0], hooks: [hook, delayedExpansionDuplicate] }] }, cwd, hooksJsonPath, results, { knownKeys: ["stop:0:0"] }).ok, false);
-  for (const command of ["node ~/runtime-alias.mjs", "node ./runtime-*.mjs", "node ./runtime-?.mjs", "node ./runtime-[a-z].mjs", "cd /tmp/alias-dir && node runtime-alias.mjs"]) {
+  for (const command of ["node ~/runtime-alias.mjs", "node ./runtime-*.mjs", "node ./runtime-?.mjs", "node ./runtime-[a-z].mjs", "cd /tmp/alias-dir && node runtime-alias.mjs", `node -e "import('/tmp/muster-'+'hook.mjs')"`]) {
     const expandedPathDuplicate = currentCodexInventoryHook({
       key: "/repo/.codex/config.toml:stop:0:0",
       currentHash,

@@ -1,21 +1,42 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { EventEmitter } from "node:events";
+import { PassThrough } from "node:stream";
 
 import {
   answerPlanUserInput,
   buildPlanCollaborationMode,
   buildPlanTurnStart,
   classifyPlanTurn,
+  createCodexAppServerClient,
   detectEffectivePlanMode,
   launchCodexPlan,
+  readSecretTerminalInput,
   renderPlanNotification,
+  sanitizeTerminalText,
 } from "../src/codex-plan-launch.js";
 
 const PLAN_PRESETS = [
   { name: "Plan", mode: "plan", model: null, reasoning_effort: "medium" },
   { name: "Default", mode: "default", model: null, reasoning_effort: null },
 ];
+
+function fakeAppServerProcess() {
+  const child = new EventEmitter();
+  child.stdin = new PassThrough();
+  child.stdout = new PassThrough();
+  child.killed = false;
+  child.exitCode = null;
+  child.signalCode = null;
+  child.kill = signal => {
+    child.killed = true;
+    child.signalCode = signal ?? "SIGTERM";
+    queueMicrotask(() => child.emit("exit", null, child.signalCode));
+    return true;
+  };
+  return child;
+}
 
 test("native activation derives the schema-required mode from the discovered Plan preset and thread model", () => {
   assert.deepEqual(buildPlanCollaborationMode(PLAN_PRESETS, {
@@ -83,6 +104,13 @@ test("request_user_input answers are relayed explicitly instead of auto-approved
   await assert.rejects(() => answerPlanUserInput({ questions: [{ id: "approval", question: "Approve?" }] }), /no interactive input surface/i);
 });
 
+test("request_user_input forwards the server auto-resolution deadline", async () => {
+  const seen = [];
+  await answerPlanUserInput({ autoResolutionMs: 2500, questions: [{ id: "choice", question: "Choose" }] },
+    async (_question, _options, autoResolutionMs) => { seen.push(autoResolutionMs); return "manual"; });
+  assert.deepEqual(seen, [2500]);
+});
+
 test("authoritative completed plan and agent messages render before interactive input", () => {
   const rendered = [];
   assert.equal(renderPlanNotification({ method: "item/completed", params: {
@@ -91,10 +119,38 @@ test("authoritative completed plan and agent messages render before interactive 
   assert.equal(renderPlanNotification({ method: "item/completed", params: {
     item: { id: "message-1", type: "agentMessage", text: "Approve, adjust, or cancel." },
   } }, text => rendered.push(text)), true);
-  assert.deepEqual(rendered, ["\n## Crew Manifest\n1. builder\n", "\nApprove, adjust, or cancel.\n"]);
+  assert.deepEqual(rendered, [
+    "\n[Codex Plan output]\n## Crew Manifest\n1. builder\n",
+    "\n[Codex Plan output]\nApprove, adjust, or cancel.\n",
+  ]);
   assert.equal(renderPlanNotification({ method: "item/completed", params: {
     item: { id: "command-1", type: "commandExecution" },
   } }, () => assert.fail("non-message item must not render")), false);
+});
+
+test("terminal-bound App Server text strips ANSI, OSC, and unsafe controls", () => {
+  assert.equal(sanitizeTerminalText("safe\u001b[31m red\u001b[0m\u001b]52;c;poison\u0007\u0000\nnext\trow"),
+    "safe red\nnext\trow");
+  const rendered = [];
+  renderPlanNotification({ method: "item/completed", params: {
+    item: { type: "plan", text: "Plan\u001b]52;c;poison\u0007 text" },
+  } }, text => rendered.push(text));
+  assert.deepEqual(rendered, ["\n[Codex Plan output]\nPlan text\n"]);
+});
+
+test("secret App Server input is not echoed and honors terminal cleanup", async () => {
+  const input = new EventEmitter();
+  input.isTTY = true;
+  input.isRaw = false;
+  input.setRawMode = value => { input.isRaw = value; };
+  input.resume = () => {};
+  const writes = [];
+  const answer = readSecretTerminalInput({ input, output: { write: text => writes.push(text) }, timeoutMs: 1000 });
+  input.emit("data", "s3cr\u007fet\r");
+  assert.equal(await answer, "s3cet");
+  assert.equal(input.isRaw, false);
+  assert.equal(writes.join(""), "> \n");
+  assert.doesNotMatch(writes.join(""), /s3cet/);
 });
 
 test("turn completion preserves failed and interrupted status", () => {
@@ -140,6 +196,109 @@ test("native launch reports Plan only after the schema-shaped effective-mode con
   });
   const start = calls.find(call => call.method === "turn/start");
   assert.equal(start.params.collaborationMode.mode, "plan");
+  assert.equal(calls.find(call => call.method === "initialize").params.clientInfo.version, "0.6.0");
+});
+
+test("native launch requires exact nonempty thread and turn receipt correlation", async () => {
+  const predicates = [];
+  const client = {
+    async request(method) {
+      if (method === "initialize") return {};
+      if (method === "collaborationMode/list") return { data: PLAN_PRESETS };
+      if (method === "skills/list") return { data: [{ cwd: "/repo", errors: [], skills: [
+        { name: "muster-plan", path: "/plugin/skills/muster-plan/SKILL.md", enabled: true },
+      ] }] };
+      if (method === "thread/start") return { thread: { id: "thread-1" }, model: "gpt-5.6-sol" };
+      if (method === "turn/start") return { turn: { id: "turn-1" } };
+      throw new Error(`unexpected request ${method}`);
+    },
+    async notify() {},
+    async waitForNotification(_method, predicate) {
+      predicates.push(
+        predicate({ method: "thread/settings/updated", params: { threadSettings: { collaborationMode: { mode: "plan" } } } }),
+        predicate({ method: "thread/settings/updated", params: { threadId: "wrong", threadSettings: { collaborationMode: { mode: "plan" } } } }),
+        predicate({ method: "thread/settings/updated", params: { threadId: "thread-1", threadSettings: { collaborationMode: { mode: "plan" } } } }),
+      );
+      return { method: "thread/settings/updated", params: {
+        threadId: "thread-1", threadSettings: { collaborationMode: { mode: "plan" } },
+      } };
+    },
+  };
+  const result = await launchCodexPlan({ client, cwd: "/repo" });
+  assert.equal(result.status, "started");
+  assert.deepEqual(predicates, [false, false, true]);
+
+  const missingTurn = { ...client, request: async method => {
+    const response = await client.request(method);
+    return method === "turn/start" ? { turn: {} } : response;
+  } };
+  assert.equal((await launchCodexPlan({ client: missingTurn, cwd: "/repo" })).status, "fallback");
+});
+
+test("skills/list must match the requested cwd exactly", async () => {
+  const client = {
+    async request(method) {
+      if (method === "initialize") return {};
+      if (method === "collaborationMode/list") return { data: PLAN_PRESETS };
+      if (method === "skills/list") return { data: [{ cwd: "/other", errors: [], skills: [
+        { name: "muster-plan", path: "/untrusted/SKILL.md", enabled: true },
+      ] }] };
+      if (method === "thread/start") return { thread: { id: "thread-1" }, model: "gpt-5.6-sol" };
+      throw new Error(`unexpected request ${method}`);
+    },
+    async notify() {},
+  };
+  const result = await launchCodexPlan({ client, cwd: "/repo" });
+  assert.equal(result.status, "fallback");
+  assert.match(result.reason, /working directory/i);
+});
+
+test("JSON-RPC transport rejects malformed and oversized frames without escaping fallback", async () => {
+  for (const frame of ["null", "1", "[]", "{}", "not-json", '{"jsonrpc":"2.0","id":1,"error":null}']) {
+    const child = fakeAppServerProcess();
+    const client = await createCodexAppServerClient({ cwd: "/repo", spawnProcess: () => child, timeoutMs: 100 });
+    const pending = client.request("initialize");
+    child.stdout.write(`${frame}\n`);
+    await assert.rejects(pending, /invalid JSON-RPC/i, frame);
+    assert.equal(child.killed, true, frame);
+  }
+
+  const child = fakeAppServerProcess();
+  const client = await createCodexAppServerClient({ cwd: "/repo", spawnProcess: () => child, timeoutMs: 100 });
+  const pending = client.request("initialize");
+  child.stdout.write("x".repeat(1024 * 1024 + 1));
+  await assert.rejects(pending, /frame.*large|buffer.*large/i);
+  assert.equal(child.killed, true);
+
+  const fallbackChild = fakeAppServerProcess();
+  const fallbackClient = await createCodexAppServerClient({ cwd: "/repo", spawnProcess: () => fallbackChild, timeoutMs: 100 });
+  const launching = launchCodexPlan({ client: fallbackClient, cwd: "/repo", outcome: "Design the import flow" });
+  fallbackChild.stdout.write("null\n");
+  const fallback = await launching;
+  assert.equal(fallback.status, "fallback");
+  assert.match(fallback.guidance, /\/plan \$muster-plan/);
+});
+
+test("JSON-RPC transport declines approvals and rejects unknown requests", async () => {
+  const child = fakeAppServerProcess();
+  const written = [];
+  child.stdin.setEncoding("utf8");
+  child.stdin.on("data", chunk => written.push(...chunk.trim().split("\n").filter(Boolean).map(JSON.parse)));
+  const client = await createCodexAppServerClient({ cwd: "/repo", spawnProcess: () => child, timeoutMs: 100 });
+  child.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", id: 9, method: "item/commandExecution/requestApproval", params: {} })}\n`);
+  child.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", id: 10, method: "unknown\u001b[31m", params: {} })}\n`);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(written.find(message => message.id === 9)?.result, { decision: "decline" });
+  assert.equal(written.find(message => message.id === 10)?.error?.code, -32601);
+
+  const interrupting = client.interruptTurn("thread-1", "turn-1");
+  await new Promise(resolve => setImmediate(resolve));
+  const interrupt = written.find(message => message.method === "turn/interrupt");
+  assert.deepEqual(interrupt.params, { threadId: "thread-1", turnId: "turn-1" });
+  child.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", id: interrupt.id, result: {} })}\n`);
+  await interrupting;
+  await client.close();
+  assert.equal(child.killed, true);
 });
 
 test("unavailable App Server control fails safely with explicit /plan guidance", async () => {

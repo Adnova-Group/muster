@@ -1,7 +1,57 @@
 import { spawn } from "node:child_process";
+import { createRequire } from "node:module";
+import { resolve } from "node:path";
+import { stripVTControlCharacters } from "node:util";
 
 const DEFAULT_TIMEOUT_MS = 15_000;
+const MAX_JSON_RPC_FRAME_BYTES = 1024 * 1024;
+const MAX_QUEUED_NOTIFICATIONS = 64;
+const QUEUED_NOTIFICATION_METHODS = new Set(["thread/settings/updated", "turn/completed"]);
 const PLAN_SKILL = "muster-plan";
+const PACKAGE_VERSION = createRequire(import.meta.url)("../package.json").version;
+
+export function sanitizeTerminalText(value) {
+  return stripVTControlCharacters(String(value ?? ""))
+    .replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, "");
+}
+
+export function readSecretTerminalInput({ input, output, timeoutMs } = {}) {
+  if (!input?.isTTY || typeof input.setRawMode !== "function" || typeof output?.write !== "function")
+    return Promise.reject(new Error("secret App Server input requires an interactive terminal"));
+  return new Promise((resolveInput, rejectInput) => {
+    let answer = "";
+    let settled = false;
+    const wasRaw = Boolean(input.isRaw);
+    const finish = (error, value) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      input.off("data", onData);
+      try { input.setRawMode(wasRaw); } catch {}
+      output.write("\n");
+      if (error) rejectInput(error);
+      else resolveInput(value);
+    };
+    const onData = chunk => {
+      for (const character of String(chunk)) {
+        if (character === "\r" || character === "\n") return finish(null, answer);
+        if (character === "\u0003") return finish(new Error("secret input cancelled"));
+        if (character === "\u007f" || character === "\b") answer = answer.slice(0, -1);
+        else if (character >= " ") answer += character;
+      }
+    };
+    const timeout = Number.isInteger(timeoutMs) && timeoutMs > 0 ? timeoutMs : null;
+    const timer = timeout === null ? null : setTimeout(() => finish(new Error("App Server input auto-resolved before an answer was submitted")), timeout);
+    try {
+      input.setRawMode(true);
+      input.on("data", onData);
+      input.resume?.();
+      output.write("> ");
+    } catch (error) {
+      finish(error);
+    }
+  });
+}
 
 export function buildPlanCollaborationMode(presets, thread) {
   const preset = Array.isArray(presets)
@@ -34,7 +84,7 @@ export function renderPlanNotification(notification, write) {
   if (notification?.method !== "item/completed" || typeof write !== "function") return false;
   const item = notification.params?.item;
   if (!["plan", "agentMessage"].includes(item?.type) || typeof item.text !== "string" || !item.text.trim()) return false;
-  write(`\n${item.text.trim()}\n`);
+  write(`\n[Codex Plan output]\n${sanitizeTerminalText(item.text).trim()}\n`);
   return true;
 }
 
@@ -53,7 +103,7 @@ export async function answerPlanUserInput(params, ask) {
   for (const question of questions) {
     if (!question?.id || !question?.question) throw new Error("native Plan mode returned a malformed user-input question");
     const options = Array.isArray(question.options) ? question.options : [];
-    const raw = String(await ask(question, options)).trim();
+    const raw = String(await ask(question, options, params?.autoResolutionMs ?? null)).trim();
     if (!raw) throw new Error(`no answer supplied for ${question.id}`);
     const numeric = Number.parseInt(raw, 10);
     const selected = Number.isInteger(numeric) && String(numeric) === raw && numeric >= 1 && numeric <= options.length
@@ -84,7 +134,15 @@ export function buildPlanTurnStart({ threadId, outcome, skill, collaborationMode
 
 function findPlanSkill(response, cwd) {
   const entries = Array.isArray(response?.data) ? response.data : [];
-  const entry = entries.find(candidate => candidate?.cwd === cwd) ?? entries[0];
+  const requested = typeof cwd === "string" ? resolve(cwd) : null;
+  const matches = requested === null ? [] : entries.filter(candidate => {
+    if (typeof candidate?.cwd !== "string") return false;
+    try { return resolve(candidate.cwd) === requested; }
+    catch { return false; }
+  });
+  if (matches.length !== 1) return null;
+  const [entry] = matches;
+  if (Array.isArray(entry.errors) && entry.errors.length > 0) return null;
   return entry?.skills?.find(skill => skill?.name === PLAN_SKILL && skill.enabled !== false) ?? null;
 }
 
@@ -104,7 +162,7 @@ export async function launchCodexPlan({ client, clientFactory = createCodexAppSe
   try {
     control ??= await clientFactory({ cwd });
     await control.request("initialize", {
-      clientInfo: { name: "muster", title: "Muster native Plan launcher", version: "0.5.0" },
+      clientInfo: { name: "muster", title: "Muster native Plan launcher", version: PACKAGE_VERSION },
       capabilities: { experimentalApi: true },
     });
     await control.notify("initialized");
@@ -113,18 +171,24 @@ export async function launchCodexPlan({ client, clientFactory = createCodexAppSe
       control.request("skills/list", { cwds: [cwd], forceReload: true }),
       control.request("thread/start", { cwd }),
     ]);
+    const threadId = thread?.thread?.id;
+    if (typeof threadId !== "string" || !threadId.trim())
+      throw new Error("thread/start did not return a valid thread id");
     const collaborationMode = buildPlanCollaborationMode(presets.data, thread);
     const skill = findPlanSkill(skills, cwd);
     const params = buildPlanTurnStart({
-      threadId: thread.thread?.id,
+      threadId,
       outcome,
       skill,
       collaborationMode,
     });
     const started = await control.request("turn/start", params);
+    const turnId = started?.turn?.id;
+    if (typeof turnId !== "string" || !turnId.trim())
+      throw new Error("turn/start did not return a valid turn id");
     const settings = await control.waitForNotification(
       "thread/settings/updated",
-      message => (message.params?.threadId === undefined || message.params.threadId === thread.thread.id)
+      message => message.params?.threadId === threadId
         && detectEffectivePlanMode(message).active,
     );
     const effective = detectEffectivePlanMode(settings);
@@ -134,8 +198,8 @@ export async function launchCodexPlan({ client, clientFactory = createCodexAppSe
       status: "started",
       native: true,
       effectiveMode: effective.effectiveMode,
-      threadId: thread.thread.id,
-      turnId: started.turn?.id,
+      threadId,
+      turnId,
     };
   } catch (error) {
     if (!client) await control?.close?.().catch(() => {});
@@ -175,11 +239,13 @@ class JsonRpcLineClient {
     this.closed = false;
     this.userInput = userInput;
     this.onNotification = onNotification;
+    this.exitPromise = new Promise(resolveExit => child.once("exit", resolveExit));
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", chunk => this.#consume(chunk));
-    child.stdout.on("error", error => this.#failAll(error));
-    child.on("error", error => this.#failAll(error));
-    child.on("exit", code => this.#failAll(new Error(`codex app-server exited with code ${code}`)));
+    child.stdin.on("error", error => this.#terminate(error));
+    child.stdout.on("error", error => this.#terminate(error));
+    child.on("error", error => this.#terminate(error));
+    child.on("exit", code => this.#terminate(new Error(`codex app-server exited with code ${code}`), false));
   }
 
   request(method, params = {}) {
@@ -191,15 +257,18 @@ class JsonRpcLineClient {
         reject(new Error(`${method} timed out after ${this.timeoutMs}ms`));
       }, this.timeoutMs);
       this.pending.set(id, { resolve, reject, timer, method });
-      this.#write({ jsonrpc: "2.0", id, method, params });
+      if (!this.#write({ jsonrpc: "2.0", id, method, params }))
+        this.#terminate(new Error("codex app-server control write failed"));
     });
   }
 
   async notify(method, params) {
-    this.#write({ jsonrpc: "2.0", method, ...(params === undefined ? {} : { params }) });
+    if (!this.#write({ jsonrpc: "2.0", method, ...(params === undefined ? {} : { params }) }))
+      throw new Error("codex app-server control is closed");
   }
 
   waitForNotification(method, predicate = () => true, timeoutMs = this.timeoutMs) {
+    if (this.closed) return Promise.reject(new Error("codex app-server control is closed"));
     const index = this.notifications.findIndex(message => message.method === method && predicate(message));
     if (index >= 0) return Promise.resolve(this.notifications.splice(index, 1)[0]);
     return new Promise((resolve, reject) => {
@@ -212,30 +281,62 @@ class JsonRpcLineClient {
     });
   }
 
-  async close() {
-    if (this.closed) return;
-    this.closed = true;
-    try { this.child.stdin.end(); } catch {}
-    try { if (!this.child.killed) this.child.kill(); } catch {}
-    this.#failAll(new Error("codex app-server control closed"));
+  async interruptTurn(threadId, turnId) {
+    if (this.closed || typeof threadId !== "string" || !threadId || typeof turnId !== "string" || !turnId) return;
+    const interrupted = this.request("turn/interrupt", { threadId, turnId }).catch(() => {});
+    await Promise.race([interrupted, new Promise(resolveWait => setTimeout(resolveWait, 250))]);
+  }
+
+  async close({ threadId, turnId, interrupt = false } = {}) {
+    if (interrupt) await this.interruptTurn(threadId, turnId);
+    if (!this.closed) {
+      this.closed = true;
+      this.#failAll(new Error("codex app-server control closed"));
+      try { this.child.stdin.end(); } catch {}
+      try { if (this.child.exitCode === null && this.child.signalCode === null) this.child.kill(); } catch {}
+    }
+    if (this.child.exitCode !== null || this.child.signalCode !== null) return;
+    const exited = await Promise.race([
+      this.exitPromise.then(() => true),
+      new Promise(resolveWait => setTimeout(() => resolveWait(false), 250)),
+    ]);
+    if (!exited) {
+      try { this.child.kill("SIGKILL"); } catch {}
+      await Promise.race([this.exitPromise, new Promise(resolveWait => setTimeout(resolveWait, 250))]);
+    }
   }
 
   #write(message) {
-    this.child.stdin.write(`${JSON.stringify(message)}\n`);
+    if (this.closed || this.child.stdin.destroyed) return false;
+    try { this.child.stdin.write(`${JSON.stringify(message)}\n`); return true; }
+    catch { return false; }
   }
 
   #consume(chunk) {
+    if (this.closed) return;
     this.buffer += chunk;
+    if (Buffer.byteLength(this.buffer, "utf8") > MAX_JSON_RPC_FRAME_BYTES && !this.buffer.includes("\n")) {
+      this.#terminate(new Error("codex app-server JSON-RPC frame buffer is too large"));
+      return;
+    }
     for (;;) {
       const newline = this.buffer.indexOf("\n");
       if (newline < 0) return;
       const line = this.buffer.slice(0, newline).trim();
       this.buffer = this.buffer.slice(newline + 1);
       if (!line) continue;
+      if (Buffer.byteLength(line, "utf8") > MAX_JSON_RPC_FRAME_BYTES) {
+        this.#terminate(new Error("codex app-server JSON-RPC frame is too large"));
+        return;
+      }
       let message;
       try { message = JSON.parse(line); }
-      catch { this.#failAll(new Error("codex app-server emitted invalid JSON-RPC output")); continue; }
-      if (message.id !== undefined && !message.method) {
+      catch { this.#terminate(new Error("codex app-server emitted invalid JSON-RPC output")); return; }
+      if (!this.#validMessage(message)) {
+        this.#terminate(new Error("codex app-server emitted invalid JSON-RPC output"));
+        return;
+      }
+      if (Object.hasOwn(message, "id") && !Object.hasOwn(message, "method")) {
         const pending = this.pending.get(message.id);
         if (!pending) continue;
         clearTimeout(pending.timer);
@@ -244,7 +345,7 @@ class JsonRpcLineClient {
         else pending.resolve(message.result);
         continue;
       }
-      if (message.id !== undefined && message.method) {
+      if (Object.hasOwn(message, "id")) {
         // This narrow launcher is an authoring surface, never an approval agent.
         // Any request that could authorize an action is declined, visibly, rather
         // than being auto-approved or silently inherited as an unsafe default.
@@ -257,28 +358,61 @@ class JsonRpcLineClient {
             } }));
         } else if (["item/commandExecution/requestApproval", "item/fileChange/requestApproval"].includes(message.method)) {
           this.#write({ jsonrpc: "2.0", id: message.id, result: { decision: "decline" } });
-          process.stderr.write(`muster: declined App Server request ${message.method}; approval was not bypassed\n`);
+          process.stderr.write(`muster: declined App Server request ${sanitizeTerminalText(message.method)}; approval was not bypassed\n`);
         } else if (["execCommandApproval", "applyPatchApproval"].includes(message.method)) {
           this.#write({ jsonrpc: "2.0", id: message.id, result: { decision: "denied" } });
-          process.stderr.write(`muster: denied legacy App Server request ${message.method}; approval was not bypassed\n`);
+          process.stderr.write(`muster: denied legacy App Server request ${sanitizeTerminalText(message.method)}; approval was not bypassed\n`);
         } else {
           this.#write({ jsonrpc: "2.0", id: message.id, error: {
             code: -32601,
-            message: `Muster's non-interactive Plan launcher cannot answer ${message.method}; resume with /plan for interactive input`,
+            message: `Muster's non-interactive Plan launcher cannot answer ${sanitizeTerminalText(message.method)}; resume with /plan for interactive input`,
           } });
-          process.stderr.write(`muster: App Server requested interactive input (${message.method}); no gate was answered automatically\n`);
+          process.stderr.write(`muster: App Server requested interactive input (${sanitizeTerminalText(message.method)}); no gate was answered automatically\n`);
         }
         continue;
       }
-      this.onNotification?.(message);
-      const waiterIndex = this.waiters.findIndex(waiter => waiter.method === message.method && waiter.predicate(message));
+      try { this.onNotification?.(message); }
+      catch (error) { this.#terminate(error); return; }
+      let waiterIndex;
+      try { waiterIndex = this.waiters.findIndex(waiter => waiter.method === message.method && waiter.predicate(message)); }
+      catch (error) { this.#terminate(error); return; }
       if (waiterIndex >= 0) {
         const [waiter] = this.waiters.splice(waiterIndex, 1);
         clearTimeout(waiter.timer);
         waiter.resolve(message);
-      } else {
+      } else if (QUEUED_NOTIFICATION_METHODS.has(message.method)) {
+        if (this.notifications.length >= MAX_QUEUED_NOTIFICATIONS) {
+          this.#terminate(new Error("codex app-server notification backlog is too large"));
+          return;
+        }
         this.notifications.push(message);
       }
+    }
+  }
+
+  #validMessage(message) {
+    if (!message || typeof message !== "object" || Array.isArray(message) || message.jsonrpc !== "2.0") return false;
+    const hasId = Object.hasOwn(message, "id");
+    const hasMethod = Object.hasOwn(message, "method");
+    if (hasId && !["string", "number"].includes(typeof message.id)) return false;
+    if (hasMethod && (typeof message.method !== "string" || !message.method)) return false;
+    if (hasId && !hasMethod) {
+      const hasResult = Object.hasOwn(message, "result");
+      const hasError = Object.hasOwn(message, "error");
+      if (hasResult === hasError) return false;
+      return !hasError || (message.error && typeof message.error === "object"
+        && typeof message.error.code === "number" && typeof message.error.message === "string");
+    }
+    return hasMethod;
+  }
+
+  #terminate(error, kill = true) {
+    if (this.closed) return;
+    this.closed = true;
+    this.buffer = "";
+    this.#failAll(error instanceof Error ? error : new Error(String(error)));
+    if (kill) {
+      try { if (this.child.exitCode === null && this.child.signalCode === null) this.child.kill(); } catch {}
     }
   }
 

@@ -69,7 +69,7 @@ import { resolveWaveDispatch, resolveWorktreeIsolation, makeGitShaVerifier, code
 import { kimiGoalInvocation, kimiProcessDispatch } from "./kimi-dispatch.js";
 import { captureSessionId, resolveSessionForCwd, readSessionUsage, summarizeItemReceipts, DEFAULT_SESSION_INDEX } from "./kimi-receipts.js";
 import { resolvePlanSurface } from "./plan-surface.js";
-import { classifyPlanTurn, createCodexAppServerClient, fallbackPlanLaunch, launchCodexPlan, renderPlanNotification } from "./codex-plan-launch.js";
+import { classifyPlanTurn, createCodexAppServerClient, fallbackPlanLaunch, launchCodexPlan, readSecretTerminalInput, renderPlanNotification, sanitizeTerminalText } from "./codex-plan-launch.js";
 import { envInt, isTruthyFlag } from "./env-util.js";
 import { scoreOutcomeForFastPath, buildFastPathManifest } from "./fast-path.js";
 import { detectReviewTriggers, lightBriefEligible } from "./review-brief.js";
@@ -405,14 +405,29 @@ async function main() {
         process.exitCode = 2;
         return;
       }
-      const terminal = createInterface({ input: process.stdin, output: process.stderr });
-      const userInput = async (question, options) => {
-        process.stderr.write(`\n${question.header ? `${question.header}: ` : ""}${question.question}\n`);
+      const userInput = async (question, options, autoResolutionMs) => {
+        process.stderr.write(`\n[Codex Plan input]\n${question.header ? `${sanitizeTerminalText(question.header)}: ` : ""}${sanitizeTerminalText(question.question)}\n`);
         for (const [index, option] of options.entries())
-          process.stderr.write(`  ${index + 1}. ${option.label}${option.description ? ` — ${option.description}` : ""}\n`);
-        return terminal.question("> ");
+          process.stderr.write(`  ${index + 1}. ${sanitizeTerminalText(option.label)}${option.description ? ` — ${sanitizeTerminalText(option.description)}` : ""}\n`);
+        if (question.isSecret)
+          return readSecretTerminalInput({ input: process.stdin, output: process.stderr, timeoutMs: autoResolutionMs });
+        const terminal = createInterface({ input: process.stdin, output: process.stderr });
+        const controller = Number.isInteger(autoResolutionMs) && autoResolutionMs > 0 ? new AbortController() : null;
+        const timer = controller ? setTimeout(() => controller.abort(), autoResolutionMs) : null;
+        try {
+          return await terminal.question("> ", controller ? { signal: controller.signal } : undefined);
+        } catch (error) {
+          if (controller?.signal.aborted)
+            throw new Error("App Server input auto-resolved before an answer was submitted");
+          throw error;
+        } finally {
+          if (timer) clearTimeout(timer);
+          terminal.close();
+        }
       };
       let client;
+      let launched;
+      let turnFinished = false;
       try {
         client = await createCodexAppServerClient({
           cwd,
@@ -420,13 +435,12 @@ async function main() {
           onNotification: message => renderPlanNotification(message, text => process.stderr.write(text)),
         });
       } catch (error) {
-        terminal.close();
         out(fallbackPlanLaunch(outcome, error));
         process.exitCode = 2;
         return;
       }
       try {
-        const launched = await launchCodexPlan({ client, cwd, outcome });
+        launched = await launchCodexPlan({ client, cwd, outcome });
         out(launched);
         if (launched.status !== "started") {
           process.exitCode = 2;
@@ -439,6 +453,7 @@ async function main() {
           30 * 60_000,
         );
         const result = classifyPlanTurn(completed.params.turn);
+        turnFinished = true;
         out({
           status: result.status,
           native: true,
@@ -448,8 +463,11 @@ async function main() {
         });
         if (result.exitCode !== 0) process.exitCode = result.exitCode;
       } finally {
-        await client.close();
-        terminal.close();
+        await client.close({
+          threadId: launched?.threadId,
+          turnId: launched?.turnId,
+          interrupt: launched?.status === "started" && !turnFinished,
+        });
       }
     } else if (cmd === "receipt-verify") {
       // base-sha-receipt-verification item: the executable consumer -- proof that a

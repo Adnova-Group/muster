@@ -738,6 +738,7 @@ test("F3: missing cowork/sprint-protocol.md at module load does not crash the se
   copyFileSync(path.join(rootDir, "cowork", "mcp-server.mjs"), path.join(tmp, "cowork", "mcp-server.mjs"));
   copyFileSync(path.join(rootDir, "mcp", "server.mjs"), path.join(tmp, "mcp", "server.mjs"));
   copyFileSync(path.join(rootDir, "mcp", "in-process-tools.mjs"), path.join(tmp, "mcp", "in-process-tools.mjs"));
+  copyFileSync(path.join(rootDir, "mcp", "in-process-worker.mjs"), path.join(tmp, "mcp", "in-process-worker.mjs"));
   copyFileSync(path.join(rootDir, "plugin", "hooks", "guidance.js"), path.join(tmp, "plugin", "hooks", "guidance.js"));
   writeFileSync(path.join(tmp, "package.json"), JSON.stringify({ version: "0.0.0-test", type: "module" }));
   // Deliberately no cowork/sprint-protocol.md written into the temp copy -- this omission IS

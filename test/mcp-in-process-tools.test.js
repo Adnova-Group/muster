@@ -1,13 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
 import { computeSprintWaves } from "../src/sprint-waves.js";
+import { invokeInProcessTool } from "../mcp/in-process-tools.mjs";
 
 const execFileP = promisify(execFile);
 const rootDir = fileURLToPath(new URL("../", import.meta.url));
@@ -58,6 +59,7 @@ const call = (id, name, args) => ({ jsonrpc: "2.0", id, method: "tools/call", pa
 
 test("twelve deterministic read-only MCP calls stay byte-equivalent without invoking the CLI", async (t) => {
   const fixture = await mkdtemp(join(tmpdir(), "muster-mcp-pure-"));
+  t.after(() => rm(fixture, { recursive: true, force: true }));
   const plan = {
     plan: [
       { id: "a", task: "Build", mode: "single", deps: [] },
@@ -126,8 +128,9 @@ test("an immediately cancelled in-process pure call preserves the cancellation b
   });
 });
 
-test("mutating MCP tools retain the CLI process boundary", async () => {
+test("mutating MCP tools retain the CLI process boundary", async (t) => {
   const fixture = await mkdtemp(join(tmpdir(), "muster-mcp-mutation-"));
+  t.after(() => rm(fixture, { recursive: true, force: true }));
   const marker = join(fixture, "cli-marker.txt");
   const fakeCli = join(fixture, "fake-cli.mjs");
   await writeFile(fakeCli, [
@@ -143,4 +146,87 @@ test("mutating MCP tools retain the CLI process boundary", async () => {
   ], { env: { NODE_ENV: "test", MUSTER_COWORK_TEST_CLI: fakeCli, MUSTER_TEST_MARKER: marker } });
   assert.equal(responses.get(2).result.isError, false);
   assert.match(await readFile(marker, "utf8"), /^backlog-publish backlog\.md --expect absent$/);
+});
+
+test("comma-containing completed and done ids retain the CLI argv join/split bytes", async (t) => {
+  const fixture = await mkdtemp(join(tmpdir(), "muster-mcp-comma-"));
+  t.after(() => rm(fixture, { recursive: true, force: true }));
+  const manifest = { plan: [{ id: "a,b", task: "Comma", mode: "single", deps: [] }] };
+  const file = join(fixture, "manifest.json");
+  await writeFile(file, JSON.stringify(manifest));
+  const [nextCli, checklistCli] = await Promise.all([
+    execFileP(process.execPath, [cliPath, "next", file, "--done", "a,b"], { cwd: rootDir }),
+    execFileP(process.execPath, [cliPath, "plan-checklist", file, "--done", "a,b"], { cwd: rootDir }),
+  ]);
+  const responses = await rpc([
+    INIT,
+    call(2, "muster_next", { manifest, completed: ["a,b"] }),
+    call(3, "muster_plan_checklist", { manifest, done: ["a,b"] }),
+  ]);
+  assert.equal(responses.get(2).result.content[0].text, nextCli.stdout.trim());
+  assert.equal(responses.get(3).result.content[0].text, checklistCli.stdout.trim());
+});
+
+test("negative changedLines retains the legacy CLI error bytes", async () => {
+  const manifest = { plan: [{ id: "a", task: "Build", mode: "single", deps: [] }] };
+  const responses = await rpc([INIT, call(2, "muster_gate_cadence", { manifest, changedLines: -1 })]);
+  assert.deepEqual(responses.get(2).result, {
+    content: [{ type: "text", text: "muster: gate-cadence --changed-lines must be a non-negative finite number" }],
+    isError: true,
+  });
+});
+
+test("a pure call can be cancelled after computation starts without blocking the MCP event loop", async () => {
+  const plan = Array.from({ length: 12_000 }, (_, index) => ({
+    id: `task-${index}`,
+    task: "Work",
+    mode: "single",
+    deps: index === 0 ? [] : [`task-${index - 1}`],
+  }));
+  const responses = await new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [serverPath], { cwd: rootDir, env: process.env, stdio: ["pipe", "pipe", "inherit"] });
+    let buffer = "";
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error("mid-computation cancellation timeout"));
+    }, 5_000);
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => {
+      buffer += chunk;
+      let newline;
+      while ((newline = buffer.indexOf("\n")) >= 0) {
+        const line = buffer.slice(0, newline).trim();
+        buffer = buffer.slice(newline + 1);
+        if (!line) continue;
+        const message = JSON.parse(line);
+        if (message.id === 2) {
+          clearTimeout(timer);
+          child.stdin.end();
+          resolve(message);
+        }
+      }
+    });
+    child.on("error", reject);
+    child.stdin.write(`${JSON.stringify(INIT)}\n`);
+    child.stdin.write(`${JSON.stringify(call(2, "muster_wave", { manifest: { plan } }))}\n`);
+    setTimeout(() => {
+      child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: 2 } })}\n`);
+    }, 100);
+  });
+  assert.equal(responses.result.isError, true);
+  assert.equal(responses.result.content[0].text, "muster MCP request cancelled");
+});
+
+test("fusion reads only the injected sanitized environment", async () => {
+  const prior = process.env.MUSTER_FUSE_TOPK;
+  process.env.MUSTER_FUSE_TOPK = "1";
+  try {
+    const candidates = [1, 2, 3].map((id) => ({ id: String(id), total: 10 - id, passing: true, content: String(id) }));
+    const fusionMap = { consensus: [], contradictions: ["x"], partialCoverage: [], uniqueInsights: [], blindSpots: [] };
+    const response = await invokeInProcessTool("muster_fuse", { candidates, fusionMap }, { environment: {} });
+    assert.equal(JSON.parse(response.result.text).topK.length, 3);
+  } finally {
+    if (prior === undefined) delete process.env.MUSTER_FUSE_TOPK;
+    else process.env.MUSTER_FUSE_TOPK = prior;
+  }
 });

@@ -13,6 +13,7 @@ import { scoreArtifact } from "../src/score.js";
 import { reconcileSprintProgress } from "../src/sprint-waves.js";
 import { validateVerdicts } from "../src/verdict-schema.js";
 import { computeWaves, nextTasks } from "../src/wave.js";
+import { Worker } from "node:worker_threads";
 
 const PURE_TOOLS = new Set([
   "muster_wave",
@@ -30,10 +31,13 @@ const PURE_TOOLS = new Set([
 ]);
 
 const json = (value) => JSON.stringify(value, null, 2);
+const workerUrl = new URL("./in-process-worker.mjs", import.meta.url);
 
 function fail(message) {
   throw new Error(message);
 }
+
+const legacyCommaList = (values) => values?.length ? values.join(",").split(",") : [];
 
 async function evaluate(name, args, environment) {
   switch (name) {
@@ -43,12 +47,15 @@ async function evaluate(name, args, environment) {
     }
     case "muster_next": {
       if (!Array.isArray(args.manifest?.plan)) fail("next: manifest has no 'plan' array");
-      return { ok: true, text: json(nextTasks(args.manifest.plan, args.completed || [])) };
+      return { ok: true, text: json(nextTasks(args.manifest.plan, legacyCommaList(args.completed))) };
     }
     case "muster_gate_cadence": {
       if (!Array.isArray(args.manifest?.plan)) fail("gate-cadence: manifest has no 'plan' array");
       const waves = computeWaves(args.manifest.plan).map((wave) => wave.map((task) => task.id));
       const changedLines = args.changedLines;
+      if (changedLines !== undefined && (!Number.isFinite(changedLines) || changedLines < 0)) {
+        fail("gate-cadence --changed-lines must be a non-negative finite number");
+      }
       const reviewDiffThreshold = envInt(
         "MUSTER_REVIEW_DIFF_THRESHOLD",
         { min: 0, def: DEFAULT_REVIEW_DIFF_THRESHOLD },
@@ -89,7 +96,7 @@ async function evaluate(name, args, environment) {
       };
     }
     case "muster_fuse":
-      return { ok: true, text: json(fuse(args.candidates, args.fusionMap)) };
+      return { ok: true, text: json(fuse(args.candidates, args.fusionMap, { environment })) };
     case "muster_fast_path": {
       if (typeof args.outcome !== "string" || !args.outcome.trim()) fail("muster_fast_path: outcome is required");
       const score = scoreOutcomeForFastPath(args.outcome);
@@ -99,29 +106,49 @@ async function evaluate(name, args, environment) {
       return { ok: true, text: json(result) };
     }
     case "muster_plan_checklist":
-      return { ok: true, text: renderPlanChecklist(args.manifest?.plan || [], args.done || []) };
+      return { ok: true, text: renderPlanChecklist(args.manifest?.plan || [], legacyCommaList(args.done)) };
     default:
       return null;
   }
 }
 
-export async function invokeInProcessTool(name, args, { signal, environment = process.env } = {}) {
-  if (!PURE_TOOLS.has(name)) return { handled: false };
-
-  // Yield once before synchronous work so an immediately-following MCP cancellation
-  // notification can abort this request just as it could abort the former CLI child.
-  await new Promise((resolve) => setImmediate(resolve));
-  if (signal?.aborted) return { handled: true, result: { ok: false, text: "muster MCP request cancelled" } };
-
+export async function evaluateInProcessTool(name, args, environment = process.env) {
   try {
     const result = await evaluate(name, args, environment);
-    if (signal?.aborted) return { handled: true, result: { ok: false, text: "muster MCP request cancelled" } };
-    return { handled: true, result };
+    return result;
   } catch (error) {
-    if (signal?.aborted) return { handled: true, result: { ok: false, text: "muster MCP request cancelled" } };
     const detail = environment.DEBUG ? (error.stack || error.message) : error.message;
-    return { handled: true, result: { ok: false, text: `muster: ${detail}` } };
+    return { ok: false, text: `muster: ${detail}` };
   }
+}
+
+export async function invokeInProcessTool(name, args, { signal, environment = process.env } = {}) {
+  if (!PURE_TOOLS.has(name)) return { handled: false };
+  if (signal?.aborted) return { handled: true, result: { ok: false, text: "muster MCP request cancelled" } };
+
+  return new Promise((resolve) => {
+    const worker = new Worker(workerUrl, { workerData: { name, args, environment } });
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
+      void worker.terminate();
+      resolve({ handled: true, result });
+    };
+    const abort = () => finish({ ok: false, text: "muster MCP request cancelled" });
+    const timer = setTimeout(
+      () => finish({ ok: false, text: "muster MCP request timed out after 60000ms" }),
+      60_000,
+    );
+    signal?.addEventListener("abort", abort, { once: true });
+    worker.once("message", finish);
+    worker.once("error", (error) => finish({ ok: false, text: `internal error: ${error.message}` }));
+    worker.once("exit", (code) => {
+      if (!settled && code !== 0) finish({ ok: false, text: `internal error: in-process MCP worker exited ${code}` });
+    });
+  });
 }
 
 export const IN_PROCESS_TOOL_NAMES = Object.freeze([...PURE_TOOLS]);

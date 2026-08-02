@@ -5,11 +5,13 @@ server instead of creating temporary input files and forking `src/cli.js`:
 `wave`, `next`, `gate-cadence`, `sprint-reconcile`, `score`, `prioritize`,
 `pick`, `tally`, `advise`, `fuse`, `fast-path`, and `plan-checklist`.
 
-The production dispatcher calls the same `src/` functions as the CLI. Its
-integration test compares every returned text payload to real CLI stdout, byte
-for byte. It yields before evaluating a request so an immediately following MCP
-cancellation can retain the established `muster MCP request cancelled` result.
-Tools outside this explicit allowlist keep the CLI boundary; in particular,
+The production dispatcher calls the same `src/` functions as the CLI in a
+worker thread owned by the long-lived MCP process. Its integration test compares
+every returned text payload to real CLI stdout, byte for byte. A worker can be
+terminated on cancellation or the established 60-second timeout without
+blocking the server event loop; this retains the old child process's
+terminability without its process or temporary-file transport. Tools outside
+this explicit allowlist keep the CLI boundary; in particular,
 `muster_backlog_publish` remains a child-process call with stdin handoff.
 
 ## Reproducible 12-call latency replay

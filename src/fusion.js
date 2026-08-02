@@ -71,16 +71,16 @@ function stableHash(str) {
  * Default: 1 (any single point of disagreement unlocks fusion).
  * 0 = always-fuse; negatives or non-integer strings clamp to default.
  */
-function minDisagreementThreshold() {
-  return envInt("MUSTER_FUSE_MIN_DISAGREEMENT", { min: 0, def: 1 });
+function minDisagreementThreshold(environment = process.env) {
+  return envInt("MUSTER_FUSE_MIN_DISAGREEMENT", { min: 0, def: 1 }, environment);
 }
 
 /**
  * Compute the top-K limit from the environment.
  * Default: 3. Must be >= 1; negatives or non-integer strings clamp to default.
  */
-function topKLimit() {
-  return envInt("MUSTER_FUSE_TOPK", { min: 1, def: 3 });
+function topKLimit(environment = process.env) {
+  return envInt("MUSTER_FUSE_TOPK", { min: 1, def: 3 }, environment);
 }
 
 // ---------------------------------------------------------------------------
@@ -111,6 +111,7 @@ function topKLimit() {
  *   }
  */
 export function fuse(candidates, map, opts = {}) {
+  const environment = opts.environment || process.env;
   // Guard: candidates must be an array — malformed input returns a clean fallback.
   if (!Array.isArray(candidates)) {
     return { mode: "fallback", reason: "invalid-candidates", winner: pickWinner([]) };
@@ -140,7 +141,7 @@ export function fuse(candidates, map, opts = {}) {
     map.uniqueInsights.length +
     map.blindSpots.length;
 
-  const threshold = minDisagreementThreshold();
+  const threshold = minDisagreementThreshold(environment);
   if (disagreementScore < threshold) {
     return {
       mode: "fallback",
@@ -152,7 +153,7 @@ export function fuse(candidates, map, opts = {}) {
   // 4. Fuse: select top-K passing candidates by total score (desc), then
   //    order the selected set by stable id-hash to decouple presentation
   //    order from rank (kills position bias in the synthesizer prompt).
-  const K = Math.min(topKLimit(), passing.length);
+  const K = Math.min(topKLimit(environment), passing.length);
 
   const ranked = [...passing].sort(
     (a, b) => b.total - a.total || String(a.id).localeCompare(String(b.id))

@@ -218,6 +218,30 @@ test("a missing receipt object is ordinary unreachability, while cat-file faults
   );
 });
 
+test("every reachability Git subprocess is time- and output-bounded", () => {
+  const receipt = "3333333333333333333333333333333333333333";
+  for (const code of ["ETIMEDOUT", "ENOBUFS"]) {
+    const optionsSeen = [];
+    const verifier = makeGitReachabilityVerifier({
+      cwd: "/repo",
+      releaseCommit: "1111111111111111111111111111111111111111",
+      spawnSyncImpl(command, args, options) {
+        optionsSeen.push(options);
+        if (args[0] === "rev-parse") return { status: 0, stdout: "", stderr: "" };
+        const error = new Error(`spawnSync git ${code}`);
+        error.code = code;
+        return { status: null, stdout: "", stderr: "", error };
+      },
+    });
+    assert.throws(() => verifier(receipt), new RegExp(code));
+    assert.equal(optionsSeen.length, 3);
+    for (const options of optionsSeen) {
+      assert.equal(options.timeout, 30_000);
+      assert.equal(options.maxBuffer, 1024 * 1024);
+    }
+  }
+});
+
 test("corrupt object storage is an operational Git failure, not an unreachable receipt", async () => {
   const cwd = await tmpProject({ "seed.txt": "seed\n" });
   await pexecFile("git", ["init", "-b", "main"], { cwd });

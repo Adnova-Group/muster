@@ -10,6 +10,8 @@ export const BACKLOG_RECEIPT_MAX_CHECKED_ITEMS = 1_000;
 export const BACKLOG_RECEIPT_MAX_UNIQUE_RECEIPTS = 1_000;
 export const BACKLOG_RECEIPT_MAX_LINE_BYTES = 64 * 1024;
 export const BACKLOG_RECEIPT_MAX_TOTAL_BYTES = 64 * 1024 * 1024;
+const GIT_REACHABILITY_TIMEOUT_MS = 30_000;
+const GIT_REACHABILITY_MAX_BUFFER = 1024 * 1024;
 
 function hasStderr(result) {
   return result.stderr !== undefined && result.stderr !== null && result.stderr.length !== 0;
@@ -20,6 +22,8 @@ function gitOptions(cwd, extra = {}) {
     cwd,
     encoding: "utf8",
     env: { ...process.env, GIT_NO_REPLACE_OBJECTS: "1" },
+    timeout: GIT_REACHABILITY_TIMEOUT_MS,
+    maxBuffer: GIT_REACHABILITY_MAX_BUFFER,
     ...extra,
   };
 }

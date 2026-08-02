@@ -4,7 +4,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { exists, readdirSafe } from "./fs-util.js";
 import { atomicWrite, readNoFollowRegular } from "./fs-safe.js";
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
-import { homedir, tmpdir } from "node:os";
+import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { execFile as execFileCb } from "node:child_process";
 import { promisify } from "node:util";
@@ -1244,7 +1244,8 @@ function concurrentConfigError(message) {
   return error;
 }
 
-const retirementReceiptPath = configPath => join(dirname(configPath), "muster", "config-retirements.json");
+const retirementReceiptDir = configPath => join(dirname(configPath), "muster", "config-retirements");
+const retirementArtifactPrefix = configPath => `.${basename(configPath)}.muster-retired-`;
 
 function retirementArtifactRecord(configPath, artifactPath, snapshot) {
   return {
@@ -1258,35 +1259,69 @@ function retirementArtifactRecord(configPath, artifactPath, snapshot) {
   };
 }
 
-export async function verifyCodexConfigRetirementReceipt(configPath) {
-  const path = retirementReceiptPath(configPath);
-  const receiptSnapshot = await exactFileSnapshot(path);
-  if (!receiptSnapshot.exists) return { path, entries: [] };
-  let value;
-  try { value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(receiptSnapshot.bytes)); }
-  catch { value = null; }
-  if (value?.format !== 1 || value.owner !== "muster" || !Array.isArray(value.entries)) {
-    throw new Error(`Codex config retirement receipt conflict: ${path}. Move it or remove it, then rerun the command.`);
-  }
+async function readConfigRetirementState(configPath, pendingArtifacts = new Set()) {
+  const path = retirementReceiptDir(configPath);
   const entries = [];
-  for (const entry of value.entries) {
-    const artifactName = typeof entry?.artifactPath === "string" ? basename(entry.artifactPath) : "";
-    const structurallyValid = entry?.configPath === configPath
-      && dirname(entry.artifactPath || "") === dirname(configPath)
-      && artifactName.startsWith(`.${basename(configPath)}.muster-retired-`)
-      && typeof entry.dev === "string" && /^\d+$/.test(entry.dev)
-      && typeof entry.ino === "string" && /^\d+$/.test(entry.ino)
-      && Number.isSafeInteger(entry.size) && entry.size >= 0
-      && entry.algorithm === "sha256" && /^[a-f0-9]{64}$/.test(entry.digest);
-    if (!structurallyValid) throw new Error(`Codex config retirement receipt conflict: ${path}. Move it or remove it, then rerun the command.`);
-    const snapshot = await exactFileSnapshot(entry.artifactPath);
-    const actual = snapshot.exists ? retirementArtifactRecord(configPath, entry.artifactPath, snapshot) : null;
-    if (!actual || JSON.stringify(actual) !== JSON.stringify(entry)) {
-      throw new Error(`Codex config retired baseline changed: ${entry.artifactPath}. Preserve and inspect it before rerunning the command.`);
+  if (await ordinaryDirectoryPath(path)) {
+    for (const name of await readdir(path)) {
+      if (!/^[a-f0-9]{64}\.json$/.test(name)) throw new Error(`Codex config retirement receipt conflict: ${join(path, name)}`);
+      const receiptPath = join(path, name);
+      const receiptSnapshot = await exactFileSnapshot(receiptPath);
+      let entry;
+      try { entry = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(receiptSnapshot.bytes)); }
+      catch { entry = null; }
+      const artifactName = typeof entry?.artifactPath === "string" ? basename(entry.artifactPath) : "";
+      const structurallyValid = entry?.configPath === configPath
+        && dirname(entry.artifactPath || "") === dirname(configPath)
+        && artifactName.startsWith(retirementArtifactPrefix(configPath))
+        && name === `${createHash("sha256").update(entry.artifactPath).digest("hex")}.json`
+        && typeof entry.dev === "string" && /^\d+$/.test(entry.dev)
+        && typeof entry.ino === "string" && /^\d+$/.test(entry.ino)
+        && Number.isSafeInteger(entry.size) && entry.size >= 0
+        && entry.algorithm === "sha256" && /^[a-f0-9]{64}$/.test(entry.digest);
+      if (!structurallyValid) throw new Error(`Codex config retirement receipt conflict: ${receiptPath}`);
+      const snapshot = await exactFileSnapshot(entry.artifactPath);
+      const actual = snapshot.exists ? retirementArtifactRecord(configPath, entry.artifactPath, snapshot) : null;
+      if (!actual || JSON.stringify(actual) !== JSON.stringify(entry)) {
+        throw new Error(`Codex config retired baseline changed: ${entry.artifactPath}. Preserve and inspect it before rerunning the command.`);
+      }
+      entries.push(entry);
     }
-    entries.push(entry);
   }
-  return { path, entries };
+  const receipted = new Set(entries.map(entry => entry.artifactPath));
+  const artifacts = (await readdirSafe(dirname(configPath))).filter(name => name.startsWith(retirementArtifactPrefix(configPath)))
+    .map(name => join(dirname(configPath), name));
+  for (const artifact of artifacts) {
+    if (!receipted.has(artifact) && !pendingArtifacts.has(artifact)) {
+      throw new Error(`Codex config retirement artifact has no receipt: ${artifact}. Preserve and inspect it before rerunning the command.`);
+    }
+  }
+  if (new Set(entries.map(entry => entry.artifactPath)).size !== entries.length) {
+    throw new Error(`Codex config retirement receipt conflict: duplicate artifact entry under ${path}`);
+  }
+  return { path, entries, artifacts };
+}
+
+export async function verifyCodexConfigRetirementReceipt(configPath) {
+  return readConfigRetirementState(configPath);
+}
+
+async function retainConfigArtifacts(configPath, artifactPaths) {
+  const pending = new Set(artifactPaths.filter(Boolean));
+  const state = await readConfigRetirementState(configPath, pending);
+  await ordinaryDirectoryPath(state.path, { create: true });
+  for (const artifactPath of pending) {
+    if (state.entries.some(entry => entry.artifactPath === artifactPath)) continue;
+    const snapshot = await exactFileSnapshot(artifactPath);
+    if (!snapshot.exists) continue;
+    const entry = retirementArtifactRecord(configPath, artifactPath, snapshot);
+    const receiptPath = join(state.path, `${createHash("sha256").update(artifactPath).digest("hex")}.json`);
+    const staged = await writePrivateSibling(receiptPath, "retirement-receipt", Buffer.from(JSON.stringify(entry, null, 2) + "\n"));
+    try { await link(staged, receiptPath); }
+    catch (error) { if (error.code !== "EEXIST") throw error; }
+    finally { await unlink(staged).catch(() => {}); }
+  }
+  await readConfigRetirementState(configPath);
 }
 
 async function writePrivateSibling(path, label, bytes) {
@@ -1295,6 +1330,59 @@ async function writePrivateSibling(path, label, bytes) {
   try { await handle.writeFile(bytes); await handle.sync(); }
   finally { await handle.close(); }
   return privatePath;
+}
+
+async function assertPrivatePluginCache(root, packageVersion) {
+  const visit = async path => {
+    const info = await lstat(path);
+    if (info.isSymbolicLink()) throw new Error(`Codex staged plugin cache contains a symlink: ${path}`);
+    if (info.isFile()) return;
+    if (!info.isDirectory()) throw new Error(`Codex staged plugin cache contains a non-regular entry: ${path}`);
+    for (const name of await readdir(path)) await visit(join(path, name));
+  };
+  await visit(root);
+  const manifest = await readJson(join(root, "package.json"));
+  const pluginManifest = await readJson(join(root, ".codex-plugin", "plugin.json"));
+  if (manifest?.version !== packageVersion || !/^[a-f0-9]{64}$/.test(manifest.inputDigest || "")
+    || pluginManifest?.name !== "muster" || pluginManifest.version !== packageVersion) {
+    throw new Error(`Codex staged plugin cache identity mismatch at ${root}`);
+  }
+}
+
+async function publishStagedPluginCache(staged, liveCodexHome, packageVersion) {
+  await assertPrivatePluginCache(staged, packageVersion);
+  const parent = join(liveCodexHome, "plugins", "cache", "muster", "muster");
+  await ordinaryDirectoryPath(parent, { create: true });
+  const target = join(parent, packageVersion);
+  const retired = join(parent, `.muster-retired-${packageVersion}-${process.pid}-${randomUUID()}`);
+  let targetExists = false;
+  try {
+    const info = await lstat(target);
+    if (info.isSymbolicLink() || !info.isDirectory()) throw new Error(`Codex plugin cache target must be an ordinary directory: ${target}`);
+    targetExists = true;
+  } catch (error) { if (error.code !== "ENOENT") throw error; }
+  try {
+    if (targetExists) await rename(target, retired);
+    await rename(staged, target);
+    return { target, retired: targetExists ? retired : null };
+  } catch (error) {
+    try {
+      const info = await lstat(target);
+      if (info.isDirectory() && !info.isSymbolicLink()) await rm(target, { recursive: true });
+    } catch (cleanupError) { if (cleanupError.code !== "ENOENT") throw cleanupError; }
+    if (targetExists) await rename(retired, target);
+    throw error;
+  }
+}
+
+async function rollbackPublishedPluginCache(receipt) {
+  if (!receipt) return;
+  try {
+    const info = await lstat(receipt.target);
+    if (info.isSymbolicLink() || !info.isDirectory()) throw new Error(`Codex plugin cache changed before rollback: ${receipt.target}`);
+    await rm(receipt.target, { recursive: true });
+  } catch (error) { if (error.code !== "ENOENT") throw error; }
+  if (receipt.retired) await rename(receipt.retired, receipt.target);
 }
 
 async function restoreRetiredName(path, retired) {
@@ -1370,7 +1458,7 @@ async function publishConfigCandidate(path, expected, bytes) {
     let displaced = null;
     let restoredBaseline = expected.exists ? null : { exists: false, bytes: null, dev: null, ino: null };
     if (sameExactFileSnapshot(stagedSnapshot, current)) {
-      displaced = join(dirname(path), `.${basename(path)}.muster-failed-publication-${process.pid}-${randomUUID()}`);
+      displaced = join(dirname(path), `.${basename(path)}.muster-retired-failed-publication-${process.pid}-${randomUUID()}`);
       await rename(path, displaced);
       const moved = await exactFileSnapshot(displaced);
       if (sameExactFileSnapshot(stagedSnapshot, moved)) {
@@ -1412,8 +1500,7 @@ async function publishConfigCandidate(path, expected, bytes) {
       }
     }
     if (displaced) await promoteChangedDisplaced(path, displaced, stagedSnapshot, restoredBaseline);
-    if (displaced) try { await unlink(displaced); } catch (cleanupError) { if (cleanupError.code !== "ENOENT") throw cleanupError; }
-    if (retired) try { await unlink(retired); } catch (cleanupError) { if (cleanupError.code !== "ENOENT") throw cleanupError; }
+    await retainConfigArtifacts(path, [displaced, retired]);
     throw error;
   } finally {
     try { await unlink(staged); } catch { /* best-effort private-artifact cleanup */ }
@@ -1425,14 +1512,14 @@ async function rollbackConfigCandidate(receipt) {
   const { path, expected, retired, published } = receipt;
   const current = await exactFileSnapshot(path);
   if (!sameExactFileSnapshot(published, current)) {
-    if (retired) try { await unlink(retired); } catch (error) { if (error.code !== "ENOENT") throw error; }
+    if (retired) await retainConfigArtifacts(path, [retired]);
     return;
   }
   // Materialize the byte-exact baseline before moving the live candidate.
   // Rollback never depends on the path-addressable retirement artifact still
   // existing: cleanup, antivirus, or a concurrent actor may have removed it.
   const recovery = expected.exists ? await writePrivateSibling(path, "recovery", expected.bytes) : null;
-  const displaced = join(dirname(path), `.${basename(path)}.muster-rollback-${process.pid}-${randomUUID()}`);
+  const displaced = join(dirname(path), `.${basename(path)}.muster-retired-rollback-${process.pid}-${randomUUID()}`);
   let discardDisplaced = false;
   let moved = false;
   let restoredBaseline = expected.exists ? null : { exists: false, bytes: null, dev: null, ino: null };
@@ -1474,9 +1561,8 @@ async function rollbackConfigCandidate(receipt) {
     throw error;
   } finally {
     if (discardDisplaced) await promoteChangedDisplaced(path, displaced, published, restoredBaseline);
-    if (discardDisplaced) try { await unlink(displaced); } catch (error) { if (error.code !== "ENOENT") throw error; }
+    await retainConfigArtifacts(path, [discardDisplaced ? displaced : null, retired]);
     if (recovery) try { await unlink(recovery); } catch (error) { if (error.code !== "ENOENT") throw error; }
-    if (retired) try { await unlink(retired); } catch (error) { if (error.code !== "ENOENT") throw error; }
   }
 }
 
@@ -1671,7 +1757,9 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
   const publishedConfigCandidates = new Map();
   const configCandidates = new Map();
   const configCandidateSources = new Map();
-  const configRetirementReceipts = new Map();
+  let pluginStagingHome = null;
+  let stagedPluginCachePath = null;
+  let publishedPluginCache = null;
   let actions = [];
   const prunedScopes = [], prunedHookState = [], prunedProjectTrust = [];
   if (!dryRun) {
@@ -1686,7 +1774,7 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
       const declarationSeparatorAdded = manifestExists && manifest.declarationSeparatorAdded === true;
       await ordinaryDirectoryPath(dir, { create: true });
       for (const configPath of new Set([threadLimitConfigPath, declarationConfigPath])) {
-        configRetirementReceipts.set(configPath, await verifyCodexConfigRetirementReceipt(configPath));
+        await verifyCodexConfigRetirementReceipt(configPath);
       }
       try {
         // Codex's own plugin registration rewrites config.toml. Preserve the
@@ -1901,26 +1989,40 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
           await runConfigParser();
           await verifyLive("strict validation");
           if (present) {
-            const stagingHome = await mkdtemp(join(tmpdir(), "muster-codex-plugin-config-"));
+            await ordinaryDirectoryPath(dirname(codexHome(home)), { create: true });
+            pluginStagingHome = await mkdtemp(join(dirname(codexHome(home)), ".muster-codex-plugin-config-"));
             try {
-              const stagedConfigPath = join(stagingHome, "config.toml");
+              const stagedConfigPath = join(pluginStagingHome, "config.toml");
               await atomicWriteSafe(stagedConfigPath, candidateSnapshots.get(threadLimitConfigPath).bytes);
               actions = await registerPlugin(executor, distributionRoot, {
                 dryRun: false,
                 runtimeIdentity: identity,
-                commandOptions: { env: { ...process.env, CODEX_HOME: stagingHome } }
+                commandOptions: { env: { ...process.env, CODEX_HOME: pluginStagingHome } }
               });
               const registered = await exactFileSnapshot(stagedConfigPath);
               if (!registered.exists) throw new Error("Codex staged plugin registration removed config.toml");
               const finalShared = { exists: true, bytes: registered.bytes, dev: null, ino: null };
               candidateSnapshots.set(threadLimitConfigPath, finalShared);
               configCandidates.set(threadLimitConfigPath, registered.bytes);
-            } finally {
-              await rm(stagingHome, { recursive: true, force: true });
+              if (identity && !execFile) {
+                stagedPluginCachePath = join(pluginStagingHome, "plugins", "cache", "muster", "muster", packageVersion);
+                await assertPrivatePluginCache(stagedPluginCachePath, packageVersion);
+              }
+            } catch (error) {
+              await rm(pluginStagingHome, { recursive: true, force: true });
+              pluginStagingHome = null;
+              throw error;
             }
             await verifyLive("staged plugin registration");
             await runConfigParser();
             await verifyLive("final strict validation");
+          }
+
+          if (stagedPluginCachePath) {
+            publishedPluginCache = await publishStagedPluginCache(
+              stagedPluginCachePath, codexHome(home), packageVersion
+            );
+            stagedPluginCachePath = null;
           }
 
           // Retire the expected name and publish by exclusive hard-link. Any
@@ -1951,23 +2053,29 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
         }
         for (const [path, receipt] of publishedConfigCandidates) {
           if (!receipt.retired) continue;
-          const owned = configRetirementReceipts.get(path);
-          const retiredSnapshot = await exactFileSnapshot(receipt.retired);
-          const entry = retirementArtifactRecord(path, receipt.retired, retiredSnapshot);
-          await ordinaryDirectoryPath(dirname(owned.path), { create: true });
-          await snapshot(originals, changed, owned.path);
-          await atomicWriteSafe(owned.path, JSON.stringify({
-            format: 1,
-            owner: "muster",
-            entries: [...owned.entries, entry]
-          }, null, 2) + "\n");
-          owned.entries.push(entry);
+          await retainConfigArtifacts(path, [receipt.retired]);
+        }
+        if (publishedPluginCache?.retired) {
+          await rm(publishedPluginCache.retired, { recursive: true });
+          publishedPluginCache.retired = null;
+        }
+        if (pluginStagingHome) {
+          await rm(pluginStagingHome, { recursive: true, force: true });
+          pluginStagingHome = null;
         }
           } catch (error) {
             const rollbackErrors = [];
             for (const receipt of [...publishedConfigCandidates.values()].reverse()) {
               try { await rollbackConfigCandidate(receipt); }
               catch (rollbackError) { rollbackErrors.push(rollbackError); }
+            }
+            try { await rollbackPublishedPluginCache(publishedPluginCache); }
+            catch (rollbackError) { rollbackErrors.push(rollbackError); }
+            publishedPluginCache = null;
+            if (pluginStagingHome) {
+              try { await rm(pluginStagingHome, { recursive: true, force: true }); }
+              catch (rollbackError) { rollbackErrors.push(rollbackError); }
+              pluginStagingHome = null;
             }
             publishedConfigCandidates.clear();
             if (rollbackErrors.length) {

@@ -6,7 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdir, open, readFile, readdir, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { trackedMkdtemp as mkdtemp } from "../test-support/helpers.js";
 import { runCodexStrictConfigCheck } from "../src/codex-strict-config.js";
 import { runCodexInstall } from "../src/codex-install.js";
@@ -354,6 +354,13 @@ test("strict config: a retired-inode writer immediately after candidate link rem
     await writer;
   } finally { watcher.close(); await held.close(); }
   assert.deepEqual(await readFile(projectPath), concurrent);
+  const artifacts = (await readdir(join(cwd, ".codex"))).filter(name => name.startsWith(".config.toml.muster-retired-"));
+  const receiptDir = join(cwd, ".codex", "muster", "config-retirements");
+  const receiptFiles = await readdir(receiptDir);
+  assert.equal(receiptFiles.length, artifacts.length, "every failure-path retirement artifact must have one immutable receipt");
+  const receipted = await Promise.all(receiptFiles.map(async name =>
+    basename(JSON.parse(await readFile(join(receiptDir, name), "utf8")).artifactPath)));
+  assert.deepEqual(receipted.sort(), artifacts.sort());
 });
 
 test("strict config: rollback reconstructs exact originals when retirement artifacts disappear", async () => {
@@ -419,6 +426,38 @@ test("strict config: native plugin config mutations are staged and included in t
   assert.match(validated, /\[marketplaces\.muster\]/);
   assert.match(validated, /\[plugins\."muster@muster"\]/);
   assert.deepEqual(await readFile(sharedPath, "utf8"), validated);
+});
+
+test("strict config: real staged registration publishes a live installed plugin cache", async t => {
+  let identity;
+  try { identity = resolveCodexRuntimeIdentity(); }
+  catch { return t.skip("trusted Codex runtime is not installed"); }
+  const tmp = await mkdtemp(join(tmpdir(), "muster-strict-real-plugin-cache-"));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), isolatedHome = join(home, ".codex");
+  const previousCodexHome = process.env.CODEX_HOME;
+  await mkdir(join(cwd, ".codex"), { recursive: true });
+  await mkdir(isolatedHome, { recursive: true });
+  await writeFile(join(isolatedHome, "config.toml"), "model = \"gpt-5.4\"\n");
+  const command = args => new Promise((resolve, reject) => {
+    const child = spawnChild(identity.node, [identity.codex, ...args], {
+      env: { ...process.env, CODEX_HOME: isolatedHome }, stdio: ["ignore", "pipe", "pipe"]
+    });
+    let stdout = "", stderr = "";
+    child.stdout.on("data", chunk => { stdout += chunk; });
+    child.stderr.on("data", chunk => { stderr += chunk; });
+    child.on("error", reject);
+    child.on("close", code => code === 0 ? resolve({ stdout, stderr }) : reject(new Error(stderr || `Codex exited ${code}`)));
+  });
+  try {
+    process.env.CODEX_HOME = isolatedHome;
+    const result = await runCodexInstall({ cwd, home, repoRoot });
+    assert.equal(result.plugin.registered, true);
+    const inventory = JSON.parse((await command(["plugin", "list", "--available", "--json"])).stdout);
+    assert.ok(inventory.installed.some(plugin => plugin.pluginId === "muster@muster" && plugin.installed === true));
+  } finally {
+    if (previousCodexHome === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = previousCodexHome;
+  }
 });
 
 test("strict config: a live writer during staged plugin registration aborts without touching it", async () => {
@@ -490,8 +529,10 @@ test("strict config: a post-commit writer holding the retired inode remains rece
     await held.truncate(0);
     await held.write(concurrent, 0, concurrent.length, 0);
   } finally { await held.close(); }
-  const receipt = JSON.parse(await readFile(join(cwd, ".codex", "muster", "config-retirements.json"), "utf8"));
-  const retired = receipt.entries.find(entry => entry.configPath === projectPath);
+  const receiptDir = join(cwd, ".codex", "muster", "config-retirements");
+  const receipts = await Promise.all((await readdir(receiptDir)).map(async name =>
+    JSON.parse(await readFile(join(receiptDir, name), "utf8"))));
+  const retired = receipts.find(entry => entry.configPath === projectPath);
   assert.ok(retired);
   assert.deepEqual(await readFile(retired.artifactPath), concurrent);
   const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome: join(home, ".codex"),
@@ -502,6 +543,19 @@ test("strict config: a post-commit writer holding the retired inode remains rece
   assert.match(retirementCheck?.detail || "", /retired baseline changed/);
   await assert.rejects(runCodexInstall({ cwd, home, repoRoot, execFile: executor,
     strictConfigRunner: async () => ({ ok: true, modelTurnEvents: 0 }) }), /retired baseline changed/);
+});
+
+test("strict config: an unreceipted retirement artifact blocks install", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-strict-orphan-retirement-"));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), configDir = join(cwd, ".codex");
+  await mkdir(configDir, { recursive: true });
+  await writeFile(join(configDir, "config.toml"), "model = \"before\"\n");
+  const orphan = join(configDir, ".config.toml.muster-retired-orphan");
+  await writeFile(orphan, "model = \"orphan\"\n");
+  await assert.rejects(runCodexInstall({ cwd, home, repoRoot,
+    execFile: async () => { throw new Error("codex absent"); },
+    strictConfigRunner: async () => ({ ok: true, modelTurnEvents: 0 }) }), /retirement artifact has no receipt/);
+  assert.equal(await readFile(orphan, "utf8"), "model = \"orphan\"\n");
 });
 
 test("strict config: rollback preserves a delayed writer holding the published candidate inode", async () => {

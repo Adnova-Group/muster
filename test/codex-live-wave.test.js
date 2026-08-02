@@ -129,6 +129,9 @@ test("posix containment pins cwd through fd 3 and creates a non-escapable PID na
   assert.ok(call.argv.includes("/proc/self/fd/3"));
   assert.ok(call.argv.includes("/tmp/muster-worktree"));
   assert.equal(call.argv.includes("/mnt"), false, "the worktree mount must not hide WSL's /mnt/wsl/resolv.conf");
+  assert.deepEqual(call.argv.slice(5, 14), [
+    "--ro-bind", "/", "/", "--dev-bind", "/dev", "/dev", "--bind", "/tmp", "/tmp",
+  ], "the outer container owns filesystem enforcement and exposes the host root read-only");
   assert.deepEqual(call.argv.slice(call.argv.indexOf("--dir"), call.argv.indexOf("--dir") + 3), [
     "--dir", "/tmp/muster-worktree", "--bind",
   ]);
@@ -268,7 +271,7 @@ test("runCodexWave resumes an authenticated persistent thread inside the same he
   assert.equal(Object.hasOwn(resumed, "argv"), false);
   assert.equal(await readFile(join(fixture.worktreeA, "result.txt"), "utf8"), "resumed");
   const launches = await readFile(fixture.launches, "utf8");
-  assert.match(launches, /exec --sandbox workspace-write resume --json --ignore-user-config --ignore-rules --strict-config/);
+  assert.match(launches, /exec --sandbox danger-full-access resume --json --ignore-user-config --ignore-rules --strict-config/);
   assert.match(launches, /resume-stdin:true/);
   assert.match(launches, /MUSTER TRUSTED FORBIDDEN ACTIONS/);
   assert.match(launches, /Never perform, authorize, or facilitate any listed action/);

@@ -580,8 +580,8 @@ const hookStateEventName = pascal => pascal.replace(/([a-z0-9])([A-Z])/g, "$1_$2
 // its live hooks.json -- fix iteration 1's answer to over-revocation blocker
 // (b): locating a muster group by content (mirroring removeOwnedHookGroups'
 // own `findIndex(candidate => same(candidate, group))` matching, including
-// its splice-as-consumed order so two owned groups for the same event never
-// collide on one position) rather than by hooksJsonPath alone means a
+// consumed-index tracking so two owned groups for the same event never
+// collide on one position without shifting their original positions) rather than by hooksJsonPath alone means a
 // co-located NON-muster hook definition -- sharing the same hooks.json but a
 // different group/hook index -- is never included here, and so never gets
 // swept up by a path-level prune.
@@ -590,15 +590,16 @@ function ownedHookStateEntries(config, hookGroups) {
   for (const [event, groups] of Object.entries(hookGroups || {})) {
     if (!Array.isArray(groups)) continue;
     const current = [...(Array.isArray(config?.hooks?.[event]) ? config.hooks[event] : [])];
+    const consumed = new Set();
     const snakeEvent = hookStateEventName(event);
     for (const group of groups) {
-      const index = current.findIndex(candidate => same(candidate, group));
+      const index = current.findIndex((candidate, candidateIndex) => !consumed.has(candidateIndex) && same(candidate, group));
       if (index < 0) continue;
+      consumed.add(index);
       const hooks = Array.isArray(group.hooks) ? group.hooks : [];
       for (let hookIndex = 0; hookIndex < hooks.length; hookIndex++) {
         entries.push({ key: `${snakeEvent}:${index}:${hookIndex}`, event, group, hook: hooks[hookIndex] });
       }
-      current.splice(index, 1);
     }
   }
   return entries;
@@ -1612,17 +1613,23 @@ function hasDynamicInterpreterEval(command) {
     if (!tokens) continue;
     for (let index = 0; index < tokens.length; index++) {
       const executable = tokens[index].replaceAll("\\", "/").split("/").pop().toLowerCase();
-      if (["sh", "bash", "dash", "ksh", "zsh", "sh.exe", "bash.exe", "dash.exe", "ksh.exe", "zsh.exe"].includes(executable)) {
-        const flag = tokens[index + 1]?.toLowerCase();
-        if (/^-[^-]*c/.test(flag || "")) return true;
-      }
-      if (["cmd", "cmd.exe"].includes(executable) && /^\/(?:c|k)$/i.test(tokens[index + 1] || "")) return true;
-      if (["powershell", "powershell.exe", "pwsh", "pwsh.exe"].includes(executable)
-        && /^-(?:c|command|e|enc|encodedcommand)$/i.test(tokens[index + 1] || "")) return true;
-      if (!["node", "node.exe", "nodejs", "nodejs.exe", "bun", "bun.exe", "deno", "deno.exe"].includes(executable)) continue;
+      const flags = [];
       for (const rawFlag of tokens.slice(index + 1)) {
-        const flag = rawFlag.toLowerCase();
-        if (flag === "--") break;
+        if (rawFlag === "--") break;
+        flags.push(rawFlag.toLowerCase());
+      }
+      if (["sh", "bash", "dash", "fish", "ksh", "zsh", "sh.exe", "bash.exe", "dash.exe", "fish.exe", "ksh.exe", "zsh.exe"].includes(executable)
+        && flags.some(flag => /^-[^-]*c/.test(flag))) return true;
+      if (["cmd", "cmd.exe"].includes(executable) && flags.some(flag => /^\/(?:c|k)$/i.test(flag))) return true;
+      if (["powershell", "powershell.exe", "pwsh", "pwsh.exe"].includes(executable)
+        && flags.some(flag => /^-(?:c|command|e|enc|encodedcommand)$/i.test(flag))) return true;
+      if (/^(?:pythonw?|pypy)(?:\d+(?:\.\d+)*)?(?:\.exe)?$/.test(executable)
+        && flags.some(flag => flag === "-c" || flag.startsWith("-c="))) return true;
+      if (/^(?:ruby|perl|lua|luajit|r|rscript|osascript)(?:\.exe)?$/.test(executable)
+        && flags.some(flag => /^-[^-]*e/i.test(flag))) return true;
+      if (/^php(?:\.exe)?$/.test(executable) && flags.some(flag => /^-[^-]*r/i.test(flag))) return true;
+      if (!["node", "node.exe", "nodejs", "nodejs.exe", "bun", "bun.exe", "deno", "deno.exe"].includes(executable)) continue;
+      for (const flag of flags) {
         if (/^-[^-]*[ep]/.test(flag) || flag === "--eval" || flag.startsWith("--eval=")
           || flag === "--print" || flag.startsWith("--print=")
           || ((executable === "deno" || executable === "deno.exe") && flag === "eval")) return true;
@@ -2664,7 +2671,15 @@ async function prepareCodexUninstall({ scope, cwd, home, execFile, runtimeIdenti
     // muster's own groups are stripped out below, so a co-located non-muster
     // hook definition sharing this same hooksJsonPath (a different group or
     // hook index) is never conflated with muster's own and survives.
-    departingScopeOwnedHookStateKeys = hookConfigExists ? ownedHookStateKeys(rawHookConfig, hookManifest.hookGroups) : null;
+    const derivedOwnedKeys = hookConfigExists ? ownedHookStateKeys(rawHookConfig, hookManifest.hookGroups) : [];
+    const expectedOwnedCount = Object.values(hookManifest.hookGroups || {}).reduce((total, groups) => total
+      + (Array.isArray(groups) ? groups.reduce((groupTotal, group) => groupTotal
+        + (Array.isArray(group?.hooks) ? group.hooks.length : 0), 0) : 0), 0);
+    const liveHookCount = hookConfigExists ? codexHookStateKeys(rawHookConfig).length : 0;
+    if (hookConfigExists && liveHookCount > 0 && derivedOwnedKeys.length !== expectedOwnedCount) {
+      throw new Error(`Codex hook conflict: not every Muster-owned hook position can be identified in ${hookConfigPath}. Restore the managed hooks or remove unrelated hooks before retrying.`);
+    }
+    departingScopeOwnedHookStateKeys = hookConfigExists && liveHookCount > 0 ? derivedOwnedKeys : null;
     hookConfig = removeOwnedHookGroups(rawHookConfig, hookManifest.hookGroups, hookConfigPath);
     const otherKeys = Object.keys(hookConfig).filter(key => key !== "hooks");
     removeHookConfig = hookManifest.hookConfigCreated && otherKeys.length === 0 && Object.keys(hookConfig.hooks || {}).length === 0;

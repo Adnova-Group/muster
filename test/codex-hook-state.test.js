@@ -485,6 +485,67 @@ test("Codex uninstall prunes the departing scope's whole hooks.state path when i
   assert.equal(result.prunedHookState.length, HOOK_EVENTS.length);
 });
 
+test("Codex uninstall prunes the whole hooks.state path when the managed hooks.json has no live hooks", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hookstate-empty-config-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), codexHomeDir = join(home, ".codex");
+  await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absentCodex });
+  const configTomlPath = join(codexHomeDir, "config.toml");
+  const hooksJsonPath = join(cwd, ".codex", "hooks.json");
+  await writeFile(configTomlPath, `${await readFile(configTomlPath, "utf8")}\n${hookStateBlock(hooksJsonPath)}\n`);
+  await writeFile(hooksJsonPath, `${JSON.stringify({ hooks: {} }, null, 2)}\n`);
+
+  const result = await runCodexUninstall({ scope: "project", cwd, home, execFile: absentCodex });
+  const after = await readFile(configTomlPath, "utf8").catch(error => error.code === "ENOENT" ? "" : Promise.reject(error));
+  assert.doesNotMatch(after, new RegExp(escapeRegex(hooksJsonPath)));
+  assert.equal(result.prunedHookState.length, HOOK_EVENTS.length);
+});
+
+test("Codex uninstall fails closed when only some manifest-owned hook positions can be derived", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hookstate-partial-config-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), codexHomeDir = join(home, ".codex");
+  await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absentCodex });
+  const hooksJsonPath = join(cwd, ".codex", "hooks.json");
+  const hooksConfig = JSON.parse(await readFile(hooksJsonPath, "utf8"));
+  delete hooksConfig.hooks.Stop;
+  await writeFile(hooksJsonPath, `${JSON.stringify(hooksConfig, null, 2)}\n`);
+  const configTomlPath = join(codexHomeDir, "config.toml");
+  await writeFile(configTomlPath, `${await readFile(configTomlPath, "utf8")}\n${hookStateBlock(hooksJsonPath)}\n`);
+
+  await assert.rejects(() => runCodexUninstall({ scope: "project", cwd, home, execFile: absentCodex }), /not every Muster-owned hook position can be identified/);
+  assert.match(await readFile(configTomlPath, "utf8"), new RegExp(escapeRegex(hooksJsonPath)), "trust state is untouched on the conflict");
+});
+
+test("Codex uninstall preserves original hook indices while pruning multiple owned groups", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hookstate-original-indices-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), codexHomeDir = join(home, ".codex");
+  await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absentCodex });
+  const hooksJsonPath = join(cwd, ".codex", "hooks.json");
+  const hookManifestPath = join(cwd, ".codex", "muster", ".muster-managed.json");
+  const hooksConfig = JSON.parse(await readFile(hooksJsonPath, "utf8"));
+  const hookManifest = JSON.parse(await readFile(hookManifestPath, "utf8"));
+  const ownedA = hooksConfig.hooks.Stop[0];
+  const ownedB = { ...ownedA, matcher: "second-owned-group" };
+  const foreign = { hooks: [{ type: "command", command: "node /foreign/hook.mjs" }] };
+  hooksConfig.hooks.Stop = [ownedA, foreign, ownedB];
+  hookManifest.hookGroups.Stop = [ownedA, ownedB];
+  await writeFile(hooksJsonPath, `${JSON.stringify(hooksConfig, null, 2)}\n`);
+  await writeFile(hookManifestPath, `${JSON.stringify(hookManifest, null, 2)}\n`);
+  const configTomlPath = join(codexHomeDir, "config.toml");
+  await writeFile(configTomlPath, `${await readFile(configTomlPath, "utf8")}\n${hookStateBlock(hooksJsonPath, [])}`
+    + `[hooks.state."${hooksJsonPath}:stop:0:0"]\ntrusted_hash = "sha256:${"0".repeat(64)}"\n\n`
+    + `[hooks.state."${hooksJsonPath}:stop:1:0"]\ntrusted_hash = "sha256:foreign"\n\n`
+    + `[hooks.state."${hooksJsonPath}:stop:2:0"]\ntrusted_hash = "sha256:${"0".repeat(64)}"\n`);
+
+  const result = await runCodexUninstall({ scope: "project", cwd, home, execFile: absentCodex });
+  const after = await readFile(configTomlPath, "utf8");
+  assert.doesNotMatch(after, new RegExp(`${escapeRegex(hooksJsonPath)}:stop:(?:0|2):0`));
+  assert.match(after, new RegExp(`${escapeRegex(hooksJsonPath)}:stop:1:0`));
+  assert.deepEqual(result.prunedHookState.map(item => item.groupIndex).sort(), [0, 2]);
+});
+
 // -- Doctor integration (fix D) ------------------------------------------------
 
 test("Codex doctor reports over-registration when a stale scope's hook trust entries are still present (regression 6)", async t => {

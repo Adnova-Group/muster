@@ -241,7 +241,11 @@ test("effectiveHookTrust accepts Codex 0.146 full hook records without relaxing 
     `'/usr/bin/node' --no-warnings --eval="import('/tmp/muster-'+'hook.mjs')"`,
     `'/usr/bin/node' -pe "import('/tmp/muster-'+'hook.mjs')"`,
     `'C:\\Program Files\\nodejs\\node.exe' --eval="import('C:/tmp/muster-'+'hook.mjs')"`,
-    `sh -c "node '/tmp/muster-''hook.mjs'"`
+    `sh -c "node '/tmp/muster-''hook.mjs'"`,
+    `bash --noprofile -c "node '/tmp/muster-''hook.mjs'"`,
+    `pwsh -NoProfile -Command "node '/tmp/muster-''hook.mjs'"`,
+    `cmd /S /C "node C:\\tmp\\muster-""hook.mjs"`,
+    `python3 -c "import os; os.system('node /tmp/muster-'+'hook.mjs')"`
   ]) {
     const expandedPathDuplicate = currentCodexInventoryHook({
       key: "/repo/.codex/config.toml:stop:0:0",

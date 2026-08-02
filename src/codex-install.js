@@ -845,7 +845,8 @@ function parseHookInventoryKey(value, { sourcePath, pluginId } = {}) {
     const pluginPrefix = typeof pluginId === "string" ? `${pluginId}:hooks/` : null;
     const relativePluginPath = pluginPrefix && path.startsWith(pluginPrefix) ? path.slice(pluginPrefix.length) : null;
     if (!relativePluginPath || relativePluginPath.split(/[\\/]/).some(part => !part || part === "." || part === "..")
-      || !validCanonicalHookPath(sourcePath)) return null;
+      || !validCanonicalHookPath(sourcePath)
+      || !sourcePath.replaceAll("\\", "/").endsWith(`/hooks/${relativePluginPath.replaceAll("\\", "/")}`)) return null;
     path = sourcePath;
   }
   return { path, position: `${match[2]}:${match[3]}:${match[4]}` };
@@ -1609,11 +1610,23 @@ function shellPathCandidates(command) {
 function hasDynamicInterpreterEval(command) {
   for (const tokens of [parsePosixShellTokens(command), parseWindowsShellTokens(command)]) {
     if (!tokens) continue;
-    for (let index = 0; index < tokens.length - 1; index++) {
+    for (let index = 0; index < tokens.length; index++) {
       const executable = tokens[index].replaceAll("\\", "/").split("/").pop().toLowerCase();
+      if (["sh", "bash", "dash", "ksh", "zsh", "sh.exe", "bash.exe", "dash.exe", "ksh.exe", "zsh.exe"].includes(executable)) {
+        const flag = tokens[index + 1]?.toLowerCase();
+        if (/^-[^-]*c/.test(flag || "")) return true;
+      }
+      if (["cmd", "cmd.exe"].includes(executable) && /^\/(?:c|k)$/i.test(tokens[index + 1] || "")) return true;
+      if (["powershell", "powershell.exe", "pwsh", "pwsh.exe"].includes(executable)
+        && /^-(?:c|command|e|enc|encodedcommand)$/i.test(tokens[index + 1] || "")) return true;
       if (!["node", "node.exe", "nodejs", "nodejs.exe", "bun", "bun.exe", "deno", "deno.exe"].includes(executable)) continue;
-      const flag = tokens[index + 1].toLowerCase();
-      if (flag.startsWith("-e") || flag.startsWith("-p") || flag === "--eval" || flag.startsWith("--eval=") || flag === "--print" || flag.startsWith("--print=")) return true;
+      for (const rawFlag of tokens.slice(index + 1)) {
+        const flag = rawFlag.toLowerCase();
+        if (flag === "--") break;
+        if (/^-[^-]*[ep]/.test(flag) || flag === "--eval" || flag.startsWith("--eval=")
+          || flag === "--print" || flag.startsWith("--print=")
+          || ((executable === "deno" || executable === "deno.exe") && flag === "eval")) return true;
+      }
     }
   }
   return false;
@@ -2651,7 +2664,7 @@ async function prepareCodexUninstall({ scope, cwd, home, execFile, runtimeIdenti
     // muster's own groups are stripped out below, so a co-located non-muster
     // hook definition sharing this same hooksJsonPath (a different group or
     // hook index) is never conflated with muster's own and survives.
-    departingScopeOwnedHookStateKeys = ownedHookStateKeys(rawHookConfig, hookManifest.hookGroups);
+    departingScopeOwnedHookStateKeys = hookConfigExists ? ownedHookStateKeys(rawHookConfig, hookManifest.hookGroups) : null;
     hookConfig = removeOwnedHookGroups(rawHookConfig, hookManifest.hookGroups, hookConfigPath);
     const otherKeys = Object.keys(hookConfig).filter(key => key !== "hooks");
     removeHookConfig = hookManifest.hookConfigCreated && otherKeys.length === 0 && Object.keys(hookConfig.hooks || {}).length === 0;

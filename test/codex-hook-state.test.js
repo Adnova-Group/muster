@@ -468,6 +468,23 @@ test("Codex uninstall --scope project prunes only its own exact [hooks.state] ke
   assert.ok(result.prunedHookState.some(item => item.event === "session_start" && item.groupIndex === 0), "the pruned entry is reported as muster's exact group index 0");
 });
 
+test("Codex uninstall prunes the departing scope's whole hooks.state path when its managed hooks.json is already missing", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hookstate-missing-config-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), codexHomeDir = join(home, ".codex");
+  await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absentCodex });
+  const configTomlPath = join(codexHomeDir, "config.toml");
+  const hooksJsonPath = join(cwd, ".codex", "hooks.json");
+  const before = await readFile(configTomlPath, "utf8");
+  await writeFile(configTomlPath, `${before}\n${hookStateBlock(hooksJsonPath)}\n`);
+  await rm(hooksJsonPath);
+
+  const result = await runCodexUninstall({ scope: "project", cwd, home, execFile: absentCodex });
+  const after = await readFile(configTomlPath, "utf8").catch(error => error.code === "ENOENT" ? "" : Promise.reject(error));
+  assert.doesNotMatch(after, new RegExp(escapeRegex(hooksJsonPath)), "all orphaned trust records for the absent managed hooks.json are removed");
+  assert.equal(result.prunedHookState.length, HOOK_EVENTS.length);
+});
+
 // -- Doctor integration (fix D) ------------------------------------------------
 
 test("Codex doctor reports over-registration when a stale scope's hook trust entries are still present (regression 6)", async t => {

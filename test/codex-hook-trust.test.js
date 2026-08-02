@@ -238,8 +238,10 @@ test("effectiveHookTrust accepts Codex 0.146 full hook records without relaxing 
     "cd /tmp/alias-dir && node runtime-alias.mjs",
     `node -e "import('/tmp/muster-'+'hook.mjs')"`,
     `/usr/bin/node -e "import('/tmp/muster-'+'hook.mjs')"`,
+    `'/usr/bin/node' --no-warnings --eval="import('/tmp/muster-'+'hook.mjs')"`,
     `'/usr/bin/node' -pe "import('/tmp/muster-'+'hook.mjs')"`,
-    `'C:\\Program Files\\nodejs\\node.exe' --eval="import('C:/tmp/muster-'+'hook.mjs')"`
+    `'C:\\Program Files\\nodejs\\node.exe' --eval="import('C:/tmp/muster-'+'hook.mjs')"`,
+    `sh -c "node '/tmp/muster-''hook.mjs'"`
   ]) {
     const expandedPathDuplicate = currentCodexInventoryHook({
       key: "/repo/.codex/config.toml:stop:0:0",
@@ -258,6 +260,10 @@ test("effectiveHookTrust accepts Codex 0.146 full hook records without relaxing 
     { ...hook, displayOrder: -1 },
     { ...hook, timeoutSec: "600" },
     { ...hook, pluginId: 42 },
+    currentCodexInventoryHook({
+      key: "demo@muster:hooks/not-the-source.json:stop:0:0", currentHash,
+      overrides: { sourcePath: "/repo/.codex/plugins/cache/demo/hooks/hooks.json", pluginId: "demo@muster", command: "node /repo/plugin-hook.mjs", source: "plugin" }
+    }),
     { ...hook, extra: true }
   ]) {
     assert.equal(effectiveHookTrust({ ...inventory, data: [{ ...inventory.data[0], hooks: [malformed] }] }, cwd, hooksJsonPath, results, { knownKeys: ["stop:0:0"] }).ok, false);
@@ -349,7 +355,7 @@ test("install and doctor reject another inventory source physically aliasing the
   const optionInventory = inventoryFor(cwd, hooksJsonPath, first.hookTrust.results);
   optionInventory.data[0].hooks.push(currentCodexInventoryHook({
     key: `${configPath}:stop:0:0`, currentHash: `sha256:${"c".repeat(64)}`,
-    overrides: { sourcePath: configPath, command: `node --import=${aliasPath} -e ''`, source: "project" }
+    overrides: { sourcePath: configPath, command: `node --import=${aliasPath} /repo/plugin-hook.mjs`, source: "project" }
   }));
   assert.equal(await hasManagedRuntimeInventoryAlias(optionInventory, {
     cwd, hooksJsonPath, activationSnapshot: await hookActivationSnapshot({ home, cwd })
@@ -358,7 +364,7 @@ test("install and doctor reject another inventory source physically aliasing the
   const fileUrlInventory = inventoryFor(cwd, hooksJsonPath, first.hookTrust.results);
   fileUrlInventory.data[0].hooks.push(currentCodexInventoryHook({
     key: `${configPath}:stop:0:0`, currentHash: `sha256:${"d".repeat(64)}`,
-    overrides: { sourcePath: configPath, command: `node --import=${pathToFileURL(aliasPath).href} -e ''`, source: "project" }
+    overrides: { sourcePath: configPath, command: `node --import=${pathToFileURL(aliasPath).href} /repo/plugin-hook.mjs`, source: "project" }
   }));
   assert.equal(await hasManagedRuntimeInventoryAlias(fileUrlInventory, {
     cwd, hooksJsonPath, activationSnapshot: await hookActivationSnapshot({ home, cwd })
@@ -380,7 +386,7 @@ test("install and doctor reject another inventory source physically aliasing the
     const value = inventoryFor(cwd, hooksJsonPath, first.hookTrust.results);
     value.data[0].hooks.push(currentCodexInventoryHook({
       key: `${configPath}:stop:0:0`, currentHash: `sha256:${"e".repeat(64)}`,
-      overrides: { sourcePath: configPath, command: `node --import=${aliasPath} -e ''`, source: "project" }
+      overrides: { sourcePath: configPath, command: `node --import=${aliasPath} /repo/plugin-hook.mjs`, source: "project" }
     }));
     return value;
   };

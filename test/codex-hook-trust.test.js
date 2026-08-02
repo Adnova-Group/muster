@@ -274,7 +274,7 @@ test("install and doctor reject another inventory source physically aliasing the
     const value = inventoryFor(cwd, hooksJsonPath, first.hookTrust.results);
     value.data[0].hooks.push(currentCodexInventoryHook({
       key: `${configPath}:stop:0:0`, currentHash: `sha256:${"b".repeat(64)}`,
-      overrides: { sourcePath: configPath, command: `node '${aliasPath}'`, source: "project" }
+      overrides: { sourcePath: configPath, command: `HOOK=${aliasPath} sh -c 'node "$HOOK"'`, source: "project" }
     }));
     return value;
   };

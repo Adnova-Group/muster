@@ -1485,13 +1485,19 @@ export function isMusterHookCommand(command) {
 function shellPathCandidates(command) {
   if (typeof command !== "string") return [];
   const candidates = new Set();
+  const addCandidate = value => {
+    if (!value) return;
+    candidates.add(value);
+    const assignment = value.match(/^[A-Za-z_][A-Za-z0-9_]*=(.+)$/s);
+    if (assignment?.[1]) candidates.add(assignment[1].replace(/^["']+|["']+$/g, ""));
+  };
   for (const tokens of [parsePosixShellTokens(command), parseWindowsShellTokens(command)]) {
-    if (tokens) for (const token of tokens) candidates.add(token);
+    if (tokens) for (const token of tokens) addCandidate(token);
   }
-  for (const match of command.matchAll(/'([^']+)'|"([^"]+)"/g)) candidates.add(match[1] ?? match[2]);
+  for (const match of command.matchAll(/'([^']+)'|"([^"]+)"/g)) addCandidate(match[1] ?? match[2]);
   for (const token of command.split(/[\s;&|<>()]+/)) {
     const value = token.replace(/^["']+|["']+$/g, "");
-    if (value) candidates.add(value);
+    addCandidate(value);
   }
   return [...candidates].filter(value => value && !value.startsWith("-"));
 }

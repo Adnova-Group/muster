@@ -252,8 +252,10 @@ test("generated Codex review gates use compact, risk-based review dispatch", asy
   assert.match(text, /Select one code reviewer for ordinary waves/);
   assert.match(text, /Add the security reviewer only/);
   assert.match(text, /3 no-progress fix-and-re-review iterations/);
+  assert.match(text, /12 total iterations/);
   assert.match(text, /strictly increasing score earns another pass/);
-  assert.match(text, /identical or regressing findings exhaust the budget/);
+  assert.match(text, /absent, or non-finite scores exhaust the budget/);
+  assert.match(text, /progress never bypasses the absolute ceiling/);
 });
 
 test("generated Codex audits cover six dimensions with three nonredundant scans", async () => {

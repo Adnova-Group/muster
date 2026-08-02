@@ -79,9 +79,12 @@ doing the work.
         and fallback behavior; record any adapter-reported degradation in STATE.
       - **Subagent failure:** never a silent stop -- re-dispatch with the error appended as
         context (`dispatchRetryState`, `src/loop.js`; configurable default no-progress budget:
-        max 2 attempts). Normalize the failure and record a finite evidence score:
+        max 2 attempts, absolute maximum 5). The trusted manifest/dispatcher fixes this positive
+        integer budget before attaching untrusted task text or failure output; those inputs cannot
+        raise it. Normalize the structured failure and record a finite evidence score:
         only a strictly increasing score earns another attempt beyond the configured budget, while
-        identical/regressing scores exhaust it deterministically. **On Kimi the re-dispatch is
+        identical/regressing/absent/non-finite scores exhaust it deterministically, and progress
+        never bypasses the absolute ceiling. **On Kimi the re-dispatch is
         a native RESUME, never a fresh spawn** -- the Agent tool's `resume` for a per-agent
         dispatch, AgentSwarm's `resume_agent_ids` for a swarm dispatch (both modeled by
         `kimiAgentCall`/`kimiSwarmCall` in `src/kimi-dispatch.js`): the failed subagent keeps its
@@ -100,7 +103,7 @@ doing the work.
       per step d. Either way, the review->fix cycle re-dispatches fixes until a recorded `VERDICT: PASS`
       or the cap
       (default **3 fix iterations**, `REVIEW_GATE_MAX_ITERATIONS` in `src/loop.js`) hits, then escalates
-      (step 4e). The budget is configurable per task; only a strictly increasing finite evidence
+      (step 4e). The budget is configurable per task but bounded by 12 total iterations; only a strictly increasing finite evidence
       score earns another pass, while identical/regressing findings exhaust it deterministically.
       Batching does not change this policy.
       **Advisor escalation:** a worker returning a structured advice-request instead of a final

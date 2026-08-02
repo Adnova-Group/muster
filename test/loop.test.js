@@ -1,6 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { loopState, reviewGateState, REVIEW_GATE_MAX_ITERATIONS, dispatchRetryState, DISPATCH_MAX_ATTEMPTS } from "../src/loop.js";
+import {
+  loopState,
+  TASK_MAX_ITERATIONS,
+  reviewGateState,
+  REVIEW_GATE_MAX_ITERATIONS,
+  REVIEW_GATE_MAX_TOTAL_ITERATIONS,
+  dispatchRetryState,
+  DISPATCH_MAX_ATTEMPTS,
+  DISPATCH_MAX_TOTAL_ATTEMPTS,
+} from "../src/loop.js";
 
 test("continues while not done and under the cap", () => {
   assert.deepEqual(loopState({ iteration: 0, maxIterations: 25, done: false }), { continue: true, reason: "iterate" });
@@ -103,4 +112,44 @@ test("progress must be strictly monotonic; flat, regressing, and non-finite scor
 test("loopState lets a cohesive 26-step worker complete under an explicit task budget", () => {
   assert.deepEqual(loopState({ iteration: 25, maxIterations: 26 }), { continue: true, reason: "iterate" });
   assert.deepEqual(loopState({ iteration: 26, maxIterations: 26, done: true }), { continue: false, reason: "done" });
+});
+
+test("invalid configured budgets fail closed before progress can extend them", () => {
+  for (const maxIterations of [NaN, Infinity, 0, -1, 1.5, "3", TASK_MAX_ITERATIONS + 1]) {
+    assert.deepEqual(loopState({ iteration: 0, maxIterations }), {
+      continue: false,
+      reason: "invalid-max-iterations",
+    });
+  }
+
+  for (const maxIterations of [NaN, Infinity, 0, -1, 1.5, "3", REVIEW_GATE_MAX_TOTAL_ITERATIONS + 1]) {
+    assert.deepEqual(reviewGateState({
+      iteration: Number.MAX_SAFE_INTEGER,
+      maxIterations,
+      progress: 2,
+      previousProgress: 1,
+    }), { continue: false, reason: "invalid-max-iterations" });
+  }
+
+  for (const maxAttempts of [NaN, Infinity, 0, -1, 1.5, "3", DISPATCH_MAX_TOTAL_ATTEMPTS + 1]) {
+    assert.deepEqual(dispatchRetryState({
+      attempt: Number.MAX_SAFE_INTEGER,
+      maxAttempts,
+      progress: 2,
+      previousProgress: 1,
+    }), { retry: false, reason: "invalid-max-attempts" });
+  }
+});
+
+test("progress cannot bypass the absolute review and dispatch ceilings", () => {
+  assert.deepEqual(reviewGateState({
+    iteration: REVIEW_GATE_MAX_TOTAL_ITERATIONS,
+    progress: 2,
+    previousProgress: 1,
+  }), { continue: false, reason: "max-total-iterations" });
+  assert.deepEqual(dispatchRetryState({
+    attempt: DISPATCH_MAX_TOTAL_ATTEMPTS,
+    progress: 2,
+    previousProgress: 1,
+  }), { retry: false, reason: "max-total-attempts" });
 });

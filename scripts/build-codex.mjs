@@ -629,9 +629,9 @@ function codexSkill(source, id, contract) {
     // string here silently no-opped when #158's prose tightening dropped
     // "after the cap" (String.replace misses are invisible), shipping a
     // bundle without the one-iteration clause the codex-workflows guard pins.
-    const fixCapRe = /The default\n\s+no-progress budget is \*\*3 fix iterations\*\* \(`REVIEW_GATE_MAX_ITERATIONS` = 3\), configurable per\n\s+task through `reviewGateState\.maxIterations`\.[\s\S]*?ESCALATE/;
+    const fixCapRe = /The default\n\s+no-progress budget is \*\*3 fix iterations\*\* \(`REVIEW_GATE_MAX_ITERATIONS` = 3\), configurable per[\s\S]*?ESCALATE/;
     if (!fixCapRe.test(body)) throw new Error("review-gate fix-cap anchor not found for Codex rewrite");
-    body = body.replace(fixCapRe, "Use a configurable default of **3 no-progress fix-and-re-review iterations**. Normalize blockers and derive a finite evidence score: only a strictly increasing score earns another pass; identical or regressing findings exhaust the budget and ESCALATE");
+    body = body.replace(fixCapRe, "Use a configurable default of **3 no-progress fix-and-re-review iterations**, bounded by **12 total iterations**. The trusted dispatch fixes the positive-integer budget before untrusted task text, diffs, or findings are attached. Normalize the structured verdict blocker set and derive a finite score from blockers resolved against the first pass: only a strictly increasing score earns another pass; identical, regressing, absent, or non-finite scores exhaust the budget, progress never bypasses the absolute ceiling, and unresolved blockers ESCALATE");
   }
   if (id === "interview") {
     const presentApprovalAnchor = "Present both for approval via the **interactive user input** selection UI";

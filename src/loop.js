@@ -2,8 +2,12 @@
 // criteria are GENUINELY met (`done`), or the max-iterations cap is hit (then stop + escalate — never
 // loop forever, never declare done falsely). The "self-reference" is that each iteration sees prior
 // work in files + the run STATE.
+export const TASK_MAX_ITERATIONS = 100;
 export function loopState({ iteration, maxIterations = 25, done = false }) {
   if (done) return { continue: false, reason: "done" };
+  if (!Number.isSafeInteger(maxIterations) || maxIterations < 1 || maxIterations > TASK_MAX_ITERATIONS) {
+    return { continue: false, reason: "invalid-max-iterations" };
+  }
   if (iteration >= maxIterations) return { continue: false, reason: "max-iterations" };
   return { continue: true, reason: "iterate" };
 }
@@ -21,6 +25,7 @@ function madeProgress({ progress, previousProgress }) {
 // budget for a task; a strictly improving progress score can exceed it because the score proves the
 // fix loop is converging rather than alternating or repeating failures.
 export const REVIEW_GATE_MAX_ITERATIONS = 3;
+export const REVIEW_GATE_MAX_TOTAL_ITERATIONS = 12;
 export function reviewGateState({
   iteration,
   done = false,
@@ -29,6 +34,12 @@ export function reviewGateState({
   previousProgress,
 }) {
   if (done) return { continue: false, reason: "done" };
+  if (!Number.isSafeInteger(maxIterations) || maxIterations < 1 || maxIterations > REVIEW_GATE_MAX_TOTAL_ITERATIONS) {
+    return { continue: false, reason: "invalid-max-iterations" };
+  }
+  if (iteration >= REVIEW_GATE_MAX_TOTAL_ITERATIONS) {
+    return { continue: false, reason: "max-total-iterations" };
+  }
   if (madeProgress({ progress, previousProgress })) {
     return { continue: true, reason: "progress" };
   }
@@ -38,6 +49,7 @@ export function reviewGateState({
 // Dispatch defaults to 2 attempts. Callers may configure a larger transient-failure budget; a
 // strictly improving progress score can also extend it without hiding a repeated fault.
 export const DISPATCH_MAX_ATTEMPTS = 2;
+export const DISPATCH_MAX_TOTAL_ATTEMPTS = 5;
 export function dispatchRetryState({
   attempt,
   succeeded = false,
@@ -46,6 +58,12 @@ export function dispatchRetryState({
   previousProgress,
 }) {
   if (succeeded) return { retry: false, reason: "succeeded" };
+  if (!Number.isSafeInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > DISPATCH_MAX_TOTAL_ATTEMPTS) {
+    return { retry: false, reason: "invalid-max-attempts" };
+  }
+  if (attempt >= DISPATCH_MAX_TOTAL_ATTEMPTS) {
+    return { retry: false, reason: "max-total-attempts" };
+  }
   if (madeProgress({ progress, previousProgress })) {
     return { retry: true, reason: "progress" };
   }

@@ -146,7 +146,7 @@ for (const marker of ["implementer leaf agent", "minimal dispatch packet", "Neve
 const implementerPrompt = await readFile(join(plugin, "internal-skills", "sp-subagents", "implementer-prompt.md"), "utf8");
 if (!implementerPrompt.includes("the parent runs the broad suite once at final verification") || implementerPrompt.includes("full suite once before committing")) fail("Codex implementer prompt repeats broad suites inside workers");
 const reviewGate = await readFile(join(plugin, "internal-skills", "review-gate", "SKILL.md"), "utf8");
-for (const marker of ["capabilities --codex --role <role>", "never attach the full skills inventory", "Select one code reviewer for ordinary waves", "Add the security reviewer only", "3 no-progress fix-and-re-review iterations", "strictly increasing score earns another pass", "identical or regressing findings exhaust the budget"]) {
+for (const marker of ["capabilities --codex --role <role>", "never attach the full skills inventory", "Select one code reviewer for ordinary waves", "Add the security reviewer only", "3 no-progress fix-and-re-review iterations", "12 total iterations", "strictly increasing score earns another pass", "absent, or non-finite scores exhaust the budget", "progress never bypasses the absolute ceiling"]) {
   if (!reviewGate.includes(marker)) fail(`Codex review gate lacks quota policy marker ${marker}`);
 }
 // structured-output-binding item: the single-sourced verdict schema must ship with the

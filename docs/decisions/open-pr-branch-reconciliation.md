@@ -1,6 +1,6 @@
 # Open PR branch reconciliation
 
-This record reconciles PRs 145–152, 166–176, and 185 as observed on 2026-08-01 against base commit `248f556c790ff1b9765c053c89a7d7e1669a4419`. The machine-readable authority is [open-pr-branch-reconciliation.json](open-pr-branch-reconciliation.json).
+This record reconciles PRs 145–152, 166–176, and 185 as observed at `2026-08-02T03:40:35.000Z` against base commit `248f556c790ff1b9765c053c89a7d7e1669a4419`. The machine-readable authority is [open-pr-branch-reconciliation.json](open-pr-branch-reconciliation.json).
 
 Every PR was still open when inspected. Consequently, every entry is `awaiting-disposition`: an implementation or review receipt did not make the backlog item complete while its promised external disposition remained undone. No GitHub state was changed by this reconciliation.
 
@@ -8,7 +8,7 @@ Every PR was still open when inspected. Consequently, every entry is `awaiting-d
 |---:|---|---|
 | 145 | active backlog owner | `@rnbennett` — rebase and isolate the missing MCP-specific runtime pin |
 | 146 | close with rationale | Accepted research rejects `--strict-config` as an unsafe doctor primitive |
-| 147 | merge | Green Node 20/22 checks and exact-head review at `dc1aec51a86cfeb15acd40aff328de09319a7358` |
+| 147 | active backlog owner | `@rnbennett` — obtain durable exact-head code/security review receipts despite green CI |
 | 148 | active backlog owner | `@rnbennett` — reconcile the process wave with the later isolation lane |
 | 149 | close with rationale | Canonical thread ceiling landed and evolved on main |
 | 150 | close with rationale | Current event-driven watcher supersedes the stale branch |

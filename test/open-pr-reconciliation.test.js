@@ -23,7 +23,8 @@ test("open PR reconciliation owns every named PR and leaves none falsely complet
   assert.equal(ledger.schemaVersion, 2);
   assert.equal(ledger.repository, "Adnova-Group/muster");
   assert.equal(ledger.baseCommit, "248f556c790ff1b9765c053c89a7d7e1669a4419");
-  assert.match(ledger.observedAt, /^\d{4}-\d{2}-\d{2}$/);
+  assert.match(ledger.observedAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+  assert.equal(new Date(ledger.observedAt).toISOString(), ledger.observedAt);
   assert.equal(ledger.externalMutationPerformed, false);
   assert.equal(ledger.externalActionCoordinator, "dispatcher");
   assert.equal(ledger.externalMutationActor, "human");

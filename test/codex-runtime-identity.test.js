@@ -123,7 +123,7 @@ test("missing trusted identity performs no Codex PATH execution", async () => {
   assert.deepEqual(calls, []);
 });
 
-test("Codex-absent install and uninstall dry-runs preserve local workflow without PATH probing", async t => {
+test("Codex-absent install and uninstall preserve local workflow without PATH probing", async t => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-absent-local-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));
   const env = { ...process.env, HOME: join(tmp, "home"), CODEX_HOME: join(tmp, "home", ".codex"), PATH: "" };
@@ -132,6 +132,12 @@ test("Codex-absent install and uninstall dry-runs preserve local workflow withou
     const { stdout } = await execFile(process.execPath, [join(repoRoot, "src", "cli.js"), verb, "codex", "--dry-run"], { cwd: join(tmp), env });
     assert.equal(JSON.parse(stdout).ok, true, verb);
   }
+  const installed = await execFile(process.execPath,
+    [join(repoRoot, "src", "cli.js"), "install", "codex", "--scope", "project"], { cwd: tmp, env });
+  const receipt = JSON.parse(installed.stdout);
+  assert.equal(receipt.ok, true);
+  assert.equal(receipt.plugin.registered, false);
+  assert.match(await readFile(join(tmp, ".codex", "config.toml"), "utf8"), /muster managed agent declarations/);
 });
 
 test("generated MCP host overlay pins canonical Node and doctor verifies Node, Codex entrypoint, and Codex version", async t => {

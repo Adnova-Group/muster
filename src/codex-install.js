@@ -1761,7 +1761,7 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
         // but before plugin registration makes the install externally visible.
         // Production always takes the bounded native parser path; tests with an
         // injected command runner opt into this boundary explicitly.
-        const configParser = strictConfigRunner || (!execFile ? runCodexStrictConfigCheck : null);
+        const configParser = strictConfigRunner || (!execFile && identity ? runCodexStrictConfigCheck : null);
         {
           const transactionTargets = [...new Set([threadLimitConfigPath, declarationConfigPath])];
           const candidateSnapshots = new Map();

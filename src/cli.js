@@ -643,7 +643,10 @@ async function handleCoreCommandPart1(cmd, rest) {
     const { catalog: effectiveCatalog, installed } = await loadEffectiveCatalog(rest);
     const capabilities = resolveCapabilities(effectiveCatalog, installed);
     const { skills } = capabilities;
-    const manifestAdvisories = manifestWarnings(obj, skills);
+    const manifestAdvisories = manifestWarnings(obj, skills, codex ? {
+      exactSkillIds: true,
+      inventoryComplete: installed.skillInventory?.complete === true,
+    } : {});
     // An all-inline crew is the expected safe Work fallback, not evidence that
     // capability resolution was skipped. Keep every other manifest advisory.
     const warnings = work

@@ -38,8 +38,14 @@ export function adaptCatalogForCodex(catalog, installed) {
       continue;
     }
 
-    const nativeId = nativeSkillId(entry.id);
-    if (nativeId && liveSkills.has(nativeId)) {
+    const nativeName = nativeSkillId(entry.id);
+    const trustedNamespacedId = nativeName && entry.id.startsWith("sp-") ? `superpowers:${nativeName}` : null;
+    // Exact unnamespaced ids remain valid. Namespaced aliases require known
+    // upstream provenance; a unique suffix alone is not proof of identity.
+    const nativeId = liveSkills.has(nativeName)
+      ? nativeName
+      : trustedNamespacedId && liveSkills.has(trustedNamespacedId) ? trustedNamespacedId : null;
+    if (nativeId) {
       upstream.push({
         id: nativeId,
         kind: "external",

@@ -741,6 +741,7 @@ export async function runCodexDoctor({
   execFile,
   strictConfigRunner,
   runtimeIdentity,
+  runtimeInventory,
   hookInventory,
   mcpRunner = runMcpHandshake,
   env = process.env,
@@ -1381,10 +1382,14 @@ export async function runCodexDoctor({
   if (available) {
     const inventory = await readCodexInventory({
       cwd, codexHome, execFile, runtimeIdentity: identity, env, allowInjected,
-      includePluginSources: true
+      includePluginSources: true,
+      ...(runtimeInventory ? { runtimeInventory } : {})
     });
-    const installed = inventory.plugins.includes("muster");
-    checks.push({ name: "codex-plugin-installed", ok: installed, detail: installed ? "muster plugin is enabled in live Codex state" : "muster plugin is not installed; run muster install codex" });
+    const complete = inventory.skillInventory?.complete === true;
+    const installed = complete && inventory.plugins.includes("muster");
+    checks.push({ name: "codex-plugin-installed", ok: installed, detail: !complete
+      ? "could not verify whether the muster plugin is installed because Codex runtime discovery was incomplete"
+      : installed ? "muster plugin is enabled in live Codex state" : "muster plugin is not installed; run muster install codex" });
     if (installed && !selectionFailed) {
       const activePlugin = inventory.pluginSources.find(item => item.name === "muster");
       try {
@@ -1403,7 +1408,9 @@ export async function runCodexDoctor({
         checks.push({ name: "codex-mode-protocol", ok: false, detail: `could not compare the active Muster plugin mode protocol with the selected package contract: ${error.message}; rerun \`muster install codex\` and start a new Codex session` });
       }
     }
-    checks.push({ name: "codex-inventory", ok: true, detail: `${inventory.plugins.length} plugins, ${inventory.skills.length} skills, ${inventory.mcpServers.length} MCP servers, ${inventory.agents.length} agents from live Codex state` });
+    checks.push({ name: "codex-inventory", ok: complete, detail: complete
+      ? `${inventory.plugins.length} plugins, ${inventory.skills.length} skills, ${inventory.mcpServers.length} MCP servers, ${inventory.agents.length} agents from live Codex state`
+      : `Codex runtime inventory incomplete: ${(inventory.skillInventory?.errors || []).join("; ") || "unknown discovery error"}` });
   }
   return { ok: checks.every(check => check.ok), target: "codex", checks };
 }

@@ -807,31 +807,27 @@ test("Codex doctor live-inventory: ABSENT -- empty live state reports the plugin
   assert.match(inventory?.detail || "", /0 plugins, 0 skills, 0 MCP servers, 0 agents from live Codex state/);
 });
 
-test("Codex doctor live-inventory: MALFORMED -- truncated/non-JSON `codex` output fails soft (plugin absent, inventory zeroed, doctor run completes)", async () => {
-  // The whole doctor run must resolve: a malformed live payload is advisory and
-  // must never reject runCodexDoctor. jsonCommand swallows the JSON.parse throw
-  // to null, so the branch degrades to the same zeroed/absent report as ABSENT.
+test("Codex doctor live-inventory: MALFORMED -- truncated/non-JSON output is incomplete, never authoritative absence", async () => {
   const { report, installed, inventory } = await inventoryDoctor(liveCodexExec({
     plugins: '{"installed":[{"name":"muster","installed":true,', // truncated JSON
     mcp: "not json at all"
   }));
   assert.equal(installed?.ok, false, installed?.detail);
-  assert.match(installed?.detail || "", /not installed/);
-  assert.equal(inventory?.ok, true, inventory?.detail);
-  assert.match(inventory?.detail || "", /0 plugins, 0 skills, 0 MCP servers, 0 agents from live Codex state/);
+  assert.match(installed?.detail || "", /could not verify/i);
+  assert.equal(inventory?.ok, false, inventory?.detail);
+  assert.match(inventory?.detail || "", /incomplete/i);
   // Still a real, complete doctor run: the non-inventory checks are present.
   assert.ok(report.checks.some(check => check.name === "codex-mcp-handshake"));
   assert.ok(report.checks.every(check => typeof check.ok === "boolean"));
 });
 
-test("Codex doctor live-inventory: FAILING -- a non-zero/throwing `codex` command is surfaced as absent and the doctor run continues", async () => {
-  // A failing live command must not abort the advisory branch or the overall run.
+test("Codex doctor live-inventory: FAILING -- a command failure is incomplete and the doctor run continues", async () => {
   const boom = () => Promise.reject(Object.assign(new Error("codex plugin list exited 1"), { code: 1, stderr: "boom" }));
   const { report, installed, inventory } = await inventoryDoctor(liveCodexExec({ plugins: boom, mcp: boom }));
   assert.equal(installed?.ok, false, installed?.detail);
-  assert.match(installed?.detail || "", /not installed/);
-  assert.equal(inventory?.ok, true, inventory?.detail);
-  assert.match(inventory?.detail || "", /0 plugins, 0 skills, 0 MCP servers, 0 agents from live Codex state/);
+  assert.match(installed?.detail || "", /could not verify/i);
+  assert.equal(inventory?.ok, false, inventory?.detail);
+  assert.match(inventory?.detail || "", /incomplete/i);
   // The run still produced the full check set -- the command failure was advisory only.
   assert.ok(report.checks.length > 3 && report.checks.some(check => check.name === "codex-mcp-handshake"));
 });

@@ -1,4 +1,4 @@
-import { execFile as execFileCb } from "node:child_process";
+import { execFile as execFileCb, spawn as spawnCb } from "node:child_process";
 import { readdir, realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
@@ -37,6 +37,157 @@ async function jsonCommand(execFile, args, runtimeIdentity, allowInjected) {
       : allowInjected ? await execFile(INJECTED_CODEX_RUNNER, args, { timeout: 10_000, maxBuffer: 4 * 1024 * 1024 }) : null;
     return result ? JSON.parse(result.stdout) : null;
   } catch { return null; }
+}
+
+function appServerClient({ cwd, spawn = spawnCb, runtimeIdentity }) {
+  const child = spawn(runtimeIdentity.node, [runtimeIdentity.codex, "app-server", "--stdio"], {
+    cwd, stdio: ["pipe", "pipe", "pipe"],
+  });
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  let stdout = "", stderr = "", nextId = 1, closed = false;
+  const pending = new Map();
+  const rejectAll = (error) => {
+    for (const { reject, timer } of pending.values()) {
+      clearTimeout(timer);
+      reject(error);
+    }
+    pending.clear();
+  };
+  child.stdout.on("data", chunk => {
+    stdout += chunk;
+    if (stdout.length > 16 * 1024 * 1024) {
+      child.kill();
+      rejectAll(new Error("Codex app-server response exceeded 16 MiB"));
+      return;
+    }
+    for (;;) {
+      const newline = stdout.indexOf("\n");
+      if (newline < 0) break;
+      const line = stdout.slice(0, newline).trim();
+      stdout = stdout.slice(newline + 1);
+      if (!line) continue;
+      let message;
+      try { message = JSON.parse(line); } catch { continue; }
+      const waiter = pending.get(message.id);
+      if (!waiter) continue;
+      pending.delete(message.id);
+      clearTimeout(waiter.timer);
+      if (message.error) waiter.reject(new Error(message.error.message || JSON.stringify(message.error)));
+      else waiter.resolve(message.result);
+    }
+  });
+  child.stderr.on("data", chunk => { if (stderr.length < 16_384) stderr += chunk; });
+  child.stdin.on("error", rejectAll);
+  child.on("error", rejectAll);
+  child.on("exit", code => {
+    closed = true;
+    if (pending.size) rejectAll(new Error(`Codex app-server exited ${code}${stderr ? `: ${stderr.trim()}` : ""}`));
+  });
+  return {
+    request(method, params) {
+      if (closed) return Promise.reject(new Error("Codex app-server is not running"));
+      const id = nextId++;
+      return new Promise((resolveRequest, reject) => {
+        const timer = setTimeout(() => {
+          pending.delete(id);
+          reject(new Error(`${method} timed out`));
+        }, 15_000);
+        pending.set(id, { resolve: resolveRequest, reject, timer });
+        child.stdin.write(JSON.stringify({ id, method, params }) + "\n");
+      });
+    },
+    notify(method) { if (!closed) child.stdin.write(JSON.stringify({ method }) + "\n"); },
+    close() { if (!closed) child.kill(); },
+  };
+}
+
+function enabledRuntimePlugins(pluginList) {
+  return (pluginList?.marketplaces || []).flatMap(marketplace =>
+    (marketplace?.plugins || [])
+      .filter(plugin => plugin?.installed === true && plugin?.enabled === true
+        && (plugin.availability === undefined || plugin.availability === "AVAILABLE"))
+      .map(plugin => ({
+        name: plugin.name || plugin.id?.split("@")[0],
+        marketplaceName: marketplace.name,
+        remotePluginId: plugin.remotePluginId,
+        sourcePath: plugin.source?.type === "local" ? plugin.source.path : null,
+        version: plugin.version,
+      })))
+    .filter(plugin => plugin.name);
+}
+
+// Codex App Server owns the effective skill/plugin inventory. Cache walks and
+// legacy CLI projections can include disabled or stale plugin generations.
+export async function readCodexRuntimeInventory({
+  cwd = process.cwd(), spawn = spawnCb, runtimeIdentity, env = process.env,
+} = {}) {
+  const errors = [];
+  let identity = runtimeIdentity;
+  try {
+    identity ||= resolveCodexRuntimeIdentity({ env });
+  } catch (error) {
+    return { plugins: [], skills: [], complete: false, errors: [error.message] };
+  }
+  const client = appServerClient({ cwd, spawn, runtimeIdentity: identity });
+  try {
+    await client.request("initialize", {
+      clientInfo: { name: "muster", version: "0" },
+      capabilities: { experimentalApi: true },
+    });
+    client.notify("initialized");
+    const [skillsResult, pluginResult] = await Promise.all([
+      client.request("skills/list", { cwds: [cwd], forceReload: false }),
+      client.request("plugin/list", { cwds: [cwd], forceRefetch: false }),
+    ]);
+    if (!Array.isArray(pluginResult?.marketplaces) || !Array.isArray(pluginResult?.marketplaceLoadErrors)) {
+      throw new Error("plugin/list returned an invalid response");
+    }
+    if (!Array.isArray(skillsResult?.data)) throw new Error("skills/list returned an invalid response");
+    const plugins = enabledRuntimePlugins(pluginResult);
+    const renderError = error => typeof error === "string" ? error : JSON.stringify(error);
+    for (const error of pluginResult.marketplaceLoadErrors) errors.push(`plugin/list: ${renderError(error)}`);
+    const rows = skillsResult.data.find(row => row?.cwd === cwd);
+    if (!rows || !Array.isArray(rows.skills) || !Array.isArray(rows.errors)) {
+      throw new Error("skills/list omitted the requested working directory");
+    }
+    for (const error of rows.errors) errors.push(`skills/list: ${renderError(error)}`);
+    const skills = rows.skills
+      .filter(skill => skill?.enabled === true && typeof skill.name === "string")
+      .map(skill => ({ id: skill.name, description: skill.description || "" }));
+    const remotes = plugins.filter(plugin => plugin.remotePluginId);
+    const details = await Promise.all(remotes.map(async plugin => {
+      try {
+        const result = await client.request("plugin/read", {
+          pluginName: plugin.remotePluginId,
+          marketplacePath: null,
+          remoteMarketplaceName: plugin.marketplaceName,
+        });
+        return { plugin, result };
+      } catch (error) {
+        errors.push(`plugin/read ${plugin.name}: ${error.message}`);
+        return null;
+      }
+    }));
+    for (const detail of details) {
+      if (!detail) continue;
+      if (!Array.isArray(detail.result?.plugin?.skills)) {
+        errors.push(`plugin/read ${detail.plugin.name}: invalid response`);
+        continue;
+      }
+      for (const skill of detail.result.plugin.skills) {
+        if (skill?.enabled === true && typeof skill.name === "string") {
+          skills.push({ id: `${detail.plugin.name}:${skill.name}`, description: skill.description || "" });
+        }
+      }
+    }
+    return { plugins, skills: [...new Map(skills.map(skill => [skill.id, skill])).values()],
+      complete: errors.length === 0, errors };
+  } catch (error) {
+    return { plugins: [], skills: [], complete: false, errors: [error.message] };
+  } finally {
+    client.close();
+  }
 }
 
 function records(result) {
@@ -219,21 +370,34 @@ function mcpNames(result) {
 
 // Codex's live CLI output is authoritative. Never walk its plugin cache: it
 // can contain stale or disabled copies that Codex is not currently using.
-export async function readCodexInventory({ cwd = process.cwd(), codexHome = process.env.CODEX_HOME || join(homedir(), ".codex"), execFile = execFileDefault, runtimeIdentity, env = process.env, allowInjected = false, includePluginSources = false } = {}) {
+export async function readCodexInventory({
+  cwd = process.cwd(), codexHome = process.env.CODEX_HOME || join(homedir(), ".codex"),
+  execFile = execFileDefault, runtimeIdentity, runtimeInventory, env = process.env,
+  allowInjected = false, includePluginSources = false,
+} = {}) {
   let identity = runtimeIdentity;
   if (!identity && !allowInjected) try { identity = resolveCodexRuntimeIdentity({ env }); } catch { /* unavailable is an empty live inventory, never a PATH probe */ }
-  const [pluginsJson, mcpJson] = await Promise.all([
-    jsonCommand(execFile, ["plugin", "list", "--available", "--json"], identity, allowInjected),
+  const runtimeReader = runtimeInventory || (!allowInjected ? readCodexRuntimeInventory : null);
+  const [runtime, pluginsJson, mcpJson] = await Promise.all([
+    runtimeReader ? runtimeReader({ cwd, runtimeIdentity: identity, env }) : null,
+    !runtimeReader ? jsonCommand(execFile, ["plugin", "list", "--available", "--json"], identity, allowInjected) : null,
     jsonCommand(execFile, ["mcp", "list", "--json"], identity, allowInjected)
   ]);
-  const active = installedPlugins(pluginsJson);
+  const active = runtimeReader
+    ? (runtime?.plugins || []).map(plugin => ({
+        name: plugin.name,
+        pluginId: plugin.name,
+        version: plugin.version,
+        source: plugin.sourcePath ? { path: plugin.sourcePath } : null,
+      }))
+    : installedPlugins(pluginsJson);
   const pluginSkills = [], pluginAgentProfiles = [];
   for (const plugin of active) {
     if (!plugin.source?.path) continue;
     let pluginRoot;
     try { pluginRoot = await realpath(plugin.source.path); }
     catch { continue; }
-    pluginSkills.push(...await skillNames(join(pluginRoot, "skills")));
+    if (!runtimeReader) pluginSkills.push(...await skillNames(join(pluginRoot, "skills")));
     pluginAgentProfiles.push(...await agentProfileRecords(
       join(pluginRoot, "agents"),
       "plugin",
@@ -249,12 +413,13 @@ export async function readCodexInventory({ cwd = process.cwd(), codexHome = proc
   const projectConfigText = projectTrusted ? await configText(join(projectConfigRoot, "config.toml")) : "";
   const projectSections = configSections(projectConfigText);
   const [projectSkills, userSkills, projectAgentProfiles, userAgentProfiles] = await Promise.all([
-    projectTrusted ? skillNames(join(projectConfigRoot, "skills")) : [],
-    skillNames(join(codexHome, "skills")),
+    !runtimeReader && projectTrusted ? skillNames(join(projectConfigRoot, "skills")) : [],
+    !runtimeReader ? skillNames(join(codexHome, "skills")) : [],
     projectTrusted ? registeredAgentProfiles(projectConfigRoot, "project", projectSections) : [],
     registeredAgentProfiles(codexHome, "user", userSections),
   ]);
   const agentProfiles = [...pluginAgentProfiles, ...userAgentProfiles, ...projectAgentProfiles];
+  const runtimeSkills = runtime?.skills || [];
   return {
     plugins: [...new Set(active.map(plugin => plugin.name || plugin.pluginId?.split("@")[0]).filter(Boolean))],
     ...(includePluginSources ? { pluginSources: active.map(plugin => ({
@@ -262,7 +427,13 @@ export async function readCodexInventory({ cwd = process.cwd(), codexHome = proc
       path: plugin.source?.path,
       version: plugin.version
     })) } : {}),
-    skills: [...new Set([...pluginSkills, ...projectSkills, ...userSkills])],
+    skills: runtimeReader
+      ? [...new Set(runtimeSkills.map(skill => skill.id))]
+      : [...new Set([...pluginSkills, ...projectSkills, ...userSkills])],
+    skillDescriptions: Object.fromEntries(runtimeSkills.map(skill => [skill.id, skill.description || ""])),
+    skillInventory: runtimeReader
+      ? { source: "codex-app-server", complete: runtime?.complete === true, errors: runtime?.errors || [] }
+      : { source: "injected-legacy-cli", complete: pluginsJson !== null, errors: pluginsJson === null ? ["plugin inventory unavailable"] : [] },
     mcpServers: [...new Set(mcpNames(mcpJson))],
     agents: [...new Set(agentProfiles.map(profile => profile.name))],
     agentProfiles,

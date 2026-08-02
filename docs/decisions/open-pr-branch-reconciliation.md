@@ -7,7 +7,7 @@ Every PR was still open when inspected. Consequently, every entry is `awaiting-d
 | PR | Proposed disposition | Reason / owner |
 |---:|---|---|
 | 145 | active backlog owner | `@rnbennett` — rebase and isolate the missing MCP-specific runtime pin |
-| 146 | close with rationale | Accepted research rejects `--strict-config` as an unsafe doctor primitive |
+| 146 | supersede with reviewed current-base implementation | Codex 0.146.0 exposes a non-session app-server strict parser; retain PR 146's outcome with bounded zero-turn checks and transactional rollback, but do not merge its conflicting stale head |
 | 147 | active backlog owner | `@rnbennett` — obtain durable exact-head code/security review receipts despite green CI |
 | 148 | active backlog owner | `@rnbennett` — reconcile the process wave with the later isolation lane |
 | 149 | close with rationale | Canonical thread ceiling landed and evolved on main |

@@ -18,6 +18,7 @@ import {
   codexThreadLimitsMeetFloor,
   readCodexThreadLimits
 } from "./codex-thread-limits.js";
+import { runCodexStrictConfigCheck } from "./codex-strict-config.js";
 
 // codex-path-shadow (backlog item run4-polish-pair; security-hardened by
 // run-5 audit High #3 `doctor-path-shadow-no-exec`): a stale globally
@@ -681,7 +682,7 @@ function isHooksSkippedManifest(owner) {
     && Object.keys(owner.hookGroups).length === 0;
 }
 
-export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, execFile, runtimeIdentity, mcpRunner = runMcpHandshake, env = process.env, platform = process.platform, nodeExecPath = process.execPath, readConfigToml = path => readRegularFile(path, "utf8", DOCTOR_CONFIG_READ_MAX_BYTES) } = {}) {
+export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, execFile, strictConfigRunner, runtimeIdentity, mcpRunner = runMcpHandshake, env = process.env, platform = process.platform, nodeExecPath = process.execPath, readConfigToml = path => readRegularFile(path, "utf8", DOCTOR_CONFIG_READ_MAX_BYTES) } = {}) {
   const base = root instanceof URL ? fileURLToPath(root) : (root || process.cwd());
   // The npm CLI runs from the package root; the bundled runtime runs from the
   // plugin root itself. Support both layouts without requiring npm at runtime.
@@ -723,6 +724,14 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   checks.push({ name: "codex-cli", ok: available, detail: available
     ? identity ? `Codex detected through pinned executable ${identity.codex}` : "codex detected through injected test runner"
     : identityError ? identityError.message : "codex not found — profiles can be installed, plugin registration is skipped" });
+  const configParser = strictConfigRunner || (!execFile ? runCodexStrictConfigCheck : null);
+  if (configParser) try {
+    const parsed = await configParser({ cwd, codexHome: codexHome || env.CODEX_HOME || join(homedir(), ".codex"), env });
+    checks.push({ name: "codex-config-strict", ok: parsed?.ok === true && parsed?.modelTurnEvents === 0,
+      detail: "Codex app-server strict parser accepted shared and project config with zero model-turn events" });
+  } catch (error) {
+    checks.push({ name: "codex-config-strict", ok: false, detail: error.message });
+  }
   if (identity) {
     try {
       const { stdout } = await runCodexCommand(execFile, identity, ["--version"], { timeout: 5_000, maxBuffer: 64 * 1024 });

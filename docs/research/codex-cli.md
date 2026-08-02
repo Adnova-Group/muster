@@ -392,12 +392,22 @@ Four of the eleven §10 items landed as code (PRs #141, #142); three of those tu
 `wait_agent` barrier, and neither failed loudly. Two items were assessed and NOT adopted, for
 reasons worth recording so they are not re-litigated:
 
-**`--strict-config` as a doctor primitive — WON'T DO (unsafe).** The flag exists only on `codex` and
-`codex exec`; every non-session subcommand rejects it (verified: `codex doctor`, `codex features
-list`, and `codex debug` all return `error: unexpected argument '--strict-config' found`). Both
-hosts start a billable session, and with a *valid* config the process proceeds past config load into
-a real turn — so a doctor check built on it would burn quota on every healthy run. muster's own
-config validation stays in-process.
+**`--strict-config` as a doctor primitive — REOPENED through app-server in Codex 0.146.0.** The
+earlier assessment remains correct for the top-level interactive and `exec` hosts: a valid parse can
+continue into a billable turn. It is no longer complete. `codex app-server` now owns an explicit
+`--strict-config` flag, and `codex app-server --strict-config --listen stdio://` with stdin closed
+parses configuration and exits without initialization, a thread, or a turn. Live 0.146.0 probes
+returned 0 for valid TOML, returned 1 with `<file>:<line>:<column>` for an unknown field, and
+returned 1 with the project config path plus TOML line/column for malformed TOML. `doctor
+--strict-config` is not a substitute: its ordinary report accepted an unknown root field during the
+same probe.
+
+Muster therefore uses the app-server parser behind a 2.5-second timeout and 64 KiB per-stream caps,
+closes stdin without sending an initialize or thread/start request, drains both output streams, and
+rejects any JSON thread/turn lifecycle event even on exit 0. Install validation runs after the full
+filesystem transaction is staged and before plugin registration; failure restores the snapshotted
+bytes. A second pass supplies project trust only in an ephemeral `CODEX_HOME`, validating an
+otherwise-untrusted project config without persisting trust. Doctor reuses the same boundary.
 
 **`agents.default_subagent_model` / `default_subagent_reasoning_effort` — LOW VALUE for muster.**
 These set a fleet-wide default for spawns that omit a model. But every muster crew member is

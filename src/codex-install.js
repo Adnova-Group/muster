@@ -21,6 +21,7 @@ import {
   ensureCodexThreadLimits,
   restoreCodexThreadLimits
 } from "./codex-thread-limits.js";
+import { runCodexStrictConfigCheck } from "./codex-strict-config.js";
 
 const execFileDefault = promisify(execFileCb);
 export const CODEX_MARKETPLACE = "Adnova-Group/muster";
@@ -1383,7 +1384,7 @@ async function prepareCodexInstall({ scope, dryRun, cwd, home, repoRoot, execFil
   return { files, profileContents, declarations, distributionRoot, dir, manifestPath, declarationConfigPath, declarationOwnership, threadLimitConfigPath, threadLimitManifestPath, packageVersion, hooks, staleFiles, present, planned };
 }
 
-export async function runCodexInstall({ scope = "project", dryRun = false, cwd = process.cwd(), home = homedir(), repoRoot, execFile, runtimeIdentity, scopeLockOptions, nodeExecPath = process.execPath } = {}) {
+export async function runCodexInstall({ scope = "project", dryRun = false, cwd = process.cwd(), home = homedir(), repoRoot, execFile, strictConfigRunner, runtimeIdentity, scopeLockOptions, nodeExecPath = process.execPath } = {}) {
   const executor = execFile || execFileDefault;
   let identity = runtimeIdentity;
   if (!identity && !execFile) try { identity = resolveCodexRuntimeIdentity({ nodeExecPath }); } catch { /* Codex absent: local install still proceeds without PATH probing */ }
@@ -1557,6 +1558,12 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
           declarationSeparatorAdded: declarationReconcile.separatorAdded,
           declarationRegion: declarationReconcile.receipt
         }, null, 2) + "\n");
+        // Parse only after every shared and scoped config mutation is on disk,
+        // but before plugin registration makes the install externally visible.
+        // Production always takes the bounded native parser path; tests with an
+        // injected command runner opt into this boundary explicitly.
+        const configParser = strictConfigRunner || (!execFile ? runCodexStrictConfigCheck : null);
+        if (configParser) await configParser({ cwd, codexHome: codexHome(home) });
         actions = present ? await registerPlugin(executor, distributionRoot, { dryRun: false, runtimeIdentity: identity }) : [];
       } catch (error) {
         await restoreFilesystem(originals, changed);

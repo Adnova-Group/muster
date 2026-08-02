@@ -125,7 +125,7 @@ const USAGE = [
   // manifest + waves: validate, order, and drive a plan
   "manifest validate <file> [--work]|wave <file>|next <manifest.json> [--done a,b]|",
   // performance pass + gate helpers
-  "resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|codex-wave <wave.json> [--repository-root <repo> --base-sha <sha>]|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex|kimi>|plan-surface <runtime>|receipt-verify <sha> --cwd <repo>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|",
+  "resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|codex-wave <wave.json> --repository-root <repo> --base-sha <sha>|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex|kimi>|plan-surface <runtime>|receipt-verify <sha> --cwd <repo>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|",
   // sprint waves, review tally, tournament pick/fuse, advisor
   "sprint-waves <backlog.md> [--max-concurrent-threads-per-session N]|sprint-reconcile <progress.json>|backlog-publish <backlog.md> --expect <sha256|absent>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|",
   // harness-native dispatch packets + session receipts (kimi/codex lanes)
@@ -405,20 +405,14 @@ async function main() {
       }
       out(await runCodexWave({
         members: wave.members,
-        forceProcess: wave.forceProcess === true,
         sandbox: wave.sandbox,
         approvalPolicy: wave.approvalPolicy,
-        codexHome: waveCodexHome,
         maxConcurrentThreadsPerSession: wave.maxConcurrentThreadsPerSession,
         configuredThreadCeiling: resolveCodexThreadCeiling(threadConfigText),
         availableThreadLimit: wave.availableThreadLimit,
         codexCommand: process.env.MUSTER_CODEX_COMMAND || "codex",
         repositoryRoot: flagValue(rest, "--repository-root"),
         baseSha: flagValue(rest, "--base-sha"),
-        // The bundled CLI cannot invoke collaboration tools from its child
-        // process. It emits cap-bounded packets for the live orchestrator;
-        // process-isolated waves execute directly here.
-        packetOnly: true,
       }));
     } else if (cmd === "worktree-isolation") {
       // worktree-isolation-native item: per-harness native worktree isolation mechanism

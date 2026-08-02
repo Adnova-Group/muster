@@ -4,14 +4,11 @@ import { promisify } from "node:util";
 import { lstat, readdir, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { readNoFollowRegular } from "./fs-safe.js";
-import { readCodexMultiAgentVersion } from "./codex-inventory.js";
 import {
   CODEX_EXEC_MODES,
   codexExecCall,
-  codexSpawnAgentCall,
   interpretCodexExecExit,
   resolveCodexDispatchLane,
-  resolveCodexMultiAgentVersion,
 } from "./wave-dispatch.js";
 
 const execFile = promisify(execFileCb);
@@ -462,9 +459,10 @@ async function runProcessWave({
   repositoryRoot,
   baseSha,
   workerTimeoutMs,
+  authority,
 }) {
   // All path checks complete before the first Codex support probe or worker process.
-  const authority = await prepareTrustedRepository(repositoryRoot, baseSha);
+  authority ||= await prepareTrustedRepository(repositoryRoot, baseSha);
   const canonicalMembers = await Promise.all(members.map(member => validateRegisteredLinkedWorktree(member, authority)));
   const seen = new Map();
   const seenGitDirs = new Map();
@@ -546,89 +544,13 @@ async function runProcessWave({
   };
 }
 
-async function versionForMember(member, { catalogVersions, codexHome }) {
-  const catalogVersion = catalogVersions
-    ? catalogVersions[member.model]
-    : await readCodexMultiAgentVersion(member.model, codexHome ? { dir: codexHome } : {});
-  return resolveCodexMultiAgentVersion({ catalogVersion });
-}
-
-async function runAgentWave({
-  members,
-  catalogVersions,
-  codexHome,
-  dispatchAgent,
-  waitForAgentBatch,
-  packetOnly,
-  effectiveCeiling,
-}) {
-  if (!packetOnly && typeof dispatchAgent !== "function") {
-    throw new Error("runCodexWave: dispatchAgent is required for the spawn_agent lane");
-  }
-  const planned = await Promise.all(members.map(async member => {
-    const version = await versionForMember(member, { catalogVersions, codexHome });
-    const packet = codexSpawnAgentCall({
-      taskId: member.id,
-      message: member.prompt,
-      agentType: member.agentType,
-      version,
-      ...(version === "v2" ? { forkTurns: member.forkTurns || "none" } : {}),
-    });
-    return { id: member.id, version, packet, member };
-  }));
-  const plannedBatches = [];
-  for (let index = 0; index < planned.length; index += effectiveCeiling) {
-    plannedBatches.push(planned.slice(index, index + effectiveCeiling));
-  }
-  if (packetOnly) {
-    const batches = plannedBatches.map(batch => batch.map(({ member, ...row }) => ({
-      ...row,
-      result: { dispatchRequired: true },
-    })));
-    return {
-      mode: CODEX_EXEC_MODES.SPAWN_AGENT,
-      isolation: "context-only",
-      effectiveCeiling,
-      batches,
-      results: batches.flat(),
-    };
-  }
-  if (plannedBatches.length > 1 && typeof waitForAgentBatch !== "function") {
-    throw new Error("runCodexWave: waitForAgentBatch is required when a spawn_agent wave exceeds the effective ceiling");
-  }
-  const batches = [];
-  for (const [batchIndex, batch] of plannedBatches.entries()) {
-    const dispatched = await Promise.all(batch.map(async row => ({
-      id: row.id,
-      version: row.version,
-      packet: row.packet,
-      result: await dispatchAgent(row.packet, row.member),
-    })));
-    batches.push(dispatched);
-    if (typeof waitForAgentBatch === "function") await waitForAgentBatch(dispatched, batchIndex);
-  }
-  return {
-    mode: CODEX_EXEC_MODES.SPAWN_AGENT,
-    isolation: "context-only",
-    effectiveCeiling,
-    batches,
-    results: batches.flat(),
-  };
-}
-
 export async function runCodexWave({
   members,
-  forceProcess = false,
   codexCommand = "codex",
   env = process.env,
   spawnProcess,
   sandbox = "workspace-write",
   approvalPolicy = "never",
-  catalogVersions,
-  codexHome,
-  dispatchAgent,
-  waitForAgentBatch,
-  packetOnly = false,
   maxConcurrentThreadsPerSession,
   configuredThreadCeiling,
   availableThreadLimit,
@@ -649,28 +571,22 @@ export async function runCodexWave({
     configuredThreadCeiling,
     availableThreadLimit,
   );
-  const lane = resolveCodexDispatchLane({ members, forceProcess, repositoryRoot });
-  if (lane.mode === CODEX_EXEC_MODES.EXEC_PROCESS) {
-    return runProcessWave({
-      members,
-      codexCommand,
-      env,
-      spawnProcess,
-      sandbox,
-      approvalPolicy,
-      effectiveCeiling,
-      repositoryRoot,
-      baseSha,
-      workerTimeoutMs,
-    });
-  }
-  return runAgentWave({
+  // Trusted repository/base provenance is authenticated before lane selection
+  // for every production wave. The resolver is process-only because no
+  // mechanically authenticated read-only spawn profile exists.
+  const authority = await prepareTrustedRepository(repositoryRoot, baseSha);
+  resolveCodexDispatchLane();
+  return runProcessWave({
     members,
-    catalogVersions,
-    codexHome,
-    dispatchAgent,
-    waitForAgentBatch,
-    packetOnly,
+    codexCommand,
+    env,
+    spawnProcess,
+    sandbox,
+    approvalPolicy,
     effectiveCeiling,
+    repositoryRoot,
+    baseSha,
+    workerTimeoutMs,
+    authority,
   });
 }

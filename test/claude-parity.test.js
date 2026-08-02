@@ -1356,5 +1356,9 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // bootstraps and verifies its own isolated outer worktree when invoked from
   // a primary checkout, retaining fail-closed CAS publication for bookkeeping.
   // File count remains unchanged.
-  assert.equal(hash.digest("hex"), "e1f99f70792a1ff3dbdd6b0ec902fb53bcbf872dcd188d17c8a4d6136aeb3ee5");
+  // 2026-08-02 re-pin #42 (hermetic Codex wave admission): the shared Codex
+  // dispatch reference now requires every production wave to traverse the
+  // fail-closed codex-wave selector before any returned spawn packet is used.
+  // File count remains unchanged.
+  assert.equal(hash.digest("hex"), "ec53c79ae00841ed214e34482d29c4de433b54f45567a5fa195e777fd0748dc2");
 });

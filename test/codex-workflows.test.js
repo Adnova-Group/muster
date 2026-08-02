@@ -105,25 +105,18 @@ test("generated Codex package exposes the native-dispatch resolvers the orchestr
 
   // Doc reachability: the ported orchestrator/SKILL.md's wave-dispatch section is wholesale-replaced
   // for Codex (scripts/build-codex.mjs's adaptOrchestratorForCodex) -- that replacement must still
-  // carry the Codex-specific resolvers (resolveCodexWaveDispatch's sequential-inline fallback,
-  // resolveWorktreeIsolation's receipts-only mechanism) it stands in for, not silently drop them
-  // along with the Claude-only prose it exists to replace.
+  // carry the Codex-specific process-only production boundary and the explicit
+  // non-wave receipts-only diagnostic it stands in for.
   const orchestrator = await readFile(join(selectedPluginRoot, "internal-skills", "orchestrator", "SKILL.md"), "utf8");
-  assert.match(orchestrator, /sequential-inline/);
-  assert.match(orchestrator, /multiAgent: false|MUSTER_CODEX_MULTI_AGENT/);
+  assert.match(orchestrator, /Production waves are process-only/);
+  assert.match(orchestrator, /trusted repository and exact base SHA before lane resolution/);
   assert.match(orchestrator, /receipts-only/);
   assert.match(orchestrator, /worktree-isolation --harness codex/);
 
-  // codex-receipt-verify-parity item: PR #78 wired the orchestrator's Claude-side prose to run
-  // `receipt-verify` right after appending each dispatch receipt, but this same wave-dispatch
-  // span is wholesale-replaced for Codex (adaptOrchestratorForCodex's waveDispatchHeading
-  // replacement, above) and that replacement text never carried the instruction forward -- so
-  // Codex-generated prose silently omitted verification on exactly the harness whose isolation
-  // floor is receipts-only. Assert the replacement text now runs receipt-verify against the
-  // bundled CLI and treats a nonzero exit as an escalation, never a silent continue.
-  assert.match(orchestrator, /runtime\/muster\.mjs receipt-verify <baseSha> --cwd <absolute worktree path>/);
-  assert.match(orchestrator, /nonzero exit as a receipt failure/);
-  assert.match(orchestrator, /escalat(?:e|ion)/i);
+  // Production waves no longer rely on the weaker receipts-only floor: the
+  // runtime authenticates repository/base/worktree identity before execution.
+  assert.match(orchestrator, /Production waves do not use that weaker floor/);
+  assert.match(orchestrator, /binds each member's absolute worktree to the trusted common Git directory and exact base SHA/);
 
   // The bundled runtime IS `src/cli.js` (esbuild-bundled, scripts/build-codex.mjs), so the
   // `receipt-verify` command ships automatically once PR #78 lands -- prove the actual generated
@@ -160,9 +153,11 @@ test("every generated spawn-bearing production surface mandates codex-wave admis
     const text = await readFile(path, "utf8");
     assert.match(
       text,
-      /Every production wave MUST first run through[\s\S]{0,180}codex-wave|construct the complete wave and first run it through[\s\S]{0,180}codex-wave/,
+      /Every production wave MUST first run through[\s\S]{0,180}codex-wave|construct the complete wave and run it through[\s\S]{0,180}codex-wave/,
       `${path} must forbid direct manifest/backlog spawn and require the fail-closed selector`,
     );
+    assert.match(text, /Production waves are process-only/i, `${path} must prohibit shared-cwd spawn for production waves`);
+    assert.doesNotMatch(text, /non-process packets returned by `codex-wave`/i, `${path} must not authorize deferred shared-cwd packets`);
   }
 });
 

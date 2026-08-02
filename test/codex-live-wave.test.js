@@ -350,8 +350,8 @@ test("generated Codex runtime and orchestrator expose only the hermetic process-
   );
   assert.match(orchestrator, /runtime\/muster\.mjs codex-wave/);
   assert.match(orchestrator, /Every production wave MUST first run through/);
-  assert.match(orchestrator, /never choose or invoke `spawn_agent` directly from a manifest/);
-  assert.match(orchestrator, /dispatch only the non-process packets returned by `codex-wave`/);
+  assert.match(orchestrator, /never choose or invoke `spawn_agent` from a wave manifest/);
+  assert.match(orchestrator, /production waves are process-only/i);
   assert.doesNotMatch(orchestrator, /disjoint or read-only members use Codex's subagent collaboration protocol/);
   assert.match(orchestrator, /registered linked worktree/);
   assert.match(orchestrator, /native-review shadow benchmark rejected adoption/);
@@ -373,23 +373,11 @@ test("generated Codex runtime and orchestrator expose only the hermetic process-
   });
   assert.equal(JSON.parse(result.stdout).mode, "exec-process");
 
-  await writeFile(join(fixture.repo, "packet-a.txt"), "a\n");
-  await writeFile(join(fixture.repo, "packet-b.txt"), "b\n");
-  const trustedCodexHome = join(fixture.root, "trusted-codex-home");
-  await mkdir(trustedCodexHome);
-  await writeFile(join(trustedCodexHome, "models_cache.json"), JSON.stringify({ models: [
-    { slug: "gpt-5.6-luna", multi_agent_version: "v1" },
-    { slug: "gpt-5.6-sol", multi_agent_version: "v2" },
-  ] }));
-  const packetFile = join(fixture.root, "packet-wave.json");
-  await writeFile(packetFile, JSON.stringify({
-    members: [
-      { id: "one", prompt: "one", model: "gpt-5.6-luna", agentType: "muster-investigator", writes: ["packet-a.txt"] },
-      { id: "two", prompt: "two", model: "gpt-5.6-sol", agentType: "muster-reviewer", writes: ["packet-b.txt"] },
-    ],
-    maxConcurrentThreadsPerSession: 2,
-    availableThreadLimit: 1,
-  }));
+  await assert.rejects(execFile(process.execPath, [runtime, "codex-wave", waveFile]), /repositoryRoot is required/i);
+  await assert.rejects(execFile(process.execPath, [
+    runtime, "codex-wave", waveFile, "--repository-root", fixture.repo,
+  ]), /baseSha must be a full/i);
+
   const untrustedHomeFile = join(fixture.root, "untrusted-home-wave.json");
   await writeFile(untrustedHomeFile, JSON.stringify({
     codexHome: join(fixture.root, "attacker-codex-home"),
@@ -400,26 +388,18 @@ test("generated Codex runtime and orchestrator expose only the hermetic process-
   const untrustedCatalogFile = join(fixture.root, "untrusted-catalog-wave.json");
   await writeFile(untrustedCatalogFile, JSON.stringify({
     catalogVersions: { "gpt-5.6-luna": "v2" },
-    members: [{ id: "one", prompt: "one", model: "gpt-5.6-luna", agentType: "muster-investigator", writes: ["packet-a.txt"] }],
+    members: [member("one", fixture.worktreeA)],
   }));
   await assert.rejects(execFile(process.execPath, [runtime, "codex-wave", untrustedCatalogFile]), /trusted out-of-band|catalogVersions/i);
-  const packets = await execFile(process.execPath, [
-    runtime, "codex-wave", packetFile,
-    "--repository-root", fixture.repo,
-    "--base-sha", fixture.baseSha,
-  ], { env: { ...process.env, CODEX_HOME: trustedCodexHome } });
-  const packetResult = JSON.parse(packets.stdout);
-  assert.equal(packetResult.effectiveCeiling, 1);
-  assert.deepEqual(packetResult.batches.map(batch => batch.length), [1, 1]);
-  assert.deepEqual(packetResult.results.map(row => row.packet.tool), [
-    "multi_agent_v1.spawn_agent",
-    "collaboration.spawn_agent",
-  ]);
 
   const fifoHome = join(fixture.root, "fifo-home");
   await mkdir(fifoHome);
   await execFile("mkfifo", [join(fifoHome, "config.toml")]);
-  await assert.rejects(execFile(process.execPath, [runtime, "codex-wave", packetFile], {
+  await assert.rejects(execFile(process.execPath, [
+    runtime, "codex-wave", waveFile,
+    "--repository-root", fixture.repo,
+    "--base-sha", fixture.baseSha,
+  ], {
     env: { ...process.env, CODEX_HOME: fifoHome },
     timeout: 2000,
   }), /regular file|unsafe/i);

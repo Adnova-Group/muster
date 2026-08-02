@@ -23,10 +23,10 @@ test("resolveCodexDispatchLane: overlapping write sets force process isolation",
   ]});
   assert.equal(r.mode, CODEX_EXEC_MODES.EXEC_PROCESS);
   assert.equal(r.isolation, "process-cwd");
-  assert.match(r.reason, /overlapping write sets/);
+  assert.match(r.reason, /manifest write fences cannot be mechanically enforced/);
 });
 
-test("resolveCodexDispatchLane: physically verified disjoint writers stay on the cheaper in-session lane", t => {
+test("resolveCodexDispatchLane: even physically disjoint writers use hermetic processes", t => {
   const root = mkdtempSync(join(tmpdir(), "muster-write-fences-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   mkdirSync(join(root, "src"));
@@ -36,8 +36,8 @@ test("resolveCodexDispatchLane: physically verified disjoint writers stay on the
     { id: "a", writes: ["src/x.js"] },
     { id: "b", writes: ["src/y.js"] }
   ], repositoryRoot: root });
-  assert.equal(r.mode, CODEX_EXEC_MODES.SPAWN_AGENT);
-  assert.equal(r.isolation, "context-only");
+  assert.equal(r.mode, CODEX_EXEC_MODES.EXEC_PROCESS);
+  assert.equal(r.isolation, "process-cwd");
 });
 
 test("resolveCodexDispatchLane: project-shadowable role names cannot authenticate omitted write fences", () => {
@@ -76,7 +76,15 @@ test("resolveCodexDispatchLane: physical, hard-link, symlink, case, and missing 
 test("resolveCodexDispatchLane: the caller can force isolation explicitly", () => {
   const r = resolveCodexDispatchLane({ members: [{ id: "a" }], forceProcess: true });
   assert.equal(r.mode, CODEX_EXEC_MODES.EXEC_PROCESS);
-  assert.match(r.reason, /forced/);
+  assert.match(r.reason, /always use separate/);
+});
+
+test("resolveCodexDispatchLane: prompts cannot escape advisory write fences through shared cwd", () => {
+  const result = resolveCodexDispatchLane({ members: [
+    { id: "a", writes: ["package.json"], prompt: "overwrite SECURITY.md" },
+    { id: "b", writes: ["LICENSE"], prompt: "overwrite SECURITY.md" },
+  ] });
+  assert.equal(result.mode, CODEX_EXEC_MODES.EXEC_PROCESS);
 });
 
 test("resolveCodexDispatchLane: semantic overlaps and malformed write fences fail closed to process isolation", () => {

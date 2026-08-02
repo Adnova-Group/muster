@@ -29,8 +29,6 @@
 // pre-Workflow Claude Code builds) -- prose is the default whenever nothing is declared.
 
 import { execFileSync } from "node:child_process";
-import { closeSync, constants as fsConstants, fstatSync, openSync, realpathSync, statSync } from "node:fs";
-import { isAbsolute, relative, resolve } from "node:path";
 
 export const AGENT_TEAMS_ENV = "MUSTER_AGENT_TEAMS";
 
@@ -489,114 +487,16 @@ export const CODEX_EXEC_MODES = Object.freeze({
   EXEC_PROCESS: "exec-process"
 });
 
-// Choose the dispatch lane for a wave. Conflicting write sets are the deciding
-// factor because they are the one thing spawn_agent cannot make safe.
-function normalizeCodexWriteFence(value) {
-  if (typeof value !== "string" || !value.trim() || /[\0\r\n]/.test(value)) return null;
-  const raw = value.trim().replace(/\\/g, "/");
-  if (raw.startsWith("/") || /^[A-Za-z]:\//.test(raw) || /[*?[\]{}]/.test(raw)) return null;
-  const segments = [];
-  for (const segment of raw.split("/")) {
-    if (!segment || segment === ".") continue;
-    if (segment === "..") {
-      if (!segments.length) return null;
-      segments.pop();
-    } else {
-      segments.push(segment);
-    }
-  }
-  return segments.length ? segments.join("/") : null;
-}
-
-function codexWriteFencesOverlap(left, right) {
-  return left === right || left.startsWith(`${right}/`) || right.startsWith(`${left}/`);
-}
-
-function physicalCodexWriteFence(root, fence) {
-  if (typeof root !== "string" || !root.trim()) return null;
-  try {
-    const canonicalRoot = realpathSync(root);
-    const lexical = resolve(canonicalRoot, fence);
-    const rel = relative(canonicalRoot, lexical);
-    if (rel.startsWith("..") || isAbsolute(rel)) return null;
-    const physical = realpathSync(lexical);
-    const physicalRel = relative(canonicalRoot, physical);
-    if (physicalRel.startsWith("..") || isAbsolute(physicalRel) || physical !== lexical) return null;
-    let descriptor;
-    let info;
-    try {
-      descriptor = openSync(lexical, fsConstants.O_RDONLY
-        | (fsConstants.O_NOFOLLOW || 0)
-        | (fsConstants.O_NONBLOCK || 0));
-      info = fstatSync(descriptor);
-      const pathInfo = statSync(physical);
-      if (pathInfo.dev !== info.dev || pathInfo.ino !== info.ino) return null;
-    } finally {
-      if (descriptor !== undefined) closeSync(descriptor);
-    }
-    // Directory fences cannot authenticate every descendant without an
-    // unbounded recursive walk; aliases below them therefore force isolation.
-    if (!info.isFile() || info.nlink !== 1) return null;
-    return { physical, folded: physical.toLocaleLowerCase("en-US"), dev: info.dev, ino: info.ino };
-  } catch {
-    // Missing targets/ancestors and filesystem aliases are ambiguous. A cold
-    // process is cheaper than trusting an unverifiable shared-cwd write fence.
-    return null;
-  }
-}
-
-export function resolveCodexDispatchLane({ members = [], forceProcess = false, repositoryRoot } = {}) {
-  let unsafeFence = false;
-  const writers = [];
-  for (const [memberIndex, member] of members.entries()) {
-    if (!member || !Object.hasOwn(member, "writes")) {
-      // Agent profile names are project-shadowable, so a manifest's readOnly
-      // claim cannot authenticate the effective role. Missing fences fail shut.
-      unsafeFence = true;
-      continue;
-    }
-    if (!Array.isArray(member.writes) || member.writes.length === 0) {
-      unsafeFence = true;
-      continue;
-    }
-    const fences = member.writes.map(normalizeCodexWriteFence);
-    if (fences.some(fence => fence === null)) {
-      unsafeFence = true;
-      continue;
-    }
-    const physical = fences.map(fence => physicalCodexWriteFence(repositoryRoot, fence));
-    if (physical.some(fence => fence === null)) {
-      unsafeFence = true;
-    }
-    writers.push({ memberIndex, fences, physical });
-  }
-  let conflicting = false;
-  for (let left = 0; left < writers.length && !conflicting; left += 1) {
-    for (let right = left + 1; right < writers.length && !conflicting; right += 1) {
-      conflicting = writers[left].fences.some(a => writers[right].fences.some(b => codexWriteFencesOverlap(a, b)));
-      if (!conflicting && writers[left].physical.every(Boolean) && writers[right].physical.every(Boolean)) {
-        conflicting = writers[left].physical.some(a => writers[right].physical.some(b =>
-          a.folded === b.folded || (a.dev === b.dev && a.ino === b.ino)));
-      }
-    }
-  }
-  if (forceProcess || unsafeFence || conflicting) {
-    return {
-      mode: CODEX_EXEC_MODES.EXEC_PROCESS,
-      reason: forceProcess
-        ? "caller forced process isolation"
-        : conflicting
-          ? "wave members declare overlapping write sets -- spawn_agent shares one cwd across all agents, so only separate `codex exec -C <dir>` processes can isolate them"
-          : unsafeFence
-          ? "wave contains an unfenced, malformed, or glob-ambiguous writer -- fail closed to separate `codex exec -C <dir>` processes"
-          : "wave members require process isolation",
-      isolation: "process-cwd"
-    };
-  }
+// Declared write fences are advisory and spawn_agent has no enforceable cwd or
+// path sandbox. Production waves therefore never authorize a later shared-cwd
+// spawn from a point-in-time manifest check; every member gets its own process
+// and registered linked worktree. Generic non-wave delegation may still use
+// codexSpawnAgentCall directly.
+export function resolveCodexDispatchLane() {
   return {
-    mode: CODEX_EXEC_MODES.SPAWN_AGENT,
-    reason: "disjoint write sets -- in-session spawn_agent keeps the prompt cache and avoids a cold process per member",
-    isolation: "context-only"
+    mode: CODEX_EXEC_MODES.EXEC_PROCESS,
+    reason: "production Codex waves always use separate `codex exec -C <dir>` processes because manifest write fences cannot be mechanically enforced in shared-cwd spawn_agent",
+    isolation: "process-cwd"
   };
 }
 

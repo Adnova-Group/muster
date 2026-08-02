@@ -259,6 +259,7 @@ Hermes note: Hermes's OWN `/goal` standing-objective loop is a different, alread
 - hooks-src: codex/hooks/muster-hook.mjs:13-105
 - hooks-template: codex/hooks/hooks.json:1-88
 - codex-js: src/codex.js:5-48
+- model-policy: src/model-policy.js
 - manifest-json: catalog/agents.manifest.json
 - build-codex: scripts/build-codex.mjs:13-453
 - skill-adapter: codex/skill-adapter.md:5-24
@@ -271,6 +272,7 @@ Hermes note: Hermes's OWN `/goal` standing-objective loop is a different, alread
 - dr-burn: docs/decisions/retriage-burn-salvage.md:33-34
 - codex-desktop-appserver: docs/research/codex-desktop.md:270-285 (app-server `thread/goal/set|get|clear` API, §8)
 - codex-appserver: https://developers.openai.com/codex/app-server
+- codex-releases: https://github.com/openai/codex/releases
 - codex-appserver-schema: local `codex-cli 0.146.0 app-server generate-json-schema --experimental` evidence captured 2026-07-31
 - codex-plan-launch: src/codex-plan-launch.js
 

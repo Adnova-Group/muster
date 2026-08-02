@@ -21,20 +21,28 @@
 // mutating state. canonicalInitJson is the digest-stable serializer every
 // profile/receipt hash depends on.
 import { createHash, randomBytes } from "node:crypto";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
+import { constants as fsConstants } from "node:fs";
 import {
-  lstat, mkdir, mkdtemp, readdir, readlink, realpath,
+  lstat, mkdir, mkdtemp, open, opendir, readdir, readlink, realpath,
   rm, stat,
 } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { devNull, tmpdir } from "node:os";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { promisify } from "node:util";
-import { atomicWrite as atomicWriteSafe, readNoFollowRegular, safeRelativePath } from "./fs-safe.js";
+import {
+  atomicWrite as atomicWriteSafe,
+  createContainedFile,
+  readNoFollowRegular,
+  resolveContainedRealpath,
+  safeRelativePath,
+} from "./fs-safe.js";
 
 const pexecFile = promisify(execFile);
 const PROFILE_FORMAT = "muster.project-profile";
 const RECEIPT_FORMAT = "muster.init-receipt";
-const FINGERPRINT_BASIS = "muster.repository-state.v1";
+const FINGERPRINT_BASIS = "muster.repository-state.v2";
+const LEGACY_FINGERPRINT_BASES = new Set(["muster.repository-state.v1", FINGERPRINT_BASIS]);
 const HEX64 = /^[0-9a-f]{64}$/;
 const GIT_HEAD = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const CLAUDE_AUTHORITY_POINTER = Buffer.from("# Claude Code\n\n@AGENTS.md\n");
@@ -49,13 +57,19 @@ export const INIT_PATHS = Object.freeze({
 });
 
 export const INIT_LIMITS = Object.freeze({
+  fingerprintDirectoryBytes: 8_388_608,
+  fingerprintDirectoryEntries: 100_000,
+  fingerprintDeadlineMs: 3_600_000,
+  fingerprintDirectoryNameBytes: 33_554_432,
+  fingerprintEntries: 1_000_000,
+  fingerprintPathBytes: 262_144,
+  fingerprintSnapshotBytes: 33_554_432,
+  fingerprintTotalBytes: 1_099_511_627_776,
+  learnCaptureBytes: 8_388_608,
   learnDepth: 4,
+  learnEvidenceBytes: 350_000,
   learnFileBytes: 1_048_576,
-  learnTotalBytes: 8_388_608,
-  fingerprintDepth: 32,
-  fingerprintEntries: 10_000,
-  fingerprintFileBytes: 16_777_216,
-  fingerprintTotalBytes: 134_217_728,
+  learnProfileBytes: 524_288,
   symlinkBytes: 4_096,
   evidenceBytes: 65_536,
   nativeArtifacts: 8,
@@ -64,6 +78,12 @@ export const INIT_LIMITS = Object.freeze({
 const utf8Sort = (a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b));
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const envelope = (receipt, observedNativeEvidence = null) => ({ receipt, observedNativeEvidence });
+
+function decodePathBytes(bytes, label) {
+  const value = bytes.toString("utf8");
+  if (!Buffer.from(value, "utf8").equals(bytes)) throw new Error(`invalid UTF-8 repository path: ${label}`);
+  return value;
+}
 
 // Digest-stability serializer: plain JSON only, safe integers only, keys in
 // UTF-8 byte order. Deliberately NOT shared with codex-doctor.js's looser
@@ -268,8 +288,14 @@ async function safeGit(cwd, suffix) {
     ...suffix,
   ];
   try {
-    const { stdout } = await pexecFile("git", args, { cwd, env: gitEnvironment(), encoding: "utf8" });
-    return stdout.trim();
+    const { stdout } = await pexecFile("git", args, { cwd, env: gitEnvironment(), encoding: "buffer" });
+    let end = stdout.length;
+    while (end && (stdout[end - 1] === 0x0a || stdout[end - 1] === 0x0d)) end--;
+    try { return decodePathBytes(stdout.subarray(0, end), "git command output"); }
+    catch (error) {
+      error.invalidGitOutput = true;
+      throw error;
+    }
   } finally {
     await rm(sandbox, { recursive: true, force: true });
   }
@@ -285,8 +311,9 @@ async function rootVcs(root) {
   try {
     const value = await safeGit(root, ["rev-parse", "--verify", "HEAD^{commit}"]);
     if (GIT_HEAD.test(value)) head = value;
-  } catch {}
-  try { branch = await safeGit(root, ["symbolic-ref", "--quiet", "--short", "HEAD"]) || null; } catch {}
+  } catch (error) { if (error.invalidGitOutput) throw error; }
+  try { branch = await safeGit(root, ["symbolic-ref", "--quiet", "--short", "HEAD"]) || null; }
+  catch (error) { if (error.invalidGitOutput) throw error; }
   return { branch, head, kind: "git", layout: info.isDirectory() ? "directory" : "worktree-file" };
 }
 
@@ -303,67 +330,418 @@ async function realGitMarker(dir) {
   return info.isDirectory() || info.isFile();
 }
 
-async function repositoryFingerprint(root) {
-  const rows = [];
-  let entries = 0;
-  let total = 0;
-  async function walk(abs, prefix, depth) {
-    if (depth > INIT_LIMITS.fingerprintDepth) throw new Error("repository fingerprint depth limit exceeded");
-    const names = (await readdir(abs)).sort(utf8Sort);
-    for (const name of names) {
-      const rel = prefix ? `${prefix}/${name}` : name;
-      if (!prefix && (name === ".git" || name === ".muster" || name.startsWith(".muster-init-tmp-"))) continue;
-      if (++entries > INIT_LIMITS.fingerprintEntries) throw new Error("repository fingerprint entry limit exceeded");
-      const path = join(abs, name);
-      const info = await lstat(path);
-      if (info.isDirectory()) {
-        if (await realGitMarker(path)) {
-          let head = null;
-          try {
-            const value = await safeGit(path, ["rev-parse", "--verify", "HEAD^{commit}"]);
-            if (GIT_HEAD.test(value)) head = value;
-          } catch {}
-          rows.push({ path: rel, row: `V\0${rel}\0${head ?? "null"}\n` });
-        } else {
-          rows.push({ path: rel, row: `D\0${rel}\0\n` });
-          await walk(path, rel, depth + 1);
+async function* gitPathStream(root, suffix) {
+  const sandbox = await mkdtemp(join(tmpdir(), "muster-git-"));
+  const args = [
+    "--no-optional-locks", "-c", `core.hooksPath=${sandbox}`, "-c", "core.fsmonitor=false",
+    "-c", "core.untrackedCache=false", "-c", "core.quotepath=false",
+    "-c", `core.excludesFile=${devNull}`, "ls-files", "-z",
+    "--deduplicate", ...suffix,
+  ];
+  const child = spawn("git", args, {
+    cwd: root, env: gitEnvironment(), stdio: ["ignore", "pipe", "pipe"],
+  });
+  let stderr = "";
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", (chunk) => { if (stderr.length < 16_384) stderr += chunk; });
+  const closed = new Promise((resolveClosed, rejectClosed) => {
+    child.once("error", rejectClosed);
+    child.once("close", (code, signal) => resolveClosed({ code, signal }));
+  });
+  try {
+    let fragments = [];
+    let pendingBytes = 0;
+    let previous = null;
+    for await (const chunk of child.stdout) {
+      let start = 0;
+      for (let end = chunk.indexOf(0, start); end >= 0; end = chunk.indexOf(0, start)) {
+        const fragment = chunk.subarray(start, end);
+        pendingBytes += fragment.length;
+        if (pendingBytes > INIT_LIMITS.fingerprintPathBytes) {
+          throw new Error("repository fingerprint path limit exceeded");
         }
-      } else if (info.isFile()) {
-        const opened = await readNoFollowRegular(
-          path, { maxBytes: INIT_LIMITS.fingerprintFileBytes, label: rel, expectedInfo: info },
-        );
-        total += opened.info.size;
-        if (total > INIT_LIMITS.fingerprintTotalBytes) throw new Error("repository fingerprint total limit exceeded");
-        rows.push({
-          path: rel,
-          row: `F\0${rel}\0${(opened.info.mode & 0o111) ? 1 : 0}\0${opened.info.size}\0${sha256(opened.bytes)}\n`,
-        });
-      } else if (info.isSymbolicLink()) {
-        const target = await readlink(path, { encoding: "buffer" });
-        if (target.length > INIT_LIMITS.symlinkBytes) throw new Error("repository symlink target limit exceeded");
-        rows.push({ path: rel, row: `L\0${rel}\0${sha256(target)}\n` });
-      } else {
-        throw new Error(`unsupported repository entry type: ${rel}`);
+        const bytes = fragments.length ? Buffer.concat([...fragments, fragment], pendingBytes) : fragment;
+        const rel = decodePathBytes(bytes, "git index");
+        if (previous && Buffer.compare(previous, bytes) >= 0) {
+          throw new Error("git returned non-canonical repository paths");
+        }
+        previous = Buffer.from(bytes);
+        fragments = [];
+        pendingBytes = 0;
+        start = end + 1;
+        if (rel && rel !== ".muster" && !rel.startsWith(".muster/") &&
+            !rel.startsWith(".muster-init-tmp-")) yield rel;
+      }
+      const fragment = chunk.subarray(start);
+      if (fragment.length) {
+        pendingBytes += fragment.length;
+        if (pendingBytes > INIT_LIMITS.fingerprintPathBytes) {
+          throw new Error("repository fingerprint path limit exceeded");
+        }
+        fragments.push(fragment);
       }
     }
+    if (pendingBytes) throw new Error("git returned an unterminated repository path");
+    const { code, signal } = await closed;
+    if (code !== 0) throw new Error(`git ls-files failed${signal ? ` (${signal})` : ""}: ${stderr.trim()}`);
+  } finally {
+    if (child.exitCode === null && child.signalCode === null) child.kill();
+    await closed.catch(() => {});
+    await rm(sandbox, { recursive: true, force: true });
   }
-  await walk(root, "", 0);
-  rows.sort((a, b) => utf8Sort(a.path, b.path));
+}
+
+async function* gitRelevantPaths(root) {
+  const cached = gitPathStream(root, ["--cached"]);
+  const other = gitPathStream(root, ["--others", "--exclude-standard"]);
+  let left;
+  let right;
+  try {
+    left = await cached.next();
+    right = await other.next();
+    while (!left.done || !right.done) {
+      if (right.done || (!left.done && utf8Sort(left.value, right.value) < 0)) {
+        yield left.value;
+        left = await cached.next();
+      } else if (left.done || utf8Sort(right.value, left.value) < 0) {
+        yield right.value;
+        right = await other.next();
+      } else {
+        yield left.value;
+        left = await cached.next();
+        right = await other.next();
+      }
+    }
+  } finally {
+    await Promise.all([cached.return(), other.return()]);
+  }
+}
+
+function sameDirectoryIdentity(current, prior) {
+  return current.isDirectory() && prior.isDirectory() && current.ino === prior.ino && current.dev === prior.dev &&
+    current.mode === prior.mode && current.nlink === prior.nlink && current.ctimeNs === prior.ctimeNs &&
+    current.mtimeNs === prior.mtimeNs;
+}
+
+async function pinnedDirectoryVisit(root, abs, rel, visit) {
+  const ancestorPaths = [root];
+  let ancestor = root;
+  for (const part of rel ? rel.split("/") : []) {
+    ancestor = join(ancestor, part);
+    ancestorPaths.push(ancestor);
+  }
+  const ancestorsBefore = await Promise.all(ancestorPaths.map((path) => lstat(path, { bigint: true })));
+  if (ancestorsBefore.some((info) => info.isSymbolicLink() || !info.isDirectory())) {
+    throw new Error(`unsafe repository directory: ${rel || "."}`);
+  }
+  const namedBefore = await lstat(abs, { bigint: true });
+  if (namedBefore.isSymbolicLink() || !namedBefore.isDirectory() ||
+      !(await resolveContainedRealpath(root, abs))) throw new Error(`unsafe repository directory: ${rel || "."}`);
+  let handle;
+  try {
+    handle = await open(
+      abs,
+      fsConstants.O_RDONLY | (fsConstants.O_DIRECTORY || 0) | (fsConstants.O_NOFOLLOW || 0),
+    );
+    const heldBefore = await handle.stat({ bigint: true });
+    if (!sameDirectoryIdentity(heldBefore, namedBefore)) throw new Error(`repository directory changed: ${rel || "."}`);
+    const descriptorPath = process.platform === "linux" ? `/proc/self/fd/${handle.fd}` :
+      process.platform === "win32" ? abs : `/dev/fd/${handle.fd}`;
+    for await (const entry of await opendir(descriptorPath, { encoding: "buffer" })) {
+      const bytes = Buffer.isBuffer(entry.name) ? entry.name : Buffer.from(entry.name);
+      if (await visit(decodePathBytes(bytes, rel || "."), bytes) === false) break;
+    }
+    const heldAfter = await handle.stat({ bigint: true });
+    const namedAfter = await lstat(abs, { bigint: true });
+    const ancestorsAfter = await Promise.all(ancestorPaths.map((path) => lstat(path, { bigint: true })));
+    if (!sameDirectoryIdentity(heldAfter, heldBefore) || !sameDirectoryIdentity(namedAfter, heldBefore) ||
+        ancestorsAfter.some((info, index) => !sameDirectoryIdentity(info, ancestorsBefore[index])) ||
+        !(await resolveContainedRealpath(root, abs))) throw new Error(`repository directory changed: ${rel || "."}`);
+    return heldBefore;
+  } finally {
+    await handle?.close();
+  }
+}
+
+async function pinnedDirectoryNames(root, abs, rel) {
+  const names = [];
+  let totalBytes = 0;
+  await pinnedDirectoryVisit(root, abs, rel, (name, bytes) => {
+    totalBytes += bytes.length;
+    if (totalBytes > INIT_LIMITS.fingerprintDirectoryBytes ||
+        names.length >= INIT_LIMITS.fingerprintDirectoryEntries) {
+      const error = new Error(`repository directory entry limit exceeded: ${rel || "."}`);
+      error.initReason = "directory-limit";
+      throw error;
+    }
+    names.push(name);
+  });
+  return names.sort(utf8Sort);
+}
+
+async function pinnedFingerprintDirectoryNames(root, abs, rel) {
+  const names = [];
+  let totalBytes = 0;
+  await pinnedDirectoryVisit(root, abs, rel, (name, bytes) => {
+    totalBytes += bytes.length;
+    if (totalBytes > INIT_LIMITS.fingerprintDirectoryNameBytes ||
+        names.length >= INIT_LIMITS.fingerprintEntries) {
+      throw new Error(`repository fingerprint directory limit exceeded: ${rel || "."}`);
+    }
+    names.push(name);
+  });
+  return names.sort(utf8Sort);
+}
+
+async function* filesystemRelevantPaths(root, abs = root, prefix = "") {
+  const children = [];
+  for (const name of await pinnedFingerprintDirectoryNames(root, abs, prefix)) {
+    if (!prefix && (name === ".git" || name === ".muster" || name.startsWith(".muster-init-tmp-"))) continue;
+    const rel = prefix ? `${prefix}/${name}` : name;
+    const path = join(abs, name);
+    const info = await lstat(path);
+    const descend = info.isDirectory() && !(await realGitMarker(path));
+    children.push({ descend, key: descend ? `${rel}/` : rel, path, rel });
+  }
+  children.sort((a, b) => utf8Sort(a.key, b.key));
+  for (const child of children) {
+    if (child.descend) yield* filesystemRelevantPaths(root, child.path, child.rel);
+    else yield child.rel;
+  }
+}
+
+function checkFingerprintDeadline(deadline) {
+  if (Date.now() > deadline) throw new Error("repository fingerprint deadline exceeded");
+}
+
+async function rejectSpecialEntries(root, abs = root, prefix = "", snapshot = null, work = null) {
+  const top = snapshot === null;
+  snapshot ||= { count: 0, hash: createHash("sha256").update("muster.directory-snapshot.v1\0") };
+  work ||= { deadline: Date.now() + INIT_LIMITS.fingerprintDeadlineMs, entries: 0 };
+  work.snapshotBytes ??= 0;
+  const directories = [];
+  const identity = await pinnedDirectoryVisit(root, abs, prefix, async (name) => {
+    checkFingerprintDeadline(work.deadline);
+    work.entries++;
+    if (work.entries > INIT_LIMITS.fingerprintEntries) {
+      throw new Error("repository fingerprint entry limit exceeded");
+    }
+    if (!prefix && (name === ".git" || name === ".muster" || name.startsWith(".muster-init-tmp-"))) return;
+    const rel = prefix ? `${prefix}/${name}` : name;
+    const path = join(abs, name);
+    const info = await lstat(path);
+    if (info.isDirectory()) {
+      if (!(await realGitMarker(path))) {
+        work.snapshotBytes += Buffer.byteLength(rel) + 128;
+        if (work.snapshotBytes > INIT_LIMITS.fingerprintSnapshotBytes) {
+          throw new Error("repository directory snapshot limit exceeded");
+        }
+        directories.push({ path, rel });
+      }
+    } else if (info.isSymbolicLink()) {
+      const target = await readlink(path, { encoding: "buffer" });
+      if (target.length > INIT_LIMITS.symlinkBytes) throw new Error("repository symlink target limit exceeded");
+    } else if (!info.isFile()) {
+      throw new Error(`unsupported repository entry type: ${rel}`);
+    }
+  });
+  const row = Buffer.from([
+    prefix, identity.dev, identity.ino, identity.mode, identity.nlink,
+    identity.ctimeNs, identity.mtimeNs,
+  ].join("\0"));
+  const length = Buffer.allocUnsafe(8);
+  length.writeBigUInt64BE(BigInt(row.length));
+  snapshot.hash.update(length).update(row);
+  snapshot.count++;
+  directories.sort((a, b) => utf8Sort(a.rel, b.rel));
+  for (const { path, rel } of directories) {
+    await rejectSpecialEntries(root, path, rel, snapshot, work);
+  }
+  if (!top) return snapshot;
+  return { count: snapshot.count, digest: snapshot.hash.digest("hex") };
+}
+
+function sameDirectorySnapshot(current, prior) {
+  return current.count === prior.count && current.digest === prior.digest;
+}
+
+async function ensureFingerprintAncestors(root, path, rel) {
+  if (typeof rel !== "string" || !rel || rel.includes("\0") || rel.includes("\\") ||
+      rel.startsWith("/") || rel.startsWith("//") || /^[A-Za-z]:/.test(rel)) {
+    throw new Error(`unsafe repository path: ${rel}`);
+  }
+  const parts = rel.split("/");
+  if (parts.some((part) => !part || part === "." || part === "..")) {
+    throw new Error(`unsafe repository path: ${rel}`);
+  }
+  let current = root;
+  for (const part of parts.slice(0, -1)) {
+    current = join(current, part);
+    const info = await lstat(current);
+    if (info.isSymbolicLink() || !info.isDirectory()) throw new Error(`unsafe ancestor for ${rel}`);
+  }
+  if (!(await resolveContainedRealpath(root, dirname(path)))) {
+    throw new Error(`unsafe ancestor for ${rel}`);
+  }
+}
+
+async function streamedFileDigest(root, path, rel, expectedInfo, deadline = Infinity) {
+  let handle;
+  try {
+    await ensureFingerprintAncestors(root, path, rel);
+    handle = await open(
+      path,
+      fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0) | (fsConstants.O_NONBLOCK || 0),
+    );
+    const before = await handle.stat({ bigint: true });
+    if (before.size > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error(`unsafe regular file: ${rel}`);
+    const size = Number(before.size);
+    if (!before.isFile()) throw new Error(`unsafe regular file: ${rel}`);
+    if (before.ino !== expectedInfo.ino || before.dev !== expectedInfo.dev) {
+      throw new Error(`file changed while reading: ${rel}`);
+    }
+    const digest = createHash("sha256");
+    const chunk = Buffer.allocUnsafe(64 * 1024);
+    let position = 0;
+    while (position < size) {
+      checkFingerprintDeadline(deadline);
+      const { bytesRead } = await handle.read(chunk, 0, Math.min(chunk.length, size - position), position);
+      if (bytesRead === 0) break;
+      digest.update(chunk.subarray(0, bytesRead));
+      position += bytesRead;
+    }
+    const after = await handle.stat({ bigint: true });
+    if (position !== size || after.ino !== before.ino || after.dev !== before.dev ||
+        after.size !== before.size || after.nlink !== before.nlink || after.mode !== before.mode ||
+        after.ctimeNs !== before.ctimeNs || after.mtimeNs !== before.mtimeNs || !after.isFile()) {
+      throw new Error(`file changed while reading: ${rel}`);
+    }
+    await ensureFingerprintAncestors(root, path, rel);
+    const named = await lstat(path, { bigint: true });
+    if (!named.isFile() || named.ino !== before.ino || named.dev !== before.dev ||
+        named.mode !== before.mode || named.size !== before.size || named.nlink !== before.nlink ||
+        named.ctimeNs !== before.ctimeNs || named.mtimeNs !== before.mtimeNs) {
+      throw new Error(`file changed while reading: ${rel}`);
+    }
+    return { digest: digest.digest("hex"), mode: Number(before.mode), size };
+  } finally {
+    await handle?.close();
+  }
+}
+
+function sameFingerprintIdentity(current, prior) {
+  return current.isFile() && prior.isFile() && current.ino === prior.ino && current.dev === prior.dev &&
+    current.mode === prior.mode && current.size === prior.size && current.nlink === prior.nlink &&
+    current.ctimeNs === prior.ctimeNs && current.mtimeNs === prior.mtimeNs;
+}
+
+async function repositoryFingerprintPass(root, learnedDigests = new Map(), deadline = Infinity, expectedSnapshot = null) {
+  // Git deliberately omits untrackable special entries from `ls-files`.
+  // Preserve the previous fail-closed repository walk before hashing only the
+  // relevant paths; ignored/generated ordinary files remain unhashed.
+  const directorySnapshot = await rejectSpecialEntries(root, root, "", null, { deadline, entries: 0 });
+  if (expectedSnapshot && !sameDirectorySnapshot(directorySnapshot, expectedSnapshot)) {
+    throw new Error("repository changed while learning");
+  }
   const hash = createHash("sha256").update(Buffer.from(`${FINGERPRINT_BASIS}\0`));
-  for (const { row } of rows) hash.update(Buffer.from(row));
-  return { algorithm: "sha256", basis: FINGERPRINT_BASIS, digest: hash.digest("hex") };
+  let rowCount = 0;
+  let visitedPaths = 0;
+  let totalBytes = 0;
+  const add = (row) => {
+    const length = Buffer.allocUnsafe(8);
+    length.writeBigUInt64BE(BigInt(row.length));
+    hash.update(length).update(row);
+    rowCount++;
+  };
+  const paths = await realGitMarker(root) ? gitRelevantPaths(root) : filesystemRelevantPaths(root);
+  for await (const rel of paths) {
+    checkFingerprintDeadline(deadline);
+    visitedPaths++;
+    if (visitedPaths > INIT_LIMITS.fingerprintEntries) throw new Error("repository fingerprint entry limit exceeded");
+    const path = join(root, rel);
+    let info;
+    try { info = await lstat(path, { bigint: true }); }
+    catch (error) {
+      if (error.code === "ENOENT") continue; // tracked-but-deleted Git path
+      throw error;
+    }
+    await ensureFingerprintAncestors(root, path, rel);
+    if (info.isDirectory() && await realGitMarker(path)) {
+      let head = null;
+      try {
+        const value = await safeGit(path, ["rev-parse", "--verify", "HEAD^{commit}"]);
+        if (GIT_HEAD.test(value)) head = value;
+      } catch (error) { if (error.invalidGitOutput) throw error; }
+      add(Buffer.from(`V\0${rel}\0${head ?? "null"}\n`));
+    } else if (info.isFile()) {
+      const learned = learnedDigests.get(rel);
+      if (learned && !sameFingerprintIdentity(info, learned.identity)) throw learningFileChanged(rel);
+      if (info.size > BigInt(Number.MAX_SAFE_INTEGER) ||
+          info.size > BigInt(INIT_LIMITS.fingerprintTotalBytes - totalBytes)) {
+        throw new Error("repository fingerprint byte limit exceeded");
+      }
+      const opened = learned || await streamedFileDigest(root, path, rel, info, deadline);
+      if (!Number.isSafeInteger(opened.size) || opened.size > INIT_LIMITS.fingerprintTotalBytes - totalBytes) {
+        throw new Error("repository fingerprint byte limit exceeded");
+      }
+      totalBytes += opened.size;
+      add(Buffer.from(`F\0${rel}\0${(opened.mode & 0o111) ? 1 : 0}\0${opened.size}\0${opened.digest}\n`));
+    } else if (info.isSymbolicLink()) {
+      const target = await readlink(path, { encoding: "buffer" });
+      if (target.length > INIT_LIMITS.symlinkBytes) throw new Error("repository symlink target limit exceeded");
+      const named = await lstat(path, { bigint: true });
+      if (!named.isSymbolicLink() || named.ino !== info.ino || named.dev !== info.dev ||
+          named.ctimeNs !== info.ctimeNs || named.mtimeNs !== info.mtimeNs) {
+        throw new Error(`file changed while reading: ${rel}`);
+      }
+      add(Buffer.from(`L\0${rel}\0${sha256(target)}\n`));
+    } else {
+      throw new Error(`unsupported repository entry type: ${rel}`);
+    }
+  }
+  for (const [rel, learned] of learnedDigests) {
+    const path = join(root, rel);
+    await ensureLearningAncestors(root, path, rel);
+    const current = await lstat(path, { bigint: true }).catch((error) => {
+      if (error.code === "ENOENT") throw learningFileChanged(rel);
+      throw error;
+    });
+    if (!sameFingerprintIdentity(current, learned.identity)) throw learningFileChanged(rel);
+  }
+  const finalDirectorySnapshot = await rejectSpecialEntries(root, root, "", null, { deadline, entries: 0 });
+  if (!sameDirectorySnapshot(finalDirectorySnapshot, directorySnapshot)) {
+    throw new Error("repository changed while fingerprinting");
+  }
+  const count = Buffer.allocUnsafe(8);
+  count.writeBigUInt64BE(BigInt(rowCount));
+  const digest = hash.update(count).digest("hex");
+  return { algorithm: "sha256", basis: FINGERPRINT_BASIS, digest };
+}
+
+async function repositoryFingerprint(root, learnedDigests = new Map(), deadline = null, expectedSnapshot = null) {
+  deadline ||= Date.now() + INIT_LIMITS.fingerprintDeadlineMs;
+  const first = await repositoryFingerprintPass(root, learnedDigests, deadline, expectedSnapshot);
+  const second = await repositoryFingerprintPass(root, learnedDigests, deadline);
+  if (first.digest !== second.digest) throw new Error("repository changed while fingerprinting");
+  return second;
 }
 
 async function classify(root) {
-  const names = await readdir(root);
-  for (const name of names) {
-    if (name === ".git") continue;
+  let classification = "greenfield";
+  await pinnedDirectoryVisit(root, root, "", async (name) => {
+    if (name === ".git") return;
     if (name === ".muster") {
-      if ((await readdir(join(root, name))).length === 0) continue;
+      let occupied = false;
+      await pinnedDirectoryVisit(root, join(root, name), name, () => {
+        occupied = true;
+        return false;
+      });
+      if (!occupied) return;
     }
-    return "brownfield";
-  }
-  return "greenfield";
+    classification = "brownfield";
+    return false;
+  });
+  return classification;
 }
 
 const MANIFEST_NAMES = new Set([
@@ -373,52 +751,220 @@ const MANIFEST_NAMES = new Set([
 const INSTRUCTION_NAMES = new Set(["AGENTS.md", "CLAUDE.md", "GEMINI.md", "copilot-instructions.md"]);
 const SOURCE_NAMES = new Set(["src", "lib", "app", "apps", "packages"]);
 const TEST_NAMES = new Set(["test", "tests", "__tests__", "spec"]);
+const LANGUAGE_SUFFIXES = new Set([".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".py", ".rs", ".go", ".rb"]);
 
-async function learnFacts(root) {
+function safeLearnedPath(path) {
+  if (typeof path !== "string" || !path || path.includes("\0") || path.includes("\\") ||
+      isAbsolute(path) || /^[A-Za-z]:/.test(path) || path.startsWith("//")) {
+    throw new Error(`unsafe learned path: ${path}`);
+  }
+  const parts = path.split("/");
+  if (parts.some((part) => !part || part === "." || part === "..")) {
+    throw new Error(`unsafe learned path: ${path}`);
+  }
+  return path;
+}
+
+function learningFileChanged(rel) {
+  const error = new Error(`file changed while reading: ${rel}`);
+  error.fsSafe = { reason: "changed" };
+  return error;
+}
+
+async function ensureLearningAncestors(root, path, rel) {
+  const parts = safeLearnedPath(rel).split("/");
+  let current = root;
+  for (const part of parts.slice(0, -1)) {
+    current = join(current, part);
+    const info = await lstat(current);
+    if (info.isSymbolicLink() || !info.isDirectory()) throw new Error(`unsafe ancestor for ${rel}`);
+  }
+  if (!(await resolveContainedRealpath(root, dirname(path)))) throw new Error(`unsafe ancestor for ${rel}`);
+}
+
+async function readLearningMetadata(root, path, rel, expectedInfo, capture, deadline = Infinity) {
+  let handle;
+  try {
+    await ensureLearningAncestors(root, path, rel);
+    handle = await open(
+      path,
+      fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0) | (fsConstants.O_NONBLOCK || 0),
+    );
+    const before = await handle.stat({ bigint: true });
+    if (!before.isFile()) throw new Error(`unsafe regular file: ${rel}`);
+    if (before.ino !== expectedInfo.ino || before.dev !== expectedInfo.dev) {
+      throw learningFileChanged(rel);
+    }
+    if (before.size > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error(`unsafe regular file: ${rel}`);
+    const size = Number(before.size);
+    const digest = createHash("sha256");
+    const chunks = capture ? [] : null;
+    const chunk = Buffer.allocUnsafe(64 * 1024);
+    let position = 0;
+    while (position < size) {
+      checkFingerprintDeadline(deadline);
+      const { bytesRead } = await handle.read(chunk, 0, Math.min(chunk.length, size - position), position);
+      if (bytesRead === 0) break;
+      const bytes = chunk.subarray(0, bytesRead);
+      digest.update(bytes);
+      if (chunks) chunks.push(Buffer.from(bytes));
+      position += bytesRead;
+    }
+    const after = await handle.stat({ bigint: true });
+    if (position !== size || after.ino !== before.ino || after.dev !== before.dev ||
+        after.size !== before.size || after.nlink !== before.nlink || after.mode !== before.mode ||
+        after.ctimeNs !== before.ctimeNs || after.mtimeNs !== before.mtimeNs || !after.isFile()) {
+      throw learningFileChanged(rel);
+    }
+    await ensureLearningAncestors(root, path, rel);
+    const named = await lstat(path, { bigint: true });
+    if (!named.isFile() || named.ino !== before.ino || named.dev !== before.dev ||
+        named.size !== before.size || named.nlink !== before.nlink || named.mode !== before.mode ||
+        named.ctimeNs !== before.ctimeNs || named.mtimeNs !== before.mtimeNs) {
+      throw learningFileChanged(rel);
+    }
+    return {
+      bytes: chunks ? Buffer.concat(chunks) : null,
+      digest: digest.digest("hex"),
+      identity: before,
+      mode: Number(before.mode),
+      size,
+    };
+  } finally {
+    await handle?.close();
+  }
+}
+
+async function learnFacts(root, deadline = Date.now() + INIT_LIMITS.fingerprintDeadlineMs) {
+  const digests = new Map();
   const rows = [];
+  const limitations = [];
   const sourceRoots = new Set();
   const testRoots = new Set();
   const extensions = new Set();
-  let total = 0;
+  let capturedBytes = 0;
+  let learnedBytes = 0;
+  let learnedEntries = 0;
+  let evidenceBytes = 0;
+  let profileLimited = false;
+  const markProfileLimited = (path) => {
+    if (profileLimited) return;
+    profileLimited = true;
+    limitations.push({ path: safeLearnedPath(path), reason: "profile-limit" });
+  };
+  const reserveEvidence = (bytes, path) => {
+    if (profileLimited) return false;
+    if (evidenceBytes + bytes > INIT_LIMITS.learnEvidenceBytes) {
+      markProfileLimited(path);
+      return false;
+    }
+    evidenceBytes += bytes;
+    return true;
+  };
+  const addLimitation = (path, reason) => {
+    const row = { path: safeLearnedPath(path), reason };
+    if (reserveEvidence(Buffer.byteLength(JSON.stringify(row)) + 2, path)) limitations.push(row);
+  };
+  const addRoot = (set, path) => {
+    if (set.has(path) || !reserveEvidence(Buffer.byteLength(JSON.stringify(path)) + 1, path)) return;
+    set.add(path);
+  };
   async function walk(abs, prefix, depth) {
-    if (depth > INIT_LIMITS.learnDepth) return;
-    for (const name of (await readdir(abs)).sort(utf8Sort)) {
+    if (depth > INIT_LIMITS.learnDepth) {
+      addLimitation(prefix, "depth-limit");
+      return;
+    }
+    let names;
+    try { names = await pinnedDirectoryNames(root, abs, prefix); }
+    catch (error) {
+      if (error.initReason === "directory-limit") {
+        addLimitation(prefix || "project-root", "directory-limit");
+        return;
+      }
+      throw error;
+    }
+    for (const name of names) {
+      checkFingerprintDeadline(deadline);
+      learnedEntries++;
+      if (learnedEntries > INIT_LIMITS.fingerprintEntries) {
+        throw new Error("project learning entry limit exceeded");
+      }
       if (!prefix && (name === ".git" || name === ".muster")) continue;
       const rel = prefix ? `${prefix}/${name}` : name;
       const path = join(abs, name);
-      const info = await lstat(path);
+      const info = await lstat(path, { bigint: true });
       if (info.isSymbolicLink()) continue;
       if (info.isDirectory()) {
-        if (SOURCE_NAMES.has(name)) sourceRoots.add(rel);
-        if (TEST_NAMES.has(name)) testRoots.add(rel);
+        if (SOURCE_NAMES.has(name)) addRoot(sourceRoots, rel);
+        if (TEST_NAMES.has(name)) addRoot(testRoots, rel);
         if (await realGitMarker(path)) continue;
         await walk(path, rel, depth + 1);
       } else if (info.isFile()) {
         const dot = name.lastIndexOf(".");
-        if (dot >= 0) extensions.add(name.slice(dot).toLowerCase());
+        const suffix = dot >= 0 ? name.slice(dot).toLowerCase() : null;
+        if (LANGUAGE_SUFFIXES.has(suffix)) extensions.add(suffix);
         if (!MANIFEST_NAMES.has(name) && !INSTRUCTION_NAMES.has(name)) continue;
-        const opened = await readNoFollowRegular(path, { maxBytes: INIT_LIMITS.learnFileBytes, label: rel, expectedInfo: info });
-        total += opened.info.size;
-        if (total > INIT_LIMITS.learnTotalBytes) throw new Error("project learning limit exceeded");
+        if (info.size > BigInt(Number.MAX_SAFE_INTEGER) ||
+            info.size > BigInt(INIT_LIMITS.fingerprintTotalBytes - learnedBytes)) {
+          throw new Error("project learning byte limit exceeded");
+        }
+        const factBytes = Buffer.byteLength(JSON.stringify({
+          bytes: Number.MAX_SAFE_INTEGER, path: rel, sha256: "0".repeat(64),
+        })) + 2;
+        if (!reserveEvidence(factBytes, rel)) continue;
+        const parse = name === "package.json" && info.size <= BigInt(INIT_LIMITS.learnFileBytes) &&
+          info.size <= BigInt(INIT_LIMITS.learnCaptureBytes - capturedBytes);
+        const opened = await readLearningMetadata(root, path, rel, info, parse, deadline);
+        learnedBytes += opened.size;
+        capturedBytes += opened.bytes?.length || 0;
+        digests.set(rel, opened);
+        if (name === "package.json" && !parse) addLimitation(rel, "parse-limit");
         rows.push({
-          bytes: opened.info.size,
+          bytes: opened.size,
           content: opened.bytes,
           instruction: INSTRUCTION_NAMES.has(name),
           path: rel,
-          sha256: sha256(opened.bytes),
+          sha256: opened.digest,
         });
       }
     }
   }
   await walk(root, "", 0);
-  return { extensions, rows, sourceRoots, testRoots };
+  limitations.sort((a, b) => utf8Sort(a.path, b.path) || utf8Sort(a.reason, b.reason));
+  return { digests, extensions, limitations, rows, sourceRoots, testRoots };
+}
+
+function boundSerializedProfile(profile) {
+  if (Buffer.byteLength(prettyInitJson(profile)) <= INIT_LIMITS.learnProfileBytes) return profile;
+  const facts = profile.facts;
+  const existing = facts.learning.limitations.find(({ reason }) => reason === "profile-limit");
+  const fallbackPath = facts.manifests.at(-1)?.path || facts.instructionFiles.at(-1)?.path ||
+    facts.sourceRoots.at(-1) || facts.learning.limitations.at(-1)?.path || "project-profile";
+  facts.learning = {
+    limitations: [existing || { path: safeLearnedPath(fallbackPath), reason: "profile-limit" }],
+    status: "incomplete",
+  };
+  const dynamic = [facts.manifests, facts.instructionFiles, facts.sourceRoots];
+  while (Buffer.byteLength(prettyInitJson(profile)) > INIT_LIMITS.learnProfileBytes) {
+    let changed = false;
+    for (const values of dynamic) {
+      if (!values.length) continue;
+      values.length = Math.floor(values.length / 2);
+      changed = true;
+    }
+    if (!changed) throw new Error("generated project profile exceeds its serialization limit");
+  }
+  return profile;
 }
 
 export async function learnProjectProfile(dir) {
   const root = await validateRoot(dir);
+  const deadline = Date.now() + INIT_LIMITS.fingerprintDeadlineMs;
+  const learningSnapshot = await rejectSpecialEntries(root, root, "", null, { deadline, entries: 0 });
+  const vcs = await rootVcs(root);
   const owned = await readOwned(root);
   const classification = owned?.receipt.classification ?? await classify(root);
-  const { extensions, rows, sourceRoots, testRoots } = await learnFacts(root);
+  const { digests, extensions, limitations, rows, sourceRoots, testRoots } = await learnFacts(root, deadline);
   const languages = new Set();
   const frameworks = new Set();
   const managers = new Set();
@@ -438,6 +984,7 @@ export async function learnProjectProfile(dir) {
     if (name === "package.json") {
       languages.add("javascript");
       managers.add("npm");
+      if (!row.content) continue;
       try {
         const pkg = JSON.parse(row.content.toString("utf8"));
         const deps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
@@ -460,23 +1007,28 @@ export async function learnProjectProfile(dir) {
     .map(({ bytes, path, sha256: digest }) => ({ bytes, path, sha256: digest })).sort((a, b) => utf8Sort(a.path, b.path));
   const shape = classification === "greenfield" ? "empty" : monorepo ? "monorepo" :
     sourceRoots.size || frameworks.size ? "application" : library ? "library" : "unknown";
-  return {
+  const profile = {
     format: PROFILE_FORMAT,
     schemaVersion: 1,
     classification,
     facts: {
       frameworks: [...frameworks].sort(utf8Sort),
       instructionFiles: factRows(true),
+      learning: { limitations, status: limitations.length ? "incomplete" : "complete" },
       languages: [...languages].sort(utf8Sort),
       manifests: factRows(false),
       packageManagers: [...managers].sort(utf8Sort),
       shape,
       sourceRoots: [...sourceRoots].sort(utf8Sort),
       testRunners: [...runners].sort(utf8Sort),
-      vcs: await rootVcs(root),
+      vcs,
     },
-    repositoryFingerprint: await repositoryFingerprint(root),
+    repositoryFingerprint: await repositoryFingerprint(root, digests, deadline, learningSnapshot),
   };
+  if (JSON.stringify(await rootVcs(root)) !== JSON.stringify(vcs)) {
+    throw new Error("repository VCS changed while learning");
+  }
+  return boundSerializedProfile(profile);
 }
 
 function exactKeys(value, keys) {
@@ -494,11 +1046,11 @@ function checkFileRows(rows, kind, field) {
     if (!exactKeys(row, ["bytes", "path", "sha256"])) {
       invalidInit(kind, field, "each row must have exactly the keys bytes, path, sha256");
     }
-    if (!Number.isInteger(row.bytes) || row.bytes < 0 || row.bytes > INIT_LIMITS.learnFileBytes) {
-      invalidInit(kind, field, "row bytes must be an integer within the learn file byte limit");
+    if (!Number.isSafeInteger(row.bytes) || row.bytes < 0) {
+      invalidInit(kind, field, "row bytes must be a non-negative safe integer");
     }
     if (!HEX64.test(row.sha256)) invalidInit(kind, field, "row sha256 must be 64 lowercase hex characters");
-    try { safeRelative(row.path); } catch { invalidInit(kind, field, "row path must be a safe relative path"); }
+    try { safeLearnedPath(row.path); } catch { invalidInit(kind, field, "row path must be a safe learned path"); }
   }
   if (new Set(rows.map((row) => row.path)).size !== rows.length) invalidInit(kind, field, "row paths must be unique");
   if (!rowsSortedByPath(rows)) invalidInit(kind, field, "rows must be sorted by UTF-8 path order");
@@ -530,14 +1082,36 @@ function validateProfile(profile) {
   if (!["greenfield", "brownfield"].includes(profile.classification)) {
     fail("classification", "must be greenfield or brownfield");
   }
-  if (!exactKeys(profile.facts, ["frameworks", "instructionFiles", "languages", "manifests", "packageManagers", "shape", "sourceRoots", "testRunners", "vcs"])) {
-    fail("facts", "keys must be exactly frameworks, instructionFiles, languages, manifests, packageManagers, shape, sourceRoots, testRunners, vcs");
+  const priorFactKeys = ["frameworks", "instructionFiles", "languages", "manifests", "packageManagers", "shape", "sourceRoots", "testRunners", "vcs"];
+  const evidenceFactKeys = [...priorFactKeys, "learning"];
+  if (!exactKeys(profile.facts, priorFactKeys) && !exactKeys(profile.facts, evidenceFactKeys)) {
+    fail("facts", "keys must be the schema-v1 fact keys, optionally including learning evidence");
   }
   if (!["empty", "library", "application", "monorepo", "unknown"].includes(profile.facts.shape)) {
     fail("facts.shape", "must be empty, library, application, monorepo, or unknown");
   }
   checkFileRows(profile.facts.manifests, "project profile", "facts.manifests");
   checkFileRows(profile.facts.instructionFiles, "project profile", "facts.instructionFiles");
+  const learning = profile.facts.learning;
+  if (learning !== undefined) {
+    if (!exactKeys(learning, ["limitations", "status"]) || !["complete", "incomplete"].includes(learning.status) ||
+        !Array.isArray(learning.limitations)) fail("facts.learning", "must carry a complete or incomplete status and limitations array");
+    for (const limitation of learning.limitations) {
+      if (!exactKeys(limitation, ["path", "reason"]) ||
+          !["depth-limit", "directory-limit", "parse-limit", "profile-limit"].includes(limitation.reason)) {
+        fail("facts.learning.limitations", "each limitation must name a path and known reason");
+      }
+      try { safeLearnedPath(limitation.path); } catch { fail("facts.learning.limitations", "paths must be safe learned paths"); }
+    }
+    if ((learning.status === "complete") !== (learning.limitations.length === 0)) {
+      fail("facts.learning", "complete must have no limitations and incomplete must have at least one");
+    }
+    const limitationKeys = learning.limitations.map(({ path, reason }) => `${path}\0${reason}`);
+    if (new Set(limitationKeys).size !== limitationKeys.length ||
+        JSON.stringify(limitationKeys) !== JSON.stringify([...limitationKeys].sort(utf8Sort))) {
+      fail("facts.learning.limitations", "entries must be unique and sorted in UTF-8 order");
+    }
+  }
   if (!exactKeys(profile.facts.vcs, ["branch", "head", "kind", "layout"])) {
     fail("facts.vcs", "keys must be exactly branch, head, kind, layout");
   }
@@ -555,8 +1129,8 @@ function validateProfile(profile) {
     fail("repositoryFingerprint", "keys must be exactly algorithm, basis, digest");
   }
   if (profile.repositoryFingerprint.algorithm !== "sha256") fail("repositoryFingerprint.algorithm", "must be sha256");
-  if (profile.repositoryFingerprint.basis !== FINGERPRINT_BASIS) {
-    fail("repositoryFingerprint.basis", `must be ${FINGERPRINT_BASIS}`);
+  if (!LEGACY_FINGERPRINT_BASES.has(profile.repositoryFingerprint.basis)) {
+    fail("repositoryFingerprint.basis", `must be a supported repository-state basis`);
   }
   if (!HEX64.test(profile.repositoryFingerprint.digest)) {
     fail("repositoryFingerprint.digest", "must be 64 lowercase hex characters");
@@ -646,16 +1220,16 @@ function validateReceipt(receipt) {
     fail("finalStateFingerprint", "keys must be exactly algorithm, basis, digest");
   }
   if (receipt.finalStateFingerprint.algorithm !== "sha256") fail("finalStateFingerprint.algorithm", "must be sha256");
-  if (receipt.finalStateFingerprint.basis !== FINGERPRINT_BASIS) {
-    fail("finalStateFingerprint.basis", `must be ${FINGERPRINT_BASIS}`);
+  if (!LEGACY_FINGERPRINT_BASES.has(receipt.finalStateFingerprint.basis)) {
+    fail("finalStateFingerprint.basis", `must be a supported repository-state basis`);
   }
   if (!HEX64.test(receipt.finalStateFingerprint.digest)) {
     fail("finalStateFingerprint.digest", "must be 64 lowercase hex characters");
   }
   const evidence = receipt.nativeInit.evidence;
   if (evidence !== null) {
-    if (!["artifact-delta", "preexisting-artifact-confirmed", "call-result"].includes(evidence.kind)) {
-      fail("nativeInit.evidence.kind", "must be artifact-delta, preexisting-artifact-confirmed, or call-result");
+    if (!["approved-pointer-normalization", "artifact-delta", "preexisting-artifact-confirmed", "call-result"].includes(evidence.kind)) {
+      fail("nativeInit.evidence.kind", "must be approved-pointer-normalization, artifact-delta, preexisting-artifact-confirmed, or call-result");
     }
     if (!Array.isArray(evidence.artifacts) || evidence.artifacts.length === 0) {
       fail("nativeInit.evidence.artifacts", "must be a non-empty array");
@@ -698,6 +1272,18 @@ function validateReceipt(receipt) {
     profileDigest: receipt.profileDigest,
   }));
   const baselineByPath = new Map(native.baseline.map((row) => [row.path, row]));
+  if (evidence?.kind === "approved-pointer-normalization") {
+    const artifactsByPath = new Map(evidence.artifacts.map((row) => [row.path, row]));
+    const agentsBaseline = baselineByPath.get("AGENTS.md");
+    const claudeBaseline = baselineByPath.get("CLAUDE.md");
+    if (evidence.artifacts.length !== 2 || !coversInstructionPair([...artifactsByPath.keys()]) ||
+        !agentsBaseline || agentsBaseline.sha256 === null || agentsBaseline.bytes === 0 ||
+        !claudeBaseline || claudeBaseline.sha256 !== null || native.reason !== "not-callable" ||
+        artifactsByPath.get("AGENTS.md")?.sha256 !== agentsBaseline.sha256 ||
+        artifactsByPath.get("CLAUDE.md")?.sha256 !== sha256(CLAUDE_AUTHORITY_POINTER)) {
+      fail("nativeInit.evidence", "approved pointer must bind AGENTS.md to its non-empty baseline and CLAUDE.md to the canonical pointer");
+    }
+  }
   const evidenceMatchesBaseline = evidence === null || evidence.artifacts.every((row) => {
     const baseline = baselineByPath.get(row.path);
     if (!baseline) return false;
@@ -926,6 +1512,11 @@ async function completionEvidence(root, receipt, kind, evidenceFile) {
   }
   await validateCanonicalInstructionPair(root, expected);
   if (kind === "artifact-delta") {
+    const baseline = new Map(receipt.nativeInit.baseline.map((row) => [row.path, row]));
+    if (coversInstructionPair(expected) && baseline.get("AGENTS.md")?.sha256 !== null &&
+        baseline.get("CLAUDE.md")?.sha256 === null) {
+      throw new Error("AGENTS-only baseline requires approved pointer normalization");
+    }
     const observed = await observeNativeInit(root);
     if (!observed.observedNativeEvidence) throw new Error("artifact delta evidence is not present");
     return observed.observedNativeEvidence;
@@ -1011,6 +1602,61 @@ export async function transitionNativeInit(dir, {
   }
   await writeReceipt(root, receipt);
   return envelope(receipt);
+}
+
+export async function normalizeCodexInstructionPair(dir, { approved = false } = {}) {
+  if (approved !== true) throw new Error("Codex pointer normalization requires explicit approval");
+  const root = await validateRoot(dir);
+  const owned = await readOwned(root);
+  if (!owned) throw new Error("project is not initialized");
+  const { receipt } = owned;
+  const native = receipt.nativeInit;
+  if (native.state !== "handoff" || native.reason !== "not-callable" ||
+      JSON.stringify(native.expectedArtifacts) !== JSON.stringify(["AGENTS.md", "CLAUDE.md"])) {
+    throw new Error("Codex pointer normalization requires a pending canonical-pair handoff");
+  }
+  const baseline = new Map(native.baseline.map((row) => [row.path, row]));
+  const agentsBaseline = baseline.get("AGENTS.md");
+  const claudeBaseline = baseline.get("CLAUDE.md");
+  if (!agentsBaseline || agentsBaseline.sha256 === null || agentsBaseline.bytes === 0 ||
+      !claudeBaseline || claudeBaseline.sha256 !== null) {
+    throw new Error("Codex pointer normalization requires an AGENTS-only baseline");
+  }
+  const assertUnchangedAuthority = async () => {
+    const agents = await readRegular(root, "AGENTS.md", INIT_LIMITS.learnFileBytes);
+    if (!agents || agents.bytes.length === 0 || sha256(agents.bytes) !== agentsBaseline.sha256 ||
+        agents.info.size !== agentsBaseline.bytes) {
+      throw new Error("AGENTS.md no longer matches the approved baseline");
+    }
+    if (importsClaudeInstruction(agents.bytes.toString("utf8"), join(root, "AGENTS.md"), join(root, "CLAUDE.md"))) {
+      throw new Error("AGENTS.md baseline must not import CLAUDE.md");
+    }
+    return agents;
+  };
+  await assertUnchangedAuthority();
+  let created;
+  try {
+    created = await createContainedFile(root, join(root, "CLAUDE.md"), CLAUDE_AUTHORITY_POINTER);
+  } catch (error) {
+    throw new Error(`CLAUDE.md must remain absent for approved normalization: ${error.message}`);
+  }
+  if (!created) throw new Error("CLAUDE.md must remain absent for approved normalization");
+  const agents = await assertUnchangedAuthority();
+  const claude = await readRegular(root, "CLAUDE.md", INIT_LIMITS.learnFileBytes);
+  if (!claude || !claude.bytes.equals(CLAUDE_AUTHORITY_POINTER)) {
+    throw new Error("CLAUDE.md changed during approved normalization");
+  }
+  native.evidence = {
+    kind: "approved-pointer-normalization",
+    artifacts: [
+      { path: "AGENTS.md", sha256: sha256(agents.bytes) },
+      { path: "CLAUDE.md", sha256: sha256(claude.bytes) },
+    ],
+  };
+  native.state = "completed";
+  native.handoffAcknowledged = false;
+  await writeReceipt(root, receipt);
+  return envelope((await readOwned(root)).receipt);
 }
 
 export async function acknowledgeNativeInitHandoff(dir, { reason }) {

@@ -26,6 +26,7 @@ import {
   acknowledgeNativeInitHandoff,
   finalizeInitialization,
   initializeProject,
+  normalizeCodexInstructionPair,
   transitionNativeInit,
 } from "./init.js";
 import { renderPlanChecklist } from "./checklist.js";
@@ -121,7 +122,7 @@ const USAGE = [
   // harness-native dispatch packets + session receipts (kimi/codex lanes)
   "kimi-goal-invocation <objective> [--stream-json] [--secondary <model>]|kimi-process-dispatch --brief <text> --agent-file <name|path> --cwd <dir> --lane <primary|secondary>|kimi-process-run --brief <text> --agent-file <name|path> --cwd <dir> --lane <primary|secondary>|kimi-session-usage <--session-dir <dir>|--cwd <dir> [--stdout-file <f>]>|kimi-summarize-receipts <items.json>|codex-spawn-packet --task-id <id> --agent-type <id> [--message <text>|--message-file <f>] [--version v1|v2] [--fork-turns <none|N>]|codex-wait-packet [--version v1|v2] [--targets a,b] [--timeout-ms N]|",
   // memory + vendor + init lifecycle
-  "memory read|write ...|vendor|init [dir]|init transition [dir] --to <handoff|attempted|completed>|init acknowledge [dir] --reason unavailable|init finalize [dir]|setup [dir]|design <init|status|resolve|detect|ignores|provider|gate|workflows|run> ...|",
+  "memory read|write ...|vendor|init [dir]|init transition [dir] --to <handoff|attempted|completed>|init normalize [dir] --approve CLAUDE.md|init acknowledge [dir] --reason unavailable|init finalize [dir]|setup [dir]|design <init|status|resolve|detect|ignores|provider|gate|workflows|run> ...|",
   // planning + routing artifacts
   "plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|",
   // prompt tooling
@@ -853,7 +854,7 @@ async function handleCoreCommandPart3(cmd, rest) {
     out(await scaffoldProject(rest[0] || process.cwd()));
     return true;
   } else if (cmd === "init") {
-    const action = ["transition", "acknowledge", "finalize"].includes(rest[0]) ? rest[0] : null;
+    const action = ["transition", "normalize", "acknowledge", "finalize"].includes(rest[0]) ? rest[0] : null;
     if (!action) {
       out(await initializeProject(rest[0] || process.cwd()));
     } else {
@@ -869,6 +870,11 @@ async function handleCoreCommandPart3(cmd, rest) {
           evidenceKind: flagValue(rest, "--evidence") ?? null,
           evidenceFile: flagValue(rest, "--evidence-file") ?? null,
         }));
+      } else if (action === "normalize") {
+        if (flagValue(rest, "--approve") !== "CLAUDE.md") {
+          fail("init normalize [dir] --approve CLAUDE.md: exact approval is required");
+        }
+        out(await normalizeCodexInstructionPair(dir, { approved: true }));
       } else if (action === "acknowledge") {
         out(await acknowledgeNativeInitHandoff(dir, { reason: flagValue(rest, "--reason") }));
       } else {

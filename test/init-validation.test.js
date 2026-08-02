@@ -1,9 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { initializeProject, readInitReceipt } from "../src/init.js";
+import { canonicalInitJson, initializeProject, readInitReceipt } from "../src/init.js";
 import { trackedMkdtemp as mkdtemp } from "../test-support/helpers.js";
 
 const tmp = () => mkdtemp(join(tmpdir(), "muster-init-validation-"));
@@ -27,6 +28,18 @@ const profileCases = [
   ["classification", (p) => { p.classification = "purple"; }, /invalid project profile: classification/],
   ["facts.shape", (p) => { p.facts.shape = "blob"; }, /invalid project profile: facts\.shape/],
   ["facts.frameworks", (p) => { p.facts.frameworks = [""]; }, /invalid project profile: facts\.frameworks/],
+  ["facts.learning", (p) => {
+    p.facts.learning = { limitations: [], status: "incomplete" };
+  }, /invalid project profile: facts\.learning/],
+  ["facts.learning.limitations", (p) => {
+    p.facts.learning = {
+      limitations: [
+        { path: "z/package.json", reason: "parse-limit" },
+        { path: "a/package.json", reason: "parse-limit" },
+      ],
+      status: "incomplete",
+    };
+  }, /invalid project profile: facts\.learning\.limitations/],
   ["facts.manifests", (p) => {
     p.facts.manifests = [{ bytes: 1, path: "x.txt", sha256: "nope" }];
   }, /invalid project profile: facts\.manifests/],
@@ -99,5 +112,21 @@ for (const [name, mutate, pattern] of receiptCases) {
 test("unmutated owned init state still validates", async () => {
   const dir = await tmp();
   const { receipt } = await initializeProject(dir);
+  assert.deepEqual(await readInitReceipt(dir), receipt);
+});
+
+test("schema-v1 profiles generated before learning evidence remain readable", async () => {
+  const dir = await tmp();
+  await initializeProject(dir);
+  const profilePath = join(dir, ".muster/project-profile.json");
+  const receiptPath = join(dir, ".muster/init-receipt.json");
+  const profile = JSON.parse(await readFile(profilePath, "utf8"));
+  const receipt = JSON.parse(await readFile(receiptPath, "utf8"));
+  delete profile.facts.learning;
+  profile.repositoryFingerprint.basis = "muster.repository-state.v1";
+  receipt.finalStateFingerprint.basis = "muster.repository-state.v1";
+  receipt.profileDigest = createHash("sha256").update(canonicalInitJson(profile)).digest("hex");
+  await writeFile(profilePath, JSON.stringify(profile));
+  await writeFile(receiptPath, JSON.stringify(receipt));
   assert.deepEqual(await readInitReceipt(dir), receipt);
 });

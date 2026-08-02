@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { link, mkdir, readFile, stat, symlink, unlink, writeFile } from "node:fs/promises";
+import { link, mkdir, open, readFile, rm, stat, symlink, truncate, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -11,8 +11,10 @@ import {
   acknowledgeNativeInitHandoff,
   canonicalInitJson,
   finalizeInitialization,
+  INIT_LIMITS,
   initializeProject,
   learnProjectProfile,
+  normalizeCodexInstructionPair,
   observeNativeInit,
   readInitReceipt,
   transitionNativeInit,
@@ -23,6 +25,22 @@ const sha = (value) => createHash("sha256").update(value).digest("hex");
 const tmp = () => mkdtemp(join(tmpdir(), "muster-init-"));
 const pexecFile = promisify(execFile);
 const CLAUDE_POINTER = "# Claude Code\n\n@AGENTS.md\n";
+const readProfile = async (dir) => JSON.parse(await readFile(join(dir, ".muster/project-profile.json"), "utf8"));
+
+async function gitWithInput(cwd, args, input) {
+  const child = spawn("git", args, { cwd, stdio: ["pipe", "pipe", "pipe"] });
+  const stdout = [];
+  const stderr = [];
+  child.stdout.on("data", (chunk) => stdout.push(chunk));
+  child.stderr.on("data", (chunk) => stderr.push(chunk));
+  child.stdin.end(input);
+  const code = await new Promise((resolve, reject) => {
+    child.once("error", reject);
+    child.once("close", resolve);
+  });
+  if (code !== 0) throw new Error(Buffer.concat(stderr).toString("utf8"));
+  return Buffer.concat(stdout).toString("utf8").trim();
+}
 
 test("canonicalInitJson recursively sorts keys and rejects non-JSON values", () => {
   assert.equal(canonicalInitJson({ z: 1, a: { d: true, c: null } }), '{"a":{"c":null,"d":true},"z":1}');
@@ -128,6 +146,88 @@ test("paired instruction artifact-delta requires the canonical authority pair", 
       await assert.rejects(completion, /canonical instruction authority pair/, fixture.name);
     }
   }
+});
+
+test("an approved missing Claude pointer completes an AGENTS-only Codex no-op handoff", async () => {
+  const dir = await tmp();
+  await writeFile(join(dir, "AGENTS.md"), "# Existing policy\n");
+  await initializeProject(dir);
+  await transitionNativeInit(dir, {
+    to: "handoff", reason: "not-callable", expectedArtifacts: ["AGENTS.md", "CLAUDE.md"],
+  });
+
+  assert.equal((await observeNativeInit(dir)).observedNativeEvidence, null, "native /init no-op");
+  const cli = new URL("../src/cli.js", import.meta.url).pathname;
+  const completed = JSON.parse((await pexecFile(
+    process.execPath,
+    [cli, "init", "normalize", dir, "--approve", "CLAUDE.md"],
+  )).stdout);
+  assert.equal(completed.receipt.nativeInit.state, "completed");
+  assert.equal(completed.receipt.nativeInit.evidence.kind, "approved-pointer-normalization");
+  assert.deepEqual(completed.receipt.nativeInit.evidence.artifacts.map(({ path }) => path), ["AGENTS.md", "CLAUDE.md"]);
+  assert.equal(await readFile(join(dir, "CLAUDE.md"), "utf8"), CLAUDE_POINTER);
+  assert.equal((await finalizeInitialization(dir)).receipt.phase, "finalized");
+});
+
+test("approved pointer normalization fails closed on changed authority and raced targets", async () => {
+  const prepare = async () => {
+    const dir = await tmp();
+    await writeFile(join(dir, "AGENTS.md"), "# Existing policy\n");
+    await initializeProject(dir);
+    await transitionNativeInit(dir, {
+      to: "handoff", reason: "not-callable", expectedArtifacts: ["AGENTS.md", "CLAUDE.md"],
+    });
+    return dir;
+  };
+
+  const changed = await prepare();
+  await writeFile(join(changed, "AGENTS.md"), "# Injected policy\n");
+  await assert.rejects(
+    () => normalizeCodexInstructionPair(changed, { approved: true }),
+    /AGENTS\.md.*baseline/,
+  );
+  await assert.rejects(() => stat(join(changed, "CLAUDE.md")), { code: "ENOENT" });
+  await writeFile(join(changed, "CLAUDE.md"), CLAUDE_POINTER);
+  await assert.rejects(
+    () => transitionNativeInit(changed, { to: "completed", evidenceKind: "artifact-delta" }),
+    /approved pointer normalization/,
+  );
+
+  const raced = await prepare();
+  await writeFile(join(raced, "CLAUDE.md"), "USER CONTENT\n");
+  await assert.rejects(
+    () => normalizeCodexInstructionPair(raced, { approved: true }),
+    /CLAUDE\.md.*absent/,
+  );
+  assert.equal(await readFile(join(raced, "CLAUDE.md"), "utf8"), "USER CONTENT\n");
+
+  const linked = await prepare();
+  const outside = join(await tmp(), "outside.md");
+  await writeFile(outside, "OUTSIDE\n");
+  await symlink(outside, join(linked, "CLAUDE.md"));
+  await assert.rejects(
+    () => normalizeCodexInstructionPair(linked, { approved: true }),
+    /symlink|reparse|absent/,
+  );
+  assert.equal(await readFile(outside, "utf8"), "OUTSIDE\n");
+});
+
+test("persisted approved pointer evidence remains bound to the AGENTS baseline", async () => {
+  const dir = await tmp();
+  await writeFile(join(dir, "AGENTS.md"), "# Existing policy\n");
+  await initializeProject(dir);
+  await transitionNativeInit(dir, {
+    to: "handoff", reason: "not-callable", expectedArtifacts: ["AGENTS.md", "CLAUDE.md"],
+  });
+  await normalizeCodexInstructionPair(dir, { approved: true });
+
+  const injected = "# Injected policy\n";
+  await writeFile(join(dir, "AGENTS.md"), injected);
+  const receiptPath = join(dir, ".muster/init-receipt.json");
+  const receipt = JSON.parse(await readFile(receiptPath, "utf8"));
+  receipt.nativeInit.evidence.artifacts[0].sha256 = sha(injected);
+  await writeFile(receiptPath, JSON.stringify(receipt));
+  await assert.rejects(() => readInitReceipt(dir), /approved pointer.*AGENTS.*baseline/i);
 });
 
 test("paired pre-existing confirmation requires both canonical instruction artifacts", async () => {
@@ -384,34 +484,421 @@ test("project learning succeeds with 248 ordinary files and preserves accurate p
   assert.deepEqual(profile.facts.manifests.map(({ path }) => path), ["package.json"]);
 });
 
-test("project learning retains per-file and aggregate byte limits", async () => {
-  const oversized = await tmp();
-  await writeFile(join(oversized, "package.json"), Buffer.alloc(1_048_577, 0x61));
-  await assert.rejects(
-    () => learnProjectProfile(oversized),
-    /unsafe regular file: package\.json/,
-  );
+test("repository fingerprints stream relevant files without repository-size ceilings", async () => {
+  const dir = await tmp();
+  await pexecFile("git", ["init", "--quiet"], { cwd: dir });
+  await writeFile(join(dir, ".gitignore"), "generated/\nignored-link\n");
+  await writeFile(join(dir, "tracked.txt"), "before\n");
+  await pexecFile("git", ["add", ".gitignore", "tracked.txt"], { cwd: dir });
+  await symlink("a".repeat(4_095), join(dir, "ignored-link"));
 
-  const aggregate = await tmp();
-  const manifests = [
-    "package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "Cargo.toml",
-    "Cargo.lock", "pyproject.toml", "requirements.txt", "go.mod", "Gemfile",
+  const generated = join(dir, "generated");
+  await mkdir(generated);
+  for (let offset = 0; offset < 10_001; offset += 250) {
+    await Promise.all(Array.from({ length: Math.min(250, 10_001 - offset) }, (_, index) =>
+      writeFile(join(generated, `entry-${offset + index}`), "")));
+  }
+
+  const largeFiles = Array.from({ length: 8 }, (_, index) => join(dir, `large-${index}.bin`));
+  for (const path of largeFiles) {
+    await writeFile(path, "");
+    await truncate(path, 16 * 1024 * 1024 + 1);
+  }
+
+  const initialized = await initializeProject(dir);
+  const before = initialized.receipt.finalStateFingerprint.digest;
+  await writeFile(join(dir, "tracked.txt"), "after\n");
+  const changed = (await learnProjectProfile(dir)).repositoryFingerprint.digest;
+  assert.notEqual(changed, before, "changing one tracked file must change the digest");
+
+  await transitionNativeInit(dir, { to: "handoff", reason: "unavailable", expectedArtifacts: [] });
+  await acknowledgeNativeInitHandoff(dir, { reason: "unavailable" });
+  const finalized = await finalizeInitialization(dir);
+  assert.equal(finalized.receipt.phase, "finalized");
+});
+
+test("repository fingerprints ignore external core.excludesFile state", async () => {
+  const dir = await tmp();
+  const outside = await tmp();
+  const excludes = join(outside, "global-ignore");
+  await pexecFile("git", ["init", "--quiet"], { cwd: dir });
+  await writeFile(join(dir, "local.txt"), "repository bytes\n");
+  await writeFile(excludes, "unrelated.txt\n");
+  await pexecFile("git", ["config", "core.excludesFile", excludes], { cwd: dir });
+
+  const before = (await learnProjectProfile(dir)).repositoryFingerprint.digest;
+  await writeFile(excludes, "local.txt\n");
+  const after = (await learnProjectProfile(dir)).repositoryFingerprint.digest;
+  assert.equal(after, before, "external ignore-file contents are not repository state");
+});
+
+test("non-Git repository fingerprints use global UTF-8 path order", async () => {
+  const dir = await tmp();
+  await mkdir(join(dir, "a"));
+  await writeFile(join(dir, "a", "z"), "nested\n");
+  await writeFile(join(dir, "a.txt"), "sibling\n");
+  const hash = createHash("sha256").update(Buffer.from("muster.repository-state.v2\0"));
+  const rows = [
+    Buffer.from(`F\0a.txt\0${0}\0${8}\0${sha("sibling\n")}\n`),
+    Buffer.from(`F\0a/z\0${0}\0${7}\0${sha("nested\n")}\n`),
   ];
-  await Promise.all(manifests.map((name) => writeFile(join(aggregate, name), Buffer.alloc(900_000, 0x61))));
+  for (const row of rows) {
+    const length = Buffer.allocUnsafe(8);
+    length.writeBigUInt64BE(BigInt(row.length));
+    hash.update(length).update(row);
+  }
+  const count = Buffer.allocUnsafe(8);
+  count.writeBigUInt64BE(2n);
+  const expected = hash.update(count).digest("hex");
+  assert.equal((await learnProjectProfile(dir)).repositoryFingerprint.digest, expected);
+});
+
+test("repository fingerprints reject a path-set addition during hashing", async () => {
+  const dir = await tmp();
+  const large = join(dir, "large.bin");
+  await writeFile(large, "");
+  await truncate(large, 128 * 1024 * 1024);
+  const writer = (async () => {
+    await sleep(20);
+    await writeFile(join(dir, "inserted.txt"), "late\n");
+  })();
+  await assert.rejects(() => learnProjectProfile(dir), /repository changed while fingerprinting/);
+  await writer;
+});
+
+test("directory learning limits remain explicit without blocking fingerprinting", async () => {
+  const dir = await tmp();
+  for (let offset = 0; offset < 33_000; offset += 500) {
+    await Promise.all(Array.from({ length: 500 }, (_, index) => {
+      const id = String(offset + index).padStart(5, "0");
+      return writeFile(join(dir, `${id}-${"x".repeat(249)}`), "");
+    }));
+  }
+
+  const profile = await learnProjectProfile(dir);
+  assert.deepEqual(profile.facts.learning, {
+    limitations: [{ path: "project-root", reason: "directory-limit" }],
+    status: "incomplete",
+  });
+  assert.match(profile.repositoryFingerprint.digest, /^[0-9a-f]{64}$/);
+});
+
+test("repository fingerprints still reject relevant special files", async () => {
+  const dir = await tmp();
+  await pexecFile("git", ["init", "--quiet"], { cwd: dir });
+  await pexecFile("mkfifo", [join(dir, "unsafe.pipe")]);
   await assert.rejects(
-    () => learnProjectProfile(aggregate),
-    /project learning limit exceeded/,
+    () => learnProjectProfile(dir),
+    /unsupported repository entry type: unsafe\.pipe/,
   );
 });
 
+test("repository fingerprints reject tracked files reached through a symlinked ancestor", async () => {
+  const dir = await tmp();
+  const outside = await tmp();
+  await pexecFile("git", ["init", "--quiet"], { cwd: dir });
+  await mkdir(join(dir, "tracked"));
+  await writeFile(join(dir, "tracked", "file.txt"), "inside\n");
+  await pexecFile("git", ["add", "tracked/file.txt"], { cwd: dir });
+  await rm(join(dir, "tracked"), { recursive: true });
+  await writeFile(join(outside, "file.txt"), "outside\n");
+  await symlink(outside, join(dir, "tracked"));
+
+  await assert.rejects(
+    () => learnProjectProfile(dir),
+    /unsafe ancestor for tracked\/file\.txt/,
+  );
+});
+
+test("repository fingerprints accept valid tracked paths longer than owned artifact paths", async () => {
+  const dir = await tmp();
+  await pexecFile("git", ["init", "--quiet"], { cwd: dir });
+  const parts = ["a".repeat(120), "b".repeat(120), "c".repeat(70)];
+  const parent = join(dir, ...parts.slice(0, -1));
+  const rel = `${parts.join("/")}.txt`;
+  await mkdir(parent, { recursive: true });
+  await writeFile(join(dir, rel), "tracked\n");
+  await pexecFile("git", ["add", rel], { cwd: dir });
+
+  const profile = await learnProjectProfile(dir);
+  assert.match(profile.repositoryFingerprint.digest, /^[0-9a-f]{64}$/);
+});
+
+test("repository fingerprint recursion does not retain parent directory descriptors", {
+  skip: process.platform === "win32" ? "POSIX file-descriptor limit" : false,
+}, async () => {
+  const dir = await tmp();
+  const deep = join(dir, ...Array.from({ length: 100 }, (_, index) => `d${index}`));
+  await mkdir(deep, { recursive: true });
+  await writeFile(join(deep, "tracked.txt"), "deep\n");
+  const cli = new URL("../src/cli.js", import.meta.url).pathname;
+  const { stdout } = await pexecFile(
+    "bash",
+    ["-c", 'ulimit -n 64; exec "$1" "$2" init "$3"', "bash", process.execPath, cli, dir],
+    { maxBuffer: 1024 * 1024 },
+  );
+  assert.equal(JSON.parse(stdout).receipt.phase, "prepared");
+});
+
+test("repository fingerprint bounds one forged Git index path while streaming", async () => {
+  const dir = await tmp();
+  await pexecFile("git", ["init", "--quiet"], { cwd: dir });
+  await writeFile(join(dir, "blob"), "");
+  const blob = (await pexecFile("git", ["hash-object", "-w", "blob"], { cwd: dir })).stdout.trim();
+  const path = "a".repeat(262_145);
+  await gitWithInput(dir, ["update-index", "-z", "--index-info"], Buffer.from(`100644 ${blob}\t${path}\0`));
+  await assert.rejects(
+    () => learnProjectProfile(dir),
+    /repository fingerprint path limit exceeded/,
+  );
+});
+
+test("repository fingerprint rejects non-round-tripping Git index path bytes", {
+  skip: process.platform === "win32" ? "POSIX permits non-UTF-8 path bytes" : false,
+}, async () => {
+  const dir = await tmp();
+  await pexecFile("git", ["init", "--quiet"], { cwd: dir });
+  await writeFile(join(dir, "blob"), "");
+  const blob = (await pexecFile("git", ["hash-object", "-w", "blob"], { cwd: dir })).stdout.trim();
+  const row = Buffer.concat([Buffer.from(`100644 ${blob}\tbad-`), Buffer.from([0xff]), Buffer.from("\0")]);
+  await gitWithInput(dir, ["update-index", "-z", "--index-info"], row);
+  await assert.rejects(() => learnProjectProfile(dir), /invalid UTF-8 repository path: git index/);
+});
+
+test("project learning rejects non-round-tripping Git ref output", {
+  skip: process.platform === "win32" ? "POSIX permits non-UTF-8 ref bytes" : false,
+}, async () => {
+  const dir = await tmp();
+  await pexecFile("git", ["init", "--quiet"], { cwd: dir });
+  await writeFile(join(dir, ".git", "HEAD"), Buffer.concat([
+    Buffer.from("ref: refs/heads/bad-"), Buffer.from([0xff]), Buffer.from("\n"),
+  ]));
+  await assert.rejects(() => learnProjectProfile(dir), /invalid UTF-8 repository path: git command output/);
+});
+
+test("project learning rejects non-round-tripping filesystem name bytes", {
+  skip: process.platform === "win32" ? "POSIX permits non-UTF-8 path bytes" : false,
+}, async () => {
+  const dir = await tmp();
+  await writeFile(Buffer.concat([Buffer.from(`${dir}/bad-`), Buffer.from([0xff])]), "");
+  await assert.rejects(() => learnProjectProfile(dir), /invalid UTF-8 repository path/);
+});
+
+test("repository fingerprints reject same-size in-place writes during a streamed read", async () => {
+  const dir = await tmp();
+  const target = join(dir, "changing.bin");
+  await writeFile(target, Buffer.alloc(16 * 1024 * 1024, 0x61));
+  const handle = await open(target, "r+");
+  const block = Buffer.alloc(64 * 1024, 0x62);
+  let stop = false;
+  const writer = (async () => {
+    let position = 0;
+    while (!stop) {
+      await handle.write(block, 0, block.length, position);
+      position = (position + block.length) % (16 * 1024 * 1024);
+    }
+  })();
+  try {
+    await assert.rejects(
+      () => learnProjectProfile(dir),
+      /file changed while reading: changing\.bin/,
+    );
+  } finally {
+    stop = true;
+    await writer;
+    await handle.close();
+  }
+});
+
+test("project learning records large metadata without treating storage size as a parse budget", async () => {
+  const lockRoot = await tmp();
+  await writeFile(join(lockRoot, "package-lock.json"), Buffer.alloc(2 * 1024 * 1024, 0x61));
+  const initialized = await initializeProject(lockRoot);
+  const lockProfile = await readProfile(lockRoot);
+  assert.equal(lockProfile.facts.manifests[0].bytes, 2 * 1024 * 1024);
+  assert.deepEqual(lockProfile.facts.learning, { limitations: [], status: "complete" });
+  assert.deepEqual(await initializeProject(lockRoot), initialized);
+
+  const aggregate = await tmp();
+  const manifests = [
+    "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lockb", "Cargo.toml",
+    "Cargo.lock", "pyproject.toml", "requirements.txt", "go.mod", "Gemfile",
+  ];
+  await Promise.all(manifests.map((name) => writeFile(join(aggregate, name), Buffer.alloc(900_000, 0x61))));
+  const aggregateInit = await initializeProject(aggregate);
+  const aggregateProfile = await readProfile(aggregate);
+  assert.ok(aggregateProfile.facts.manifests.reduce((sum, row) => sum + row.bytes, 0) > 8 * 1024 * 1024);
+  assert.deepEqual(aggregateProfile.facts.learning, { limitations: [], status: "complete" });
+  assert.deepEqual(await initializeProject(aggregate), aggregateInit);
+});
+
+test("project learning rejects recognized metadata beyond its cumulative work budget before reading", async () => {
+  const dir = await tmp();
+  const lock = join(dir, "package-lock.json");
+  await writeFile(lock, "");
+  await truncate(lock, INIT_LIMITS.fingerprintTotalBytes + 1);
+  await assert.rejects(() => learnProjectProfile(dir), /project learning byte limit exceeded/);
+});
+
+test("project learning reuses a descriptor-pinned digest for sparse recognized metadata", async () => {
+  const dir = await tmp();
+  const lock = join(dir, "package-lock.json");
+  await writeFile(lock, "");
+  await truncate(lock, 17 * 1024 * 1024 + 1);
+  const initialized = await initializeProject(dir);
+  const profile = await readProfile(dir);
+  assert.equal(profile.facts.manifests[0].bytes, 17 * 1024 * 1024 + 1);
+  assert.deepEqual(profile.facts.learning, { limitations: [], status: "complete" });
+  assert.match(profile.repositoryFingerprint.digest, /^[0-9a-f]{64}$/);
+  assert.deepEqual(await initializeProject(dir), initialized);
+});
+
+test("project learning rejects metadata changed before its fingerprint is sealed", async () => {
+  const dir = await tmp();
+  const instructions = join(dir, "AGENTS.md");
+  await writeFile(instructions, "before!\n");
+  const lock = join(dir, "package-lock.json");
+  await writeFile(lock, "");
+  await truncate(lock, 128 * 1024 * 1024);
+  const writer = (async () => {
+    await sleep(20);
+    await writeFile(instructions, "after!!\n");
+  })();
+  await assert.rejects(
+    () => learnProjectProfile(dir),
+    /file changed while reading: AGENTS\.md/,
+  );
+  await writer;
+});
+
+test("project learning binds source facts to the pre-learning directory snapshot", async () => {
+  const dir = await tmp();
+  await mkdir(join(dir, "src"));
+  await writeFile(join(dir, "src", "app.js"), "export {};\n");
+  const lock = join(dir, "package-lock.json");
+  await writeFile(lock, "");
+  await truncate(lock, 128 * 1024 * 1024);
+  const writer = (async () => {
+    await sleep(20);
+    await rm(join(dir, "src", "app.js"));
+  })();
+  await assert.rejects(() => learnProjectProfile(dir), /repository changed while learning/);
+  await writer;
+});
+
+test("project learning binds root VCS facts to the sealed fingerprint", async () => {
+  const dir = await tmp();
+  await pexecFile("git", ["init", "--quiet"], { cwd: dir });
+  await pexecFile("git", ["config", "user.name", "Muster Test"], { cwd: dir });
+  await pexecFile("git", ["config", "user.email", "muster@example.invalid"], { cwd: dir });
+  const large = join(dir, "large.bin");
+  await writeFile(large, "");
+  await truncate(large, 512 * 1024 * 1024);
+  await pexecFile("git", ["add", "large.bin"], { cwd: dir });
+  await pexecFile("git", ["commit", "--quiet", "-m", "initial"], { cwd: dir });
+  const writer = (async () => {
+    await sleep(50);
+    await pexecFile("git", ["commit", "--quiet", "--allow-empty", "-m", "advance"], { cwd: dir });
+  })();
+  await assert.rejects(() => learnProjectProfile(dir), /repository VCS changed while learning/);
+  await writer;
+});
+
+test("project learning cumulatively bounds retained package metadata", async () => {
+  const dir = await tmp();
+  const packageBytes = Buffer.from(`{"padding":"${"x".repeat(1_048_560)}"}`);
+  assert.equal(packageBytes.length, 1_048_574);
+  for (let index = 0; index < 9; index++) {
+    const parent = join(dir, `p${index}`);
+    await mkdir(parent);
+    await writeFile(join(parent, "package.json"), packageBytes);
+  }
+  const profile = await learnProjectProfile(dir);
+  assert.ok(profile.facts.learning.limitations.some(({ reason }) => reason === "parse-limit"));
+  assert.ok(profile.facts.manifests.reduce((sum, row) => sum + row.bytes, 0) > INIT_LIMITS.learnCaptureBytes);
+});
+
+test("project learning reports bounded parsing and depth as explicit incomplete evidence", async () => {
+  const oversizedPackage = await tmp();
+  await writeFile(join(oversizedPackage, "package.json"), Buffer.alloc(2 * 1024 * 1024, 0x61));
+  const parseInit = await initializeProject(oversizedPackage);
+  assert.deepEqual((await readProfile(oversizedPackage)).facts.learning, {
+    limitations: [{ path: "package.json", reason: "parse-limit" }],
+    status: "incomplete",
+  });
+  assert.deepEqual(await initializeProject(oversizedPackage), parseInit);
+
+  const deep = await tmp();
+  const deepDir = join(deep, "one", "two", "three", "four", "five");
+  await mkdir(deepDir, { recursive: true });
+  await writeFile(join(deepDir, "package.json"), "{}");
+  const depthInit = await initializeProject(deep);
+  assert.deepEqual((await readProfile(deep)).facts.learning, {
+    limitations: [{ path: "one/two/three/four/five", reason: "depth-limit" }],
+    status: "incomplete",
+  });
+  assert.deepEqual(await initializeProject(deep), depthInit);
+});
+
+test("project learning accepts contained metadata paths longer than owned-artifact paths", async () => {
+  const dir = await tmp();
+  const parts = ["a".repeat(100), "b".repeat(100), "c".repeat(90)];
+  const parent = join(dir, ...parts);
+  await mkdir(parent, { recursive: true });
+  await writeFile(join(parent, "Cargo.toml"), "[package]\n");
+  const initialized = await initializeProject(dir);
+  const profile = await readProfile(dir);
+  const path = profile.facts.manifests[0].path;
+  assert.ok(Buffer.byteLength(path) >= 300);
+  assert.deepEqual(profile.facts.learning, { limitations: [], status: "complete" });
+  assert.deepEqual(await initializeProject(dir), initialized);
+});
+
+test("project learning bounds generated evidence so high-cardinality profiles reread", async () => {
+  const dir = await tmp();
+  const metadata = [
+    "package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lockb",
+    "Cargo.toml", "Cargo.lock", "pyproject.toml", "requirements.txt", "go.mod", "Gemfile",
+    "AGENTS.md", "CLAUDE.md", "GEMINI.md",
+  ];
+  for (let offset = 0; offset < 600; offset += 20) {
+    await Promise.all(Array.from({ length: 20 }, async (_, index) => {
+      const id = String(offset + index).padStart(3, "0");
+      const parent = join(dir, `${id}-${"x".repeat(246)}`);
+      await mkdir(parent);
+      await Promise.all(metadata.map((name) => writeFile(join(parent, name), name === "package.json" ? "{}" : "")));
+    }));
+  }
+  const initialized = await initializeProject(dir);
+  const profile = await readProfile(dir);
+  assert.equal(profile.facts.learning.status, "incomplete");
+  assert.ok(profile.facts.learning.limitations.some(({ reason }) => reason === "profile-limit"));
+  assert.ok((await stat(join(dir, ".muster/project-profile.json"))).size <= INIT_LIMITS.learnProfileBytes);
+  assert.deepEqual(await initializeProject(dir), initialized);
+});
+
+test("project learning dynamically trims many source roots to the serialized profile ceiling", async () => {
+  const dir = await tmp();
+  const sourceNames = ["src", "lib", "app", "apps", "packages"];
+  for (let offset = 0; offset < 5_740; offset += 100) {
+    await Promise.all(Array.from({ length: Math.min(100, 5_740 - offset) }, async (_, index) => {
+      const parent = join(dir, (offset + index).toString(36).padStart(4, "0"));
+      await Promise.all(sourceNames.map((name) => mkdir(join(parent, name), { recursive: true })));
+    }));
+  }
+  const initialized = await initializeProject(dir);
+  const profile = await readProfile(dir);
+  assert.equal(profile.facts.learning.status, "incomplete");
+  assert.ok(profile.facts.learning.limitations.some(({ reason }) => reason === "profile-limit"));
+  assert.ok((await stat(join(dir, ".muster/project-profile.json"))).size <= INIT_LIMITS.learnProfileBytes);
+  assert.deepEqual(await initializeProject(dir), initialized);
+});
+
 // --- TOCTOU translation arm (audit 2 slice J) ------------------------------
-// learnFacts's readNoFollowRegular call passes the walk's own lstat as
-// expectedInfo (src/init.js:402); a same-user writer replacing the target
-// mid-read trips the shared reader's "changed" reason (post-read identity
-// recheck on the HELD descriptor, fs-safe.js:159-161 -- the same reason the
-// expectedInfo arm throws for a lstat->open swap). init.js deliberately lets
-// that diagnostic propagate untranslated, so the rejection must surface with
-// the exact `file changed while reading: <rel>` message, tagged.
+// learnFacts passes the walk's own lstat to the streaming metadata reader; a
+// same-user writer replacing the target mid-read trips its "changed" reason
+// through post-read identity checks on both the held descriptor and its name.
+// The rejection must surface with the exact tagged diagnostic below.
 test("learnProjectProfile: a manifest swapped mid-read rejects with the changed-while-reading diagnostic", async () => {
   const dir = await tmp();
   // Stagings live OUTSIDE the walked root (same tmp filesystem, so the

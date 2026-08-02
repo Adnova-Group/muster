@@ -5,7 +5,7 @@ import { readFile } from "node:fs/promises";
 const root = new URL("../", import.meta.url);
 const read = path => readFile(new URL(path, root), "utf8");
 
-test("init command binds the frozen prepare, transition, acknowledge, and finalize API", async () => {
+test("init command binds the frozen prepare, transition, normalize, acknowledge, and finalize API", async () => {
   const text = await read("plugin/commands/init.md");
 
   assert.match(text, /^name: init$/m);
@@ -13,6 +13,7 @@ test("init command binds the frozen prepare, transition, acknowledge, and finali
   assert.match(text, /\$MUSTER_CLI init "\$TARGET"/);
   assert.match(text, /\$MUSTER_CLI init transition "\$TARGET" --to handoff --reason not-callable --expect AGENTS\.md/);
   assert.match(text, /\$MUSTER_CLI init transition "\$TARGET" --to handoff --reason unavailable --expect ""/);
+  assert.match(text, /\$MUSTER_CLI init normalize "\$TARGET" --approve CLAUDE\.md/);
   assert.match(text, /\$MUSTER_CLI init acknowledge "\$TARGET" --reason unavailable/);
   assert.match(text, /\$MUSTER_CLI init finalize "\$TARGET"/);
 });
@@ -28,6 +29,22 @@ test("init command makes native harness work a HUMAN-HOLD and never treats invoc
   assert.match(text, /--to completed --evidence artifact-delta/);
   assert.match(text, /--to completed --evidence preexisting-confirmed/);
   assert.match(text, /--to completed --evidence call-result --evidence-file/);
+});
+
+test("Codex AGENTS-only no-op offers an approved canonical pointer recovery", async () => {
+  const text = await read("plugin/commands/init.md");
+
+  assert.match(text, /Codex[\s\S]*?`AGENTS\.md` existed at the baseline[\s\S]*?`CLAUDE\.md` was absent/i);
+  assert.match(text, /native `\/init`[\s\S]*?(?:no-op|no artifact delta)/i);
+  assert.match(text, /explicit user approval[\s\S]*?create[\s\S]*?missing `CLAUDE\.md`/i);
+  assert.match(text, /# Claude Code\n\s*\n\s*@AGENTS\.md/);
+  assert.match(
+    text,
+    /explicit user approval[\s\S]*?init normalize "\$TARGET" --approve CLAUDE\.md[\s\S]*?init finalize/i,
+  );
+  assert.match(text, /Do not synthesize the write[\s\S]*?shell redirection[\s\S]*?`writeFile`/i);
+  assert.match(text, /both files existed at the baseline[\s\S]*?preexisting-confirmed/i);
+  assert.match(text, /independent instructions[\s\S]*?HUMAN-HOLD/i);
 });
 
 test("init command preserves the cloned-repository trust boundary", async () => {

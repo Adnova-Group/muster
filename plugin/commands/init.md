@@ -104,10 +104,29 @@ instruction seeds.
    at the baseline and Claude Code creates `CLAUDE.md`, move that generated
    policy text intact to `AGENTS.md`, then replace the newly created
    `CLAUDE.md` with the pointer above. When Codex creates `AGENTS.md`, add the
-   pointer as the missing `CLAUDE.md`. If either file existed at the baseline
-   and prevents this pattern, do not overwrite it: leave a HUMAN-HOLD asking the
-   user to consolidate the files. Normalization is part of native initialization
-   and must happen before completion evidence is submitted.
+   pointer as the missing `CLAUDE.md`.
+
+   Codex has one additional attended recovery for a native `/init` no-op. When
+   `AGENTS.md` existed at the baseline, `CLAUDE.md` was absent, and native
+   `/init` produces no artifact delta, show the exact pointer above and request
+   explicit user approval to create only the missing `CLAUDE.md`. On approval,
+   run `$MUSTER_CLI init normalize "$TARGET" --approve CLAUDE.md`. This bounded
+   operation rechecks that `AGENTS.md` is an unchanged, non-empty, single-link
+   regular file with no `CLAUDE.md` import, exclusively creates the still-absent
+   pointer without following links or replacing a raced file, and binds the
+   completed receipt to both exact artifact hashes. Do not synthesize the write
+   with shell redirection, `writeFile`, or a generic edit tool. Only when the
+   normalization receipt reports `nativeInit.state: "completed"`, run
+   `$MUSTER_CLI init finalize "$TARGET"`. Never create or replace either file
+   without that approval.
+
+   When both files existed at the baseline and already form the canonical pair,
+   use the explicit `preexisting-confirmed` path in step 4. If either baseline
+   file contains independent instructions, the reverse import exists, either
+   file changed before an approved write, or an existing file otherwise
+   prevents the exact pattern, do not overwrite it: leave a **HUMAN-HOLD** asking
+   the user to consolidate the files. Normalization is part of native
+   initialization and must happen before completion evidence is submitted.
 
 4. **Resume only from evidence or acknowledgement.**
 

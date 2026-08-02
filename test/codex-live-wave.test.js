@@ -103,6 +103,13 @@ test("runCodexWave rejects an existing but unregistered worktree path before Cod
   await assertRejectedBeforeCodex(fixture, rogue, /registered linked git worktree/i);
 });
 
+test("runCodexWave rejects a registered path whose .git pointer is swapped to a sibling worktree", async t => {
+  const fixture = await waveFixture(t);
+  const siblingPointer = await readFile(join(fixture.worktreeB, ".git"), "utf8");
+  await writeFile(join(fixture.worktreeA, ".git"), siblingPointer);
+  await assertRejectedBeforeCodex(fixture, fixture.worktreeA, /git directory|registry|backpointer/i);
+});
+
 test("runCodexWave rejects symlink-equivalent duplicate worktrees before Codex execution", async t => {
   const fixture = await waveFixture(t);
   const alias = join(fixture.root, "member-a-alias");
@@ -210,6 +217,17 @@ test("runCodexWave rejects unsafe policy before probes and rejects an exit-zero 
   );
 });
 
+test("runCodexWave rejects NUL-bearing command inputs before every Codex probe", async t => {
+  const fixture = await waveFixture(t);
+  const nul = member("nul", fixture.worktreeA);
+  nul.prompt = "unsafe\0prompt";
+  await assert.rejects(runCodexWave({
+    members: [nul], forceProcess: true, codexCommand: fixture.codex,
+    repositoryRoot: fixture.repo, baseSha: fixture.baseSha,
+  }), /NUL/i);
+  await assert.rejects(readFile(fixture.launches, "utf8"), { code: "ENOENT" });
+});
+
 test("runCodexWave rejects executable project config and bounds members, duration, and captured output", async t => {
   const configured = await waveFixture(t);
   await mkdir(join(configured.worktreeA, ".codex"));
@@ -260,6 +278,28 @@ test("runCodexWave rejects executable project config and bounds members, duratio
     }),
     /output exceeded/i,
   );
+
+  const schemaFixture = await waveFixture(t);
+  const oversizedSchema = join(schemaFixture.worktreeA, "schema.json");
+  await writeFile(oversizedSchema, "x".repeat(1024 * 1024 + 1));
+  const schemaMember = member("schema", schemaFixture.worktreeA);
+  schemaMember.schemaPath = oversizedSchema;
+  await assert.rejects(runCodexWave({
+    members: [schemaMember], forceProcess: true, codexCommand: schemaFixture.codex,
+    repositoryRoot: schemaFixture.repo, baseSha: schemaFixture.baseSha,
+  }), /unsafe regular file|too-large|schema/i);
+  await assert.rejects(readFile(schemaFixture.launches, "utf8"), { code: "ENOENT" });
+
+  const fifoFixture = await waveFixture(t);
+  const fifoSchema = join(fifoFixture.worktreeA, "schema.pipe");
+  await execFile("mkfifo", [fifoSchema]);
+  const fifoMember = member("fifo-schema", fifoFixture.worktreeA);
+  fifoMember.schemaPath = fifoSchema;
+  await assert.rejects(runCodexWave({
+    members: [fifoMember], forceProcess: true, codexCommand: fifoFixture.codex,
+    repositoryRoot: fifoFixture.repo, baseSha: fifoFixture.baseSha,
+  }), /regular file|schema/i);
+  await assert.rejects(readFile(fifoFixture.launches, "utf8"), { code: "ENOENT" });
 });
 
 test("generated Codex runtime and orchestrator expose only the hermetic process-wave production lane", async t => {
@@ -277,6 +317,10 @@ test("generated Codex runtime and orchestrator expose only the hermetic process-
   assert.match(orchestrator, /registered linked worktree/);
   assert.match(orchestrator, /native-review shadow benchmark rejected adoption/);
 
+  const oversizedWave = join(fixture.root, "oversized-wave.json");
+  await writeFile(oversizedWave, " ".repeat(1024 * 1024 + 1));
+  await assert.rejects(execFile(process.execPath, [runtime, "codex-wave", oversizedWave]), /unsafe regular file|too-large/i);
+
   const waveFile = join(fixture.root, "wave.json");
   await writeFile(waveFile, JSON.stringify({
     members: [member("a", fixture.worktreeA), member("b", fixture.worktreeB)],
@@ -293,8 +337,8 @@ test("generated Codex runtime and orchestrator expose only the hermetic process-
   const packetFile = join(fixture.root, "packet-wave.json");
   await writeFile(packetFile, JSON.stringify({
     members: [
-      { id: "one", prompt: "one", model: "gpt-5.6-luna", agentType: "muster-surgeon", writes: ["a"] },
-      { id: "two", prompt: "two", model: "gpt-5.6-sol", agentType: "muster-builder", writes: ["b"] },
+      { id: "one", prompt: "one", model: "gpt-5.6-luna", agentType: "muster-investigator", readOnly: true },
+      { id: "two", prompt: "two", model: "gpt-5.6-sol", agentType: "muster-reviewer", readOnly: true },
     ],
     catalogVersions: { "gpt-5.6-luna": "v1", "gpt-5.6-sol": "v2" },
     maxConcurrentThreadsPerSession: 2,
@@ -308,4 +352,12 @@ test("generated Codex runtime and orchestrator expose only the hermetic process-
     "multi_agent_v1.spawn_agent",
     "collaboration.spawn_agent",
   ]);
+
+  const fifoHome = join(fixture.root, "fifo-home");
+  await mkdir(fifoHome);
+  await execFile("mkfifo", [join(fifoHome, "config.toml")]);
+  await assert.rejects(execFile(process.execPath, [runtime, "codex-wave", packetFile], {
+    env: { ...process.env, CODEX_HOME: fifoHome },
+    timeout: 2000,
+  }), /regular file|unsafe/i);
 });

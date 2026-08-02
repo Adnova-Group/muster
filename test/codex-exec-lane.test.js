@@ -2,6 +2,9 @@
 // diff-review gate. Evidence: docs/research/codex-cli.md sec 10.4.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { linkSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   resolveCodexDispatchLane, codexExecCall, interpretCodexExecExit, codexReviewCall,
   resolveCodexReviewRouting, CODEX_EXEC_MODES
@@ -22,18 +25,47 @@ test("resolveCodexDispatchLane: overlapping write sets force process isolation",
   assert.match(r.reason, /overlapping write sets/);
 });
 
-test("resolveCodexDispatchLane: disjoint writers stay on the cheaper in-session lane", () => {
+test("resolveCodexDispatchLane: physically verified disjoint writers stay on the cheaper in-session lane", t => {
+  const root = mkdtempSync(join(tmpdir(), "muster-write-fences-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(join(root, "src"));
+  writeFileSync(join(root, "src/x.js"), "x");
+  writeFileSync(join(root, "src/y.js"), "y");
   const r = resolveCodexDispatchLane({ members: [
     { id: "a", writes: ["src/x.js"] },
     { id: "b", writes: ["src/y.js"] }
-  ]});
+  ], repositoryRoot: root });
   assert.equal(r.mode, CODEX_EXEC_MODES.SPAWN_AGENT);
   assert.equal(r.isolation, "context-only");
 });
 
-test("resolveCodexDispatchLane: read-only members never force a cold process", () => {
-  const r = resolveCodexDispatchLane({ members: [{ id: "a" }, { id: "b" }] });
+test("resolveCodexDispatchLane: only authenticated read-only roles may omit write fences", () => {
+  const r = resolveCodexDispatchLane({ members: [
+    { id: "a", readOnly: true, agentType: "muster-investigator" },
+    { id: "b", readOnly: true, agentType: "muster-reviewer" },
+  ] });
   assert.equal(r.mode, CODEX_EXEC_MODES.SPAWN_AGENT);
+  for (const member of [{ id: "missing" }, { id: "claim", readOnly: true, agentType: "muster-builder" }]) {
+    assert.equal(resolveCodexDispatchLane({ members: [member] }).mode, CODEX_EXEC_MODES.EXEC_PROCESS);
+  }
+});
+
+test("resolveCodexDispatchLane: physical, hard-link, symlink, case, and missing aliases fail closed", t => {
+  const root = mkdtempSync(join(tmpdir(), "muster-write-aliases-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  writeFileSync(join(root, "target"), "x");
+  linkSync(join(root, "target"), join(root, "hard"));
+  symlinkSync(join(root, "target"), join(root, "sym"));
+  writeFileSync(join(root, "Case"), "upper");
+  writeFileSync(join(root, "case"), "lower");
+  for (const writes of [
+    ["target", "hard"], ["target", "sym"], ["Case", "case"], ["target", "missing"],
+  ]) {
+    assert.equal(resolveCodexDispatchLane({
+      members: writes.map((write, index) => ({ id: String(index), writes: [write] })),
+      repositoryRoot: root,
+    }).mode, CODEX_EXEC_MODES.EXEC_PROCESS);
+  }
 });
 
 test("resolveCodexDispatchLane: the caller can force isolation explicitly", () => {

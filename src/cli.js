@@ -104,6 +104,17 @@ import {
   scanDesign,
 } from "./design.js";
 
+const CODEX_WAVE_FILE_MAX_BYTES = 1024 * 1024;
+const CODEX_THREAD_CONFIG_MAX_BYTES = 128 * 1024;
+
+async function readBoundedCliText(path, maxBytes, label) {
+  return (await readNoFollowRegular(resolve(path), {
+    maxBytes,
+    label,
+    requireSingleLink: true,
+  })).bytes.toString("utf8");
+}
+
 const CATALOG_DIR = new URL("../catalog/", import.meta.url);
 // One array element per command group, each carrying its own "|" separators and
 // joined with "" so the rendered single-line usage stays byte-identical to the
@@ -377,12 +388,16 @@ async function main() {
       out(resolveWaveDispatch({ agentTeams }));
     } else if (cmd === "codex-wave") {
       const file = requireArg(rest, 0, "codex-wave <wave.json>: missing file path", fail);
-      const wave = JSON.parse(await readFile(file, "utf8"));
+      const wave = JSON.parse(await readBoundedCliText(file, CODEX_WAVE_FILE_MAX_BYTES, "Codex wave manifest"));
       if (!wave || typeof wave !== "object" || Array.isArray(wave)) fail("codex-wave <wave.json>: expected an object");
       const waveCodexHome = wave.codexHome || process.env.CODEX_HOME || join(homedir(), ".codex");
       let threadConfigText = "";
       try {
-        threadConfigText = await readFile(codexThreadLimitConfigPath(waveCodexHome), "utf8");
+        threadConfigText = await readBoundedCliText(
+          codexThreadLimitConfigPath(waveCodexHome),
+          CODEX_THREAD_CONFIG_MAX_BYTES,
+          "Codex thread configuration",
+        );
       } catch (error) {
         if (error.code !== "ENOENT") throw error;
       }
@@ -652,7 +667,11 @@ async function main() {
       if (explicitCeiling === undefined) {
         const waveCodexHome = process.env.CODEX_HOME || join(homedir(), ".codex");
         try {
-          threadConfigText = await readFile(codexThreadLimitConfigPath(waveCodexHome), "utf8");
+          threadConfigText = await readBoundedCliText(
+            codexThreadLimitConfigPath(waveCodexHome),
+            CODEX_THREAD_CONFIG_MAX_BYTES,
+            "Codex thread configuration",
+          );
         } catch (error) {
           if (error.code !== "ENOENT") throw error;
         }

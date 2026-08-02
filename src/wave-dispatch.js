@@ -29,6 +29,8 @@
 // pre-Workflow Claude Code builds) -- prose is the default whenever nothing is declared.
 
 import { execFileSync } from "node:child_process";
+import { realpathSync, statSync } from "node:fs";
+import { isAbsolute, relative, resolve } from "node:path";
 
 export const AGENT_TEAMS_ENV = "MUSTER_AGENT_TEAMS";
 
@@ -510,11 +512,38 @@ function codexWriteFencesOverlap(left, right) {
   return left === right || left.startsWith(`${right}/`) || right.startsWith(`${left}/`);
 }
 
-export function resolveCodexDispatchLane({ members = [], forceProcess = false } = {}) {
+const TRUSTED_READ_ONLY_AGENT_TYPES = new Set([
+  "muster-investigator", "muster-reviewer", "muster-strategist", "muster-improver",
+  "wsh-code-reviewer", "wsh-security-auditor",
+]);
+
+function physicalCodexWriteFence(root, fence) {
+  if (typeof root !== "string" || !root.trim()) return null;
+  try {
+    const canonicalRoot = realpathSync(root);
+    const lexical = resolve(canonicalRoot, fence);
+    const rel = relative(canonicalRoot, lexical);
+    if (rel.startsWith("..") || isAbsolute(rel)) return null;
+    const physical = realpathSync(lexical);
+    const physicalRel = relative(canonicalRoot, physical);
+    if (physicalRel.startsWith("..") || isAbsolute(physicalRel) || physical !== lexical) return null;
+    const info = statSync(physical);
+    return { physical, folded: physical.toLocaleLowerCase("en-US"), dev: info.dev, ino: info.ino };
+  } catch {
+    // Missing targets/ancestors and filesystem aliases are ambiguous. A cold
+    // process is cheaper than trusting an unverifiable shared-cwd write fence.
+    return null;
+  }
+}
+
+export function resolveCodexDispatchLane({ members = [], forceProcess = false, repositoryRoot } = {}) {
   let unsafeFence = false;
   const writers = [];
   for (const [memberIndex, member] of members.entries()) {
-    if (!member || !Object.hasOwn(member, "writes")) continue;
+    if (!member || !Object.hasOwn(member, "writes")) {
+      if (!(member?.readOnly === true && TRUSTED_READ_ONLY_AGENT_TYPES.has(member?.agentType))) unsafeFence = true;
+      continue;
+    }
     if (!Array.isArray(member.writes) || member.writes.length === 0) {
       unsafeFence = true;
       continue;
@@ -524,12 +553,20 @@ export function resolveCodexDispatchLane({ members = [], forceProcess = false } 
       unsafeFence = true;
       continue;
     }
-    writers.push({ memberIndex, fences });
+    const physical = fences.map(fence => physicalCodexWriteFence(repositoryRoot, fence));
+    if (physical.some(fence => fence === null)) {
+      unsafeFence = true;
+    }
+    writers.push({ memberIndex, fences, physical });
   }
   let conflicting = false;
   for (let left = 0; left < writers.length && !conflicting; left += 1) {
     for (let right = left + 1; right < writers.length && !conflicting; right += 1) {
       conflicting = writers[left].fences.some(a => writers[right].fences.some(b => codexWriteFencesOverlap(a, b)));
+      if (!conflicting && writers[left].physical.every(Boolean) && writers[right].physical.every(Boolean)) {
+        conflicting = writers[left].physical.some(a => writers[right].physical.some(b =>
+          a.folded === b.folded || (a.dev === b.dev && a.ino === b.ino)));
+      }
     }
   }
   if (forceProcess || unsafeFence || conflicting) {
@@ -537,9 +574,11 @@ export function resolveCodexDispatchLane({ members = [], forceProcess = false } 
       mode: CODEX_EXEC_MODES.EXEC_PROCESS,
       reason: forceProcess
         ? "caller forced process isolation"
-        : unsafeFence
+        : conflicting
+          ? "wave members declare overlapping write sets -- spawn_agent shares one cwd across all agents, so only separate `codex exec -C <dir>` processes can isolate them"
+          : unsafeFence
           ? "wave contains an unfenced, malformed, or glob-ambiguous writer -- fail closed to separate `codex exec -C <dir>` processes"
-          : "wave members declare overlapping write sets -- spawn_agent shares one cwd across all agents, so only separate `codex exec -C <dir>` processes can isolate them",
+          : "wave members require process isolation",
       isolation: "process-cwd"
     };
   }

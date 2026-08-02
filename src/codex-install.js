@@ -1620,7 +1620,7 @@ function hasDynamicInterpreterEval(command) {
       }
       if (["sh", "bash", "dash", "fish", "ksh", "zsh", "sh.exe", "bash.exe", "dash.exe", "fish.exe", "ksh.exe", "zsh.exe"].includes(executable)
         && flags.some(flag => /^-[^-]*c/.test(flag))) return true;
-      if (["cmd", "cmd.exe"].includes(executable) && flags.some(flag => /^\/(?:c|k)$/i.test(flag))) return true;
+      if (["cmd", "cmd.exe"].includes(executable) && flags.some(flag => /^\/(?:c|k)/i.test(flag))) return true;
       if (["powershell", "powershell.exe", "pwsh", "pwsh.exe"].includes(executable)
         && flags.some(flag => /^-(?:c|command|e|enc|encodedcommand)$/i.test(flag))) return true;
       if (/^(?:pythonw?|pypy)(?:\d+(?:\.\d+)*)?(?:\.exe)?$/.test(executable)
@@ -1629,6 +1629,13 @@ function hasDynamicInterpreterEval(command) {
         && flags.some(flag => /^-[^-]*e/i.test(flag))) return true;
       if (/^php(?:\.exe)?$/.test(executable) && flags.some(flag => /^-[^-]*r/i.test(flag))) return true;
       if (!["node", "node.exe", "nodejs", "nodejs.exe", "bun", "bun.exe", "deno", "deno.exe"].includes(executable)) continue;
+      for (let flagIndex = 0; flagIndex < flags.length; flagIndex++) {
+        const moduleOption = flags[flagIndex].match(/^--(?:experimental-loader|import|loader|preload)(?:=(.*))?$/);
+        if (!moduleOption) continue;
+        const specifier = moduleOption[1] ?? flags[flagIndex + 1];
+        if (specifier && /^[a-z][a-z0-9+.-]*:/i.test(specifier)
+          && !/^file:/i.test(specifier) && !win32.isAbsolute(specifier)) return true;
+      }
       for (const flag of flags) {
         if (/^-[^-]*[ep]/.test(flag) || flag === "--eval" || flag.startsWith("--eval=")
           || flag === "--print" || flag.startsWith("--print=")
@@ -1640,7 +1647,8 @@ function hasDynamicInterpreterEval(command) {
 }
 
 const hasUnresolvedShellExpansion = command => typeof command === "string"
-  && (/(^|[^\\])(?:\$[({A-Za-z_]|`)/.test(command)
+  && (/[\r\n]/.test(command)
+    || /(^|[^\\])(?:\$[({A-Za-z_]|`)/.test(command)
     || /![^!\r\n]+!|%[^%\r\n]+%|%[0-9*~]/.test(command)
     || /(^|[\s=])~(?:[\\/]|$)|[*?]|\[[^\]\r\n]*\]/.test(command)
     || /(?:^|[;&|('"\s])(?:cd|chdir|pushd|popd)(?:\s|$)/i.test(command)
@@ -2673,6 +2681,7 @@ async function prepareCodexUninstall({ scope, cwd, home, execFile, runtimeIdenti
   await ordinaryDirectoryPath(hookRuntimeDir);
   const hookManifestExists = await safeExists(hookManifestPath), hookConfigExists = await safeExists(hookConfigPath);
   const hookManifest = hookManifestExists ? validateHookManifest(await readJson(hookManifestPath), hookRuntimeDir, hookManifestPath) : null;
+  const hookFiles = hookManifest ? hookManifest.files.map(file => join(hookRuntimeDir, file)) : [];
   let hookConfig = null, removeHookConfig = false, departingScopeOwnedHookStateKeys = null;
   if (hookManifest) {
     const rawHookConfig = hookConfigExists ? await readJson(hookConfigPath) : { hooks: {} };
@@ -2695,10 +2704,12 @@ async function prepareCodexUninstall({ scope, cwd, home, execFile, runtimeIdenti
     if (Object.values(hookConfig.hooks || {}).flat().some(group => groupCommands(group).some(isMusterHookCommand))) {
       throw new Error(`Codex hook conflict: ${hookConfigPath} contains a duplicate or unmanaged Muster hook outside manifest ownership. Remove the extra group, then rerun the command.`);
     }
+    if (await hasMusterHookCommandAlias(hookConfig, hookFiles, { cwds: [cwd] })) {
+      throw new Error(`Codex hook conflict: ${hookConfigPath} contains an aliased Muster hook outside manifest ownership. Remove the alias, then rerun the command.`);
+    }
     const otherKeys = Object.keys(hookConfig).filter(key => key !== "hooks");
     removeHookConfig = hookManifest.hookConfigCreated && otherKeys.length === 0 && Object.keys(hookConfig.hooks || {}).length === 0;
   }
-  const hookFiles = hookManifest ? hookManifest.files.map(file => join(hookRuntimeDir, file)) : [];
   const present = await codexAvailable({ execFile, runtimeIdentity, allowInjected });
   const ownsScope = manifestExists || hookManifestExists;
   const currentScope = await scopeEntry(scope, cwd, home);

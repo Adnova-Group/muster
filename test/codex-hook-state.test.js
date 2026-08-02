@@ -32,7 +32,7 @@
 //       function's comment for why).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { link, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { reconcileConfigTomlHookState, runCodexInstall, runCodexUninstall } from "../src/codex-install.js";
@@ -558,6 +558,23 @@ test("Codex uninstall rejects a duplicate Muster group left outside manifest own
 
   await assert.rejects(() => runCodexUninstall({ scope: "project", cwd, home, execFile: absentCodex }), /duplicate or unmanaged Muster hook/);
   await readFile(join(cwd, ".codex", "muster", ".muster-managed.json"), "utf8");
+});
+
+test("Codex uninstall rejects a leftover hook physically aliasing its managed runtime", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hookstate-uninstall-alias-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const cwd = join(tmp, "project"), home = join(tmp, "home");
+  await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absentCodex });
+  const hooksJsonPath = join(cwd, ".codex", "hooks.json");
+  const runtimePath = join(cwd, ".codex", "muster", "hooks", "muster-hook.mjs");
+  const aliasPath = join(tmp, "foreign-hook.mjs");
+  await link(runtimePath, aliasPath);
+  const config = JSON.parse(await readFile(hooksJsonPath, "utf8"));
+  config.hooks.Stop.push({ hooks: [{ type: "command", command: `node ${aliasPath}` }] });
+  await writeFile(hooksJsonPath, `${JSON.stringify(config, null, 2)}\n`);
+
+  await assert.rejects(() => runCodexUninstall({ scope: "project", cwd, home, execFile: absentCodex }), /aliased Muster hook/);
+  await readFile(runtimePath, "utf8");
 });
 
 // -- Doctor integration (fix D) ------------------------------------------------

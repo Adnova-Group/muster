@@ -159,13 +159,16 @@ async function readScopeRegistry(home) {
 
 export async function hookActivationSnapshot({ home, cwd, userCodexHome = codexHome(home) }) {
   const registryPath = join(userCodexHome, "muster", "install-scopes.json");
-  const registryFile = await physicalFileSnapshot(registryPath);
+  let registryFile = await activationFileSnapshot(registryPath);
   let entries = [];
-  if (registryFile.exists) {
+  if (!registryFile.unsafe && registryFile.exists) {
     let registry;
-    try { registry = JSON.parse(registryFile.bytes.toString("utf8")); }
-    catch { throw new Error(`Codex managed-scope registry ownership is invalid: ${registryPath}`); }
-    entries = validateScopeRegistry(registryPath, registry);
+    try {
+      registry = JSON.parse(registryFile.bytes.toString("utf8"));
+      entries = validateScopeRegistry(registryPath, registry);
+    } catch (error) {
+      registryFile = { unsafe: true, code: "INVALID_REGISTRY", message: error.message };
+    }
   }
   const dirs = new Set([userCodexHome, join(cwd, ".codex"), ...entries.map(entry => resolve(entry.configDir))]);
   const paths = [registryPath];
@@ -288,8 +291,14 @@ export async function reconcileScopeRegistryEntries(entries, { lstatFn = lstat, 
     }
     if (typeof stat.isDirectory === "function" ? !stat.isDirectory() : !stat.isDirectory) continue;
     if (typeof stat.isSymbolicLink === "function" ? stat.isSymbolicLink() : stat.isSymbolicLink) continue;
-    const key = `${entry.scope}:${stat.dev}:${stat.ino}`;
-    if (survivors.has(key)) continue;
+    const key = `${stat.dev}:${stat.ino}`;
+    const existing = survivors.get(key);
+    if (existing) {
+      if (existing.scope !== entry.scope) {
+        throw new Error(`Codex managed-scope registry maps one physical directory to both ${existing.scope} and ${entry.scope} scope: ${entry.configDir}`);
+      }
+      continue;
+    }
     const canonicalConfigDir = await canonicalDiskCasing(entry.configDir, { readdirFn }) ?? entry.configDir;
     survivors.set(key, { scope: entry.scope, configDir: canonicalConfigDir });
   }
@@ -1517,7 +1526,8 @@ function shellPathCandidates(command) {
 }
 
 const hasUnresolvedShellExpansion = command => typeof command === "string"
-  && (/(^|[^\\])(?:\$[({A-Za-z_]|`)/.test(command) || /%[A-Za-z_][A-Za-z0-9_]*%/.test(command));
+  && (/(^|[^\\])(?:\$[({A-Za-z_]|`)/.test(command)
+    || /![^!\r\n]+!|%[^%\r\n]+%|%[0-9*~]/.test(command));
 
 async function physicalHookIdentity(path) {
   const canonical = await realpath(path);
@@ -1858,7 +1868,7 @@ async function inspectEffectiveUserScopeHooks({ home, packageVersion, expected, 
     || inspected.gaps.results.length !== expected.hookCount
     || inventoryAlias || !sameHookActivationSnapshot(activationBefore, activationAfter)) return null;
   const effective = effectiveHookTrust(inventory, cwd, inspected.configPath, inspected.gaps.results, { knownKeys: inspected.knownKeys });
-  return effective.ok ? { ...inspected, effective } : null;
+  return effective.ok ? { ...inspected, effective, activationSnapshot: activationAfter } : null;
 }
 
 async function userScopeHooksHealthy(options) {
@@ -2346,8 +2356,12 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
           if (!canonicalUserTrust) {
             throw new Error("The canonical user hook scope changed or became inactive during install; cannot remove the project hook fallback");
           }
+          await scopeLockOptions?.afterCanonicalVerification?.();
         }
         activationProofStart = await hookActivationSnapshot({ home, cwd });
+        if (hooks.skipped && !sameHookActivationSnapshot(canonicalUserTrust.activationSnapshot, activationProofStart)) {
+          throw new Error("The canonical user hook scope changed after effective verification; cannot remove the project hook fallback");
+        }
         if (!activationSnapshotMatchesWrites(activationProofStart, written)) {
           throw new Error("Codex hook activation state diverged from the transaction's exact writes before verification");
         }

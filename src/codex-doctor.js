@@ -857,6 +857,7 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
       : "bundled runtime and MCP entrypoint present" });
   }
   const userCodexHome = codexHome || process.env.CODEX_HOME || join(homedir(), ".codex");
+  const activationProofStart = await hookActivationSnapshot({ cwd, userCodexHome });
   const registeredScopes = await registeredManagedScopes(userCodexHome);
   checks.push({ name: "codex-managed-scopes", ok: registeredScopes.issues.length === 0, detail: registeredScopes.issues.length
     ? `${registeredScopes.issues.join("; ")}; rerun muster install codex for the affected scope`
@@ -1032,7 +1033,6 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   const managedHookScripts = [...hookHomes].map(dir => join(dir, "muster", "hooks", "muster-hook.mjs"));
   const managedProjectCwds = [...hookHomes].filter(dir => dir !== userCodexHome).map(dirname);
   const currentProjectHookHome = join(cwd, ".codex");
-  const activationProofStart = await hookActivationSnapshot({ cwd, userCodexHome });
   for (const dir of hookHomes) {
     const manifestPath = join(dir, "muster", ".muster-managed.json");
     const registered = scopeHomes.get(dir);

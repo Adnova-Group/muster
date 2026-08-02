@@ -218,6 +218,16 @@ test("effectiveHookTrust accepts Codex 0.146 full hook records without relaxing 
     overrides: { sourcePath: "/repo/.codex/config.toml", command: hook.command, source: "project" }
   });
   assert.equal(effectiveHookTrust({ ...inventory, data: [{ ...inventory.data[0], hooks: [hook, inlineDuplicate] }] }, cwd, hooksJsonPath, results, { knownKeys: ["stop:0:0"] }).ok, false);
+  const delayedExpansionDuplicate = currentCodexInventoryHook({
+    key: "/repo/.codex/config.toml:stop:0:0",
+    currentHash,
+    overrides: {
+      sourcePath: "/repo/.codex/config.toml",
+      command: "set DIR=C:\\runtime && set NAME=muster && set PART=-hook && set EXT=.mjs && cmd /V:ON /C node !DIR!\\!NAME!!PART!!EXT!",
+      source: "project"
+    }
+  });
+  assert.equal(effectiveHookTrust({ ...inventory, data: [{ ...inventory.data[0], hooks: [hook, delayedExpansionDuplicate] }] }, cwd, hooksJsonPath, results, { knownKeys: ["stop:0:0"] }).ok, false);
 
   for (const malformed of [
     { ...hook, sourcePath: "/foreign/hooks.json" },

@@ -210,6 +210,22 @@ test("Codex install: canonical user drift during collapse rolls the project fall
   assert.equal(await readFile(projectRuntimePath, "utf8"), beforeRuntime);
 });
 
+test("Codex install binds canonical verification's closing snapshot through fallback removal", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-scope-collapse-post-verify-drift-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), userHooksPath = join(home, ".codex", "hooks.json");
+  const userResult = await installTrustedUser({ cwd, home });
+  await assert.rejects(
+    () => runCodexInstall({
+      scope: "project", cwd, home, repoRoot, execFile: absentCodex, hookInventory: userResult.hookInventory,
+      scopeLockOptions: { afterCanonicalVerification: async () => writeFile(userHooksPath, JSON.stringify({ hooks: {} }, null, 2) + "\n") }
+    }),
+    /canonical user hook scope changed after effective verification/
+  );
+  assert.deepEqual(JSON.parse(await readFile(userHooksPath, "utf8")), { hooks: {} });
+  await assert.rejects(() => readFile(join(cwd, ".codex", "muster", "hooks", "muster-hook.mjs"), "utf8"));
+});
+
 test("Codex install: unexpected active hook positions from canonical hooks.json retain the project fallback", async t => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-scope-collapse-extra-active-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));

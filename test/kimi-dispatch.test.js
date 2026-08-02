@@ -657,10 +657,10 @@ test("kimiProcessDispatch: 4,001 chars and 64 KiB reach a child intact through t
     for (const brief of ["x".repeat(4001), "y".repeat(64 * 1024), exactMultibyte64KiB, "before\0after"]) {
       assert.ok(Buffer.byteLength(brief, "utf8") <= 64 * 1024);
       const dispatch = kimiProcessDispatch({ brief, agentFile: "muster-builder.md", cwd: home, lane: "primary" });
-      assert.deepEqual(dispatch.briefTransport, { kind: "temporary-file", encoding: "utf8", maxBytes: 64 * 1024, mode: 0o600 });
+      assert.deepEqual(dispatch.briefTransport, { kind: "temporary-file", encoding: "utf8", maxBytes: 64 * 1024 });
       assert.ok(!dispatch.argv.some(value => value.includes(brief)), "the process brief must not ride argv");
       let transportedPath;
-      const received = await withKimiProcessBriefFile(dispatch, prepared => {
+      const received = await withKimiProcessBriefFile(dispatch, async prepared => {
         assert.ok(prepared.argv.every(value => Buffer.byteLength(value, "utf8") < 4096), "argv remains bounded independently of brief size");
         const prompt = prepared.argv[1];
         transportedPath = JSON.parse(prompt.slice(prompt.indexOf(":") + 1));
@@ -673,6 +673,14 @@ test("kimiProcessDispatch: 4,001 chars and 64 KiB reach a child intact through t
     assert.throws(
       () => kimiProcessDispatch({ brief: "x".repeat(64 * 1024 + 1), agentFile: "muster-builder.md", cwd: home, lane: "primary" }),
       /brief is 65537 UTF-8 bytes; temporary-file transport cap is 65536 bytes/
+    );
+    await assert.rejects(
+      withKimiProcessBriefFile(kimiProcessDispatch({ brief: "x", agentFile: "muster-builder.md", cwd: home, lane: "primary" }), () => "child still running"),
+      /invoke must return a Promise that settles after child exit/
+    );
+    await assert.rejects(
+      withKimiProcessBriefFile({ brief: "forged", briefTransport: { kind: "temporary-file", mode: 0o644 }, argv: ["-p", "x"] }, async () => {}),
+      /kimiProcessDispatch descriptor is required/
     );
     assert.throws(
       () => kimiProcessDispatch({ brief: "€".repeat(21_846), agentFile: "muster-builder.md", cwd: home, lane: "primary" }),

@@ -90,7 +90,7 @@ test("cli wire: kimi-process-dispatch prints the headless -p descriptor, -m ALWA
     assert.match(d.argv[1], /complete UTF-8 process brief/);
     assert.ok(!d.argv.includes("Implement the feature."));
     assert.deepEqual(d.argv.slice(2), ["--agent-file", agentFile, "--output-format", "stream-json", "-m", model]);
-    assert.deepEqual(d.briefTransport, { kind: "temporary-file", encoding: "utf8", maxBytes: 64 * 1024, mode: 0o600 });
+    assert.deepEqual(d.briefTransport, { kind: "temporary-file", encoding: "utf8", maxBytes: 64 * 1024 });
     assert.equal(d.env.KIMI_CODE_EXPERIMENTAL_FLAG, "1");
     assert.equal(d.cwd, cwd);
     assert.equal(d.lane, lane);

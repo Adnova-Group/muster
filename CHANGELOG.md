@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- **Kimi process briefs use a documented 64 KiB UTF-8 temporary-file transport instead of inheriting `/goal`'s 4,000-character objective cap.** `kimiProcessDispatch` accepts 4,001-character and 64 KiB briefs while `withKimiProcessBriefFile` writes the exact payload to a private 0600 file, puts only a bounded file-bootstrap in `-p`, and removes the file after the child exits. This avoids POSIX and Windows argv limits while keeping `kimiGoalInvocation`'s binary-pinned 4,000-character rejection unchanged.
+- **Kimi process briefs use a documented 64 KiB UTF-8 temporary-file transport instead of inheriting `/goal`'s 4,000-character objective cap.** `kimiProcessDispatch` accepts 4,001-character and 64 KiB briefs while `withKimiProcessBriefFile` writes the exact non-secret payload to an ephemeral file, puts only a bounded file-bootstrap in `-p`, requires a completion Promise, and removes the file after child exit. Branded/frozen descriptors and execution-time validation protect the contract. This avoids POSIX and Windows argv limits while keeping `kimiGoalInvocation`'s binary-pinned 4,000-character rejection unchanged.
 
 ## [0.6.0] - 2026-07-31
 

@@ -71,12 +71,15 @@ unlinks only non-followed entries beneath an open receipt-directory descriptor. 
 emitted, for the primary lane too: `model_preference` binds only a process's SPAWNED
 SUBAGENTS, never the `-p` process's own main agent, so the process's model comes ONLY from
 `-m` and omitting it silently falls to config `default_model`. The descriptor records this
-as `briefTransport: { kind: "temporary-file", encoding: "utf8", maxBytes: 65536,
-mode: 0600 }`: `withKimiProcessBriefFile` writes the complete brief to a private temporary
-directory, substitutes only its path into the bounded `-p` bootstrap, and recursively removes
-the directory after the child exits or throws. This file transport is cross-platform and does
+as `briefTransport: { kind: "temporary-file", encoding: "utf8", maxBytes: 65536 }`:
+`withKimiProcessBriefFile` writes the complete brief to an ephemeral temporary directory,
+substitutes only its path into the bounded `-p` bootstrap, requires the launcher to return a
+Promise that settles after child exit, and recursively removes the directory after that Promise
+settles or rejects. The descriptor is module-branded and its transport/argv surfaces are frozen;
+the helper independently revalidates the byte cap and argv template. This file transport is cross-platform and does
 not inherit `/goal`'s unrelated 4,000-character objective limit or Windows' command-line size.
-Briefs MUST be secret-free because the model consumes their contents. If a future trusted
+Briefs MUST be secret-free: the mode is a POSIX hardening hint, not a Windows ACL or a
+confidentiality boundary, and the model consumes their contents. If a future trusted
 broker enables this interface, its execution receipt must be
 the stream-json result on stdout plus the process exit code, with per-leg token accounting
 from `$MUSTER_CLI kimi-session-usage --cwd <leg cwd> --stdout-file <captured stdout file>`

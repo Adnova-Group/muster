@@ -11,7 +11,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdirSync, writeFileSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
+import { join, dirname, isAbsolute, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { trackedMkdtempSync as mkdtempSync } from "../test-support/helpers.js";
 import {
@@ -190,8 +190,9 @@ test("spawnAttempt keeps the transported brief inside the cell quarantine", asyn
     const execute = async (_command, argv) => {
       const prompt = argv[argv.indexOf("-p") + 1];
       const briefPath = JSON.parse(prompt.slice(prompt.indexOf(":") + 1));
-      assert.ok(briefPath.startsWith(cell.quarantineDir + "/"), "brief file must remain inside quarantine");
-      return { stdout: JSON.stringify({ role: "tool", name: "Read", arguments: { file_path: briefPath } }) + "\n" };
+      const rel = relative(cell.quarantineDir, briefPath);
+      assert.ok(rel && !rel.startsWith("..") && !isAbsolute(rel), "brief file must remain inside quarantine");
+      return { stdout: toolCallLine("Read", { file_path: briefPath }) + "\n" };
     };
     const attempt = await spawnAttempt(cell, { resultsDir, attempt: 1, execute });
     assert.equal(scanContamination(attempt.stdout, { quarantineDir: cell.quarantineDir }).contaminated, false);

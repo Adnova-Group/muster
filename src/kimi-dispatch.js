@@ -205,7 +205,7 @@ export const KIMI_GOAL_MAX_OBJECTIVE = 4000;
 // This is independent of the Kimi binary's 4,000-character /goal objective cap.
 export const KIMI_PROCESS_MAX_BRIEF = 64 * 1024;
 const KIMI_PROCESS_BRIEF_PATH_PLACEHOLDER = "{{MUSTER_PROCESS_BRIEF_FILE}}";
-const kimiProcessDescriptors = new WeakSet();
+const kimiProcessDescriptorSecrets = new WeakMap();
 const kimiProcessBriefPrompt = path =>
   `Read and execute the complete UTF-8 process brief at:${JSON.stringify(path)}`;
 
@@ -420,11 +420,14 @@ export function kimiProcessDispatch({ brief, agentFile, cwd, lane } = {}) {
     lane
   };
   // The descriptor's JSON/debug surface never repeats the potentially large
-  // brief. The executor helper below owns the private payload and its lifetime.
-  Object.defineProperty(descriptor, "brief", { value: brief });
+  // brief. Canonical execution data stays private so public-property mutation
+  // cannot redirect or enlarge the eventual invocation.
   Object.freeze(descriptor.argv);
-  kimiProcessDescriptors.add(descriptor);
-  return descriptor;
+  Object.freeze(descriptor.pathBindings.cwd);
+  Object.freeze(descriptor.pathBindings.agentFile);
+  Object.freeze(descriptor.pathBindings);
+  kimiProcessDescriptorSecrets.set(descriptor, { brief, argv: descriptor.argv, cwd: descriptor.cwd });
+  return Object.freeze(descriptor);
 }
 
 // Materialize a process brief outside argv, invoke the caller while the file
@@ -432,7 +435,8 @@ export function kimiProcessDispatch({ brief, agentFile, cwd, lane } = {}) {
 // documented `-p` interface still receives a short bootstrap prompt; the full
 // brief rides a 0600 UTF-8 file, so Windows CreateProcessW never sees it.
 export async function withKimiProcessBriefFile(descriptor, invoke, { temporaryRoot = tmpdir() } = {}) {
-  if (!descriptor || !kimiProcessDescriptors.has(descriptor) || typeof descriptor.brief !== "string") {
+  const canonical = descriptor && kimiProcessDescriptorSecrets.get(descriptor);
+  if (!canonical) {
     throw new Error("withKimiProcessBriefFile: a kimiProcessDispatch descriptor is required");
   }
   if (typeof invoke !== "function") {
@@ -441,14 +445,15 @@ export async function withKimiProcessBriefFile(descriptor, invoke, { temporaryRo
   const directory = mkdtempSync(join(temporaryRoot, "muster-kimi-brief-"));
   const briefPath = join(directory, "brief.utf8");
   try {
-    const briefBytes = Buffer.byteLength(descriptor.brief, "utf8");
+    const briefBytes = Buffer.byteLength(canonical.brief, "utf8");
     if (briefBytes > KIMI_PROCESS_MAX_BRIEF) {
       throw new Error(`withKimiProcessBriefFile: brief is ${briefBytes} UTF-8 bytes; transport cap is ${KIMI_PROCESS_MAX_BRIEF} bytes`);
     }
-    if (descriptor.argv[0] !== "-p" || !descriptor.argv[1]?.includes(KIMI_PROCESS_BRIEF_PATH_PLACEHOLDER)) {
+    const expectedArgv = ["-p", kimiProcessBriefPrompt(KIMI_PROCESS_BRIEF_PATH_PLACEHOLDER), "--agent-file", descriptor.pathBindings.agentFile.path, "--output-format", "stream-json", "-m", KIMI_LANES[descriptor.lane]];
+    if (canonical.cwd !== descriptor.cwd || canonical.argv.length !== expectedArgv.length || canonical.argv.some((value, index) => value !== expectedArgv[index])) {
       throw new Error("withKimiProcessBriefFile: invalid process argv template");
     }
-    writeFileSync(briefPath, descriptor.brief, { encoding: "utf8", mode: 0o600 });
+    writeFileSync(briefPath, canonical.brief, { encoding: "utf8", mode: 0o600 });
     const prepared = {
       ...descriptor,
       argv: descriptor.argv.map((value, index) => index === 1 ? kimiProcessBriefPrompt(briefPath) : value),

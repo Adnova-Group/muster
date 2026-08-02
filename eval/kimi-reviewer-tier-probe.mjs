@@ -63,7 +63,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { kimiProcessDispatch, withKimiProcessBriefFile, KIMI_PROCESS_MAX_BRIEF, detectKimiQuotaFault, quotaFaultLines } from "../src/kimi-dispatch.js";
 import { captureSessionId, resolveSessionForCwd, readSessionUsage, readSessionThinkingEfforts } from "../src/kimi-receipts.js";
 
@@ -250,7 +250,7 @@ export function buildCells({ repoRoot = REPO_ROOT, agentFile = AGENT_FILE, baseD
     for (const { lane, effort } of variants) {
       const quarantine = buildQuarantineDir({ probeId: probe.id, repoRoot, baseDir });
       const descriptor = kimiProcessDispatch({ brief, agentFile, cwd: quarantine.dir, lane });
-      if (effort) descriptor.env = { ...descriptor.env, [EFFORT_ENV_VAR]: effort };
+      if (effort) descriptor.env[EFFORT_ENV_VAR] = effort;
       cells.push({
         probe: probe.id,
         gate: probe.gate,
@@ -369,7 +369,8 @@ export function scanContamination(stdout, { quarantineDir, repoRoot = REPO_ROOT 
       if (READ_PATH_TOOLS.has(name)) {
         for (const key of PATH_ARG_KEYS) {
           const p = args[key];
-          if (typeof p === "string" && p.startsWith("/") && p !== quarantineDir && !p.startsWith(quarantineDir + "/")) {
+          const rel = typeof p === "string" && isAbsolute(p) ? relative(quarantineDir, p) : "";
+          if (rel && (rel.startsWith("..") || isAbsolute(rel))) {
             indicators.push({ line: lineNo, kind: "read-outside-quarantine", detail: `${name} ${p}` });
           }
         }

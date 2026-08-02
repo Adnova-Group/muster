@@ -658,6 +658,8 @@ test("kimiProcessDispatch: 4,001 chars and 64 KiB reach a child intact through t
       assert.ok(Buffer.byteLength(brief, "utf8") <= 64 * 1024);
       const dispatch = kimiProcessDispatch({ brief, agentFile: "muster-builder.md", cwd: home, lane: "primary" });
       assert.deepEqual(dispatch.briefTransport, { kind: "temporary-file", encoding: "utf8", maxBytes: 64 * 1024 });
+      assert.throws(() => { dispatch.argv = ["-p", brief]; }, TypeError, "canonical argv is non-writable");
+      assert.throws(() => { dispatch.cwd = join(home, "agents"); }, TypeError, "canonical cwd is non-writable");
       assert.ok(!dispatch.argv.some(value => value.includes(brief)), "the process brief must not ride argv");
       let transportedPath;
       const received = await withKimiProcessBriefFile(dispatch, async prepared => {

@@ -2,7 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { validateVendorManifest, toBuiltin, toAgent, generateNotice, runVendor, pickLatestVersion, splitFrontmatter, cloneCommandsFor } from "../src/vendor.js";
 import { modelForRole } from "../src/model.js";
-import { claudeModelForTier } from "../src/claude.js";
+import { claudeModelForTier, claudeProfileForAgentId } from "../src/claude.js";
+import { loadCatalog } from "../src/catalog.js";
 import { mkdtemp, mkdir, writeFile, readFile, rm, symlink, lstat, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -388,6 +389,20 @@ test("toAgent model passthrough: explicit item.model wins verbatim", () => {
   const r = toAgent(agentSrc, item, agentSource);
   const { data } = splitFrontmatter(r.content);
   assert.equal(data.model, "haiku");
+});
+
+test("toAgent frontmatter model matches the manifest profile for every agent-backed entry", async () => {
+  const catalog = await loadCatalog(new URL("../catalog/", import.meta.url));
+  const agents = catalog.filter((entry) => entry.kind === "agent");
+  assert.ok(agents.length > 0, "catalog must contain agent-backed entries");
+
+  for (const entry of agents) {
+    const profile = claudeProfileForAgentId(entry.id);
+    assert.ok(profile, `${entry.id} must have a manifest-backed Claude profile`);
+    const item = { from: "ag/AGENT.md", id: entry.id, roles: entry.roles };
+    const { data } = splitFrontmatter(toAgent(agentSrc, item, agentSource).content);
+    assert.equal(data.model, profile.model, `${entry.id} frontmatter must match its manifest profile`);
+  }
 });
 
 test("toAgent architecture-review role → modelForRole policy (fable→opus by default)", () => {

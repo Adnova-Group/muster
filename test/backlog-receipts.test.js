@@ -123,6 +123,28 @@ test("CLI validates staged stdin bytes rather than the old on-disk backlog", asy
   assert.equal(JSON.parse(result.stdout).summary.rejected, 1);
 });
 
+test("CLI release-ref and ancestry operations ignore replacement metadata end to end", async () => {
+  const cwd = await tmpProject({ "seed.txt": "seed\n" });
+  await pexecFile("git", ["init", "-b", "main"], { cwd });
+  await pexecFile("git", ["add", "."], { cwd });
+  await pexecFile("git", ["-c", "user.name=Muster Test", "-c", "user.email=test@example.invalid", "commit", "-m", "release"], { cwd });
+  const releaseCommit = (await pexecFile("git", ["rev-parse", "HEAD"], { cwd })).stdout.trim();
+  await pexecFile("git", ["checkout", "--orphan", "side"], { cwd });
+  await writeFile(join(cwd, "seed.txt"), "unrelated receipt\n");
+  await pexecFile("git", ["add", "."], { cwd });
+  await pexecFile("git", ["-c", "user.name=Muster Test", "-c", "user.email=test@example.invalid", "commit", "-m", "receipt"], { cwd });
+  const receipt = (await pexecFile("git", ["rev-parse", "HEAD"], { cwd })).stdout.trim();
+  await pexecFile("git", ["checkout", "main"], { cwd });
+  await pexecFile("git", ["replace", "--graft", releaseCommit, receipt], { cwd });
+  const result = spawnSync(process.execPath, [CLI, "backlog-receipts", "-", "--release-ref", "main"], {
+    cwd,
+    encoding: "utf8",
+    input: `- [x] forged ancestry {done: ${receipt}}\n`,
+  });
+  assert.equal(result.status, 2, result.stderr);
+  assert.equal(JSON.parse(result.stdout).summary.rejected, 1);
+});
+
 test("operational git failures throw instead of masquerading as ordinary unreachability", async () => {
   const cwd = await tmpProject();
   assert.throws(

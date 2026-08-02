@@ -677,7 +677,10 @@ async function main() {
       let releaseCommit;
       try {
         releaseCommit = execFileSync("git", ["rev-parse", "--verify", `${releaseRef}^{commit}`], {
-          cwd: process.cwd(), encoding: "utf8", stdio: ["ignore", "pipe", "ignore"],
+          cwd: process.cwd(),
+          encoding: "utf8",
+          env: { ...process.env, GIT_NO_REPLACE_OBJECTS: "1" },
+          stdio: ["ignore", "pipe", "ignore"],
         }).trim().toLowerCase();
       } catch {
         fail(`backlog-receipts: release ref ${releaseRef} does not resolve to a commit`);

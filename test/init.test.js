@@ -445,6 +445,20 @@ test("repository fingerprints reject tracked files reached through a symlinked a
   );
 });
 
+test("repository fingerprints accept valid tracked paths longer than owned artifact paths", async () => {
+  const dir = await tmp();
+  await pexecFile("git", ["init", "--quiet"], { cwd: dir });
+  const parts = ["a".repeat(120), "b".repeat(120), "c".repeat(70)];
+  const parent = join(dir, ...parts.slice(0, -1));
+  const rel = `${parts.join("/")}.txt`;
+  await mkdir(parent, { recursive: true });
+  await writeFile(join(dir, rel), "tracked\n");
+  await pexecFile("git", ["add", rel], { cwd: dir });
+
+  const profile = await learnProjectProfile(dir);
+  assert.match(profile.repositoryFingerprint.digest, /^[0-9a-f]{64}$/);
+});
+
 test("repository fingerprints reject same-size in-place writes during a streamed read", async () => {
   const dir = await tmp();
   const target = join(dir, "changing.bin");

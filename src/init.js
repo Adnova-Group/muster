@@ -374,7 +374,20 @@ async function rejectSpecialEntries(abs, prefix = "") {
 }
 
 async function ensureFingerprintAncestors(root, path, rel) {
-  await ensureSafeAncestors(root, rel);
+  if (typeof rel !== "string" || !rel || rel.includes("\0") || rel.includes("\\") ||
+      rel.startsWith("/") || rel.startsWith("//") || /^[A-Za-z]:/.test(rel)) {
+    throw new Error(`unsafe repository path: ${rel}`);
+  }
+  const parts = rel.split("/");
+  if (parts.some((part) => !part || part === "." || part === "..")) {
+    throw new Error(`unsafe repository path: ${rel}`);
+  }
+  let current = root;
+  for (const part of parts.slice(0, -1)) {
+    current = join(current, part);
+    const info = await lstat(current);
+    if (info.isSymbolicLink() || !info.isDirectory()) throw new Error(`unsafe ancestor for ${rel}`);
+  }
   if (!(await resolveContainedRealpath(root, dirname(path)))) {
     throw new Error(`unsafe ancestor for ${rel}`);
   }
@@ -437,13 +450,13 @@ async function repositoryFingerprint(root) {
   const paths = await realGitMarker(root) ? gitRelevantPaths(root) : filesystemRelevantPaths(root);
   for await (const rel of paths) {
     const path = join(root, rel);
-    await ensureFingerprintAncestors(root, path, rel);
     let info;
     try { info = await lstat(path, { bigint: true }); }
     catch (error) {
       if (error.code === "ENOENT") continue; // tracked-but-deleted Git path
       throw error;
     }
+    await ensureFingerprintAncestors(root, path, rel);
     if (info.isDirectory() && await realGitMarker(path)) {
       let head = null;
       try {

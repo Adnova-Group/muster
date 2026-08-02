@@ -24,7 +24,7 @@ const releaseCommit = execFileSync("git", ["rev-parse", "--verify", `${releaseRe
 // parser grammar. False-positive candidate files are harmless; false negatives
 // would let a checked item evade the gate.
 const discovery = spawnSync("git", [
-  "grep", "--cached", "-z", "-l", "-I", "-F",
+  "grep", "--cached", "-z", "-l", "-F",
   "-e", "- [x] ", "-e", "- [X] ", "--",
 ], {
   cwd: process.cwd(), encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],

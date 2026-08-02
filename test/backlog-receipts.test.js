@@ -168,8 +168,8 @@ test("CI scanner rejects invalid canonical tracked backlog files", async () => {
   });
 });
 
-test("CI scanner discovers checked backlog items with any filename and parser-accepted indentation", async () => {
-  const cwd = await tmpProject({ "seed.txt": "seed\n", "plans/release-checklist.txt": "\u00a0- [x] stale {id: renamed}\n" });
+test("CI scanner discovers checked items with any filename, parser indentation, and later NUL bytes", async () => {
+  const cwd = await tmpProject({ "seed.txt": "seed\n", "plans/release-checklist.txt": "\u00a0- [x] stale {id: renamed}\n\0binary tail\n" });
   await pexecFile("git", ["init", "-b", "main"], { cwd });
   await pexecFile("git", ["add", "."], { cwd });
   await pexecFile("git", ["-c", "user.name=Muster Test", "-c", "user.email=test@example.invalid", "commit", "-m", "seed"], { cwd });

@@ -836,13 +836,22 @@ function validHookPosition(value) {
   const match = value.match(/^([a-z][a-z0-9_]*):(0|[1-9]\d*):(0|[1-9]\d*)$/);
   return Boolean(match && Number.isSafeInteger(Number(match[2])) && Number.isSafeInteger(Number(match[3])));
 }
-function parseHookInventoryKey(value) {
+function parseHookInventoryKey(value, { sourcePath, pluginId } = {}) {
   if (typeof value !== "string" || HOOK_INVENTORY_CONTROLS.test(value)) return null;
   const match = value.match(/^(.+):([a-z][a-z0-9_]*):(0|[1-9]\d*):(0|[1-9]\d*)$/);
-  if (!match || !validCanonicalHookPath(match[1])
-    || !Number.isSafeInteger(Number(match[3])) || !Number.isSafeInteger(Number(match[4]))) return null;
-  return { path: match[1], position: `${match[2]}:${match[3]}:${match[4]}` };
+  if (!match || !Number.isSafeInteger(Number(match[3])) || !Number.isSafeInteger(Number(match[4]))) return null;
+  let path = match[1];
+  if (!validCanonicalHookPath(path)) {
+    const pluginPrefix = typeof pluginId === "string" ? `${pluginId}:hooks/` : null;
+    const relativePluginPath = pluginPrefix && path.startsWith(pluginPrefix) ? path.slice(pluginPrefix.length) : null;
+    if (!relativePluginPath || relativePluginPath.split(/[\\/]/).some(part => !part || part === "." || part === "..")
+      || !validCanonicalHookPath(sourcePath)) return null;
+    path = sourcePath;
+  }
+  return { path, position: `${match[2]}:${match[3]}:${match[4]}` };
 }
+
+const parseInventoryHook = hook => parseHookInventoryKey(hook?.key, { sourcePath: hook?.sourcePath, pluginId: hook?.pluginId });
 
 function validHookInventoryRecord(entry) {
   if (!exactObject(entry, ["cwd", "warnings", "errors", "hooks"])
@@ -851,7 +860,7 @@ function validHookInventoryRecord(entry) {
     || !denseArray(entry.errors) || !entry.errors.every(item => typeof item === "string")
     || !denseArray(entry.hooks)) return false;
   return entry.hooks.every(hook => {
-    const parsed = parseHookInventoryKey(hook?.key);
+    const parsed = parseInventoryHook(hook);
     const legacyShape = exactObject(hook, ["key", "enabled", "trustStatus", "currentHash"]);
     const currentShape = exactObject(hook, [
       "key", "eventName", "handlerType", "matcher", "command", "timeoutSec", "statusMessage",
@@ -916,7 +925,7 @@ export function effectiveHookTrust(inventory, cwd, hooksJsonPath, results, { kno
     return { verified: true, ok: false, error: scope?.errors?.join("; ") || "Codex hooks/list omitted the requested scope", results: [] };
   }
   const hooks = Array.isArray(scope.hooks) ? scope.hooks : [];
-  const parsedHooks = hooks.map(hook => ({ hook, parsed: parseHookInventoryKey(hook.key) }));
+  const parsedHooks = hooks.map(hook => ({ hook, parsed: parseInventoryHook(hook) }));
   const foreignHooks = parsedHooks.filter(({ parsed }) => parsed.path !== hooksJsonPath);
   if (foreignHooks.some(({ hook }) => typeof hook.command !== "string" || isMusterHookCommand(hook.command)
     || hasUnresolvedShellExpansion(hook.command))) {
@@ -1597,12 +1606,25 @@ function shellPathCandidates(command) {
   return [...candidates].filter(value => value && !value.startsWith("-"));
 }
 
+function hasDynamicInterpreterEval(command) {
+  for (const tokens of [parsePosixShellTokens(command), parseWindowsShellTokens(command)]) {
+    if (!tokens) continue;
+    for (let index = 0; index < tokens.length - 1; index++) {
+      const executable = tokens[index].replaceAll("\\", "/").split("/").pop().toLowerCase();
+      if (!["node", "node.exe", "nodejs", "nodejs.exe", "bun", "bun.exe", "deno", "deno.exe"].includes(executable)) continue;
+      const flag = tokens[index + 1].toLowerCase();
+      if (flag.startsWith("-e") || flag.startsWith("-p") || flag === "--eval" || flag.startsWith("--eval=") || flag === "--print" || flag.startsWith("--print=")) return true;
+    }
+  }
+  return false;
+}
+
 const hasUnresolvedShellExpansion = command => typeof command === "string"
   && (/(^|[^\\])(?:\$[({A-Za-z_]|`)/.test(command)
     || /![^!\r\n]+!|%[^%\r\n]+%|%[0-9*~]/.test(command)
     || /(^|[\s=])~(?:[\\/]|$)|[*?]|\[[^\]\r\n]*\]/.test(command)
     || /(?:^|[;&|('"\s])(?:cd|chdir|pushd|popd)(?:\s|$)/i.test(command)
-    || /(?:^|[;&|('"\s])(?:node|nodejs|bun|deno)(?:\.exe)?\s+(?:-e|--eval(?:=|\s)|-p|--print(?:=|\s))/i.test(command));
+    || hasDynamicInterpreterEval(command));
 
 async function physicalHookIdentity(path) {
   const canonical = await realpath(path);
@@ -1644,7 +1666,7 @@ export async function hasManagedRuntimeInventoryAlias(inventory, { cwd, hooksJso
   const scope = Array.isArray(inventory?.data) ? inventory.data.find(entry => entry?.cwd === cwd) : null;
   if (!scope || !Array.isArray(scope.hooks)) return false;
   const commands = scope.hooks.flatMap(hook => {
-    const parsed = parseHookInventoryKey(hook?.key);
+    const parsed = parseInventoryHook(hook);
     return parsed && parsed.path !== hooksJsonPath && typeof hook.command === "string" ? [hook.command] : [];
   });
   if (!commands.length) return false;
@@ -1658,7 +1680,7 @@ export async function inventoryAliasCandidateSnapshot(inventory, { cwd, hooksJso
   const scope = Array.isArray(inventory?.data) ? inventory.data.find(entry => entry?.cwd === cwd) : null;
   const paths = new Set();
   for (const hook of Array.isArray(scope?.hooks) ? scope.hooks : []) {
-    const parsed = parseHookInventoryKey(hook?.key);
+    const parsed = parseInventoryHook(hook);
     if (!parsed || parsed.path === hooksJsonPath || typeof hook.command !== "string") continue;
     for (const candidate of shellPathCandidates(hook.command)) {
       let filesystemCandidate = candidate;

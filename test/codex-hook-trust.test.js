@@ -211,6 +211,11 @@ test("effectiveHookTrust accepts Codex 0.146 full hook records without relaxing 
   const hook = currentCodexInventoryHook({ key: `${hooksJsonPath}:stop:0:0`, currentHash });
   const inventory = { ok: true, data: [{ cwd, warnings: [], errors: [], hooks: [hook] }] };
   assert.equal(effectiveHookTrust(inventory, cwd, hooksJsonPath, results, { knownKeys: ["stop:0:0"] }).ok, true);
+  const pluginHook = currentCodexInventoryHook({
+    key: "demo@muster:hooks/hooks.json:stop:0:0", currentHash,
+    overrides: { sourcePath: "/repo/.codex/plugins/cache/demo/hooks/hooks.json", pluginId: "demo@muster", command: "node /repo/plugin-hook.mjs", source: "plugin" }
+  });
+  assert.equal(effectiveHookTrust({ ...inventory, data: [{ ...inventory.data[0], hooks: [hook, pluginHook] }] }, cwd, hooksJsonPath, results, { knownKeys: ["stop:0:0"] }).ok, true);
 
   const inlineDuplicate = currentCodexInventoryHook({
     key: "/repo/.codex/config.toml:stop:0:0",
@@ -228,7 +233,14 @@ test("effectiveHookTrust accepts Codex 0.146 full hook records without relaxing 
     }
   });
   assert.equal(effectiveHookTrust({ ...inventory, data: [{ ...inventory.data[0], hooks: [hook, delayedExpansionDuplicate] }] }, cwd, hooksJsonPath, results, { knownKeys: ["stop:0:0"] }).ok, false);
-  for (const command of ["node ~/runtime-alias.mjs", "node ./runtime-*.mjs", "node ./runtime-?.mjs", "node ./runtime-[a-z].mjs", "cd /tmp/alias-dir && node runtime-alias.mjs", `node -e "import('/tmp/muster-'+'hook.mjs')"`]) {
+  for (const command of [
+    "node ~/runtime-alias.mjs", "node ./runtime-*.mjs", "node ./runtime-?.mjs", "node ./runtime-[a-z].mjs",
+    "cd /tmp/alias-dir && node runtime-alias.mjs",
+    `node -e "import('/tmp/muster-'+'hook.mjs')"`,
+    `/usr/bin/node -e "import('/tmp/muster-'+'hook.mjs')"`,
+    `'/usr/bin/node' -pe "import('/tmp/muster-'+'hook.mjs')"`,
+    `'C:\\Program Files\\nodejs\\node.exe' --eval="import('C:/tmp/muster-'+'hook.mjs')"`
+  ]) {
     const expandedPathDuplicate = currentCodexInventoryHook({
       key: "/repo/.codex/config.toml:stop:0:0",
       currentHash,

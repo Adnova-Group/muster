@@ -1,5 +1,5 @@
 import { spawn as spawnChild } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -24,6 +24,27 @@ function modelTurnEventCount(text) {
     } catch { /* Native diagnostics are not required to be JSON. */ }
   }
   return count;
+}
+
+async function stagedFileReceipt(path, expected) {
+  if (!expected.exists) {
+    try { await lstat(path); }
+    catch (error) { if (error.code === "ENOENT") return { exists: false }; throw error; }
+    throw new Error(`Codex strict config staging unexpectedly created ${path}`);
+  }
+  const info = await lstat(path);
+  if (info.isSymbolicLink() || !info.isFile()) throw new Error(`Codex strict config staging is not a regular file: ${path}`);
+  const bytes = await readFile(path);
+  if (!bytes.equals(expected.bytes)) throw new Error(`Codex strict config staging changed before parser acceptance: ${path}`);
+  return { exists: true, dev: info.dev, ino: info.ino, bytes };
+}
+
+async function assertStagedFile(path, expected, receipt) {
+  const current = await stagedFileReceipt(path, expected);
+  if (current.exists !== receipt.exists
+    || (current.exists && (current.dev !== receipt.dev || current.ino !== receipt.ino || !current.bytes.equals(receipt.bytes)))) {
+    throw new Error(`Codex strict config staging changed during parser validation: ${path}`);
+  }
 }
 
 function runOneStrictConfigCheck({
@@ -157,15 +178,37 @@ export async function runCodexStrictConfigCheck(options = {}) {
     try {
       await mkdir(stagedHome, { recursive: true });
       await mkdir(join(stagedProject, ".codex"), { recursive: true });
-      if (options.configSnapshots.shared.exists) await writeFile(stagedSharedConfig, options.configSnapshots.shared.bytes);
-      if (options.configSnapshots.project.exists) await writeFile(stagedProjectConfig, options.configSnapshots.project.bytes);
+      if (options.configSnapshots.shared.exists) {
+        await writeFile(stagedSharedConfig, options.configSnapshots.shared.bytes);
+        await chmod(stagedSharedConfig, 0o400);
+      }
+      if (options.configSnapshots.project.exists) {
+        await writeFile(stagedProjectConfig, options.configSnapshots.project.bytes);
+        await chmod(stagedProjectConfig, 0o400);
+      }
+      const stagedReceipts = new Map();
+      for (const [staged, _original] of mappings) {
+        const expected = staged === stagedSharedConfig ? options.configSnapshots.shared : options.configSnapshots.project;
+        stagedReceipts.set(staged, await stagedFileReceipt(staged, expected));
+      }
+      const assertStaging = async () => {
+        for (const [staged, _original] of mappings) {
+          const expected = staged === stagedSharedConfig ? options.configSnapshots.shared : options.configSnapshots.project;
+          await assertStagedFile(staged, expected, stagedReceipts.get(staged));
+        }
+      };
       try {
+        await assertStaging();
         await runOneStrictConfigCheck({ ...options, cwd: stagedProject, codexHome: stagedHome, runtimeIdentity, spawn });
+        await assertStaging();
         const trustHome = join(temporaryRoot, "trust-home");
         await mkdir(trustHome);
         await writeFile(join(trustHome, "config.toml"),
           `[projects.${JSON.stringify(resolve(stagedProject))}]\ntrust_level = "trusted"\n`);
-        return await runOneStrictConfigCheck({ ...options, cwd: stagedProject, codexHome: trustHome, runtimeIdentity, spawn });
+        await assertStaging();
+        const result = await runOneStrictConfigCheck({ ...options, cwd: stagedProject, codexHome: trustHome, runtimeIdentity, spawn });
+        await assertStaging();
+        return result;
       } catch (error) { throw remap(error); }
     } finally {
       await rm(temporaryRoot, { recursive: true, force: true });

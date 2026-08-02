@@ -1,4 +1,6 @@
 import { EventEmitter } from "node:events";
+import { spawn as spawnChild } from "node:child_process";
+import { chmodSync, writeFileSync } from "node:fs";
 import { PassThrough } from "node:stream";
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -150,6 +152,32 @@ test("strict config: real Codex validates unknown and malformed config without a
     runCodexStrictConfigCheck({ cwd, codexHome, runtimeIdentity, timeoutMs: 2_500 }),
     new RegExp(`project config file ${cwd.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/\\.codex/config\\.toml: TOML parse error at line 1, column 8`)
   );
+});
+
+test("strict config: native acceptance is rejected when staged candidate bytes are mutated", async t => {
+  let runtimeIdentity;
+  try { runtimeIdentity = resolveCodexRuntimeIdentity(); }
+  catch { t.skip("trusted Codex runtime identity is unavailable"); return; }
+  const shared = Buffer.from("model = \"gpt-5.6-sol\"\n");
+  const project = Buffer.from("unknown_staged_race = true\n");
+  let mutated = false;
+  const spawn = (command, args, options) => {
+    if (!mutated) {
+      const stagedProjectConfig = join(options.cwd, ".codex", "config.toml");
+      chmodSync(stagedProjectConfig, 0o600);
+      writeFileSync(stagedProjectConfig, "model = \"gpt-5.6-sol\"\n");
+      mutated = true;
+    }
+    return spawnChild(command, args, options);
+  };
+  await assert.rejects(runCodexStrictConfigCheck({
+    runtimeIdentity, spawn,
+    configSnapshots: {
+      shared: { path: "/original/home/config.toml", exists: true, bytes: shared },
+      project: { path: "/original/project/.codex/config.toml", exists: true, bytes: project }
+    }
+  }), /strict config staging changed/);
+  assert.equal(mutated, true);
 });
 
 test("strict config: default process launch refuses an unpinned runtime", async () => {

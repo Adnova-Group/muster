@@ -65,6 +65,7 @@ import { runHygiene, renderHygieneReport, DEFAULT_WORKTREE_THRESHOLD } from "./h
 import { resolveMusterCli } from "./cli-resolve.js";
 import { planGateCadence, DEFAULT_REVIEW_DIFF_THRESHOLD } from "./gate-cadence.js";
 import { resolveWaveDispatch, resolveWorktreeIsolation, makeGitShaVerifier, codexSpawnAgentCall, codexWaitAgentCall } from "./wave-dispatch.js";
+import { runCodexWave } from "./codex-wave-runner.js";
 import { kimiGoalInvocation, kimiProcessDispatch } from "./kimi-dispatch.js";
 import { captureSessionId, resolveSessionForCwd, readSessionUsage, summarizeItemReceipts, DEFAULT_SESSION_INDEX } from "./kimi-receipts.js";
 import { resolvePlanSurface } from "./plan-surface.js";
@@ -113,7 +114,7 @@ const USAGE = [
   // manifest + waves: validate, order, and drive a plan
   "manifest validate <file> [--work]|wave <file>|next <manifest.json> [--done a,b]|",
   // performance pass + gate helpers
-  "resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex|kimi>|plan-surface <runtime>|receipt-verify <sha> --cwd <repo>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|",
+  "resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|codex-wave <wave.json>|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex|kimi>|plan-surface <runtime>|receipt-verify <sha> --cwd <repo>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|",
   // sprint waves, review tally, tournament pick/fuse, advisor
   "sprint-waves <backlog.md> [--max-concurrent-threads-per-session N]|sprint-reconcile <progress.json>|backlog-publish <backlog.md> --expect <sha256|absent>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|",
   // harness-native dispatch packets + session receipts (kimi/codex lanes)
@@ -374,6 +375,19 @@ async function main() {
       // to the declared MUSTER_AGENT_TEAMS env var. See src/wave-dispatch.js.
       const agentTeams = rest.includes("--agent-teams") ? true : rest.includes("--no-agent-teams") ? false : undefined;
       out(resolveWaveDispatch({ agentTeams }));
+    } else if (cmd === "codex-wave") {
+      const file = requireArg(rest, 0, "codex-wave <wave.json>: missing file path", fail);
+      const wave = JSON.parse(await readFile(file, "utf8"));
+      if (!wave || typeof wave !== "object" || Array.isArray(wave)) fail("codex-wave <wave.json>: expected an object");
+      out(await runCodexWave({
+        members: wave.members,
+        forceProcess: wave.forceProcess === true,
+        sandbox: wave.sandbox,
+        approvalPolicy: wave.approvalPolicy,
+        catalogVersions: wave.catalogVersions,
+        codexHome: wave.codexHome,
+        codexCommand: process.env.MUSTER_CODEX_COMMAND || "codex",
+      }));
     } else if (cmd === "worktree-isolation") {
       // worktree-isolation-native item: per-harness native worktree isolation mechanism
       // selection (Agent-tool isolation on Claude Code, Desktop's automatic worktree,

@@ -3,7 +3,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  resolveCodexDispatchLane, codexExecCall, interpretCodexExecExit, codexReviewCall, CODEX_EXEC_MODES
+  resolveCodexDispatchLane, codexExecCall, interpretCodexExecExit, codexReviewCall,
+  resolveCodexReviewRouting, CODEX_EXEC_MODES
 } from "../src/wave-dispatch.js";
 
 // --- lane selection ---------------------------------------------------------
@@ -46,19 +47,27 @@ test("resolveCodexDispatchLane: the caller can force isolation explicitly", () =
 test("codexExecCall: always emits --json, and -C is what actually isolates", () => {
   const call = codexExecCall({ prompt: "do the thing", cwd: "/w/item-1" });
   assert.equal(call.command, "codex");
-  assert.deepEqual(call.argv, ["exec", "--json", "-C", "/w/item-1", "do the thing"]);
+  assert.deepEqual(call.argv, [
+    "--ask-for-approval", "never", "exec", "--json", "--ignore-user-config",
+    "--strict-config", "--ephemeral", "--sandbox", "workspace-write",
+    "-C", "/w/item-1", "do the thing",
+  ]);
   assert.equal(call.isolation, "process-cwd");
 });
 
-test("codexExecCall: threads model, schema, last-message, ephemeral and git-check flags", () => {
+test("codexExecCall: threads policy, model, schema, last-message and git-check flags", () => {
   const call = codexExecCall({
     prompt: "p", cwd: "/w", model: "gpt-5.6-sol", schemaPath: "/s.json",
-    lastMessagePath: "/out.txt", ephemeral: true, skipGitCheck: true
+    lastMessagePath: "/out.txt", sandbox: "read-only", approvalPolicy: "untrusted", skipGitCheck: true
   });
   assert.deepEqual(call.argv, [
-    "exec", "--json", "-C", "/w", "-m", "gpt-5.6-sol",
-    "--output-schema", "/s.json", "-o", "/out.txt", "--ephemeral", "--skip-git-repo-check", "p"
+    "--ask-for-approval", "untrusted", "exec", "--json", "--ignore-user-config",
+    "--strict-config", "--ephemeral", "--sandbox", "read-only", "-C", "/w",
+    "-m", "gpt-5.6-sol", "--output-schema", "/s.json", "-o", "/out.txt",
+    "--skip-git-repo-check", "p"
   ]);
+  assert.throws(() => codexExecCall({ prompt: "p", sandbox: "host" }), /unsupported sandbox/);
+  assert.throws(() => codexExecCall({ prompt: "p", approvalPolicy: "always" }), /unsupported approval policy/);
 });
 
 test("codexExecCall: the prompt is always last, so it is never parsed as a flag value", () => {
@@ -91,4 +100,13 @@ test("codexReviewCall: exactly one selector — zero or two is a caller bug, not
 test("codexReviewCall: optional title and prompt, prompt last", () => {
   const call = codexReviewCall({ base: "main", title: "wave 1", prompt: "focus on the gate" });
   assert.deepEqual(call.argv, ["review", "--base", "main", "--title", "wave 1", "focus on the gate"]);
+});
+
+test("native Codex review remains shadow-only after the failed benchmark", () => {
+  assert.deepEqual(resolveCodexReviewRouting(), {
+    mode: "muster-review-gate",
+    nativeReviewEnabled: false,
+    reason: "native review shadow benchmark rejected adoption (0/10 schema-valid outputs)",
+  });
+  assert.equal(resolveCodexReviewRouting({ requestNativeReview: true }).nativeReviewEnabled, false);
 });

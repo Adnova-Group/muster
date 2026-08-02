@@ -194,6 +194,31 @@ test("effectiveHookTrust rejects duplicate scope and managed hook inventory reco
   const duplicateHook = structuredClone(record);
   duplicateHook.hooks.push(structuredClone(duplicateHook.hooks[0]));
   assert.equal(effectiveHookTrust({ ok: true, data: [duplicateHook] }, cwd, hooksJsonPath, results, { knownKeys: ["stop:0:0"] }).ok, false);
+  for (const mutate of [
+    item => { item.errors = "fatal load error"; },
+    item => { item.warnings = null; },
+    item => { item.cwd = `${cwd}/\0/..`; },
+    item => { item.hooks[0].enabled = "true"; },
+    item => { item.hooks[0].currentHash = null; }
+  ]) {
+    const malformed = structuredClone(record);
+    mutate(malformed);
+    assert.equal(effectiveHookTrust({ ok: true, data: [malformed] }, cwd, hooksJsonPath, results, { knownKeys: ["stop:0:0"] }).ok, false);
+  }
+});
+
+test("Codex reinstall rejects an exact duplicate Muster group left outside manifest ownership", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-duplicate-owned-"));
+  const cwd = join(tmp, "project"), home = join(tmp, "home");
+  await runCodexInstall({ cwd, home, repoRoot, execFile: absentCodex });
+  const hooksPath = join(cwd, ".codex", "hooks.json");
+  const config = JSON.parse(await readFile(hooksPath, "utf8"));
+  config.hooks.SessionStart.push(structuredClone(config.hooks.SessionStart[0]));
+  await writeFile(hooksPath, JSON.stringify(config, null, 2) + "\n");
+  await assert.rejects(
+    () => runCodexInstall({ cwd, home, repoRoot, execFile: absentCodex }),
+    /duplicate|unmanaged Muster hook|hook conflict/i
+  );
 });
 
 test("ordinary project/user install and doctor reject unexpected active positions", async t => {

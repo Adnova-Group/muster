@@ -632,11 +632,27 @@ export async function readCodexHookInventory({ runtimeIdentity, cwds, env = proc
   });
 }
 
+function validHookInventoryRecord(entry) {
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)
+    || typeof entry.cwd !== "string" || !entry.cwd || !isAbsolute(entry.cwd)
+    || /[\0\r\n]/.test(entry.cwd) || resolve(entry.cwd) !== entry.cwd
+    || !Array.isArray(entry.warnings) || !entry.warnings.every(item => typeof item === "string")
+    || !Array.isArray(entry.errors) || !entry.errors.every(item => typeof item === "string")
+    || !Array.isArray(entry.hooks)) return false;
+  return entry.hooks.every(hook => hook && typeof hook === "object" && !Array.isArray(hook)
+    && typeof hook.key === "string" && hook.key.length > 0 && !/[\0\r\n]/.test(hook.key)
+    && typeof hook.enabled === "boolean"
+    && typeof hook.trustStatus === "string" && hook.trustStatus.length > 0
+    && typeof hook.currentHash === "string" && hook.currentHash.length > 0);
+}
+
 export function effectiveHookTrust(inventory, cwd, hooksJsonPath, results, { knownKeys } = {}) {
   if (!inventory?.ok) return { verified: false, ok: false, error: inventory?.error || "Codex hooks/list unavailable", results: [] };
   if (!Array.isArray(results) || results.length === 0) return { verified: true, ok: false, error: "no expected Muster hooks were supplied for activation verification", results: [] };
-  const scopes = (Array.isArray(inventory.data) ? inventory.data : []).filter(entry =>
-    typeof entry?.cwd === "string" && entry.cwd.length > 0 && resolve(entry.cwd) === resolve(cwd));
+  if (!Array.isArray(inventory.data) || !inventory.data.every(validHookInventoryRecord)) {
+    return { verified: true, ok: false, error: "Codex hooks/list returned a malformed scope or hook record", results: [] };
+  }
+  const scopes = inventory.data.filter(entry => entry.cwd === resolve(cwd));
   if (scopes.length !== 1) {
     return { verified: true, ok: false, error: scopes.length ? `Codex hooks/list returned duplicate records for ${cwd}` : "Codex hooks/list omitted the requested scope", results: [] };
   }
@@ -1588,6 +1604,9 @@ async function prepareHooks({ scope, cwd, home, hookSourceRoot, packageVersion, 
   // reinstall exactly as before this feature.
   const previousOwnedHookStateKeys = previous ? ownedHookStateKeys(config, previous.hookGroups) : [];
   if (previous) config = removeOwnedHookGroups(config, previous.hookGroups, configPath);
+  if (Object.values(config.hooks).flat().some(group => groupCommands(group).some(isMusterHookCommand))) {
+    throw new Error(`Codex hook conflict: ${configPath} contains a duplicate or unmanaged Muster hook outside manifest ownership. Remove the extra group, then rerun the command.`);
+  }
 
   const skipped = scope === "project" && canonicalUserHooksActive === true;
 

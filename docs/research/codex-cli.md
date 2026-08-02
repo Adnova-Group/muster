@@ -248,9 +248,11 @@ Hermes note: Hermes's OWN `/goal` standing-objective loop is a different, alread
 - codex-env-doc: https://developers.openai.com/codex/config-file/environment-variables.md
 - codex-wsl-doc: https://developers.openai.com/codex/windows/wsl.md
 - codex-llms-map: https://developers.openai.com/codex/llms.txt
+- codex-releases: https://github.com/openai/codex/releases
 - hooks-src: codex/hooks/muster-hook.mjs:13-105
 - hooks-template: codex/hooks/hooks.json:1-88
 - codex-js: src/codex.js:5-48
+- model-policy: src/model-policy.js
 - manifest-json: catalog/agents.manifest.json
 - build-codex: scripts/build-codex.mjs:13-453
 - skill-adapter: codex/skill-adapter.md:5-24

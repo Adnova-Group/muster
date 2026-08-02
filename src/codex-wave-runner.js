@@ -637,18 +637,30 @@ async function assertNoExecutableSessionConfig(sessionHome) {
   }
 }
 
+function isCodexDiscoveryPath(path) {
+  const segments = String(path).split("/").filter(Boolean);
+  const basename = segments.at(-1);
+  return basename === "AGENTS.md" || basename === "AGENTS.override.md"
+    || segments.includes(".agents") || segments.includes(".codex");
+}
+
 async function assertNoIgnoredCodexDiscovery(canonical, memberId, deadline) {
   const ignored = (await gitText(canonical, ["ls-files", "--others", "--ignored", "--exclude-standard", "-z"], deadline))
     .split("\0")
     .filter(Boolean);
-  const planted = ignored.find(path => {
-    const segments = path.split("/");
-    const basename = segments.at(-1);
-    return basename === "AGENTS.md" || basename === "AGENTS.override.md"
-      || segments.includes(".agents") || segments.includes(".codex");
-  });
+  const planted = ignored.find(isCodexDiscoveryPath);
   if (planted) {
     throw new Error(`runCodexWave: process member ${JSON.stringify(memberId)} contains ignored Codex discovery surface ${JSON.stringify(planted)}`);
+  }
+}
+
+async function assertNoTrackedCodexDiscoveryDrift(canonical, baseSha, headSha, memberId, deadline) {
+  const changed = (await gitText(canonical, [
+    "diff", "--name-only", "--diff-filter=ACDMRTUXB", "-z", baseSha, headSha, "--",
+  ], deadline)).split("\0").filter(Boolean);
+  const drifted = changed.find(isCodexDiscoveryPath);
+  if (drifted) {
+    throw new Error(`runCodexWaveContinuation: process member ${JSON.stringify(memberId)} changed tracked Codex discovery surface ${JSON.stringify(drifted)} between retained base and HEAD`);
   }
 }
 
@@ -1176,6 +1188,7 @@ export async function runCodexWaveContinuation({
     timeout: remainingMs(deadline, "Codex fix-loop ancestry validation"),
   }).then(() => true, () => false);
   if (!baseIsAncestor) throw new Error("runCodexWaveContinuation: retained base is not an ancestor of current HEAD");
+  await assertNoTrackedCodexDiscoveryDrift(receipt.cwd, receipt.baseSha, receipt.headSha, receipt.memberId, deadline);
   const actionFenceSha256 = createHash("sha256").update(JSON.stringify(receipt.actionFence)).digest("hex");
   if (actionFenceSha256 !== receipt.actionFenceSha256 || !Array.isArray(receipt.actionFence)
     || receipt.actionFence.some(action => !ACTION_CLASSES.has(action))) {

@@ -155,6 +155,8 @@ The protected broker config schema is:
 {
   "socketPath": "/run/user/1000/muster-evidence.sock",
   "statePath": "/var/lib/muster/run-uuid/state.json",
+  "checkpointPath": "/var/lib/muster/run-uuid/checkpoint.json",
+  "lockPath": "/var/lib/muster/run-uuid/state.lock",
   "receiptPrivateKeyPath": "/var/lib/muster/run-uuid/receipt-private.pem",
   "approvalPrivateKeyPath": "/var/lib/muster/run-uuid/approval-private.pem",
   "approvalPublicKeyPath": "/var/lib/muster/run-uuid/approval-public.pem"
@@ -196,7 +198,11 @@ The owner-only state file is versioned. `callbackPrincipals` keys are SHA-256 di
 }
 ```
 
-Initialize under the broker service account with `umask 077`, generate each key with `openssl genpkey -algorithm Ed25519`, derive the public PEM with `openssl pkey -pubout`, write config/state mode `0600`, and start `node scripts/sprint-evidence-broker.mjs /protected/config.json`. To admit an item, rotate a callback, or record a newly emitted approval action, write the complete next state to an owner-only sibling temp file with `version` incremented, `fsync` it, then atomically rename it over `state.json`. The broker reopens and validates the protected file on every callback; it rejects version rollback, same-version content changes, and in-place `runId` changes. Rotate a run by stopping the service and starting a new protected config/state/key set with a new `runId`; never reuse callback tokens across runs.
+Initialize under the broker service account with `umask 077`, generate each key with `openssl genpkey -algorithm Ed25519`, derive the public PEM with `openssl pkey -pubout`, write config/state mode `0600`, and start `node scripts/sprint-evidence-broker.mjs /protected/config.json`. The broker initializes the owner-only monotonic checkpoint on its first protected read.
+
+Every later state writer, including the host adapter that admits an item, rotates a callback, or records a newly emitted approval action, must use the same transactional publisher as the broker consumer. First run `node scripts/sprint-evidence-state.mjs read /protected/config.json` and retain its exact `version` and `contentHash`. Prepare the complete desired state in another owner-only file, then run `node scripts/sprint-evidence-state.mjs publish /protected/config.json /protected/next-state.json <version> <contentHash>`. Do not increment `version` in the desired document; the publisher does that while holding the shared lock. On a conflict, reread, reapply the intended change to the new state, and retry. Never rename a state file directly: doing so bypasses the shared compare-and-swap protocol.
+
+Consumption and publication both lock `lockPath`, compare the expected `{version, contentHash}`, advance the durable checkpoint, and atomically replace the state. Consequently neither ordering of a publisher/consumer race can restore a consumed capability. The checkpoint survives broker restarts and rejects rollback or same-version replacement; if the service fails after advancing the checkpoint but before replacing state, it fails closed and an operator must reconcile the protected files rather than lowering the checkpoint. Rotate a run by stopping the service and starting a new protected config/state/checkpoint/key set with a new `runId`; never reuse callback tokens across runs.
 
 Receipt callback tokens are canonical 64-character lowercase hex values representing at least 32 random bytes. Human approval uses a distinct one-time token whose principal embeds the exact run, actor, item, emitted action digest, trusted human-event timestamp, and expiry. The broker preserves that human timestamp, atomically removes the capability and increments state version before returning the signature, so duplicate/replayed approval calls fail; a crash after consumption requires a new human event rather than recreating freshness. The service requires a service-owned `0700` state/config directory, owner-owned `0600` files, and creates the Unix socket as `0600`; Windows currently fails closed until an ACL-hardened named-pipe adapter exists.
 

@@ -35,7 +35,11 @@ export function startSprintEvidenceBroker({
       buffer = "";
       Promise.resolve().then(async () => {
         const envelope = JSON.parse(line);
-        const currentState = await resolveState();
+        const loaded = await resolveState();
+        const snapshot = typeof loaded?.contentHash === "string" && loaded?.state
+          ? loaded
+          : { state: loaded, version: loaded?.version, contentHash: undefined };
+        const currentState = snapshot.state;
         if (Date.now() - authWindowStarted > 60_000) { authWindowStarted = Date.now(); failedAuth = 0; }
         if (failedAuth >= 8) throw new Error("broker callback authentication throttled");
         let principal;
@@ -51,7 +55,10 @@ export function startSprintEvidenceBroker({
                 state: currentState, principal, approvalPrivateKey,
               });
               if (typeof consumeApprovalCapability !== "function") throw new Error("approval capability consumer unavailable");
-              await consumeApprovalCapability(principal.tokenDigest, currentState.version);
+              await consumeApprovalCapability(principal.tokenDigest, {
+                version: snapshot.version,
+                contentHash: snapshot.contentHash,
+              });
               return issued;
             })()
             : (() => { throw new Error("unknown broker request kind"); })();

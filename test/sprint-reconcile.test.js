@@ -710,8 +710,8 @@ test("privileged IPC broker binds callback capabilities, assignments, and fresh 
   const socketPath = join(dir, "broker.sock");
   const broker = startSprintEvidenceBroker({
     socketPath, loadState: async () => assignments,
-    consumeApprovalCapability: async (digest, version) => {
-      assert.equal(version, assignments.version);
+    consumeApprovalCapability: async (digest, expected) => {
+      assert.equal(expected.version, assignments.version);
       assert.ok(assignments.callbackPrincipals[digest]?.oneTimeApproval);
       assignments = structuredClone(assignments);
       delete assignments.callbackPrincipals[digest];

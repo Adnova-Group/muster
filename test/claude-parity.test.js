@@ -1371,5 +1371,7 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // leaves only Ed25519 public verification keys on the model-callable path.
   // Re-pin #47 makes that broker a separately privileged host service with
   // owner-only key/state files, never a child of the Cowork/model process.
-  assert.equal(hash.digest("hex"), "2d36452e5dea5e08326feff8066ba923ed2f7f21ba676ee8a2b990ab03031cf6");
+  // Re-pin #48 preserves progress-aware runner recovery in the generated
+  // profile while retaining the configured non-waivable runaway boundary.
+  assert.equal(hash.digest("hex"), "e0644743865f363097b77c889c0efe83e424a4fb121f1b87433b60f0d81c2601");
 });

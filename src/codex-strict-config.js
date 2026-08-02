@@ -32,6 +32,7 @@ function runOneStrictConfigCheck({
   runtimeIdentity,
   spawn = spawnChild,
   timeoutMs = CODEX_STRICT_CONFIG_TIMEOUT_MS,
+  terminationGraceMs = 1_000,
   env = process.env
 } = {}) {
   if (!runtimeIdentity?.nativeCodex) {
@@ -44,10 +45,13 @@ function runOneStrictConfigCheck({
     let settled = false;
     let pendingFailure = null;
     let escalationTimer = null;
+    let lifecycleTimer = null;
     const finish = error => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      clearTimeout(escalationTimer);
+      clearTimeout(lifecycleTimer);
       if (error) reject(error);
       else resolveResult({ ok: true, modelTurnEvents: 0 });
     };
@@ -73,6 +77,10 @@ function runOneStrictConfigCheck({
       signalTree("SIGTERM");
       escalationTimer = setTimeout(() => signalTree("SIGKILL"), 100);
       escalationTimer.unref?.();
+      lifecycleTimer = setTimeout(() => finish(new Error(
+        `${pendingFailure.message}; parser termination could not be confirmed after ${terminationGraceMs}ms`
+      )), terminationGraceMs);
+      lifecycleTimer.unref?.();
     };
     const timer = setTimeout(() => requestTermination(
       new Error(`Codex app-server strict config validation timed out after ${timeoutMs}ms`)

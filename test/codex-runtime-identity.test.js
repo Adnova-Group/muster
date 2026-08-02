@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, realpath, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { execFile as execFileCb } from "node:child_process";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
@@ -65,6 +65,18 @@ test("Codex version attestation rejects warnings, suffixes, extra lines, and con
   for (const output of [
     "warning: codex 9.8.7", "codex-cli 9.8.7 extra", "codex-cli 9.8.7\nattacker", "\u001b[31mcodex-cli 9.8.7\u001b[0m",
   ]) assert.equal(codexVersionMatches(output, "9.8.7").ok, false, output);
+});
+
+test("trusted Codex identity rejects a native executable symlink escaping the package root", async t => {
+  const { tmp, env, nativePath } = await fixture(t, process.platform);
+  const outside = join(tmp, "outside-native");
+  await writeFile(outside, "untrusted native\n");
+  await unlink(nativePath);
+  await symlink(outside, nativePath);
+  assert.throws(
+    () => resolveCodexRuntimeIdentity({ env, platform: process.platform, nodeExecPath: process.execPath }),
+    /escapes the trusted Codex package root/
+  );
 });
 
 test("missing trusted identity performs no Codex PATH execution", async () => {

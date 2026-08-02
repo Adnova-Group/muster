@@ -159,7 +159,7 @@ test("strict config: default process launch refuses an unpinned runtime", async 
   );
 });
 
-test("strict config: timeout does not settle until the parser closes", async () => {
+test("strict config: timeout remains bounded when the parser never closes", async () => {
   let child;
   const spawn = () => {
     child = new EventEmitter();
@@ -169,16 +169,12 @@ test("strict config: timeout does not settle until the parser closes", async () 
     child.kill = () => { child.killed = true; return true; };
     return child;
   };
-  let settled = false;
   const pending = runCodexStrictConfigCheck({
     cwd: "/tmp/project", codexHome: "/tmp", runtimeIdentity: PINNED_IDENTITY,
-    spawn, timeoutMs: 5, validateProjectConfig: false
-  }).finally(() => { settled = true; });
-  await new Promise(resolve => setTimeout(resolve, 15));
+    spawn, timeoutMs: 5, terminationGraceMs: 10, validateProjectConfig: false
+  });
+  await assert.rejects(pending, /termination could not be confirmed after 10ms/);
   assert.equal(child.killed, true);
-  assert.equal(settled, false, "rollback cannot start before parser close is confirmed");
-  child.stdout.end(); child.stderr.end(); child.emit("close", null, "SIGKILL");
-  await assert.rejects(pending, /timed out after 5ms/);
 });
 
 test("strict config: install validates the complete write and restores config bytes on failure", async () => {
@@ -227,11 +223,13 @@ test("strict config: rollback preserves malformed config bytes exactly", async (
   await mkdir(join(cwd, ".codex"), { recursive: true });
   await writeFile(sharedPath, sharedOriginal);
   await writeFile(projectPath, projectOriginal);
+  let parserCalled = false;
   await assert.rejects(runCodexInstall({
     cwd, home, repoRoot,
     execFile: async () => { throw new Error("codex absent"); },
-    strictConfigRunner: async () => { throw new Error(`${sharedPath}:1:3: invalid UTF-8`); }
+    strictConfigRunner: async () => { parserCalled = true; }
   }), /invalid UTF-8/);
+  assert.equal(parserCalled, false, "invalid bytes must be rejected before candidate transformation or parsing");
   assert.deepEqual(await readFile(sharedPath), sharedOriginal);
   assert.deepEqual(await readFile(projectPath), projectOriginal);
 });

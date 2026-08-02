@@ -58,15 +58,17 @@ export function resolveCodexRuntimeIdentity({
   if (!target) throw new Error(`unsupported Codex native target: ${platform}-${arch}`);
   const [platformPackage, triple, executable] = target;
   let nativeCandidate = join(canonicalRoot, "vendor", triple, "bin", executable);
-  try { nativeCandidate = canonicalRegularFile(nativeCandidate, "Codex native executable"); }
-  catch {
+  try { nativeCandidate = containedFile(canonicalRoot, nativeCandidate, "Codex native executable").canonical; }
+  catch (error) {
+    if (error.code !== "ENOENT") throw error;
     const requireFromCodex = createRequire(packageJson);
     const platformManifest = canonicalRegularFile(requireFromCodex.resolve(`${platformPackage}/package.json`), "Codex platform package manifest");
+    const platformRoot = realpathSync(dirname(platformManifest));
     const platformPackageJson = JSON.parse(readFileSync(platformManifest, "utf8"));
     if (platformPackageJson?.name !== "@openai/codex" || !String(platformPackageJson.version || "").startsWith(`${manifest.version}-`)) {
       throw new Error("trusted Codex platform package has an unexpected name or version");
     }
-    nativeCandidate = canonicalRegularFile(join(dirname(platformManifest), "vendor", triple, "bin", executable), "Codex native executable");
+    nativeCandidate = containedFile(platformRoot, join(platformRoot, "vendor", triple, "bin", executable), "Codex native executable").canonical;
   }
   return Object.freeze({ node, codex, nativeCodex: nativeCandidate, version: manifest.version, packageRoot: canonicalRoot });
 }

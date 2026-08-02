@@ -49,10 +49,13 @@ Save `screen_dir` and `state_dir` from the response. With `--open`, the browser 
 
 **The URL contains a controller key (`?key=…`).** Always give the user the
 **complete** URL from the `url` field — never strip the query string, and never
-hand out a bare `http://host:port`. The controller keeps that key only in its
-nonce-protected page memory and uses it for the WebSocket. Generated screens run
-in an opaque-origin sandbox and receive a separate read-only view capability for
-`/screen` and `/files/*`; no credential is stored in a localhost cookie.
+hand out a bare `http://host:port`. The server exchanges that bootstrap key for
+short-lived, single-connection WebSocket and view capabilities held only in the
+controller's nonce-protected page memory. Generated screens run in an
+opaque-origin sandbox and receive only the read-only view capability for
+`/screen` and `/files/*`; no credential is stored in a localhost cookie. An
+expired capability, or one whose WebSocket disconnected, cannot be replayed;
+refresh the complete launch URL to establish a new controller connection.
 
 **Finding connection info:** The server writes its startup JSON to `$STATE_DIR/server-info`. If you launched the server in the background and didn't capture stdout, read that file to get the URL and port. When using `--project-dir`, check `<project>/.superpowers/brainstorm/` for the session directory.
 
@@ -91,21 +94,27 @@ scripts/start-server.sh --project-dir /path/to/project --open --foreground
 
 **Other environments:** The server must keep running in the background across conversation turns. If your environment reaps detached processes, use `--foreground` and launch the command with your platform's background execution mechanism.
 
-If the URL is unreachable from your browser (common in remote/containerized setups), bind a non-loopback host:
+If the server runs on a remote machine or in a container, keep it bound to
+loopback and expose it only through an authenticated, encrypted SSH tunnel.
+After starting it, note the port in `server-info`, then run this on the browser
+machine (using the same local and server port keeps the printed URL valid):
 
 ```bash
-scripts/start-server.sh \
-  --project-dir /path/to/project \
-  --host 0.0.0.0 \
-  --url-host localhost
+ssh -L [local-port]:127.0.0.1:[server-port] user@remote-host
 ```
 
-Use `--url-host` to control what hostname is printed in the returned URL JSON.
+Open the complete `http://localhost:[local-port]/?key=…` URL through that
+tunnel. SSH authenticates the remote endpoint and encrypts the HTTP/WebSocket
+bytes in transit; a packet capture on the remote path therefore cannot expose
+a capability or browser event in plaintext. Bare non-loopback binds (including
+`--host 0.0.0.0`) fail before the server listens. If an authenticated SSH tunnel
+is unavailable, do not expose the companion; continue the brainstorm in the
+terminal instead.
 
 ## The Loop
 
 1. **Check server is alive**, then **write HTML** to a new file in `screen_dir`:
-   - **Required: confirm the server is alive before referring to the URL or pushing a screen.** Check that `$STATE_DIR/server-info` exists and `$STATE_DIR/server-stopped` does not. If it has shut down, restart it with `start-server.sh` using the **same `--project-dir`** — it reuses the same port, so the user's open tab reconnects on its own (it shows a "paused" overlay while the server is down) and you don't need to send a new URL. The server auto-exits after 4 hours idle (configurable with `--idle-timeout-minutes`).
+   - **Required: confirm the server is alive before referring to the URL or pushing a screen.** Check that `$STATE_DIR/server-info` exists and `$STATE_DIR/server-stopped` does not. If it has shut down, restart it with `start-server.sh` using the **same `--project-dir`** — it reuses the same port and launch URL. Ask the user to refresh that complete URL to establish fresh controller capabilities. The server auto-exits after 4 hours idle (configurable with `--idle-timeout-minutes`).
    - Use semantic filenames: `platform.html`, `visual-style.html`, `layout.html`
    - **Never reuse filenames** — each screen gets a fresh file
    - Use your file-creation tool — **never use cat/heredoc** (dumps noise into terminal)

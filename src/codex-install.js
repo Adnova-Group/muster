@@ -633,17 +633,18 @@ export async function readCodexHookInventory({ runtimeIdentity, cwds, env = proc
 }
 
 function validHookInventoryRecord(entry) {
+  const controls = /[\u0000-\u001F\u007F-\u009F]/u;
   if (!entry || typeof entry !== "object" || Array.isArray(entry)
     || typeof entry.cwd !== "string" || !entry.cwd || !isAbsolute(entry.cwd)
-    || /[\0\r\n]/.test(entry.cwd) || resolve(entry.cwd) !== entry.cwd
+    || controls.test(entry.cwd) || resolve(entry.cwd) !== entry.cwd
     || !Array.isArray(entry.warnings) || !entry.warnings.every(item => typeof item === "string")
     || !Array.isArray(entry.errors) || !entry.errors.every(item => typeof item === "string")
     || !Array.isArray(entry.hooks)) return false;
   return entry.hooks.every(hook => hook && typeof hook === "object" && !Array.isArray(hook)
-    && typeof hook.key === "string" && hook.key.length > 0 && !/[\0\r\n]/.test(hook.key)
+    && typeof hook.key === "string" && /^.+:[a-z][a-z0-9_]*:\d+:\d+$/.test(hook.key) && !controls.test(hook.key)
     && typeof hook.enabled === "boolean"
-    && typeof hook.trustStatus === "string" && hook.trustStatus.length > 0
-    && typeof hook.currentHash === "string" && hook.currentHash.length > 0);
+    && typeof hook.trustStatus === "string" && hook.trustStatus.length > 0 && !controls.test(hook.trustStatus)
+    && typeof hook.currentHash === "string" && /^sha256:[0-9a-f]{64}$/.test(hook.currentHash));
 }
 
 export function effectiveHookTrust(inventory, cwd, hooksJsonPath, results, { knownKeys } = {}) {
@@ -651,6 +652,11 @@ export function effectiveHookTrust(inventory, cwd, hooksJsonPath, results, { kno
   if (!Array.isArray(results) || results.length === 0) return { verified: true, ok: false, error: "no expected Muster hooks were supplied for activation verification", results: [] };
   if (!Array.isArray(inventory.data) || !inventory.data.every(validHookInventoryRecord)) {
     return { verified: true, ok: false, error: "Codex hooks/list returned a malformed scope or hook record", results: [] };
+  }
+  const inventoryCwds = inventory.data.map(entry => entry.cwd);
+  if (new Set(inventoryCwds).size !== inventoryCwds.length
+    || inventory.data.some(entry => new Set(entry.hooks.map(hook => hook.key)).size !== entry.hooks.length)) {
+    return { verified: true, ok: false, error: "Codex hooks/list returned duplicate scope or hook records", results: [] };
   }
   const scopes = inventory.data.filter(entry => entry.cwd === resolve(cwd));
   if (scopes.length !== 1) {
@@ -673,7 +679,7 @@ export function effectiveHookTrust(inventory, cwd, hooksJsonPath, results, { kno
   const effectiveResults = results.map(result => {
     const expectedKey = `${hooksJsonPath}:${result.key}`;
     const hook = hooks.find(candidate => candidate?.key === expectedKey);
-    const active = Boolean(hook && hook.enabled === true && String(hook.trustStatus).toLowerCase() === "trusted"
+    const active = Boolean(hook && hook.enabled === true && hook.trustStatus === "trusted"
       && hook.currentHash === result.currentHash);
     return { key: result.key, expectedKey, present: Boolean(hook), enabled: hook?.enabled ?? null,
       trustStatus: hook?.trustStatus ?? null, currentHash: hook?.currentHash ?? null, status: active ? "active" : "inactive" };

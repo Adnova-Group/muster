@@ -186,9 +186,10 @@ const inventoryFor = (cwd, hooksJsonPath, results) => ({ ok: true, data: [{ cwd,
 
 test("effectiveHookTrust rejects duplicate scope and managed hook inventory records", () => {
   const cwd = "/repo", hooksJsonPath = "/repo/.codex/hooks.json";
-  const results = [{ key: "stop:0:0", currentHash: "sha256:exact" }];
+  const exactHash = `sha256:${"a".repeat(64)}`;
+  const results = [{ key: "stop:0:0", currentHash: exactHash }];
   const record = { cwd, warnings: [], errors: [], hooks: [{
-    key: `${hooksJsonPath}:stop:0:0`, enabled: true, trustStatus: "trusted", currentHash: "sha256:exact"
+    key: `${hooksJsonPath}:stop:0:0`, enabled: true, trustStatus: "trusted", currentHash: exactHash
   }] };
   assert.equal(effectiveHookTrust({ ok: true, data: [record, structuredClone(record)] }, cwd, hooksJsonPath, results, { knownKeys: ["stop:0:0"] }).ok, false);
   const duplicateHook = structuredClone(record);
@@ -198,12 +199,32 @@ test("effectiveHookTrust rejects duplicate scope and managed hook inventory reco
     item => { item.errors = "fatal load error"; },
     item => { item.warnings = null; },
     item => { item.cwd = `${cwd}/\0/..`; },
+    item => { item.cwd = `${cwd}/\t/..`; },
+    item => { item.cwd = `${cwd}/\x01/..`; },
+    item => { item.cwd = `${cwd}/\u007f/..`; },
+    item => { item.cwd = `${cwd}/\u0085/..`; },
     item => { item.hooks[0].enabled = "true"; },
-    item => { item.hooks[0].currentHash = null; }
+    item => { item.hooks[0].currentHash = null; },
+    item => { item.hooks[0].trustStatus = "TRUSTED"; },
+    item => { item.hooks[0].key += "\t"; }
   ]) {
     const malformed = structuredClone(record);
     mutate(malformed);
     assert.equal(effectiveHookTrust({ ok: true, data: [malformed] }, cwd, hooksJsonPath, results, { knownKeys: ["stop:0:0"] }).ok, false);
+  }
+  const other = { ...structuredClone(record), cwd: "/other" };
+  assert.equal(effectiveHookTrust({ ok: true, data: [record, other, structuredClone(other)] }, cwd, hooksJsonPath, results, { knownKeys: ["stop:0:0"] }).ok, false);
+  const duplicateForeign = structuredClone(record);
+  const foreign = { key: "/foreign/hooks.json:stop:0:0", enabled: false, trustStatus: "untrusted", currentHash: exactHash };
+  duplicateForeign.hooks.push(foreign, structuredClone(foreign));
+  assert.equal(effectiveHookTrust({ ok: true, data: [duplicateForeign] }, cwd, hooksJsonPath, results, { knownKeys: ["stop:0:0"] }).ok, false);
+  const malformedForeign = structuredClone(record);
+  malformedForeign.hooks.push({ ...foreign, currentHash: "not-a-sha256" });
+  assert.equal(effectiveHookTrust({ ok: true, data: [malformedForeign] }, cwd, hooksJsonPath, results, { knownKeys: ["stop:0:0"] }).ok, false);
+  for (const control of ["\t", "\x01", "\u007f", "\u0085"]) {
+    const controlledCwd = `/repo/${control}name`;
+    const controlled = { ...structuredClone(record), cwd: controlledCwd };
+    assert.equal(effectiveHookTrust({ ok: true, data: [controlled] }, controlledCwd, hooksJsonPath, results, { knownKeys: ["stop:0:0"] }).ok, false);
   }
 });
 

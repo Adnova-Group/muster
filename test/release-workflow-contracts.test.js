@@ -89,3 +89,15 @@ test("CI explicitly gates checked backlog completion on release reachability", a
   assert.match(backlog, /backlog-receipts - --release-ref/);
   assert.match(backlog, /Only those same verified bytes/i);
 });
+
+test("trusted PR receipt gate runs base verifier against HEAD-bound PR data before lifecycle code", async () => {
+  const trusted = await read(".github/workflows/backlog-receipts.yml");
+  assert.match(trusted, /pull_request_target:/);
+  assert.match(trusted, /pull_request\.base\.sha/);
+  assert.match(trusted, /pull_request\.head\.sha/);
+  assert.match(trusted, /\.\.\/verifier\/scripts\/check-backlog-receipts\.mjs/);
+  assert.doesNotMatch(trusted, /npm ci/);
+
+  const ci = await read(".github/workflows/ci.yml");
+  assert.ok(ci.indexOf("Verify backlog completion receipts") < ci.indexOf("npm ci"));
+});

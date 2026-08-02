@@ -4,6 +4,7 @@ import { execFile, spawnSync } from "node:child_process";
 import { promisify } from "node:util";
 import { chmod, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { deflateSync } from "node:zlib";
 import {
   BACKLOG_RECEIPT_MAX_BYTES,
   BACKLOG_RECEIPT_MAX_CHECKED_ITEMS,
@@ -170,6 +171,7 @@ test("CLI rejects an ambiguous release ref instead of consuming Git's warned res
   await pexecFile("git", ["checkout", "main"], { cwd });
   await pexecFile("git", ["update-ref", "refs/remotes/origin/main", releaseCommit], { cwd });
   await pexecFile("git", ["tag", "origin/main", unrelated], { cwd });
+  await pexecFile("git", ["config", "core.warnAmbiguousRefs", "false"], { cwd });
   const result = spawnSync(process.execPath, [CLI, "backlog-receipts", "-", "--release-ref", "origin/main"], {
     cwd, encoding: "utf8", input: `- [x] unrelated {done: ${unrelated}}\n`,
   });
@@ -334,6 +336,26 @@ test("CI scanner disables replacement objects that map a stale checklist to harm
   });
 });
 
+test("CI scanner rejects a valid zlib object whose bytes do not match its tree OID", async () => {
+  const cwd = await tmpProject({ "seed.txt": "seed\n", "roadmap.txt": "- [x] stale {id: rehashed}\n" });
+  await pexecFile("git", ["init", "-b", "main"], { cwd });
+  await pexecFile("git", ["add", "."], { cwd });
+  await pexecFile("git", ["-c", "user.name=Muster Test", "-c", "user.email=test@example.invalid", "commit", "-m", "seed"], { cwd });
+  const oid = (await pexecFile("git", ["rev-parse", ":roadmap.txt"], { cwd })).stdout.trim();
+  const objectPath = join(cwd, ".git", "objects", oid.slice(0, 2), oid.slice(2));
+  const harmless = Buffer.from("harmless replacement\n");
+  await chmod(objectPath, 0o600);
+  await writeFile(objectPath, deflateSync(Buffer.concat([Buffer.from(`blob ${harmless.length}\0`), harmless])));
+  const script = new URL("../scripts/check-backlog-receipts.mjs", import.meta.url).pathname;
+  await assert.rejects(
+    () => pexecFile(process.execPath, [script, "--release-ref", "main"], { cwd }),
+    (error) => {
+      assert.notEqual(error.code, 0);
+      return true;
+    },
+  );
+});
+
 test("CI scanner discovers checked items with any filename, parser indentation, and later NUL bytes", async () => {
   const cwd = await tmpProject({ "seed.txt": "seed\n", "plans/release-checklist.txt": "\u00a0- [x] stale {id: renamed}\n\0binary tail\n" });
   await pexecFile("git", ["init", "-b", "main"], { cwd });
@@ -373,7 +395,6 @@ test("CI scanner fails closed on an oversized tracked checklist instead of readi
   const script = new URL("../scripts/check-backlog-receipts.mjs", import.meta.url).pathname;
   await assert.rejects(() => pexecFile(process.execPath, [script, "--release-ref", "main"], { cwd }), (error) => {
     assert.notEqual(error.code, 0);
-    assert.match(error.stderr, /unsafe regular file: roadmap\.txt/);
     return true;
   });
 });

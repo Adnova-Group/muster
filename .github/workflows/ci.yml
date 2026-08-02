@@ -24,9 +24,9 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
-      - run: npm ci
       - name: Verify backlog completion receipts
         run: node scripts/check-backlog-receipts.mjs --release-ref "origin/${GITHUB_BASE_REF:-main}"
+      - run: npm ci
       - run: npm test
       - name: Router eval (deterministic grade on goldens)
         # The full model-driven router eval runs separately (it needs a model); this prints

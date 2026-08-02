@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
-  BACKLOG_RECEIPT_MAX_BYTES,
   BACKLOG_RECEIPT_MAX_CHECKED_ITEMS,
   BACKLOG_RECEIPT_MAX_TOTAL_BYTES,
   BACKLOG_RECEIPT_MAX_UNIQUE_RECEIPTS,
@@ -9,19 +9,20 @@ import {
   makeGitReachabilityVerifier,
 } from "../src/backlog-receipts.js";
 
-const GIT_OUTPUT_MAX_BYTES = 16 * 1024 * 1024;
+const GIT_TIMEOUT_MS = 30_000;
+const GIT_OUTPUT_MAX_BYTES = BACKLOG_RECEIPT_MAX_TOTAL_BYTES + 4 * 1024 * 1024;
 const utf8 = new TextDecoder("utf-8", { fatal: true });
 
-function git(args, { input, allowNoMatch = false, maxBuffer = GIT_OUTPUT_MAX_BYTES } = {}) {
+function git(args, { input, maxBuffer = GIT_OUTPUT_MAX_BYTES } = {}) {
   const result = spawnSync("git", args, {
     cwd: process.cwd(),
     env: { ...process.env, GIT_NO_REPLACE_OBJECTS: "1" },
     input,
     maxBuffer,
+    timeout: GIT_TIMEOUT_MS,
     stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
   });
   if (result.error || result.status !== 0 || result.stderr.length !== 0) {
-    if (allowNoMatch && result.status === 1 && !result.error && result.stderr.length === 0) return result;
     if (result.error) throw result.error;
     throw new Error(`git ${args[0]} failed with exit ${result.status ?? "unknown"}`);
   }
@@ -40,74 +41,76 @@ function splitNul(bytes) {
   return parts.filter((part) => part.length > 0);
 }
 
+function parseBatchBlobs(output, expectedOids) {
+  const blobs = new Map();
+  let cursor = 0;
+  for (const expectedOid of expectedOids) {
+    const newline = output.indexOf(10, cursor);
+    if (newline < 0) throw new Error("git cat-file --batch returned a truncated header");
+    const header = output.subarray(cursor, newline).toString("ascii");
+    const match = /^([0-9a-f]{40,64}) blob (\d+)$/.exec(header);
+    if (!match || match[1] !== expectedOid) throw new Error("git cat-file --batch returned an invalid blob header");
+    const size = Number(match[2]);
+    const start = newline + 1;
+    const end = start + size;
+    if (!Number.isSafeInteger(size) || end >= output.length || output[end] !== 10) {
+      throw new Error("git cat-file --batch returned invalid blob framing");
+    }
+    const bytes = output.subarray(start, end);
+    const algorithm = expectedOid.length === 64 ? "sha256" : "sha1";
+    const actualOid = createHash(algorithm).update(Buffer.from(`blob ${size}\0`)).update(bytes).digest("hex");
+    if (actualOid !== expectedOid) throw new Error(`git object hash mismatch for ${expectedOid}`);
+    blobs.set(expectedOid, bytes);
+    cursor = end + 1;
+  }
+  if (cursor !== output.length) throw new Error("git cat-file --batch returned trailing output");
+  return blobs;
+}
+
 const flagIndex = process.argv.indexOf("--release-ref");
 const releaseRef = flagIndex >= 0 ? process.argv[flagIndex + 1] : "origin/main";
 if (!releaseRef || releaseRef.startsWith("-") || /[\0-\x20\x7f]/.test(releaseRef)) {
   throw new Error("--release-ref must be a non-option Git ref without control characters or whitespace");
 }
-const releaseCommit = utf8.decode(git(["rev-parse", "--verify", `${releaseRef}^{commit}`]).stdout).trim().toLowerCase();
+const releaseCommit = utf8.decode(git([
+  "-c", "core.warnAmbiguousRefs=true", "rev-parse", "--verify", "--end-of-options", `${releaseRef}^{commit}`,
+]).stdout).trim().toLowerCase();
 
-// Freeze one logical index snapshot. Candidate discovery deliberately searches
-// a literal superset of the parser grammar, including binary-classified blobs;
-// exact parsing happens only after each raw path is mapped to its immutable blob.
-const tree = utf8.decode(git(["write-tree"]).stdout).trim();
-const entries = new Map();
-for (const record of splitNul(git(["ls-tree", "-r", "-z", "--full-tree", tree]).stdout)) {
+// Bind validation to the checked-out commit, not the mutable index. Preflight
+// integrity and aggregate sizes before reading content; then independently hash
+// every returned blob before the authoritative JavaScript parser sees it.
+const headCommit = utf8.decode(git(["rev-parse", "--verify", "HEAD^{commit}"]).stdout).trim();
+git(["fsck", "--strict", "--no-dangling", headCommit]);
+const tree = utf8.decode(git(["rev-parse", "--verify", `${headCommit}^{tree}`]).stdout).trim();
+const entries = [];
+for (const record of splitNul(git(["ls-tree", "-r", "-z", "-l", "--full-tree", tree]).stdout)) {
   const tab = record.indexOf(9);
-  if (tab < 0) throw new Error("git ls-files returned an invalid record");
+  if (tab < 0) throw new Error("git ls-tree returned an invalid record");
   const header = record.subarray(0, tab).toString("ascii");
-  const match = /^(\d{6}) blob ([0-9a-f]{40,64})$/.exec(header);
+  const match = /^(100644|100755) blob ([0-9a-f]{40,64})\s+(\d+)$/.exec(header);
   if (!match) continue;
-  entries.set(record.subarray(tab + 1).toString("hex"), { mode: match[1], oid: match[2], rawPath: record.subarray(tab + 1) });
+  const size = Number(match[3]);
+  if (!Number.isSafeInteger(size)) throw new Error("git ls-tree returned an invalid blob size");
+  entries.push({ mode: match[1], oid: match[2], size, rawPath: record.subarray(tab + 1) });
 }
-const discovery = git([
-  "grep", "-z", "-l", "-a", "-F",
-  "-e", "- [x] ", "-e", "- [X] ", tree, "--",
-], { allowNoMatch: true });
-const candidates = discovery.status === 1 ? [] : splitNul(discovery.stdout).map((rawPath) => {
-  const prefix = Buffer.from(`${tree}:`);
-  if (!rawPath.subarray(0, prefix.length).equals(prefix)) throw new Error("git grep returned an invalid tree prefix");
-  const snapshotPath = rawPath.subarray(prefix.length);
-  const entry = entries.get(snapshotPath.toString("hex"));
-  if (!entry) throw new Error("git grep returned a path absent from the captured index");
-  if (entry.mode !== "100644" && entry.mode !== "100755") throw new Error("tracked checklist must be a regular file");
-  let path;
-  try { path = utf8.decode(entry.rawPath); }
-  catch { throw new Error("tracked checklist path is not valid UTF-8"); }
-  return { ...entry, path };
-});
-if (candidates.length > BACKLOG_RECEIPT_MAX_CHECKED_ITEMS) {
-  throw new Error(`repository contains more than ${BACKLOG_RECEIPT_MAX_CHECKED_ITEMS} candidate checklist files`);
+const totalTrackedBytes = entries.reduce((sum, entry) => sum + entry.size, 0);
+if (!Number.isSafeInteger(totalTrackedBytes) || totalTrackedBytes > BACKLOG_RECEIPT_MAX_TOTAL_BYTES) {
+  throw new Error(`tracked repository blobs exceed ${BACKLOG_RECEIPT_MAX_TOTAL_BYTES} total bytes`);
 }
 
-const uniqueOids = [...new Set(candidates.map(({ oid }) => oid))];
-const sizes = new Map();
-if (uniqueOids.length > 0) {
-  const checked = git(["cat-file", "--batch-check=%(objectname) %(objecttype) %(objectsize)"], {
-    input: Buffer.from(`${uniqueOids.join("\n")}\n`),
-  });
-  for (const line of utf8.decode(checked.stdout).trim().split("\n")) {
-    const match = /^([0-9a-f]{40,64}) blob (\d+)$/.exec(line);
-    if (!match) throw new Error("git cat-file --batch-check returned an invalid blob response");
-    sizes.set(match[1], Number(match[2]));
-  }
-}
-const totalCandidateBytes = candidates.reduce((sum, { oid }) => sum + (sizes.get(oid) || 0), 0);
-if (!Number.isSafeInteger(totalCandidateBytes) || totalCandidateBytes > BACKLOG_RECEIPT_MAX_TOTAL_BYTES) {
-  throw new Error(`candidate checklist blobs exceed ${BACKLOG_RECEIPT_MAX_TOTAL_BYTES} total bytes`);
-}
+const uniqueOids = [...new Set(entries.map(({ oid }) => oid))];
+const batch = uniqueOids.length === 0
+  ? Buffer.alloc(0)
+  : git(["cat-file", "--batch"], { input: Buffer.from(`${uniqueOids.join("\n")}\n`) }).stdout;
+const blobs = parseBatchBlobs(batch, uniqueOids);
 
 const isReachable = makeGitReachabilityVerifier({ cwd: process.cwd(), releaseCommit });
 const reachabilityCache = new Map();
 const results = [];
 let checkedItems = 0;
-for (const { oid, path } of candidates.sort((a, b) => a.path.localeCompare(b.path))) {
-  const size = sizes.get(oid);
-  if (!Number.isSafeInteger(size) || size > BACKLOG_RECEIPT_MAX_BYTES) {
-    throw new Error(`unsafe regular file: ${path}`);
-  }
-  const blob = git(["cat-file", "blob", oid], { maxBuffer: BACKLOG_RECEIPT_MAX_BYTES + 1 }).stdout;
-  if (blob.length !== size) throw new Error(`git blob size changed while reading: ${path}`);
+for (const entry of entries) {
+  const blob = blobs.get(entry.oid);
+  if (!blob || blob.length !== entry.size) throw new Error("verified blob size does not match its tree entry");
   const result = checkBacklogReceipts(blob.toString("utf8"), {
     releaseRef,
     isReachable,
@@ -115,8 +118,16 @@ for (const { oid, path } of candidates.sort((a, b) => a.path.localeCompare(b.pat
     maxCheckedItems: BACKLOG_RECEIPT_MAX_CHECKED_ITEMS - checkedItems,
     maxUniqueReceipts: BACKLOG_RECEIPT_MAX_UNIQUE_RECEIPTS,
   });
+  if (result.summary.checked === 0) continue;
+  let path;
+  try { path = utf8.decode(entry.rawPath); }
+  catch { throw new Error("tracked checklist path is not valid UTF-8"); }
   checkedItems += result.summary.checked;
   results.push({ path, ...result });
+}
+results.sort((a, b) => a.path.localeCompare(b.path));
+if (results.length > BACKLOG_RECEIPT_MAX_CHECKED_ITEMS) {
+  throw new Error(`repository contains more than ${BACKLOG_RECEIPT_MAX_CHECKED_ITEMS} checklist files`);
 }
 const rejected = results.reduce((sum, result) => sum + result.summary.rejected, 0);
 const report = { ok: rejected === 0, releaseRef, files: results.length, rejected, results };

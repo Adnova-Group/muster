@@ -675,7 +675,9 @@ async function main() {
         content = bytes.toString("utf8");
       }
       let releaseCommit;
-      const resolvedRelease = spawnSync("git", ["rev-parse", "--verify", `${releaseRef}^{commit}`], {
+      const resolvedRelease = spawnSync("git", [
+        "-c", "core.warnAmbiguousRefs=true", "rev-parse", "--verify", "--end-of-options", `${releaseRef}^{commit}`,
+      ], {
         cwd: process.cwd(),
         encoding: "utf8",
         env: { ...process.env, GIT_NO_REPLACE_OBJECTS: "1" },

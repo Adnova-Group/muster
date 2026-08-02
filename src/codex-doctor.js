@@ -10,7 +10,7 @@ import { codexAvailable, readCodexInventory } from "./codex-inventory.js";
 import { codexVersionMatches, resolveCodexRuntimeIdentity, runCodexCommand } from "./codex-runtime-identity.js";
 import { exists } from "./fs-util.js";
 import { parseAgentProfileToml, resolveCodexPlugin } from "./codex-release.js";
-import { codexHookStateKeys, effectiveHookTrust, expectedCodexHookInstall, musterHookTrustGaps, parseHookCommand, readCodexHookInventory, reconcileConfigTomlHookState, reconcileScopeRegistryEntries } from "./codex-install.js";
+import { codexHookStateKeys, effectiveHookTrust, expectedCodexHookInstall, hasMusterHookCommandAlias, isMusterHookCommand, musterHookTrustGaps, parseHookCommand, readCodexHookInventory, reconcileConfigTomlHookState, reconcileScopeRegistryEntries } from "./codex-install.js";
 import { readNoFollowRegular } from "./fs-safe.js";
 import {
   CODEX_THREAD_LIMIT_REMEDIATION,
@@ -230,7 +230,7 @@ function canonical(value) {
 
 const same = (left, right) => JSON.stringify(canonical(left)) === JSON.stringify(canonical(right));
 const groupCommands = group => (group?.hooks || []).flatMap(hook => [hook?.command, hook?.commandWindows, hook?.command_windows]);
-const isMusterHookGroup = group => groupCommands(group).some(command => typeof command === "string" && command.replaceAll("\\", "/").includes("/muster/hooks/muster-hook.mjs"));
+const isMusterHookGroup = group => groupCommands(group).some(isMusterHookCommand);
 const MCP_TIMEOUT_MS = 5_000;
 // A misbehaving or compromised MCP child could stream unbounded output into the
 // doctor process (memory blowup) and get raw bytes echoed into a check detail.
@@ -1073,7 +1073,9 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
       const hash = createHash("sha256");
       for (let index = 0; index < hookFiles.length; index++) hash.update(`hooks/${hookFiles[index]}`).update("\0").update(runtime[index]);
       const digest = hash.digest("hex");
+      const aliasedMusterCommand = await hasMusterHookCommandAlias(config, join(runtimeDir, "muster-hook.mjs"));
       const coherent = owner.owner === "muster" && expected
+        && !aliasedMusterCommand
         && same(owner.files, expected.files)
         && same(canonicalHookGroupShape(owner.hookGroups), canonicalHookGroupShape(expected.hookGroups))
         && ownsExactHookGroups(config, owner) && owner.packageVersion === selected?.packageVersion

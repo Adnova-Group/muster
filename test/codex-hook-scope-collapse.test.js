@@ -7,7 +7,7 @@
 // hook scope. See prepareHooks' userScopeHooksHealthy in src/codex-install.js.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CODEX_COUNTS } from "../src/codex.js";
@@ -354,6 +354,54 @@ test("Codex install adversarial: an unmanaged Muster hook in project hooks.json 
   const unmanaged = { hooks: { Stop: [{ hooks: [{ type: "command", command: `node "${join(cwd, ".codex", "muster", "hooks", "muster-hook.mjs")}"` }] }] } };
   await writeFile(join(cwd, ".codex", "hooks.json"), JSON.stringify(unmanaged, null, 2));
   await assert.rejects(() => runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absentCodex }), /Codex hook conflict.*unmanaged Muster hook/);
+});
+
+test("Codex install and doctor reject a shell-equivalent aliased Muster runtime command", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-scope-collapse-command-alias-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), codexHome = join(home, ".codex");
+  const userResult = await installTrustedUser({ cwd, home });
+  const hooksPath = join(codexHome, "hooks.json");
+  const config = JSON.parse(await readFile(hooksPath, "utf8"));
+  const alias = structuredClone(config.hooks.Stop[0]);
+  for (const hook of alias.hooks) {
+    hook.command = hook.command.replace("/muster/hooks/", "/muster/./hooks/");
+    hook.commandWindows = `"C:\\node.exe" "C:\\scope\\muster\\hooks\\..\\hooks\\muster-hook.mjs"`;
+  }
+  config.hooks.Stop.push(alias);
+  await writeFile(hooksPath, JSON.stringify(config, null, 2));
+
+  const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absentCodex });
+  assert.equal(report.checks.find(check => check.name === "codex-hooks")?.ok, false);
+
+  const installed = await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absentCodex, hookInventory: userResult.hookInventory });
+  assert.equal(installed.hooksSkipped, null);
+  assert.equal(installed.ok, false, "an untrusted project fallback must not be reported active after the aliased user duplicate invalidates canonical collapse");
+});
+
+test("Codex install and doctor reject a symlink alias to the Muster runtime command", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-scope-collapse-command-symlink-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), codexHome = join(home, ".codex");
+  const userResult = await installTrustedUser({ cwd, home });
+  const hooksPath = join(codexHome, "hooks.json");
+  const runtimePath = join(codexHome, "muster", "hooks", "muster-hook.mjs");
+  const aliasPath = join(tmp, "foreign-looking-hook.mjs");
+  await symlink(runtimePath, aliasPath);
+  const config = JSON.parse(await readFile(hooksPath, "utf8"));
+  const alias = structuredClone(config.hooks.Stop[0]);
+  for (const hook of alias.hooks) {
+    hook.command = `'/usr/bin/node' '${aliasPath}'`;
+    delete hook.commandWindows;
+  }
+  config.hooks.Stop.push(alias);
+  await writeFile(hooksPath, JSON.stringify(config, null, 2));
+
+  const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absentCodex });
+  assert.equal(report.checks.find(check => check.name === "codex-hooks")?.ok, false);
+  const installed = await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absentCodex, hookInventory: userResult.hookInventory });
+  assert.equal(installed.hooksSkipped, null);
+  assert.equal(installed.ok, false);
 });
 
 test("Codex install adversarial: a failed transaction mid-migration restores the pre-migration dual-scope state byte-identically", async t => {

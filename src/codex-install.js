@@ -3,7 +3,7 @@ import { link, lstat, mkdir, open, readFile, readdir, realpath, rename, rmdir, s
 import { createHash, randomUUID } from "node:crypto";
 import { exists, readdirSafe } from "./fs-util.js";
 import { atomicWrite } from "./fs-safe.js";
-import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, parse, posix, relative, resolve, sep, win32 } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { execFile as execFileCb } from "node:child_process";
@@ -1338,7 +1338,35 @@ function validateThreadLimitManifest(manifest, manifestPath, expectedConfigPath)
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
 const same = (left, right) => JSON.stringify(left) === JSON.stringify(right);
 const groupCommands = group => (group?.hooks || []).flatMap(hook => [hook?.command, hook?.commandWindows, hook?.command_windows]).filter(Boolean);
-const isMusterHookCommand = command => typeof command === "string" && command.replaceAll("\\", "/").includes("/muster/hooks/muster-hook.mjs");
+const MUSTER_HOOK_POSIX_SUFFIX = "/muster/hooks/muster-hook.mjs";
+const MUSTER_HOOK_WINDOWS_SUFFIX = "\\muster\\hooks\\muster-hook.mjs";
+export function isMusterHookCommand(command) {
+  for (const windows of [false, true]) {
+    const parsed = parseHookCommand(command, { windows });
+    if (!parsed) continue;
+    const script = parsed.script;
+    if (posix.isAbsolute(script) && posix.normalize(script).endsWith(MUSTER_HOOK_POSIX_SUFFIX)) return true;
+    if (win32.isAbsolute(script) && win32.normalize(script).toLowerCase().endsWith(MUSTER_HOOK_WINDOWS_SUFFIX)) return true;
+  }
+  return false;
+}
+
+export async function hasMusterHookCommandAlias(config, expectedScript) {
+  let expectedIdentity;
+  try { expectedIdentity = await realpath(expectedScript); } catch { return false; }
+  for (const groups of Object.values(config?.hooks || {})) {
+    if (!Array.isArray(groups)) continue;
+    for (const group of groups) for (const command of groupCommands(group)) {
+      if (isMusterHookCommand(command)) continue;
+      for (const windows of [false, true]) {
+        const parsed = parseHookCommand(command, { windows });
+        if (!parsed || (!posix.isAbsolute(parsed.script) && !win32.isAbsolute(parsed.script))) continue;
+        try { if (await realpath(parsed.script) === expectedIdentity) return true; } catch { /* missing and foreign scripts are not managed aliases */ }
+      }
+    }
+  }
+  return false;
+}
 
 function exactMusterHookGroups(config, expectedHookGroups) {
   if (!config?.hooks || typeof config.hooks !== "object" || Array.isArray(config.hooks)) return false;
@@ -1467,6 +1495,14 @@ function parsePosixShellTokens(command) {
         while (index < command.length && command[index] !== "'") token += command[index++];
         if (index >= command.length) return null;
         index++;
+      } else if (char === '"') {
+        index++;
+        while (index < command.length && command[index] !== '"') {
+          if (command[index] === "\\" && index + 1 < command.length) { token += command[index + 1]; index += 2; }
+          else token += command[index++];
+        }
+        if (index >= command.length) return null;
+        index++;
       } else if (char === "\\") {
         if (index + 1 >= command.length) return null;
         token += command[index + 1];
@@ -1580,6 +1616,7 @@ async function inspectUserScopeHooks({ home, packageVersion, expected }) {
   try { configText = await readSafe(configPath); config = JSON.parse(configText); }
   catch { return null; }
   if (!config || typeof config !== "object" || Array.isArray(config) || typeof config.hooks !== "object" || !config.hooks || Array.isArray(config.hooks)) return null;
+  if (await hasMusterHookCommandAlias(config, join(runtimeDir, "hooks", "muster-hook.mjs"))) return null;
   if (!exactMusterHookGroups(config, expected.hookGroups)) return null;
   let matchedHookCount = 0;
   for (const [event, groups] of Object.entries(expected.hookGroups)) {
@@ -1621,6 +1658,7 @@ async function userScopeHooksHealthy(options) {
 async function prepareHooks({ scope, cwd, home, hookSourceRoot, packageVersion, nodeExecPath, canonicalUserHooksActive }) {
   const dir = configDir(scope, cwd, home);
   const runtimeDir = join(dir, "muster"), manifestPath = join(runtimeDir, MANIFEST), configPath = join(dir, "hooks.json");
+  const runtimeScript = join(runtimeDir, "hooks", "muster-hook.mjs");
   await ordinaryDirectoryPath(dir);
   await ordinaryDirectoryPath(runtimeDir);
   const manifestExists = await safeExists(manifestPath), configExists = await safeExists(configPath);
@@ -1639,6 +1677,9 @@ async function prepareHooks({ scope, cwd, home, hookSourceRoot, packageVersion, 
   }
   if (!previous && Object.values(config.hooks).flat().some(group => groupCommands(group).some(isMusterHookCommand))) {
     throw new Error(`Codex hook conflict: ${configPath} contains an unmanaged Muster hook. Remove it or restore its Muster manifest, then rerun the command.`);
+  }
+  if (await hasMusterHookCommandAlias(config, runtimeScript)) {
+    throw new Error(`Codex hook conflict: ${configPath} contains an aliased Muster hook command. Remove the alias or restore the exact Muster hook manifest, then rerun the command.`);
   }
   // Captured BEFORE removeOwnedHookGroups mutates `config` below, at exactly
   // the group/hook indices this scope's PRIOR install currently occupies in
@@ -1661,7 +1702,6 @@ async function prepareHooks({ scope, cwd, home, hookSourceRoot, packageVersion, 
   const templatePath = join(hookSourceRoot, "hooks.json");
   const template = await readJson(templatePath);
   if (!template?.hooks || typeof template.hooks !== "object") throw new Error(`Codex hook template is missing or malformed: ${templatePath}`);
-  const runtimeScript = join(runtimeDir, "hooks", "muster-hook.mjs");
   const command = skipped ? null : shellCommand(runtimeScript, await validatedHookNode(nodeExecPath));
   const hookGroups = skipped ? {} : clone(template.hooks);
   if (!skipped) {

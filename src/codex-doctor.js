@@ -10,7 +10,7 @@ import { codexAvailable, readCodexInventory } from "./codex-inventory.js";
 import { codexVersionMatches, resolveCodexRuntimeIdentity, runCodexCommand } from "./codex-runtime-identity.js";
 import { exists } from "./fs-util.js";
 import { parseAgentProfileToml, resolveCodexPlugin } from "./codex-release.js";
-import { codexHookStateKeys, effectiveHookTrust, expectedCodexHookInstall, hasMusterHookCommandAlias, hookActivationSnapshot, isMusterHookCommand, musterHookTrustGaps, parseHookCommand, readCodexHookInventory, reconcileConfigTomlHookState, reconcileScopeRegistryEntries, sameHookActivationSnapshot } from "./codex-install.js";
+import { codexHookStateKeys, effectiveHookTrust, expectedCodexHookInstall, hasManagedRuntimeInventoryAlias, hasMusterHookCommandAlias, hookActivationSnapshot, isMusterHookCommand, musterHookTrustGaps, parseHookCommand, readCodexHookInventory, reconcileConfigTomlHookState, reconcileScopeRegistryEntries, sameHookActivationSnapshot } from "./codex-install.js";
 import { readNoFollowRegular } from "./fs-safe.js";
 import {
   CODEX_THREAD_LIMIT_REMEDIATION,
@@ -1233,12 +1233,17 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   const inventoryCwds = [...new Set(effectiveTargets.map(target => target.cwd))];
   const activationBefore = effectiveTargets.length ? await hookActivationSnapshot({ cwd, userCodexHome }) : null;
   const inventory = effectiveTargets.length ? await inventoryReader({ runtimeIdentity: identity, cwds: inventoryCwds, env: { ...env, CODEX_HOME: userCodexHome } }) : null;
+  const inventoryAliases = effectiveTargets.length ? await Promise.all(effectiveTargets.map(target => hasManagedRuntimeInventoryAlias(inventory, {
+    cwd: target.cwd, hooksJsonPath: target.configPath, activationSnapshot: activationBefore
+  }))) : [];
   const activationAfter = effectiveTargets.length ? await hookActivationSnapshot({ cwd, userCodexHome }) : null;
   const activationStable = !effectiveTargets.length || sameHookActivationSnapshot(activationBefore, activationAfter);
-  const effectiveFailures = effectiveTargets.map(target => ({
+  const effectiveFailures = effectiveTargets.map((target, index) => ({
     dir: target.dir,
     cwd: target.cwd,
-    effective: activationStable
+    effective: inventoryAliases[index]
+      ? { verified: true, ok: false, error: "Codex hooks/list reported another source invoking the managed Muster runtime", results: [] }
+      : activationStable
       ? effectiveHookTrust(inventory, target.cwd, target.configPath, target.results, { knownKeys: target.knownKeys })
       : { verified: true, ok: false, error: "Codex hook activation state changed during hooks/list verification", results: [] }
   })).filter(item => !item.effective.ok);

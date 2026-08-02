@@ -2,12 +2,12 @@
 // trusted_hash exactly matches the hook's current normalized content hash.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rename, writeFile } from "node:fs/promises";
+import { link, mkdir, mkdtemp, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { effectiveHookTrust, musterHookTrustGaps, runCodexInstall } from "../src/codex-install.js";
+import { effectiveHookTrust, hasManagedRuntimeInventoryAlias, hookActivationSnapshot, musterHookTrustGaps, runCodexInstall } from "../src/codex-install.js";
 import { runCodexDoctor } from "../src/codex-doctor.js";
 import { repoRoot } from "../test-support/codex-helpers.js";
 
@@ -212,6 +212,13 @@ test("effectiveHookTrust accepts Codex 0.146 full hook records without relaxing 
   const inventory = { ok: true, data: [{ cwd, warnings: [], errors: [], hooks: [hook] }] };
   assert.equal(effectiveHookTrust(inventory, cwd, hooksJsonPath, results, { knownKeys: ["stop:0:0"] }).ok, true);
 
+  const inlineDuplicate = currentCodexInventoryHook({
+    key: "/repo/.codex/config.toml:stop:0:0",
+    currentHash,
+    overrides: { sourcePath: "/repo/.codex/config.toml", command: hook.command, source: "project" }
+  });
+  assert.equal(effectiveHookTrust({ ...inventory, data: [{ ...inventory.data[0], hooks: [hook, inlineDuplicate] }] }, cwd, hooksJsonPath, results, { knownKeys: ["stop:0:0"] }).ok, false);
+
   for (const malformed of [
     { ...hook, sourcePath: "/foreign/hooks.json" },
     { ...hook, displayOrder: -1 },
@@ -250,6 +257,39 @@ test("install and doctor reject hooks/list proofs when activation files change d
   const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome: join(home, ".codex"), execFile: absentCodex, hookInventory: changingInventory });
   assert.equal(report.checks.find(check => check.name === "codex-hook-trust")?.ok, false);
   assert.match(report.checks.find(check => check.name === "codex-hook-trust")?.detail || "", /activation state changed/);
+});
+
+test("install and doctor reject another inventory source physically aliasing the managed runtime", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-inventory-hardlink-"));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), hooksJsonPath = join(cwd, ".codex", "hooks.json");
+  await mkdir(cwd, { recursive: true });
+  const first = await runCodexInstall({ cwd, home, repoRoot, execFile: absentCodex });
+  const configPath = join(cwd, ".codex", "config.toml");
+  await writeFile(configPath, `${await readFile(configPath, "utf8")}\n${first.hookTrust.results
+    .map(result => state(result.key, { trustedHash: result.currentHash })).join("")}`);
+  const aliasPath = join(tmp, "foreign-inventory-hook.mjs");
+  const inventory = async () => {
+    await unlink(aliasPath).catch(error => { if (error.code !== "ENOENT") throw error; });
+    await link(join(cwd, ".codex", "muster", "hooks", "muster-hook.mjs"), aliasPath);
+    const value = inventoryFor(cwd, hooksJsonPath, first.hookTrust.results);
+    value.data[0].hooks.push(currentCodexInventoryHook({
+      key: `${configPath}:stop:0:0`, currentHash: `sha256:${"b".repeat(64)}`,
+      overrides: { sourcePath: configPath, command: `node '${aliasPath}'`, source: "project" }
+    }));
+    return value;
+  };
+
+  const directInventory = await inventory();
+  assert.equal(await hasManagedRuntimeInventoryAlias(directInventory, {
+    cwd, hooksJsonPath, activationSnapshot: await hookActivationSnapshot({ home, cwd })
+  }), true);
+
+  const installed = await runCodexInstall({ cwd, home, repoRoot, execFile: absentCodex, hookInventory: inventory });
+  assert.equal(installed.ok, false);
+  assert.match(installed.hookTrust.effective.error, /another source invoking/);
+  const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome: join(home, ".codex"), execFile: absentCodex, hookInventory: inventory });
+  assert.equal(report.checks.find(check => check.name === "codex-hook-trust")?.ok, false);
+  assert.match(report.checks.find(check => check.name === "codex-hook-trust")?.detail || "", /another source invoking/);
 });
 
 test("effectiveHookTrust rejects duplicate scope and managed hook inventory records", () => {

@@ -825,6 +825,10 @@ export function effectiveHookTrust(inventory, cwd, hooksJsonPath, results, { kno
   }
   const hooks = Array.isArray(scope.hooks) ? scope.hooks : [];
   const parsedHooks = hooks.map(hook => ({ hook, parsed: parseHookInventoryKey(hook.key) }));
+  const foreignHooks = parsedHooks.filter(({ parsed }) => parsed.path !== hooksJsonPath);
+  if (foreignHooks.some(({ hook }) => typeof hook.command !== "string" || isMusterHookCommand(hook.command))) {
+    return { verified: true, ok: false, error: "Codex hooks/list reported another source that may invoke the managed Muster runtime", results: [] };
+  }
   const managedKeys = parsedHooks.filter(({ parsed }) => parsed.path === hooksJsonPath).map(({ parsed }) => parsed.position);
   if (new Set(managedKeys).size !== managedKeys.length) {
     return { verified: true, ok: false, error: `Codex hooks/list returned duplicate hook positions for ${hooksJsonPath}`, results: [] };
@@ -1499,7 +1503,7 @@ async function physicalHookIdentity(path) {
   return `path:${process.platform === "win32" ? canonical.toLowerCase() : canonical}`;
 }
 
-export async function hasMusterHookCommandAlias(config, expectedScripts, { cwds = [] } = {}) {
+export async function hasMusterHookCommandAlias(config, expectedScripts, { cwds = [], includeDirect = false } = {}) {
   const expectedIdentities = new Set();
   for (const expectedScript of Array.isArray(expectedScripts) ? expectedScripts : [expectedScripts]) {
     try { expectedIdentities.add(await physicalHookIdentity(expectedScript)); } catch { /* absent managed runtimes cannot be alias targets */ }
@@ -1508,7 +1512,7 @@ export async function hasMusterHookCommandAlias(config, expectedScripts, { cwds 
   for (const groups of Object.values(config?.hooks || {})) {
     if (!Array.isArray(groups)) continue;
     for (const group of groups) for (const command of groupCommands(group)) {
-      if (isMusterHookCommand(command)) continue;
+      if (!includeDirect && isMusterHookCommand(command)) continue;
       for (const candidate of shellPathCandidates(command)) {
         const paths = posix.isAbsolute(candidate) || win32.isAbsolute(candidate)
           ? [candidate]
@@ -1520,6 +1524,19 @@ export async function hasMusterHookCommandAlias(config, expectedScripts, { cwds 
     }
   }
   return false;
+}
+
+export async function hasManagedRuntimeInventoryAlias(inventory, { cwd, hooksJsonPath, activationSnapshot }) {
+  const scope = Array.isArray(inventory?.data) ? inventory.data.find(entry => entry?.cwd === cwd) : null;
+  if (!scope || !Array.isArray(scope.hooks)) return false;
+  const commands = scope.hooks.flatMap(hook => {
+    const parsed = parseHookInventoryKey(hook?.key);
+    return parsed && parsed.path !== hooksJsonPath && typeof hook.command === "string" ? [hook.command] : [];
+  });
+  if (!commands.length) return false;
+  const expectedScripts = [...activationSnapshot.keys()].filter(path => path.endsWith(join("muster", "hooks", "muster-hook.mjs")));
+  const config = { hooks: { Stop: commands.map(command => ({ hooks: [{ command }] })) } };
+  return hasMusterHookCommandAlias(config, expectedScripts, { cwds: [cwd], includeDirect: true });
 }
 
 function exactMusterHookGroups(config, expectedHookGroups) {
@@ -1808,11 +1825,14 @@ async function inspectEffectiveUserScopeHooks({ home, packageVersion, expected, 
     cwds: [cwd],
     env: { ...process.env, CODEX_HOME: codexHome(home) }
   });
+  const inventoryAlias = await hasManagedRuntimeInventoryAlias(inventory, {
+    cwd, hooksJsonPath: before.configPath, activationSnapshot: activationBefore
+  });
   const inspected = await inspectUserScopeHooks({ home, packageVersion, expected, cwd });
   const activationAfter = await hookActivationSnapshot({ home, cwd });
   if (!inspected || inspected.snapshot !== before.snapshot || inspected.gaps.untrusted.length || inspected.gaps.stale.length
     || inspected.gaps.results.length !== expected.hookCount
-    || !sameHookActivationSnapshot(activationBefore, activationAfter)) return null;
+    || inventoryAlias || !sameHookActivationSnapshot(activationBefore, activationAfter)) return null;
   const effective = effectiveHookTrust(inventory, cwd, inspected.configPath, inspected.gaps.results, { knownKeys: inspected.knownKeys });
   return effective.ok ? { ...inspected, effective } : null;
 }
@@ -2332,10 +2352,15 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
       cwds: [cwd],
       env: { ...process.env, CODEX_HOME: codexHome(home) }
     });
+    const inventoryAlias = hooks.skipped ? false : await hasManagedRuntimeInventoryAlias(inventory, {
+      cwd, hooksJsonPath: trustTarget.configPath, activationSnapshot: activationBefore
+    });
     const activationAfter = hooks.skipped ? null : await hookActivationSnapshot({ home, cwd });
     const effective = hooks.skipped
       ? canonicalUserTrust.effective
-      : !sameHookActivationSnapshot(activationBefore, activationAfter)
+      : inventoryAlias
+        ? { verified: true, ok: false, error: "Codex hooks/list reported another source invoking the managed Muster runtime", results: [] }
+        : !sameHookActivationSnapshot(activationBefore, activationAfter)
         ? { verified: true, ok: false, error: "Codex hook activation state changed during hooks/list verification", results: [] }
         : effectiveHookTrust(inventory, cwd, trustTarget.configPath, gaps.results, { knownKeys: trustTarget.knownKeys });
     const persistedOk = gaps.untrusted.length === 0 && gaps.stale.length === 0;

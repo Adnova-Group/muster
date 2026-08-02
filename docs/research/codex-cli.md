@@ -412,9 +412,18 @@ uses a dedicated process group behind a 2.5-second timeout and 64 KiB per-stream
 initialize or thread/start request, confirms process close, drains both output streams, and rejects
 any JSON thread/turn lifecycle event even on exit 0. Install validation copies the complete candidate
 shared/project bytes into immutable staging while the live paths retain their originals, then
-compare-and-swap publishes only after the parser accepts them. Descriptor-pinned snapshots bind
+stages marketplace/plugin registration in a private `CODEX_HOME`, parses the registered result a
+second time, and transactionally promotes both the registered plugin cache and exact config bytes
+only after both parser passes accept them. The staged cache's non-derived source projection must
+byte-match the trusted generated plugin tree, the complete size-eligible Codex-derived command-adapter
+set is checked against deterministic trusted-source transformations, and publication exclusively
+reserves and reattests the live version directory. Failure restores the exact prior cache generation
+through an exclusive copy while retaining both generations instead of recursively deleting possibly
+writer-held paths. Descriptor-pinned snapshots bind
 publication to unchanged config inodes and bytes; failure restores raw snapshotted bytes without
-overwriting a concurrent writer. A second pass supplies project trust only in an ephemeral `CODEX_HOME`, validating an
+overwriting a concurrent writer. Published installs retain every displaced config inode under an
+immutable, exclusive per-artifact ownership receipts instead of guessing when an already-open writer is quiescent; doctor and
+later installs fail loud if a retained inode changes. The project-trust pass likewise supplies trust only in an ephemeral `CODEX_HOME`, validating an
 otherwise-untrusted project config without persisting trust. Doctor reuses the same boundary.
 [src: strict-config-src] [src: strict-config-tests]
 

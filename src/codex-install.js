@@ -1,5 +1,5 @@
 import { constants as fsConstants } from "node:fs";
-import { link, lstat, mkdir, open, readFile, readdir, realpath, rename, rmdir, stat, unlink } from "node:fs/promises";
+import { cp, link, lstat, mkdir, mkdtemp, open, readFile, readdir, realpath, rename, rm, rmdir, stat, unlink } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { exists, readdirSafe } from "./fs-util.js";
 import { atomicWrite, readNoFollowRegular } from "./fs-safe.js";
@@ -11,7 +11,7 @@ import { promisify } from "node:util";
 import { codexAvailable } from "./codex-inventory.js";
 import { codexMcpOverlay, resolveCodexRuntimeIdentity, runCodexCommand } from "./codex-runtime-identity.js";
 import { escapeRe } from "./keyword.js";
-import { generateCodexProfiles } from "./codex-release.js";
+import { assertRegularTree, generateCodexProfiles } from "./codex-release.js";
 import { processAlive, processStartIdentity } from "./codex-lock.js";
 import {
   CODEX_THREAD_LIMIT_REMEDIATION,
@@ -696,10 +696,10 @@ async function removeSafe(path) {
   if (stat) await unlink(path);
 }
 const profileFiles = async root => (await readdirSafe(root)).filter(name => name.endsWith(".toml")).sort();
-const run = (execFile, args, runtimeIdentity) => runtimeIdentity
-  ? runCodexCommand(execFile, runtimeIdentity, args, { timeout: 30_000, maxBuffer: 4 * 1024 * 1024 })
-  : execFile("muster:injected-codex-runner", args, { timeout: 30_000, maxBuffer: 4 * 1024 * 1024 });
-async function runJson(execFile, args, runtimeIdentity) { return JSON.parse((await run(execFile, args, runtimeIdentity)).stdout); }
+const run = (execFile, args, runtimeIdentity, commandOptions = {}) => runtimeIdentity
+  ? runCodexCommand(execFile, runtimeIdentity, args, { timeout: 30_000, maxBuffer: 4 * 1024 * 1024, ...commandOptions })
+  : execFile("muster:injected-codex-runner", args, { timeout: 30_000, maxBuffer: 4 * 1024 * 1024, ...commandOptions });
+async function runJson(execFile, args, runtimeIdentity, commandOptions) { return JSON.parse((await run(execFile, args, runtimeIdentity, commandOptions)).stdout); }
 
 // Defense in depth (arbitrary-write containment) behind generateCodexProfiles'
 // manifest-id guard: every profile filename here is one join() away from
@@ -1238,6 +1238,92 @@ function sameExactFileSnapshot(left, right) {
     && (!left.exists || (left.dev === right.dev && left.ino === right.ino && left.bytes.equals(right.bytes)));
 }
 
+function concurrentConfigError(message) {
+  const error = new Error(message);
+  error.musterConcurrentConfig = true;
+  return error;
+}
+
+const retirementReceiptDir = configPath => join(dirname(configPath), "muster", "config-retirements");
+const retirementArtifactPrefix = configPath => `.${basename(configPath)}.muster-retired-`;
+
+function retirementArtifactRecord(configPath, artifactPath, snapshot) {
+  return {
+    configPath,
+    artifactPath,
+    dev: String(snapshot.dev),
+    ino: String(snapshot.ino),
+    size: snapshot.bytes.length,
+    algorithm: "sha256",
+    digest: createHash("sha256").update(snapshot.bytes).digest("hex")
+  };
+}
+
+async function readConfigRetirementState(configPath, pendingArtifacts = new Set()) {
+  const path = retirementReceiptDir(configPath);
+  const entries = [];
+  if (await ordinaryDirectoryPath(path)) {
+    for (const name of await readdir(path)) {
+      if (!/^[a-f0-9]{64}\.json$/.test(name)) throw new Error(`Codex config retirement receipt conflict: ${join(path, name)}`);
+      const receiptPath = join(path, name);
+      const receiptSnapshot = await exactFileSnapshot(receiptPath);
+      let entry;
+      try { entry = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(receiptSnapshot.bytes)); }
+      catch { entry = null; }
+      const artifactName = typeof entry?.artifactPath === "string" ? basename(entry.artifactPath) : "";
+      const structurallyValid = entry?.configPath === configPath
+        && dirname(entry.artifactPath || "") === dirname(configPath)
+        && artifactName.startsWith(retirementArtifactPrefix(configPath))
+        && name === `${createHash("sha256").update(entry.artifactPath).digest("hex")}.json`
+        && typeof entry.dev === "string" && /^\d+$/.test(entry.dev)
+        && typeof entry.ino === "string" && /^\d+$/.test(entry.ino)
+        && Number.isSafeInteger(entry.size) && entry.size >= 0
+        && entry.algorithm === "sha256" && /^[a-f0-9]{64}$/.test(entry.digest);
+      if (!structurallyValid) throw new Error(`Codex config retirement receipt conflict: ${receiptPath}`);
+      const snapshot = await exactFileSnapshot(entry.artifactPath);
+      const actual = snapshot.exists ? retirementArtifactRecord(configPath, entry.artifactPath, snapshot) : null;
+      if (!actual || JSON.stringify(actual) !== JSON.stringify(entry)) {
+        throw new Error(`Codex config retired baseline changed: ${entry.artifactPath}. Preserve and inspect it before rerunning the command.`);
+      }
+      entries.push(entry);
+    }
+  }
+  const receipted = new Set(entries.map(entry => entry.artifactPath));
+  const artifacts = (await readdirSafe(dirname(configPath))).filter(name => name.startsWith(retirementArtifactPrefix(configPath)))
+    .map(name => join(dirname(configPath), name));
+  for (const artifact of artifacts) {
+    if (!receipted.has(artifact) && !pendingArtifacts.has(artifact)) {
+      throw new Error(`Codex config retirement artifact has no receipt: ${artifact}. Preserve and inspect it before rerunning the command.`);
+    }
+  }
+  if (new Set(entries.map(entry => entry.artifactPath)).size !== entries.length) {
+    throw new Error(`Codex config retirement receipt conflict: duplicate artifact entry under ${path}`);
+  }
+  return { path, entries, artifacts };
+}
+
+export async function verifyCodexConfigRetirementReceipt(configPath) {
+  return readConfigRetirementState(configPath);
+}
+
+async function retainConfigArtifacts(configPath, artifactPaths) {
+  const pending = new Set(artifactPaths.filter(Boolean));
+  const state = await readConfigRetirementState(configPath, pending);
+  await ordinaryDirectoryPath(state.path, { create: true });
+  for (const artifactPath of pending) {
+    if (state.entries.some(entry => entry.artifactPath === artifactPath)) continue;
+    const snapshot = await exactFileSnapshot(artifactPath);
+    if (!snapshot.exists) continue;
+    const entry = retirementArtifactRecord(configPath, artifactPath, snapshot);
+    const receiptPath = join(state.path, `${createHash("sha256").update(artifactPath).digest("hex")}.json`);
+    const staged = await writePrivateSibling(receiptPath, "retirement-receipt", Buffer.from(JSON.stringify(entry, null, 2) + "\n"));
+    try { await link(staged, receiptPath); }
+    catch (error) { if (error.code !== "EEXIST") throw error; }
+    finally { await unlink(staged).catch(() => {}); }
+  }
+  await readConfigRetirementState(configPath);
+}
+
 async function writePrivateSibling(path, label, bytes) {
   const privatePath = join(dirname(path), `.${basename(path)}.muster-${label}-${process.pid}-${randomUUID()}`);
   const handle = await open(privatePath, fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY, 0o600);
@@ -1246,9 +1332,204 @@ async function writePrivateSibling(path, label, bytes) {
   return privatePath;
 }
 
+const MIGRATED_COMMAND_PREFIX = ".codex-plugin/migrated-command-skills";
+const MAX_MIGRATED_COMMAND_SKILL_BYTES = 4_000;
+
+async function expectedMigratedCommandSkill(sourceRoot, commandName) {
+  const source = await readFile(join(sourceRoot, "commands", `${commandName}.md`));
+  const text = new TextDecoder("utf-8", { fatal: true }).decode(source);
+  const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/.exec(text);
+  if (!match) throw new Error(`Codex trusted source command has malformed frontmatter: ${commandName}`);
+  const description = match[1].split(/\r?\n/).find(line => line.startsWith("description:"));
+  if (!description) throw new Error(`Codex trusted source command has no description: ${commandName}`);
+  return Buffer.from([
+    "---",
+    `name: ${JSON.stringify(`source-command-${commandName}`)}`,
+    description,
+    "---",
+    "",
+    `# source-command-${commandName}`,
+    "",
+    `Use this skill when the user asks to run the migrated source command \`${commandName}\`.`,
+    "",
+    "## Command Template",
+    match[2]
+  ].join("\n"));
+}
+
+async function assertTrustedPluginCacheProjection(root, tree, sourceRoot, sourceTree) {
+  const projected = {
+    dirs: tree.dirs.filter(path => path !== MIGRATED_COMMAND_PREFIX && !path.startsWith(`${MIGRATED_COMMAND_PREFIX}/`)),
+    files: tree.files.filter(file => !file.path.startsWith(`${MIGRATED_COMMAND_PREFIX}/`))
+  };
+  if (JSON.stringify(projected) !== JSON.stringify(sourceTree)) {
+    throw new Error(`Codex staged plugin cache differs from the exact trusted plugin source: ${root}`);
+  }
+  const expectedFiles = [];
+  const expectedDirs = new Set();
+  for (const sourceFile of sourceTree.files) {
+    const match = /^commands\/([a-z0-9]+(?:-[a-z0-9]+)*)\.md$/.exec(sourceFile.path);
+    if (!match) continue;
+    const expected = await expectedMigratedCommandSkill(sourceRoot, match[1]);
+    if (expected.length > MAX_MIGRATED_COMMAND_SKILL_BYTES) continue;
+    const path = `${MIGRATED_COMMAND_PREFIX}/source-command-${match[1]}/SKILL.md`;
+    expectedFiles.push({ path, sha256: createHash("sha256").update(expected).digest("hex"), size: expected.length });
+    expectedDirs.add(dirname(path).replaceAll("\\", "/"));
+  }
+  expectedFiles.sort((left, right) => left.path.localeCompare(right.path));
+  const migratedFiles = tree.files.filter(file => file.path.startsWith(`${MIGRATED_COMMAND_PREFIX}/`));
+  if (JSON.stringify(migratedFiles) !== JSON.stringify(expectedFiles)) {
+    throw new Error(`Codex staged plugin cache has an incomplete or tampered migrated command inventory under ${MIGRATED_COMMAND_PREFIX}`);
+  }
+  const migratedDirs = tree.dirs.filter(path => path === MIGRATED_COMMAND_PREFIX || path.startsWith(`${MIGRATED_COMMAND_PREFIX}/`));
+  const allowedDirs = new Set(migratedFiles.length ? [MIGRATED_COMMAND_PREFIX, ...expectedDirs] : []);
+  if (migratedDirs.some(path => !allowedDirs.has(path)) || migratedDirs.length !== allowedDirs.size) {
+    throw new Error(`Codex staged plugin cache contains an untrusted derived directory under ${MIGRATED_COMMAND_PREFIX}`);
+  }
+}
+
+async function assertPrivatePluginCache(root, packageVersion, { sourceRoot = null, sourceTree = null, exactTree = null } = {}) {
+  const tree = await assertRegularTree(root);
+  const manifest = await readJson(join(root, "package.json"));
+  const pluginManifest = await readJson(join(root, ".codex-plugin", "plugin.json"));
+  if (manifest?.version !== packageVersion || !/^[a-f0-9]{64}$/.test(manifest.inputDigest || "")
+    || pluginManifest?.name !== "muster" || pluginManifest.version !== packageVersion) {
+    throw new Error(`Codex staged plugin cache identity mismatch at ${root}`);
+  }
+  if (sourceTree) await assertTrustedPluginCacheProjection(root, tree, sourceRoot, sourceTree);
+  if (exactTree && JSON.stringify(tree) !== JSON.stringify(exactTree)) throw new Error(`Codex plugin cache differs from its exact staged receipt: ${root}`);
+  return tree;
+}
+
+async function stablePluginCacheSnapshot(root, packageVersion, options = {}) {
+  const before = await lstat(root);
+  if (before.isSymbolicLink() || !before.isDirectory()) throw new Error(`Codex plugin cache target must be an ordinary directory: ${root}`);
+  const first = await assertPrivatePluginCache(root, packageVersion, options);
+  const second = await assertPrivatePluginCache(root, packageVersion, options);
+  const after = await lstat(root);
+  if (before.dev !== after.dev || before.ino !== after.ino || JSON.stringify(first) !== JSON.stringify(second)) {
+    throw new Error(`Codex plugin cache changed while being verified: ${root}`);
+  }
+  return { dev: after.dev, ino: after.ino, tree: second };
+}
+
+const samePluginCacheSnapshot = (left, right) => left.dev === right.dev && left.ino === right.ino
+  && JSON.stringify(left.tree) === JSON.stringify(right.tree);
+async function copyPluginCacheExclusively(source, target, expectedTree, packageVersion) {
+  await mkdir(target, { mode: 0o700 });
+  const owner = await lstat(target);
+  try {
+    for (const name of await readdir(source)) {
+      await cp(join(source, name), join(target, name), { recursive: true, force: false, errorOnExist: true });
+    }
+    const published = await stablePluginCacheSnapshot(target, packageVersion, { exactTree: expectedTree });
+    if (published.dev !== owner.dev || published.ino !== owner.ino
+      || JSON.stringify(published.tree) !== JSON.stringify(expectedTree)) {
+      throw new Error(`Codex plugin cache changed during exclusive publication: ${target}`);
+    }
+    return published;
+  } catch (error) {
+    // Never recursively remove the reserved target: an uncooperative writer
+    // may have populated or replaced it. The valid source remains retained.
+    throw error;
+  }
+}
+
+async function publishStagedPluginCache(staged, liveCodexHome, packageVersion, trustedSourceRoot, trustedTree) {
+  const stagedTree = await assertPrivatePluginCache(staged, packageVersion, {
+    sourceRoot: trustedSourceRoot, sourceTree: trustedTree
+  });
+  const parent = join(liveCodexHome, "plugins", "cache", "muster", "muster");
+  await ordinaryDirectoryPath(parent, { create: true });
+  const target = join(parent, packageVersion);
+  const retired = join(parent, `.muster-retired-${packageVersion}-${process.pid}-${randomUUID()}`);
+  let expected = null;
+  try {
+    expected = await stablePluginCacheSnapshot(target, packageVersion);
+  } catch (error) { if (error.code !== "ENOENT") throw error; }
+  if (expected && JSON.stringify(expected.tree) === JSON.stringify(stagedTree)) {
+    return { target, retired: null, expected, published: expected, reused: true, packageVersion };
+  }
+  if (expected) {
+    await rename(target, retired);
+    const moved = await stablePluginCacheSnapshot(retired, packageVersion);
+    if (!samePluginCacheSnapshot(expected, moved)) {
+      try { await copyPluginCacheExclusively(retired, target, moved.tree, packageVersion); }
+      catch { /* preserve both names/artifacts and fail with the ownership conflict */ }
+      throw new Error(`Codex plugin cache changed before retirement: ${target}; concurrent state was preserved`);
+    }
+  }
+  let published;
+  try { published = await copyPluginCacheExclusively(staged, target, stagedTree, packageVersion); }
+  catch (error) {
+    if (expected) try { await copyPluginCacheExclusively(retired, target, expected.tree, packageVersion); } catch { /* preserve artifacts */ }
+    throw error;
+  }
+  return { target, retired: expected ? retired : null, expected, published, reused: false, packageVersion };
+}
+
+async function rollbackPublishedPluginCache(receipt) {
+  if (!receipt) return;
+  if (receipt.reused) return;
+  const current = await stablePluginCacheSnapshot(receipt.target, receipt.packageVersion);
+  if (!samePluginCacheSnapshot(receipt.published, current)) {
+    throw new Error(`Codex plugin cache changed before rollback: ${receipt.target}; concurrent state was preserved`);
+  }
+  const failed = join(dirname(receipt.target), `.muster-rolled-back-${receipt.packageVersion}-${process.pid}-${randomUUID()}`);
+  await rename(receipt.target, failed);
+  const moved = await stablePluginCacheSnapshot(failed, receipt.packageVersion);
+  if (!samePluginCacheSnapshot(receipt.published, moved)) {
+    try { await copyPluginCacheExclusively(failed, receipt.target, moved.tree, receipt.packageVersion); }
+    catch { /* preserve both names and surface the ownership conflict */ }
+    throw new Error(`Codex plugin cache changed during rollback: ${receipt.target}; concurrent state was preserved`);
+  }
+  if (receipt.retired) {
+    await copyPluginCacheExclusively(
+      receipt.retired, receipt.target, receipt.expected.tree, receipt.packageVersion
+    );
+  }
+  // The failed generation and retired predecessor remain path-addressable.
+  // No recursive delete is safe in the presence of arbitrary directory FDs.
+}
+
+async function verifyPublishedPluginCache(receipt) {
+  if (!receipt) return;
+  const current = await stablePluginCacheSnapshot(receipt.target, receipt.packageVersion, {
+    exactTree: receipt.published.tree
+  });
+  if (!samePluginCacheSnapshot(receipt.published, current)) {
+    throw new Error(`Codex plugin cache changed before the install commit point: ${receipt.target}; concurrent state was preserved`);
+  }
+}
+
 async function restoreRetiredName(path, retired) {
   try { await link(retired, path); }
   catch (error) { if (error.code !== "EEXIST") throw error; }
+}
+
+async function promoteChangedDisplaced(path, displaced, expectedDisplaced, restoredBaseline) {
+  if (!restoredBaseline || sameExactFileSnapshot(expectedDisplaced, await exactFileSnapshot(displaced))) return;
+  const live = await exactFileSnapshot(path);
+  if (!sameExactFileSnapshot(restoredBaseline, live)) return;
+  const baselineAlias = live.exists
+    ? join(dirname(path), `.${basename(path)}.muster-displaced-baseline-${process.pid}-${randomUUID()}`)
+    : null;
+  if (baselineAlias) {
+    await rename(path, baselineAlias);
+    if (!sameExactFileSnapshot(restoredBaseline, await exactFileSnapshot(baselineAlias))) {
+      await restoreRetiredName(path, baselineAlias);
+      await unlink(baselineAlias);
+      return;
+    }
+  }
+  try { await link(displaced, path); }
+  catch (error) {
+    if (error.code !== "EEXIST") {
+      if (baselineAlias) await restoreRetiredName(path, baselineAlias);
+      throw error;
+    }
+  }
+  if (baselineAlias) await unlink(baselineAlias);
 }
 
 // Publish without an overwrite-capable rename. The old name is first retired,
@@ -1259,6 +1540,7 @@ async function publishConfigCandidate(path, expected, bytes) {
   const staged = await writePrivateSibling(path, "candidate", bytes);
   const stagedSnapshot = await exactFileSnapshot(staged);
   const recovery = expected.exists ? await writePrivateSibling(path, "publication-recovery", expected.bytes) : null;
+  const recoverySnapshot = recovery ? await exactFileSnapshot(recovery) : { exists: false, bytes: null, dev: null, ino: null };
   let retired = null;
   try {
     if (expected.exists) {
@@ -1266,21 +1548,21 @@ async function publishConfigCandidate(path, expected, bytes) {
       await rename(path, retired);
       if (!sameExactFileSnapshot(expected, await exactFileSnapshot(retired))) {
         await restoreRetiredName(path, retired);
-        throw new Error(`Codex config changed before strict candidate publication: ${path}; concurrent bytes were preserved`);
+        throw concurrentConfigError(`Codex config changed before strict candidate publication: ${path}; concurrent bytes were preserved`);
       }
     }
     try { await link(staged, path); }
     catch (error) {
       if (retired) await restoreRetiredName(path, retired);
-      if (error.code === "EEXIST") throw new Error(`Codex config changed during strict candidate publication: ${path}; concurrent bytes were preserved`);
+      if (error.code === "EEXIST") throw concurrentConfigError(`Codex config changed during strict candidate publication: ${path}; concurrent bytes were preserved`);
       throw error;
     }
     const published = await exactFileSnapshot(path);
     if (!sameExactFileSnapshot(stagedSnapshot, published)) {
-      throw new Error(`Codex config changed during strict candidate publication: ${path}; concurrent bytes were preserved`);
+      throw concurrentConfigError(`Codex config changed during strict candidate publication: ${path}; concurrent bytes were preserved`);
     }
     if (retired && !sameExactFileSnapshot(expected, await exactFileSnapshot(retired))) {
-      throw new Error(`Codex config changed during strict candidate publication: ${path}; concurrent bytes were preserved`);
+      throw concurrentConfigError(`Codex config changed during strict candidate publication: ${path}; concurrent bytes were preserved`);
     }
     return { path, expected, retired, published: stagedSnapshot };
   } catch (error) {
@@ -1291,22 +1573,51 @@ async function publishConfigCandidate(path, expected, bytes) {
     try { current = await exactFileSnapshot(path); }
     catch { current = { exists: false, bytes: null, dev: null, ino: null }; }
     let displaced = null;
+    let restoredBaseline = expected.exists ? null : { exists: false, bytes: null, dev: null, ino: null };
     if (sameExactFileSnapshot(stagedSnapshot, current)) {
-      displaced = join(dirname(path), `.${basename(path)}.muster-failed-publication-${process.pid}-${randomUUID()}`);
+      displaced = join(dirname(path), `.${basename(path)}.muster-retired-failed-publication-${process.pid}-${randomUUID()}`);
       await rename(path, displaced);
-      current = { exists: false, bytes: null, dev: null, ino: null };
+      const moved = await exactFileSnapshot(displaced);
+      if (sameExactFileSnapshot(stagedSnapshot, moved)) {
+        current = { exists: false, bytes: null, dev: null, ino: null };
+      } else {
+        // A writer won between the live snapshot and rename. Re-link exactly
+        // what was moved; never replace it with the retained baseline.
+        await restoreRetiredName(path, displaced);
+        current = await exactFileSnapshot(path);
+      }
     }
-    if (!current.exists && recovery) {
-      try { await link(recovery, path); }
-      catch (restoreError) {
-        if (restoreError.code !== "EEXIST") {
-          if (displaced) await restoreRetiredName(path, displaced);
-          throw restoreError;
+    if (!current.exists && expected.exists) {
+      let restored = false;
+      if (retired) {
+        try {
+          await link(retired, path);
+          restored = true;
+          restoredBaseline = await exactFileSnapshot(retired);
+        }
+        catch (restoreError) {
+          if (restoreError.code === "EEXIST") restored = true;
+          else if (restoreError.code !== "ENOENT") {
+            if (displaced) await restoreRetiredName(path, displaced);
+            throw restoreError;
+          }
+        }
+      }
+      if (!restored && recovery) {
+        try {
+          await link(recovery, path);
+          restoredBaseline = recoverySnapshot;
+        }
+        catch (restoreError) {
+          if (restoreError.code !== "EEXIST") {
+            if (displaced) await restoreRetiredName(path, displaced);
+            throw restoreError;
+          }
         }
       }
     }
-    if (displaced) try { await unlink(displaced); } catch (cleanupError) { if (cleanupError.code !== "ENOENT") throw cleanupError; }
-    if (retired) try { await unlink(retired); } catch (cleanupError) { if (cleanupError.code !== "ENOENT") throw cleanupError; }
+    if (displaced) await promoteChangedDisplaced(path, displaced, stagedSnapshot, restoredBaseline);
+    await retainConfigArtifacts(path, [displaced, retired]);
     throw error;
   } finally {
     try { await unlink(staged); } catch { /* best-effort private-artifact cleanup */ }
@@ -1318,16 +1629,17 @@ async function rollbackConfigCandidate(receipt) {
   const { path, expected, retired, published } = receipt;
   const current = await exactFileSnapshot(path);
   if (!sameExactFileSnapshot(published, current)) {
-    if (retired) try { await unlink(retired); } catch (error) { if (error.code !== "ENOENT") throw error; }
+    if (retired) await retainConfigArtifacts(path, [retired]);
     return;
   }
   // Materialize the byte-exact baseline before moving the live candidate.
   // Rollback never depends on the path-addressable retirement artifact still
   // existing: cleanup, antivirus, or a concurrent actor may have removed it.
   const recovery = expected.exists ? await writePrivateSibling(path, "recovery", expected.bytes) : null;
-  const displaced = join(dirname(path), `.${basename(path)}.muster-rollback-${process.pid}-${randomUUID()}`);
+  const displaced = join(dirname(path), `.${basename(path)}.muster-retired-rollback-${process.pid}-${randomUUID()}`);
   let discardDisplaced = false;
   let moved = false;
+  let restoredBaseline = expected.exists ? null : { exists: false, bytes: null, dev: null, ino: null };
   try {
     await rename(path, displaced);
     moved = true;
@@ -1336,9 +1648,26 @@ async function rollbackConfigCandidate(receipt) {
       discardDisplaced = true;
       return;
     }
-    if (recovery) {
-      try { await link(recovery, path); }
-      catch (error) { if (error.code !== "EEXIST") throw error; }
+    if (expected.exists) {
+      let restored = false;
+      if (retired) {
+        try {
+          await link(retired, path);
+          restored = true;
+          restoredBaseline = await exactFileSnapshot(retired);
+        }
+        catch (error) {
+          if (error.code === "EEXIST") restored = true;
+          else if (error.code !== "ENOENT") throw error;
+        }
+      }
+      if (!restored && recovery) {
+        try {
+          await link(recovery, path);
+          restoredBaseline = await exactFileSnapshot(recovery);
+        }
+        catch (error) { if (error.code !== "EEXIST") throw error; }
+      }
     }
     // For an originally absent file, the vacant name is the restored state.
     // For an existing file, either recovery won or a concurrent creator did.
@@ -1348,9 +1677,9 @@ async function rollbackConfigCandidate(receipt) {
     if (moved) await restoreRetiredName(path, displaced);
     throw error;
   } finally {
-    if (discardDisplaced) try { await unlink(displaced); } catch (error) { if (error.code !== "ENOENT") throw error; }
+    if (discardDisplaced) await promoteChangedDisplaced(path, displaced, published, restoredBaseline);
+    await retainConfigArtifacts(path, [discardDisplaced ? displaced : null, retired]);
     if (recovery) try { await unlink(recovery); } catch (error) { if (error.code !== "ENOENT") throw error; }
-    if (retired) try { await unlink(retired); } catch (error) { if (error.code !== "ENOENT") throw error; }
   }
 }
 
@@ -1386,8 +1715,8 @@ async function trustedMusterMarketplace(item, repoRoot) {
     && await sameLocalRoot(source.source, repoRoot);
 }
 
-async function existingMusterMarketplace(execFile, repoRoot, runtimeIdentity) {
-  const result = await runJson(execFile, ["plugin", "marketplace", "list", "--json"], runtimeIdentity);
+async function existingMusterMarketplace(execFile, repoRoot, runtimeIdentity, commandOptions) {
+  const result = await runJson(execFile, ["plugin", "marketplace", "list", "--json"], runtimeIdentity, commandOptions);
   const matches = Array.isArray(result?.marketplaces) ? result.marketplaces.filter(item => item.name === "muster") : [];
   const trusted = await Promise.all(matches.map(item => trustedMusterMarketplace(item, repoRoot)));
   if (trusted.some(value => !value)) {
@@ -1399,23 +1728,27 @@ async function existingMusterMarketplace(execFile, repoRoot, runtimeIdentity) {
 // File-local, so the flag is an OPTIONS object rather than a positional
 // boolean: `registerPlugin(execFile, root, { dryRun: true })` reads at the call
 // site; the old `registerPlugin(execFile, true, root)` did not.
-async function registerPlugin(execFile, repoRoot, { dryRun, runtimeIdentity, afterRegister }) {
+async function registerPlugin(execFile, repoRoot, { dryRun, runtimeIdentity, afterRegister, commandOptions }) {
   if (dryRun) return [`codex plugin marketplace add ${repoRoot}`, `codex plugin add ${CODEX_PLUGIN}`];
-  let marketplaceAdded = false, pluginAdded = false;
+  let marketplaceAdded = false, pluginAdded = false, pluginPreviouslyInstalled = false;
   try {
-    const marketplace = await existingMusterMarketplace(execFile, repoRoot, runtimeIdentity);
+    const marketplace = await existingMusterMarketplace(execFile, repoRoot, runtimeIdentity, commandOptions);
     if (!marketplace) {
-      await run(execFile, ["plugin", "marketplace", "add", repoRoot], runtimeIdentity);
+      await run(execFile, ["plugin", "marketplace", "add", repoRoot], runtimeIdentity, commandOptions);
       marketplaceAdded = true;
     }
-    await runJson(execFile, ["plugin", "list", "--available", "--json"], runtimeIdentity);
-    await run(execFile, ["plugin", "add", CODEX_PLUGIN], runtimeIdentity);
+    const inventory = await runJson(execFile, ["plugin", "list", "--available", "--json"], runtimeIdentity, commandOptions);
+    pluginPreviouslyInstalled = Array.isArray(inventory?.installed) && inventory.installed.some(plugin =>
+      plugin === CODEX_PLUGIN || plugin?.pluginId === CODEX_PLUGIN
+        || (plugin?.name === "muster" && (plugin?.marketplace === "muster" || plugin?.source?.marketplace === "muster"))
+    );
+    await run(execFile, ["plugin", "add", CODEX_PLUGIN], runtimeIdentity, commandOptions);
     pluginAdded = true;
     await afterRegister?.();
     return [];
   } catch (error) {
-    if (pluginAdded) try { await run(execFile, ["plugin", "remove", CODEX_PLUGIN], runtimeIdentity); } catch { /* best-effort transaction rollback */ }
-    if (marketplaceAdded) try { await run(execFile, ["plugin", "marketplace", "remove", "muster"], runtimeIdentity); } catch { /* best-effort transaction rollback */ }
+    if (pluginAdded && !pluginPreviouslyInstalled) try { await run(execFile, ["plugin", "remove", CODEX_PLUGIN], runtimeIdentity, commandOptions); } catch { /* best-effort transaction rollback */ }
+    if (marketplaceAdded) try { await run(execFile, ["plugin", "marketplace", "remove", "muster"], runtimeIdentity, commandOptions); } catch { /* best-effort transaction rollback */ }
     throw error;
   }
 }
@@ -1528,20 +1861,35 @@ async function prepareCodexInstall({ scope, dryRun, cwd, home, repoRoot, execFil
     { op: "merge", path: declarationConfigPath },
     { op: "merge", path: threadLimitConfigPath }
   ];
-  return { files, profileContents, declarations, distributionRoot, dir, manifestPath, declarationConfigPath, declarationOwnership, threadLimitConfigPath, threadLimitManifestPath, packageVersion, hooks, staleFiles, present, planned };
+  const pluginCacheSourceRoot = pluginRoot
+    ? root
+    : join(distributionRoot, ".agents", "plugins", "plugin");
+  return { files, profileContents, declarations, distributionRoot, pluginCacheSourceRoot, dir, manifestPath, declarationConfigPath, declarationOwnership, threadLimitConfigPath, threadLimitManifestPath, packageVersion, hooks, staleFiles, present, planned };
 }
 
 export async function runCodexInstall({ scope = "project", dryRun = false, cwd = process.cwd(), home = homedir(), repoRoot, execFile, strictConfigRunner, runtimeIdentity, scopeLockOptions, nodeExecPath = process.execPath } = {}) {
   const executor = execFile || execFileDefault;
   let identity = runtimeIdentity;
-  if (!identity && !execFile) try { identity = resolveCodexRuntimeIdentity({ nodeExecPath }); } catch { /* Codex absent: local install still proceeds without PATH probing */ }
-  const { files, profileContents, declarations, distributionRoot, dir, manifestPath, declarationConfigPath, declarationOwnership, threadLimitConfigPath, threadLimitManifestPath, packageVersion, hooks, staleFiles, present, planned } =
+  if (!identity && !execFile) try { identity = resolveCodexRuntimeIdentity({ nodeExecPath }); } catch (error) {
+    // An explicitly managed package root is a trust declaration, not an
+    // optional availability hint. A broken declared runtime must fail closed
+    // instead of silently bypassing native strict validation as "absent".
+    if (process.env.CODEX_MANAGED_PACKAGE_ROOT) throw error;
+    /* Codex genuinely absent: local install still proceeds without PATH probing. */
+  }
+  const { files, profileContents, declarations, distributionRoot, pluginCacheSourceRoot, dir, manifestPath, declarationConfigPath, declarationOwnership, threadLimitConfigPath, threadLimitManifestPath, packageVersion, hooks, staleFiles, present, planned } =
     await prepareCodexInstall({ scope, dryRun, cwd, home, repoRoot, execFile: executor, runtimeIdentity: identity, allowInjected: Boolean(execFile), nodeExecPath });
+  const trustedPluginCacheTree = present && identity && !execFile
+    ? await assertRegularTree(pluginCacheSourceRoot)
+    : null;
   let originals, changed;
-  const rollbackConflicts = new Set();
   const publishedConfigCandidates = new Map();
   const configCandidates = new Map();
   const configCandidateSources = new Map();
+  let pluginStagingHome = null;
+  let stagedPluginCachePath = null;
+  let publishedPluginCache = null;
+  const authoritativeRollbackPaths = new Set();
   let actions = [];
   const prunedScopes = [], prunedHookState = [], prunedProjectTrust = [];
   if (!dryRun) {
@@ -1554,9 +1902,17 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
       const manifestExists = checkedOwnership.manifest.exists;
       const declarationConfigExists = checkedOwnership.config.exists;
       const declarationSeparatorAdded = manifestExists && manifest.declarationSeparatorAdded === true;
-      let committed = false;
       await ordinaryDirectoryPath(dir, { create: true });
+      for (const configPath of new Set([threadLimitConfigPath, declarationConfigPath])) {
+        await verifyCodexConfigRetirementReceipt(configPath);
+      }
       try {
+        // Codex's own plugin registration rewrites config.toml. Preserve the
+        // exact pre-registration bytes here; the config transaction below is
+        // deliberately derived only after registration has completed.
+        for (const configPath of new Set([threadLimitConfigPath, declarationConfigPath])) {
+          await snapshot(originals, changed, configPath);
+        }
         const currentScope = await scopeEntry(scope, cwd, home);
         await snapshot(originals, changed, registry.path);
         // Reconcile on every install: prune scopes whose configDir no
@@ -1606,7 +1962,10 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
         await atomicWriteSafe(hooks.configPath, JSON.stringify(hooks.config, null, 2) + "\n");
         await snapshot(originals, changed, hooks.manifestPath);
         await atomicWriteSafe(hooks.manifestPath, JSON.stringify(hooks.manifest, null, 2) + "\n");
-        try {
+        const installConfig = async () => {
+          let verifyUnpublishedLive = null;
+          try {
+          try {
           const threadLimitOriginal = await exactFileSnapshot(threadLimitConfigPath);
           const configExistedBefore = threadLimitOriginal.exists;
           const existingConfigText = configSnapshotText(threadLimitOriginal, threadLimitConfigPath);
@@ -1680,7 +2039,6 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
           await snapshot(originals, changed, threadLimitConfigPath);
           configCandidates.set(threadLimitConfigPath, Buffer.from(threadLimits.text));
           configCandidateSources.set(threadLimitConfigPath, threadLimitOriginal);
-          rollbackConflicts.add(threadLimitConfigPath);
           await snapshot(originals, changed, threadLimitManifestPath);
           await atomicWriteSafe(threadLimitManifestPath, JSON.stringify({
             format: 1, owner: "muster", configPath: threadLimitConfigPath,
@@ -1712,7 +2070,6 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
         if (!configCandidateSources.has(declarationConfigPath)) {
           configCandidateSources.set(declarationConfigPath, declarationOriginal);
         }
-        rollbackConflicts.add(declarationConfigPath);
         await snapshot(originals, changed, manifestPath);
         await atomicWriteSafe(manifestPath, JSON.stringify({
           format: 1, owner: "muster", files, packageVersion,
@@ -1720,11 +2077,13 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
           declarationSeparatorAdded: declarationReconcile.separatorAdded,
           declarationRegion: declarationReconcile.receipt
         }, null, 2) + "\n");
-        // Parse only after every shared and scoped config candidate is complete,
-        // but before plugin registration makes the install externally visible.
+        // Parse after every shared and scoped config candidate is complete.
+        // Plugin registration then runs only against a private CODEX_HOME;
+        // its resulting config is parsed again before the exact bytes are
+        // exclusively published to the real configuration paths.
         // Production always takes the bounded native parser path; tests with an
         // injected command runner opt into this boundary explicitly.
-        const configParser = strictConfigRunner || (!execFile ? runCodexStrictConfigCheck : null);
+        const configParser = strictConfigRunner || (!execFile && identity ? runCodexStrictConfigCheck : null);
         {
           const transactionTargets = [...new Set([threadLimitConfigPath, declarationConfigPath])];
           const candidateSnapshots = new Map();
@@ -1735,8 +2094,9 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
           const liveExpected = new Map();
           for (const path of transactionTargets) liveExpected.set(path, configCandidateSources.get(path));
           if (!liveExpected.has(projectConfigPath)) liveExpected.set(projectConfigPath, await exactFileSnapshot(projectConfigPath));
-          const projectCandidate = candidateSnapshots.get(projectConfigPath) || liveExpected.get(projectConfigPath);
-          if (configParser) {
+          const runConfigParser = async () => {
+            if (!configParser) return;
+            const projectCandidate = candidateSnapshots.get(projectConfigPath) || liveExpected.get(projectConfigPath);
             await configParser({
               cwd,
               codexHome: codexHome(home),
@@ -1746,16 +2106,65 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
                 project: { path: projectConfigPath, ...projectCandidate }
               }
             });
+          };
+          const verifyLive = async phase => {
+            const concurrent = [];
+            for (const [path, expected] of liveExpected) {
+              let current;
+              try { current = await exactFileSnapshot(path); }
+              catch { current = { exists: false, bytes: null, dev: null, ino: null }; }
+              if (!sameExactFileSnapshot(expected, current)) concurrent.push(path);
+            }
+            if (concurrent.length) throw concurrentConfigError(`Codex config changed during ${phase}: ${concurrent.join(", ")}; concurrent bytes were preserved`);
+          };
+          verifyUnpublishedLive = verifyLive;
+          const runVerifiedConfigParser = async phase => {
+            try { await runConfigParser(); }
+            catch (error) {
+              await verifyLive(`${phase} failure`);
+              throw error;
+            }
+            await verifyLive(phase);
+          };
+          await runVerifiedConfigParser("strict validation");
+          if (present) {
+            await ordinaryDirectoryPath(dirname(codexHome(home)), { create: true });
+            pluginStagingHome = await mkdtemp(join(dirname(codexHome(home)), ".muster-codex-plugin-config-"));
+            try {
+              const stagedConfigPath = join(pluginStagingHome, "config.toml");
+              await atomicWriteSafe(stagedConfigPath, candidateSnapshots.get(threadLimitConfigPath).bytes);
+              actions = await registerPlugin(executor, distributionRoot, {
+                dryRun: false,
+                runtimeIdentity: identity,
+                commandOptions: { env: { ...process.env, CODEX_HOME: pluginStagingHome } }
+              });
+              const registered = await exactFileSnapshot(stagedConfigPath);
+              if (!registered.exists) throw new Error("Codex staged plugin registration removed config.toml");
+              const finalShared = { exists: true, bytes: registered.bytes, dev: null, ino: null };
+              candidateSnapshots.set(threadLimitConfigPath, finalShared);
+              configCandidates.set(threadLimitConfigPath, registered.bytes);
+              if (identity && !execFile) {
+                stagedPluginCachePath = join(pluginStagingHome, "plugins", "cache", "muster", "muster", packageVersion);
+                await assertPrivatePluginCache(stagedPluginCachePath, packageVersion, {
+                  sourceRoot: pluginCacheSourceRoot, sourceTree: trustedPluginCacheTree
+                });
+              }
+            } catch (error) {
+              await rm(pluginStagingHome, { recursive: true, force: true });
+              pluginStagingHome = null;
+              throw error;
+            }
+            await verifyLive("staged plugin registration");
+            await runVerifiedConfigParser("final strict validation");
           }
 
-          const concurrent = [];
-          for (const [path, expected] of liveExpected) {
-            let current;
-            try { current = await exactFileSnapshot(path); }
-            catch { current = { exists: false, bytes: null, dev: null, ino: null }; }
-            if (!sameExactFileSnapshot(expected, current)) concurrent.push(path);
+          if (stagedPluginCachePath) {
+            publishedPluginCache = await publishStagedPluginCache(
+              stagedPluginCachePath, codexHome(home), packageVersion,
+              pluginCacheSourceRoot, trustedPluginCacheTree
+            );
+            stagedPluginCachePath = null;
           }
-          if (concurrent.length) throw new Error(`Codex config changed during strict validation: ${concurrent.join(", ")}; concurrent bytes were preserved`);
 
           // Retire the expected name and publish by exclusive hard-link. Any
           // writer that wins after validation remains authoritative and blocks
@@ -1763,7 +2172,7 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
           for (const path of transactionTargets) {
             const current = await exactFileSnapshot(path);
             if (!sameExactFileSnapshot(liveExpected.get(path), current)) {
-              throw new Error(`Codex config changed before strict candidate publication: ${path}; concurrent bytes were preserved`);
+              throw concurrentConfigError(`Codex config changed before strict candidate publication: ${path}; concurrent bytes were preserved`);
             }
             publishedConfigCandidates.set(path, await publishConfigCandidate(
               path, liveExpected.get(path), candidateSnapshots.get(path).bytes
@@ -1771,50 +2180,87 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
           }
           for (const [path, receipt] of publishedConfigCandidates) {
             if (!sameExactFileSnapshot(receipt.published, await exactFileSnapshot(path))) {
-              throw new Error(`Codex config changed during strict candidate publication: ${path}; concurrent bytes were preserved`);
+              throw concurrentConfigError(`Codex config changed during strict candidate publication: ${path}; concurrent bytes were preserved`);
             }
           }
         }
-        const commitConfigCandidates = async () => {
-          for (const [path, receipt] of publishedConfigCandidates) {
-            if (!sameExactFileSnapshot(receipt.published, await exactFileSnapshot(path))) {
-              throw new Error(`Codex config changed during plugin registration: ${path}; concurrent bytes were preserved`);
-            }
+        for (const [path, receipt] of publishedConfigCandidates) {
+          if (!sameExactFileSnapshot(receipt.published, await exactFileSnapshot(path))) {
+            throw concurrentConfigError(`Codex config changed at the strict config commit point: ${path}; concurrent bytes were preserved`);
           }
-          // No await follows this assignment before registerPlugin returns;
-          // later edits are ordinary post-install user changes, not bytes the
-          // installation can overwrite or claim as its validated candidate.
-          committed = true;
+          if (receipt.retired && !sameExactFileSnapshot(receipt.expected, await exactFileSnapshot(receipt.retired))) {
+            throw concurrentConfigError(`Codex config writer changed the retired baseline before the commit point: ${path}; concurrent bytes will be restored`);
+          }
+        }
+        await verifyPublishedPluginCache(publishedPluginCache);
+        for (const [path, receipt] of publishedConfigCandidates) {
+          if (!receipt.retired) continue;
+          await retainConfigArtifacts(path, [receipt.retired]);
+        }
+        if (pluginStagingHome) {
+          await rm(pluginStagingHome, { recursive: true, force: true });
+          pluginStagingHome = null;
+        }
+        await verifyPublishedPluginCache(publishedPluginCache);
+        for (const configPath of new Set([threadLimitConfigPath, declarationConfigPath])) {
+          await verifyCodexConfigRetirementReceipt(configPath);
+        }
+          } catch (error) {
+            const rollbackErrors = [];
+            if (!publishedConfigCandidates.size && verifyUnpublishedLive && !error?.musterConcurrentConfig) {
+              try { await verifyUnpublishedLive("failed config transaction"); }
+              catch (concurrentError) { error = concurrentError; }
+            }
+            for (const receipt of [...publishedConfigCandidates.values()].reverse()) {
+              try {
+                await rollbackConfigCandidate(receipt);
+                if (!sameExactFileSnapshot(receipt.expected, await exactFileSnapshot(receipt.path))) {
+                  authoritativeRollbackPaths.add(receipt.path);
+                }
+              } catch (rollbackError) {
+                // Once candidate rollback cannot prove the expected bytes at
+                // this path, the outer snapshot rollback must not overwrite
+                // whatever a concurrent writer left there.
+                authoritativeRollbackPaths.add(receipt.path);
+                rollbackErrors.push(rollbackError);
+              }
+            }
+            try { await rollbackPublishedPluginCache(publishedPluginCache); }
+            catch (rollbackError) { rollbackErrors.push(rollbackError); }
+            publishedPluginCache = null;
+            if (pluginStagingHome) {
+              try { await rm(pluginStagingHome, { recursive: true, force: true }); }
+              catch (rollbackError) { rollbackErrors.push(rollbackError); }
+              pluginStagingHome = null;
+            }
+            publishedConfigCandidates.clear();
+            if (rollbackErrors.length) {
+              throw new AggregateError([error, ...rollbackErrors],
+                `${error.message}; ${rollbackErrors.length} config rollback operation(s) also failed`, { cause: error });
+            }
+            throw error;
+          }
         };
-        if (present) {
-          actions = await registerPlugin(executor, distributionRoot, {
-            dryRun: false, runtimeIdentity: identity, afterRegister: commitConfigCandidates
-          });
-        } else {
-          actions = [];
-          await commitConfigCandidates();
-        }
+        if (!present) actions = [];
+        await installConfig();
       } catch (error) {
         const rollbackErrors = [];
-        for (const receipt of [...publishedConfigCandidates.values()].reverse()) {
-          try { await rollbackConfigCandidate(receipt); }
-          catch (rollbackError) { rollbackErrors.push(rollbackError); }
-        }
-        try { await restoreFilesystem(originals, changed, { skip: rollbackConflicts }); }
+        // Config candidates are never written by the generic transaction:
+        // before publication these live paths remain untouched, and after
+        // publication the identity-aware candidate rollback above owns them.
+        // Always excluding them also closes the post-verification window in
+        // which a concurrent writer could otherwise be overwritten while
+        // unrelated managed files are being restored.
+        const skip = new Set([
+          threadLimitConfigPath, declarationConfigPath, ...authoritativeRollbackPaths
+        ]);
+        try { await restoreFilesystem(originals, changed, { skip }); }
         catch (rollbackError) { rollbackErrors.push(rollbackError); }
         if (rollbackErrors.length) {
           throw new AggregateError([error, ...rollbackErrors],
             `${error.message}; ${rollbackErrors.length} rollback operation(s) also failed`, { cause: error });
         }
         throw error;
-      }
-      if (committed) {
-        // Registration is the commit point. Retirement artifacts are now
-        // cleanup-only and must never re-enter rollback after earlier baseline
-        // names have already been discarded.
-        for (const receipt of publishedConfigCandidates.values()) {
-          if (receipt.retired) try { await unlink(receipt.retired); } catch { /* best-effort post-commit cleanup */ }
-        }
       }
     }, scopeLockOptions);
   } else {

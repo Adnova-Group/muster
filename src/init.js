@@ -22,14 +22,20 @@
 // profile/receipt hash depends on.
 import { createHash, randomBytes } from "node:crypto";
 import { execFile } from "node:child_process";
+import { constants as fsConstants } from "node:fs";
 import {
-  lstat, mkdir, mkdtemp, readdir, readlink, realpath,
+  lstat, mkdir, mkdtemp, open, readdir, readlink, realpath,
   rm, stat,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { promisify } from "node:util";
-import { atomicWrite as atomicWriteSafe, readNoFollowRegular, safeRelativePath } from "./fs-safe.js";
+import {
+  atomicWrite as atomicWriteSafe,
+  readNoFollowRegular,
+  resolveContainedRealpath,
+  safeRelativePath,
+} from "./fs-safe.js";
 
 const pexecFile = promisify(execFile);
 const PROFILE_FORMAT = "muster.project-profile";
@@ -51,7 +57,6 @@ export const INIT_PATHS = Object.freeze({
 export const INIT_LIMITS = Object.freeze({
   learnDepth: 4,
   learnFileBytes: 1_048_576,
-  learnTotalBytes: 8_388_608,
   fingerprintDepth: 32,
   fingerprintEntries: 10_000,
   fingerprintFileBytes: 16_777_216,
@@ -374,19 +379,97 @@ const INSTRUCTION_NAMES = new Set(["AGENTS.md", "CLAUDE.md", "GEMINI.md", "copil
 const SOURCE_NAMES = new Set(["src", "lib", "app", "apps", "packages"]);
 const TEST_NAMES = new Set(["test", "tests", "__tests__", "spec"]);
 
+function safeLearnedPath(path) {
+  if (typeof path !== "string" || !path || path.includes("\0") || path.includes("\\") ||
+      isAbsolute(path) || /^[A-Za-z]:/.test(path) || path.startsWith("//")) {
+    throw new Error(`unsafe learned path: ${path}`);
+  }
+  const parts = path.split("/");
+  if (parts.some((part) => !part || part === "." || part === "..")) {
+    throw new Error(`unsafe learned path: ${path}`);
+  }
+  return path;
+}
+
+function learningFileChanged(rel) {
+  const error = new Error(`file changed while reading: ${rel}`);
+  error.fsSafe = { reason: "changed" };
+  return error;
+}
+
+async function ensureLearningAncestors(root, path, rel) {
+  const parts = safeLearnedPath(rel).split("/");
+  let current = root;
+  for (const part of parts.slice(0, -1)) {
+    current = join(current, part);
+    const info = await lstat(current);
+    if (info.isSymbolicLink() || !info.isDirectory()) throw new Error(`unsafe ancestor for ${rel}`);
+  }
+  if (!(await resolveContainedRealpath(root, dirname(path)))) throw new Error(`unsafe ancestor for ${rel}`);
+}
+
+async function readLearningMetadata(root, path, rel, expectedInfo, capture) {
+  let handle;
+  try {
+    await ensureLearningAncestors(root, path, rel);
+    handle = await open(
+      path,
+      fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0) | (fsConstants.O_NONBLOCK || 0),
+    );
+    const before = await handle.stat({ bigint: true });
+    if (!before.isFile()) throw new Error(`unsafe regular file: ${rel}`);
+    if (before.ino !== expectedInfo.ino || before.dev !== expectedInfo.dev) {
+      throw learningFileChanged(rel);
+    }
+    if (before.size > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error(`unsafe regular file: ${rel}`);
+    const size = Number(before.size);
+    const digest = createHash("sha256");
+    const chunks = capture ? [] : null;
+    const chunk = Buffer.allocUnsafe(64 * 1024);
+    let position = 0;
+    while (position < size) {
+      const { bytesRead } = await handle.read(chunk, 0, Math.min(chunk.length, size - position), position);
+      if (bytesRead === 0) break;
+      const bytes = chunk.subarray(0, bytesRead);
+      digest.update(bytes);
+      if (chunks) chunks.push(Buffer.from(bytes));
+      position += bytesRead;
+    }
+    const after = await handle.stat({ bigint: true });
+    if (position !== size || after.ino !== before.ino || after.dev !== before.dev ||
+        after.size !== before.size || after.nlink !== before.nlink || after.mode !== before.mode ||
+        after.ctimeNs !== before.ctimeNs || after.mtimeNs !== before.mtimeNs || !after.isFile()) {
+      throw learningFileChanged(rel);
+    }
+    await ensureLearningAncestors(root, path, rel);
+    const named = await lstat(path, { bigint: true });
+    if (!named.isFile() || named.ino !== before.ino || named.dev !== before.dev ||
+        named.size !== before.size || named.nlink !== before.nlink || named.mode !== before.mode ||
+        named.ctimeNs !== before.ctimeNs || named.mtimeNs !== before.mtimeNs) {
+      throw learningFileChanged(rel);
+    }
+    return { bytes: chunks ? Buffer.concat(chunks) : null, digest: digest.digest("hex"), size };
+  } finally {
+    await handle?.close();
+  }
+}
+
 async function learnFacts(root) {
   const rows = [];
+  const limitations = [];
   const sourceRoots = new Set();
   const testRoots = new Set();
   const extensions = new Set();
-  let total = 0;
   async function walk(abs, prefix, depth) {
-    if (depth > INIT_LIMITS.learnDepth) return;
+    if (depth > INIT_LIMITS.learnDepth) {
+      limitations.push({ path: safeLearnedPath(prefix), reason: "depth-limit" });
+      return;
+    }
     for (const name of (await readdir(abs)).sort(utf8Sort)) {
       if (!prefix && (name === ".git" || name === ".muster")) continue;
       const rel = prefix ? `${prefix}/${name}` : name;
       const path = join(abs, name);
-      const info = await lstat(path);
+      const info = await lstat(path, { bigint: true });
       if (info.isSymbolicLink()) continue;
       if (info.isDirectory()) {
         if (SOURCE_NAMES.has(name)) sourceRoots.add(rel);
@@ -397,28 +480,29 @@ async function learnFacts(root) {
         const dot = name.lastIndexOf(".");
         if (dot >= 0) extensions.add(name.slice(dot).toLowerCase());
         if (!MANIFEST_NAMES.has(name) && !INSTRUCTION_NAMES.has(name)) continue;
-        const opened = await readNoFollowRegular(path, { maxBytes: INIT_LIMITS.learnFileBytes, label: rel, expectedInfo: info });
-        total += opened.info.size;
-        if (total > INIT_LIMITS.learnTotalBytes) throw new Error("project learning limit exceeded");
+        const parse = name === "package.json" && info.size <= BigInt(INIT_LIMITS.learnFileBytes);
+        const opened = await readLearningMetadata(root, path, rel, info, parse);
+        if (name === "package.json" && !parse) limitations.push({ path: rel, reason: "parse-limit" });
         rows.push({
-          bytes: opened.info.size,
+          bytes: opened.size,
           content: opened.bytes,
           instruction: INSTRUCTION_NAMES.has(name),
           path: rel,
-          sha256: sha256(opened.bytes),
+          sha256: opened.digest,
         });
       }
     }
   }
   await walk(root, "", 0);
-  return { extensions, rows, sourceRoots, testRoots };
+  limitations.sort((a, b) => utf8Sort(a.path, b.path) || utf8Sort(a.reason, b.reason));
+  return { extensions, limitations, rows, sourceRoots, testRoots };
 }
 
 export async function learnProjectProfile(dir) {
   const root = await validateRoot(dir);
   const owned = await readOwned(root);
   const classification = owned?.receipt.classification ?? await classify(root);
-  const { extensions, rows, sourceRoots, testRoots } = await learnFacts(root);
+  const { extensions, limitations, rows, sourceRoots, testRoots } = await learnFacts(root);
   const languages = new Set();
   const frameworks = new Set();
   const managers = new Set();
@@ -438,6 +522,7 @@ export async function learnProjectProfile(dir) {
     if (name === "package.json") {
       languages.add("javascript");
       managers.add("npm");
+      if (!row.content) continue;
       try {
         const pkg = JSON.parse(row.content.toString("utf8"));
         const deps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
@@ -467,6 +552,7 @@ export async function learnProjectProfile(dir) {
     facts: {
       frameworks: [...frameworks].sort(utf8Sort),
       instructionFiles: factRows(true),
+      learning: { limitations, status: limitations.length ? "incomplete" : "complete" },
       languages: [...languages].sort(utf8Sort),
       manifests: factRows(false),
       packageManagers: [...managers].sort(utf8Sort),
@@ -494,11 +580,11 @@ function checkFileRows(rows, kind, field) {
     if (!exactKeys(row, ["bytes", "path", "sha256"])) {
       invalidInit(kind, field, "each row must have exactly the keys bytes, path, sha256");
     }
-    if (!Number.isInteger(row.bytes) || row.bytes < 0 || row.bytes > INIT_LIMITS.learnFileBytes) {
-      invalidInit(kind, field, "row bytes must be an integer within the learn file byte limit");
+    if (!Number.isSafeInteger(row.bytes) || row.bytes < 0) {
+      invalidInit(kind, field, "row bytes must be a non-negative safe integer");
     }
     if (!HEX64.test(row.sha256)) invalidInit(kind, field, "row sha256 must be 64 lowercase hex characters");
-    try { safeRelative(row.path); } catch { invalidInit(kind, field, "row path must be a safe relative path"); }
+    try { safeLearnedPath(row.path); } catch { invalidInit(kind, field, "row path must be a safe learned path"); }
   }
   if (new Set(rows.map((row) => row.path)).size !== rows.length) invalidInit(kind, field, "row paths must be unique");
   if (!rowsSortedByPath(rows)) invalidInit(kind, field, "rows must be sorted by UTF-8 path order");
@@ -530,14 +616,35 @@ function validateProfile(profile) {
   if (!["greenfield", "brownfield"].includes(profile.classification)) {
     fail("classification", "must be greenfield or brownfield");
   }
-  if (!exactKeys(profile.facts, ["frameworks", "instructionFiles", "languages", "manifests", "packageManagers", "shape", "sourceRoots", "testRunners", "vcs"])) {
-    fail("facts", "keys must be exactly frameworks, instructionFiles, languages, manifests, packageManagers, shape, sourceRoots, testRunners, vcs");
+  const priorFactKeys = ["frameworks", "instructionFiles", "languages", "manifests", "packageManagers", "shape", "sourceRoots", "testRunners", "vcs"];
+  const evidenceFactKeys = [...priorFactKeys, "learning"];
+  if (!exactKeys(profile.facts, priorFactKeys) && !exactKeys(profile.facts, evidenceFactKeys)) {
+    fail("facts", "keys must be the schema-v1 fact keys, optionally including learning evidence");
   }
   if (!["empty", "library", "application", "monorepo", "unknown"].includes(profile.facts.shape)) {
     fail("facts.shape", "must be empty, library, application, monorepo, or unknown");
   }
   checkFileRows(profile.facts.manifests, "project profile", "facts.manifests");
   checkFileRows(profile.facts.instructionFiles, "project profile", "facts.instructionFiles");
+  const learning = profile.facts.learning;
+  if (learning !== undefined) {
+    if (!exactKeys(learning, ["limitations", "status"]) || !["complete", "incomplete"].includes(learning.status) ||
+        !Array.isArray(learning.limitations)) fail("facts.learning", "must carry a complete or incomplete status and limitations array");
+    for (const limitation of learning.limitations) {
+      if (!exactKeys(limitation, ["path", "reason"]) || !["depth-limit", "parse-limit"].includes(limitation.reason)) {
+        fail("facts.learning.limitations", "each limitation must name a path and known reason");
+      }
+      try { safeLearnedPath(limitation.path); } catch { fail("facts.learning.limitations", "paths must be safe learned paths"); }
+    }
+    if ((learning.status === "complete") !== (learning.limitations.length === 0)) {
+      fail("facts.learning", "complete must have no limitations and incomplete must have at least one");
+    }
+    const limitationKeys = learning.limitations.map(({ path, reason }) => `${path}\0${reason}`);
+    if (new Set(limitationKeys).size !== limitationKeys.length ||
+        JSON.stringify(limitationKeys) !== JSON.stringify([...limitationKeys].sort(utf8Sort))) {
+      fail("facts.learning.limitations", "entries must be unique and sorted in UTF-8 order");
+    }
+  }
   if (!exactKeys(profile.facts.vcs, ["branch", "head", "kind", "layout"])) {
     fail("facts.vcs", "keys must be exactly branch, head, kind, layout");
   }

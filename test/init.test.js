@@ -23,6 +23,7 @@ const sha = (value) => createHash("sha256").update(value).digest("hex");
 const tmp = () => mkdtemp(join(tmpdir(), "muster-init-"));
 const pexecFile = promisify(execFile);
 const CLAUDE_POINTER = "# Claude Code\n\n@AGENTS.md\n";
+const readProfile = async (dir) => JSON.parse(await readFile(join(dir, ".muster/project-profile.json"), "utf8"));
 
 test("canonicalInitJson recursively sorts keys and rejects non-JSON values", () => {
   assert.equal(canonicalInitJson({ z: 1, a: { d: true, c: null } }), '{"a":{"c":null,"d":true},"z":1}');
@@ -384,34 +385,69 @@ test("project learning succeeds with 248 ordinary files and preserves accurate p
   assert.deepEqual(profile.facts.manifests.map(({ path }) => path), ["package.json"]);
 });
 
-test("project learning retains per-file and aggregate byte limits", async () => {
-  const oversized = await tmp();
-  await writeFile(join(oversized, "package.json"), Buffer.alloc(1_048_577, 0x61));
-  await assert.rejects(
-    () => learnProjectProfile(oversized),
-    /unsafe regular file: package\.json/,
-  );
+test("project learning records large metadata without treating storage size as a parse budget", async () => {
+  const lockRoot = await tmp();
+  await writeFile(join(lockRoot, "package-lock.json"), Buffer.alloc(2 * 1024 * 1024, 0x61));
+  const initialized = await initializeProject(lockRoot);
+  const lockProfile = await readProfile(lockRoot);
+  assert.equal(lockProfile.facts.manifests[0].bytes, 2 * 1024 * 1024);
+  assert.deepEqual(lockProfile.facts.learning, { limitations: [], status: "complete" });
+  assert.deepEqual(await initializeProject(lockRoot), initialized);
 
   const aggregate = await tmp();
   const manifests = [
-    "package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "Cargo.toml",
+    "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lockb", "Cargo.toml",
     "Cargo.lock", "pyproject.toml", "requirements.txt", "go.mod", "Gemfile",
   ];
   await Promise.all(manifests.map((name) => writeFile(join(aggregate, name), Buffer.alloc(900_000, 0x61))));
-  await assert.rejects(
-    () => learnProjectProfile(aggregate),
-    /project learning limit exceeded/,
-  );
+  const aggregateInit = await initializeProject(aggregate);
+  const aggregateProfile = await readProfile(aggregate);
+  assert.ok(aggregateProfile.facts.manifests.reduce((sum, row) => sum + row.bytes, 0) > 8 * 1024 * 1024);
+  assert.deepEqual(aggregateProfile.facts.learning, { limitations: [], status: "complete" });
+  assert.deepEqual(await initializeProject(aggregate), aggregateInit);
+});
+
+test("project learning reports bounded parsing and depth as explicit incomplete evidence", async () => {
+  const oversizedPackage = await tmp();
+  await writeFile(join(oversizedPackage, "package.json"), Buffer.alloc(2 * 1024 * 1024, 0x61));
+  const parseInit = await initializeProject(oversizedPackage);
+  assert.deepEqual((await readProfile(oversizedPackage)).facts.learning, {
+    limitations: [{ path: "package.json", reason: "parse-limit" }],
+    status: "incomplete",
+  });
+  assert.deepEqual(await initializeProject(oversizedPackage), parseInit);
+
+  const deep = await tmp();
+  const deepDir = join(deep, "one", "two", "three", "four", "five");
+  await mkdir(deepDir, { recursive: true });
+  await writeFile(join(deepDir, "package.json"), "{}");
+  const depthInit = await initializeProject(deep);
+  assert.deepEqual((await readProfile(deep)).facts.learning, {
+    limitations: [{ path: "one/two/three/four/five", reason: "depth-limit" }],
+    status: "incomplete",
+  });
+  assert.deepEqual(await initializeProject(deep), depthInit);
+});
+
+test("project learning accepts contained metadata paths longer than owned-artifact paths", async () => {
+  const dir = await tmp();
+  const parts = ["a".repeat(100), "b".repeat(100), "c".repeat(90)];
+  const parent = join(dir, ...parts);
+  await mkdir(parent, { recursive: true });
+  await writeFile(join(parent, "Cargo.toml"), "[package]\n");
+  const initialized = await initializeProject(dir);
+  const profile = await readProfile(dir);
+  const path = profile.facts.manifests[0].path;
+  assert.ok(Buffer.byteLength(path) >= 300);
+  assert.deepEqual(profile.facts.learning, { limitations: [], status: "complete" });
+  assert.deepEqual(await initializeProject(dir), initialized);
 });
 
 // --- TOCTOU translation arm (audit 2 slice J) ------------------------------
-// learnFacts's readNoFollowRegular call passes the walk's own lstat as
-// expectedInfo (src/init.js:402); a same-user writer replacing the target
-// mid-read trips the shared reader's "changed" reason (post-read identity
-// recheck on the HELD descriptor, fs-safe.js:159-161 -- the same reason the
-// expectedInfo arm throws for a lstat->open swap). init.js deliberately lets
-// that diagnostic propagate untranslated, so the rejection must surface with
-// the exact `file changed while reading: <rel>` message, tagged.
+// learnFacts passes the walk's own lstat to the streaming metadata reader; a
+// same-user writer replacing the target mid-read trips its "changed" reason
+// through post-read identity checks on both the held descriptor and its name.
+// The rejection must surface with the exact tagged diagnostic below.
 test("learnProjectProfile: a manifest swapped mid-read rejects with the changed-while-reading diagnostic", async () => {
   const dir = await tmp();
   // Stagings live OUTSIDE the walked root (same tmp filesystem, so the

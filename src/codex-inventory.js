@@ -50,6 +50,18 @@ function tomlString(raw) {
   return null;
 }
 
+function unambiguousTopLevelName(text) {
+  const values = [];
+  for (const line of String(text).split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    if (trimmed.startsWith("[") || trimmed.includes('"""') || trimmed.includes("'''")) break;
+    const assignment = line.match(/^\s*name\s*=\s*("(?:[^"\\]|\\.)*"|'[^']*')\s*(?:#.*)?$/);
+    if (assignment) values.push(tomlString(assignment[1]));
+  }
+  return values.length === 1 && values[0] ? values[0] : null;
+}
+
 async function agentProfileRecords(root, scope, plugin = null) {
   const records = [];
   for (const filename of (await readdirSafe(root)).filter(name => name.endsWith(".toml")).sort()) {
@@ -60,7 +72,20 @@ async function agentProfileRecords(root, scope, plugin = null) {
         maxBytes: 1_048_576,
         label: `Codex agent profile ${path}`,
       });
-      const parsed = parseAgentProfileToml(bytes.toString("utf8"));
+      const text = bytes.toString("utf8");
+      let parsed;
+      try { parsed = parseAgentProfileToml(text); }
+      catch {
+        records.push({
+          name: unambiguousTopLevelName(text) || fallbackName,
+          model: null,
+          status: "unresolved",
+          scope,
+          path,
+          ...(plugin ? { plugin } : {}),
+        });
+        continue;
+      }
       const name = tomlString(parsed.name);
       const model = tomlString(parsed.model);
       records.push({

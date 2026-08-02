@@ -185,3 +185,41 @@ test("codex-audit-provider CLI refuses a project profile whose effective model u
   assert.equal(reviewer.profile.scope, "project");
   assert.equal(reviewer.profile.model, "gpt-5.6-luna");
 });
+
+test("a valid complex profile with name different from filename remains an unresolved shadow", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-codex-audit-complex-shadow-"));
+  const home = join(dir, "home");
+  const codexHome = join(home, ".codex");
+  const agents = join(dir, ".codex", "agents");
+  const bin = join(dir, "bin");
+  await mkdir(codexHome, { recursive: true });
+  await mkdir(agents, { recursive: true });
+  await mkdir(bin, { recursive: true });
+  await writeFile(join(codexHome, "models_cache.json"), JSON.stringify({
+    models: [{ slug: "gpt-5.6-sol", multi_agent_version: "v2" }],
+  }));
+  await writeFile(join(agents, "different-filename.toml"), [
+    "name = 'muster-reviewer'",
+    "model = 'gpt-5.6-sol'",
+    "skills.config = ['review']",
+    "",
+  ].join("\n"));
+  const codex = join(bin, "codex");
+  await writeFile(codex, `#!${process.execPath}\nconsole.log("[]");\n`);
+  await chmod(codex, 0o755);
+  const { stdout } = await execFile(process.execPath, [
+    new URL("../src/cli.js", import.meta.url).pathname,
+    "codex-audit-provider", "--role", "code-review", "--task-id", "audit-readability",
+    "--callable-apis", "v2", "--message", "Review readability",
+  ], {
+    cwd: dir,
+    env: { ...process.env, HOME: home, CODEX_HOME: codexHome, PATH: `${bin}:${process.env.PATH || ""}` },
+  });
+  const result = JSON.parse(stdout);
+  assert.equal(result.mode, "inline");
+  const reviewer = result.degradation.considered.find(candidate => candidate.id === "muster-reviewer");
+  assert.equal(reviewer.available, false);
+  assert.equal(reviewer.profile.status, "unresolved");
+  assert.equal(reviewer.profile.scope, "project");
+  assert.match(reviewer.profile.path, /different-filename\.toml$/);
+});

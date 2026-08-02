@@ -7,6 +7,7 @@ import { join } from "node:path";
 import {
   BACKLOG_RECEIPT_MAX_BYTES,
   BACKLOG_RECEIPT_MAX_CHECKED_ITEMS,
+  BACKLOG_RECEIPT_MAX_LINE_BYTES,
   checkBacklogReceipts,
   makeGitReachabilityVerifier,
 } from "../src/backlog-receipts.js";
@@ -81,6 +82,11 @@ test("a checked item without an explicit id is identified by its line", () => {
   assert.equal(result.errors[0].line, 2);
 });
 
+test("adversarial annotation parsing is bounded by a conservative checked-line cap", { timeout: 1_000 }, () => {
+  const hostile = `- [x] hostile ${"{a:".repeat(Math.ceil((BACKLOG_RECEIPT_MAX_LINE_BYTES * 4) / 3))}}x`;
+  assert.throws(() => check(hostile), /checked backlog line exceeds 65536 bytes/i);
+});
+
 test("CLI verifies against the declared release ref and reports every stale checked item", async () => {
   const cwd = await tmpProject({ "seed.txt": "seed\n" });
   await pexecFile("git", ["init", "-b", "main"], { cwd });
@@ -121,7 +127,7 @@ test("operational git failures throw instead of masquerading as ordinary unreach
   const cwd = await tmpProject();
   assert.throws(
     () => makeGitReachabilityVerifier({ cwd, releaseCommit: "1111111111111111111111111111111111111111" }),
-    /requires a repository/i,
+    /git rev-parse|requires a repository/i,
   );
 });
 
@@ -173,6 +179,39 @@ test("corrupt object storage is an operational Git failure, not an unreachable r
   assert.throws(() => verifier(receipt), /git cat-file.*failed/i);
 });
 
+test("unexpected merge-base stderr is an operational failure even with exit zero", () => {
+  const receipt = "2222222222222222222222222222222222222222";
+  const verifier = makeGitReachabilityVerifier({
+    cwd: "/repo",
+    releaseCommit: "1111111111111111111111111111111111111111",
+    spawnSyncImpl(command, args) {
+      if (args[0] === "rev-parse") return { status: 0, stdout: "", stderr: "" };
+      if (args[0] === "cat-file") return { status: 0, stdout: `${receipt} commit\n`, stderr: "" };
+      return { status: 0, stdout: "", stderr: "warning: ancestry metadata changed\n" };
+    },
+  });
+  assert.throws(() => verifier(receipt), /git merge-base.*exit 0/i);
+});
+
+test("legacy graft metadata is rejected before it can forge receipt ancestry", async () => {
+  const cwd = await tmpProject({ "seed.txt": "release\n" });
+  await pexecFile("git", ["init", "-b", "main"], { cwd });
+  await pexecFile("git", ["add", "."], { cwd });
+  await pexecFile("git", ["-c", "user.name=Muster Test", "-c", "user.email=test@example.invalid", "commit", "-m", "release"], { cwd });
+  const releaseCommit = (await pexecFile("git", ["rev-parse", "HEAD"], { cwd })).stdout.trim();
+  await pexecFile("git", ["checkout", "--orphan", "side"], { cwd });
+  await writeFile(join(cwd, "seed.txt"), "unrelated receipt\n");
+  await pexecFile("git", ["add", "."], { cwd });
+  await pexecFile("git", ["-c", "user.name=Muster Test", "-c", "user.email=test@example.invalid", "commit", "-m", "receipt"], { cwd });
+  const receipt = (await pexecFile("git", ["rev-parse", "HEAD"], { cwd })).stdout.trim();
+  await pexecFile("git", ["checkout", "main"], { cwd });
+  await writeFile(join(cwd, ".git", "info", "grafts"), `${releaseCommit} ${receipt}\n`);
+  assert.throws(
+    () => makeGitReachabilityVerifier({ cwd, releaseCommit }),
+    /refuses legacy info\/grafts metadata/i,
+  );
+});
+
 test("checked-item processing is capped and repeated receipt SHAs are verified once", () => {
   let calls = 0;
   const duplicate = checkBacklogReceipts([
@@ -220,6 +259,23 @@ test("CI scanner validates immutable index blobs rather than replaced working-tr
   await assert.rejects(() => pexecFile(process.execPath, [script, "--release-ref", "main"], { cwd }), (error) => {
     assert.equal(error.code, 2);
     assert.equal(JSON.parse(error.stdout).rejected, 1);
+    return true;
+  });
+});
+
+test("CI scanner disables replacement objects that map a stale checklist to harmless bytes", async () => {
+  const cwd = await tmpProject({ "seed.txt": "seed\n", "roadmap.txt": "- [x] stale {id: replaced}\n" });
+  await pexecFile("git", ["init", "-b", "main"], { cwd });
+  await pexecFile("git", ["add", "."], { cwd });
+  await pexecFile("git", ["-c", "user.name=Muster Test", "-c", "user.email=test@example.invalid", "commit", "-m", "seed"], { cwd });
+  const indexedBlob = (await pexecFile("git", ["rev-parse", ":roadmap.txt"], { cwd })).stdout.trim();
+  const harmless = spawnSync("git", ["hash-object", "-w", "--stdin"], { cwd, encoding: "utf8", input: "harmless\n" });
+  assert.equal(harmless.status, 0);
+  await pexecFile("git", ["replace", indexedBlob, harmless.stdout.trim()], { cwd });
+  const script = new URL("../scripts/check-backlog-receipts.mjs", import.meta.url).pathname;
+  await assert.rejects(() => pexecFile(process.execPath, [script, "--release-ref", "main"], { cwd }), (error) => {
+    assert.equal(error.code, 2);
+    assert.equal(JSON.parse(error.stdout).results[0].errors[0].id, "replaced");
     return true;
   });
 });

@@ -13,7 +13,11 @@ const utf8 = new TextDecoder("utf-8", { fatal: true });
 
 function git(args, { input, allowNoMatch = false, maxBuffer = GIT_OUTPUT_MAX_BYTES } = {}) {
   const result = spawnSync("git", args, {
-    cwd: process.cwd(), input, maxBuffer, stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
+    cwd: process.cwd(),
+    env: { ...process.env, GIT_NO_REPLACE_OBJECTS: "1" },
+    input,
+    maxBuffer,
+    stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
   });
   if (allowNoMatch && result.status === 1 && !result.error) return result;
   if (result.error || result.status !== 0 || result.stderr.length !== 0) {

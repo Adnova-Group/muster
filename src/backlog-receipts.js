@@ -1,4 +1,6 @@
 import { spawnSync } from "node:child_process";
+import { lstatSync } from "node:fs";
+import { resolve } from "node:path";
 import { stripAnnotations } from "./sprint-waves.js";
 
 const CHECKED_CHECKBOX_RE = /^- \[[xX]\] (.*)$/;
@@ -6,6 +8,20 @@ const SHA_RE = /^[0-9a-f]{40}$/;
 export const BACKLOG_RECEIPT_MAX_BYTES = 16 * 1024 * 1024;
 export const BACKLOG_RECEIPT_MAX_CHECKED_ITEMS = 1_000;
 export const BACKLOG_RECEIPT_MAX_UNIQUE_RECEIPTS = 1_000;
+export const BACKLOG_RECEIPT_MAX_LINE_BYTES = 64 * 1024;
+
+function hasStderr(result) {
+  return result.stderr !== undefined && result.stderr !== null && result.stderr.length !== 0;
+}
+
+function gitOptions(cwd, extra = {}) {
+  return {
+    cwd,
+    encoding: "utf8",
+    env: { ...process.env, GIT_NO_REPLACE_OBJECTS: "1" },
+    ...extra,
+  };
+}
 
 function gitFailure(operation, result) {
   if (result.error) throw result.error;
@@ -27,6 +43,9 @@ export function checkBacklogReceipts(content, {
   content.split(/\r?\n/).forEach((line, index) => {
     const match = CHECKED_CHECKBOX_RE.exec(line.replace(/^\s+/, ""));
     if (!match) return;
+    if (Buffer.byteLength(line) > BACKLOG_RECEIPT_MAX_LINE_BYTES) {
+      throw new Error(`checked backlog line exceeds ${BACKLOG_RECEIPT_MAX_LINE_BYTES} bytes`);
+    }
     checked += 1;
     if (checked > maxCheckedItems) {
       throw new Error(`backlog contains more than ${maxCheckedItems} permitted checked items`);
@@ -76,31 +95,42 @@ export function checkBacklogReceipts(content, {
 
 export function makeGitReachabilityVerifier({ cwd, releaseCommit, spawnSyncImpl = spawnSync }) {
   if (!SHA_RE.test(releaseCommit || "")) throw new TypeError("releaseCommit must be a lowercase 40-character Git SHA");
-  const repository = spawnSyncImpl("git", ["rev-parse", "--git-dir"], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const graftLocation = spawnSyncImpl("git", ["rev-parse", "--git-path", "info/grafts"], gitOptions(cwd, { stdio: ["ignore", "pipe", "pipe"] }));
+  if (graftLocation.error || graftLocation.status !== 0 || hasStderr(graftLocation)) gitFailure("git rev-parse --git-path info/grafts", graftLocation);
+  const graftPath = graftLocation.stdout.trim();
+  if (graftPath) {
+    try {
+      lstatSync(resolve(cwd, graftPath));
+      throw new Error("git reachability verification refuses legacy info/grafts metadata");
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+  }
+  const repository = spawnSyncImpl("git", ["rev-parse", "--git-dir"], gitOptions(cwd, { stdio: ["ignore", "pipe", "pipe"] }));
   if (repository.error) throw repository.error;
-  if (repository.status !== 0) throw new Error("git reachability verification requires a repository");
+  if (repository.status !== 0 || hasStderr(repository)) throw new Error("git reachability verification requires a repository");
   return (receipt) => {
     // Batch-check reports an unknown object as structured `missing` output while
     // reserving a nonzero process status for an operational Git failure. `cat-file
     // -e` collapses both cases to a nonzero exit (commonly 128), which would let a
     // broken object database masquerade as an ordinary stale receipt.
     const object = spawnSyncImpl("git", ["cat-file", "--batch-check=%(objectname) %(objecttype)"], {
-      cwd,
-      encoding: "utf8",
+      ...gitOptions(cwd),
       input: `${receipt}\n`,
       stdio: ["pipe", "pipe", "pipe"],
     });
-    if (object.status !== 0 || object.error || object.stderr !== "") gitFailure("git cat-file --batch-check", object);
+    if (object.status !== 0 || object.error || hasStderr(object)) gitFailure("git cat-file --batch-check", object);
     const objectLine = object.stdout.trim();
     if (objectLine === `${receipt} missing`) return false;
     if (objectLine !== `${receipt} commit`) {
       if (/^[0-9a-f]{40} \S+$/.test(objectLine)) return false;
       throw new Error("git cat-file --batch-check returned an invalid response");
     }
-    const result = spawnSyncImpl("git", ["merge-base", "--is-ancestor", receipt, releaseCommit], {
-      cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
-    });
+    const result = spawnSyncImpl("git", ["merge-base", "--is-ancestor", receipt, releaseCommit], gitOptions(cwd, {
+      stdio: ["ignore", "pipe", "pipe"],
+    }));
     if (result.error) throw result.error;
+    if (hasStderr(result)) gitFailure("git merge-base --is-ancestor", result);
     if (result.status === 0) return true;
     if (result.status === 1) return false;
     gitFailure("git merge-base --is-ancestor", result);

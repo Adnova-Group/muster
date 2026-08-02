@@ -52,14 +52,17 @@ const args = process.argv.slice(2);
 if (args[0] === "--version") return process.stdout.write("codex-cli 0.145.0\\n");
 if (args[0] === "--help") return process.stdout.write("--ask-for-approval\\n");
 if (args[0] === "exec" && args[1] === "--help") return process.stdout.write("--json --ignore-user-config --ignore-rules --strict-config --ephemeral --sandbox\\n");
-const cwd = args.includes("-C") ? args[args.indexOf("-C") + 1] : "/mnt";
+const cwd = args.includes("-C") ? args[args.indexOf("-C") + 1] : process.cwd();
 const input = fs.readFileSync(0, "utf8");
 const isResume = args.includes("resume");
 const payload = isResume ? {value:"resumed",delayMs:10} : JSON.parse(input);
+if (payload.writeIgnoredConfig) {
+  fs.writeFileSync(process.env.CODEX_HOME + "/config.toml", '[projects."/trusted"]\\ntrust_level = "trusted"\\n', {mode:0o600});
+}
 const worker = require("node:path").basename(fs.realpathSync("/proc/self/fd/3"));
 if (isResume) fs.appendFileSync(${JSON.stringify(launches)}, "resume-stdin:" + (/^The following JSON-encoded reviewer findings/.test(input) && input.includes("<remote-text>")) + "\\n");
 if (payload.escapeProcessGroup) {
-  require("node:child_process").spawn("setsid", ["sh", "-c", "sleep 0.3; printf escaped > /mnt/escaped.txt"], {detached:true,stdio:"ignore"}).unref();
+  require("node:child_process").spawn("setsid", ["sh", "-c", "sleep 0.3; printf escaped > " + cwd + "/escaped.txt"], {detached:true,stdio:"ignore"}).unref();
 }
 fs.appendFileSync(${JSON.stringify(launches)}, "worker-start:" + worker + "\\n");
 fs.appendFileSync(${JSON.stringify(launches)}, "env-secret:" + String(process.env.SUPER_SECRET) + "\\n");
@@ -124,6 +127,11 @@ test("posix containment pins cwd through fd 3 and creates a non-escapable PID na
   assert.equal(call.command, "/usr/bin/bwrap");
   assert.deepEqual(call.argv.slice(0, 4), ["--die-with-parent", "--unshare-pid", "--new-session", "--proc"]);
   assert.ok(call.argv.includes("/proc/self/fd/3"));
+  assert.ok(call.argv.includes("/tmp/muster-worktree"));
+  assert.equal(call.argv.includes("/mnt"), false, "the worktree mount must not hide WSL's /mnt/wsl/resolv.conf");
+  assert.deepEqual(call.argv.slice(call.argv.indexOf("--dir"), call.argv.indexOf("--dir") + 3), [
+    "--dir", "/tmp/muster-worktree", "--bind",
+  ]);
   assert.deepEqual(call.argv.slice(-4), ["codex", "exec", "--", "-"]);
 });
 
@@ -265,6 +273,27 @@ test("runCodexWave resumes an authenticated persistent thread inside the same he
   assert.match(launches, /MUSTER TRUSTED FORBIDDEN ACTIONS/);
   assert.match(launches, /Never perform, authorize, or facilitate any listed action/);
   assert.doesNotMatch(launches, /exec .*--ephemeral/);
+});
+
+test("runCodexWaveContinuation accepts an unchanged owner-only config created by Codex while user config stays ignored", async t => {
+  const fixture = await waveFixture(t);
+  const configured = member("a", fixture.worktreeA);
+  configured.prompt = JSON.stringify({ value: "initial", delayMs: 10, writeIgnoredConfig: true });
+  const initial = await runCodexWave({
+    members: [configured],
+    codexCommand: fixture.codex,
+    repositoryRoot: fixture.repo,
+    baseSha: fixture.baseSha,
+  });
+  await rm(join(fixture.worktreeA, "result.txt"));
+  const resumed = await runCodexWaveContinuation({
+    receiptId: initial.results[0].receiptId,
+    blockers: ["still broken"],
+    codexCommand: fixture.codex,
+    repositoryRoot: fixture.repo,
+  });
+  assert.equal(resumed.mode, "exec-process-resume");
+  assert.equal(await readFile(join(fixture.worktreeA, "result.txt"), "utf8"), "resumed");
 });
 
 test("runCodexWave masks receipt and sibling-session storage from worker tools", async t => {

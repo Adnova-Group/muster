@@ -468,6 +468,11 @@ export function codexExecCall({
   }
   const argv = [
     "--ask-for-approval", approvalPolicy,
+    "--disable", "plugins",
+    "--disable", "remote_plugin",
+    "--disable", "apps",
+    "--disable", "skill_search",
+    "--disable", "skill_mcp_dependency_install",
     "exec", "--json", "--ignore-user-config", "--ignore-rules", "--strict-config",
   ];
   if (ephemeral) argv.push("--ephemeral");
@@ -503,6 +508,11 @@ export function codexExecResumeCall({
   if (!['untrusted', 'on-request', 'never'].includes(approvalPolicy)) throw new Error("codexExecResumeCall: unsupported approval policy");
   const argv = [
     "--ask-for-approval", approvalPolicy,
+    "--disable", "plugins",
+    "--disable", "remote_plugin",
+    "--disable", "apps",
+    "--disable", "skill_search",
+    "--disable", "skill_mcp_dependency_install",
     "exec", "--sandbox", sandbox,
     "resume", "--json", "--ignore-user-config", "--ignore-rules", "--strict-config",
     "-c", 'shell_environment_policy.inherit="none"',

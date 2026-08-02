@@ -38,7 +38,10 @@ const REQUIRED_EXEC_FEATURES = Object.freeze([
   "--sandbox",
 ]);
 const REQUIRED_ROOT_FEATURES = Object.freeze(["--ask-for-approval"]);
-const CONTAINED_CWD = "/mnt";
+// Do not mount the worktree over /mnt. WSL commonly makes /etc/resolv.conf a
+// symlink to /mnt/wsl/resolv.conf, so shadowing /mnt breaks DNS inside the
+// otherwise network-sharing Bubblewrap process.
+const CONTAINED_CWD = "/tmp/muster-worktree";
 const TRUSTED_GIT_COMMAND = "/usr/bin/git";
 const ACTION_CLASSES = new Set(["send", "sign", "submit", "publish", "purchase", "delete-remote"]);
 const CODEX_THREAD_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -73,6 +76,7 @@ export function posixContainmentCall({
       "--die-with-parent", "--unshare-pid", "--new-session", "--proc", "/proc",
       "--dev-bind", "/", "/",
       ...privateMounts,
+      "--dir", CONTAINED_CWD,
       "--bind", `/proc/self/fd/${descriptorFd}`, CONTAINED_CWD,
       "--chdir", CONTAINED_CWD, "--", command, ...argv,
     ],
@@ -627,7 +631,7 @@ function isolatedCodexHomeBinds(home) {
 }
 
 async function assertNoExecutableSessionConfig(sessionHome) {
-  for (const relativePath of ["AGENTS.md", "AGENTS.override.md", "config.toml", "hooks.json", "rules", "skills", "agents", "plugins"]) {
+  for (const relativePath of ["AGENTS.md", "AGENTS.override.md", "hooks.json", "rules", "agents", "plugins"]) {
     try {
       await lstat(join(sessionHome, relativePath));
       throw new Error(`runCodexWaveContinuation: isolated Codex home contains executable discovery surface ${JSON.stringify(relativePath)}`);
@@ -635,6 +639,80 @@ async function assertNoExecutableSessionConfig(sessionHome) {
       if (error.code !== "ENOENT") throw error;
     }
   }
+}
+
+async function systemSkillsSnapshot(sessionHome) {
+  const skillsRoot = join(sessionHome, "skills");
+  let topLevel;
+  try { topLevel = await readdir(skillsRoot, { withFileTypes: true }); }
+  catch (error) { if (error.code === "ENOENT") return null; throw error; }
+  if (topLevel.some(entry => entry.name !== ".system")) {
+    throw new Error('runCodexWaveContinuation: isolated Codex home contains executable discovery surface "skills/non-system"');
+  }
+  if (!topLevel.length) return null;
+  const systemRoot = join(skillsRoot, ".system");
+  const systemInfo = await lstat(systemRoot);
+  if (!systemInfo.isDirectory() || systemInfo.isSymbolicLink() || (systemInfo.mode & 0o022) !== 0
+    || (typeof process.getuid === "function" && systemInfo.uid !== process.getuid())) {
+    throw new Error("runCodexWaveContinuation: system skill root is not owner-controlled and non-writable");
+  }
+  const rows = [];
+  let totalBytes = 0;
+  async function walk(directory, prefix = "") {
+    const entries = await readdir(directory, { withFileTypes: true });
+    for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+      const path = join(directory, entry.name);
+      const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
+      const info = await lstat(path);
+      if (entry.isSymbolicLink() || (info.mode & 0o022) !== 0
+        || (typeof process.getuid === "function" && info.uid !== process.getuid())) {
+        throw new Error("runCodexWaveContinuation: system skill tree is not owner-controlled and non-writable");
+      }
+      if (entry.isDirectory()) {
+        rows.push(["d", relativePath, info.mode & 0o777]);
+        await walk(path, relativePath);
+      } else if (entry.isFile()) {
+        const read = await readNoFollowRegular(path, {
+          maxBytes: 256 * 1024,
+          label: `system skill ${relativePath}`,
+          requireSingleLink: true,
+        });
+        totalBytes += read.bytes.length;
+        if (totalBytes > 2 * 1024 * 1024) throw new Error("runCodexWaveContinuation: system skill tree exceeds 2 MiB");
+        rows.push(["f", relativePath, info.mode & 0o777, read.bytes.length, createHash("sha256").update(read.bytes).digest("hex")]);
+      } else {
+        throw new Error("runCodexWaveContinuation: system skill tree contains a special file");
+      }
+      if (rows.length > 256) throw new Error("runCodexWaveContinuation: system skill tree exceeds 256 entries");
+    }
+  }
+  await walk(systemRoot);
+  return { entries: rows.length, bytes: totalBytes, sha256: createHash("sha256").update(JSON.stringify(rows)).digest("hex") };
+}
+
+async function ignoredUserConfigSnapshot(sessionHome) {
+  try {
+    const read = await readNoFollowRegular(join(sessionHome, "config.toml"), {
+      maxBytes: 64 * 1024,
+      label: "ignored Codex user config",
+      requireSingleLink: true,
+    });
+    if ((read.info.mode & 0o077) !== 0
+      || (typeof process.getuid === "function" && read.info.uid !== process.getuid())) {
+      throw new Error("runCodexWaveContinuation: ignored Codex user config is not owner-only");
+    }
+    return {
+      bytes: read.bytes.length,
+      sha256: createHash("sha256").update(read.bytes).digest("hex"),
+    };
+  } catch (error) {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+function sameIgnoredUserConfig(left, right) {
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function isCodexDiscoveryPath(path) {
@@ -1083,6 +1161,8 @@ async function runProcessWave({
           return { error };
         }
         const headSha = await gitText(member.cwd, ["rev-parse", "HEAD"], deadline);
+        const ignoredUserConfig = await ignoredUserConfigSnapshot(isolatedHome.sessionHome);
+        const systemSkills = await systemSkillsSnapshot(isolatedHome.sessionHome);
         const receiptId = await writeFixLoopReceipt(fixLoopStore, {
           format: FIX_LOOP_RECEIPT_FORMAT,
           memberId: member.id,
@@ -1094,6 +1174,8 @@ async function runProcessWave({
           headSha,
           sessionHome: isolatedHome.sessionHome,
           sessionMountPoint: isolatedHome.mountPoint,
+          ignoredUserConfig,
+          systemSkills,
           codexVersion: support.version,
           codexCommand: await realpath(codexCommand),
           rolePolicy: {
@@ -1178,6 +1260,14 @@ export async function runCodexWaveContinuation({
   if (JSON.stringify(authenticated) !== JSON.stringify(receipt)) throw new Error("runCodexWaveContinuation: receipt changed during validation");
   const isolatedHome = await validateIsolatedCodexHome(store, receipt.sessionHome, receipt.sessionMountPoint);
   await assertNoExecutableSessionConfig(isolatedHome.sessionHome);
+  const ignoredUserConfig = await ignoredUserConfigSnapshot(isolatedHome.sessionHome);
+  if (!sameIgnoredUserConfig(ignoredUserConfig, receipt.ignoredUserConfig ?? null)) {
+    throw new Error("runCodexWaveContinuation: ignored Codex user config changed after the retained turn");
+  }
+  const systemSkills = await systemSkillsSnapshot(isolatedHome.sessionHome);
+  if (!sameIgnoredUserConfig(systemSkills, receipt.systemSkills ?? null)) {
+    throw new Error("runCodexWaveContinuation: native system skill tree changed after the retained turn");
+  }
   const headAuthority = await prepareTrustedRepository(receipt.repositoryRoot, receipt.headSha, deadline);
   if (headAuthority.commonDir !== authority.commonDir) throw new Error("runCodexWaveContinuation: worktree repository changed");
   const revalidated = await validateRegisteredLinkedWorktree(member, headAuthority, null, { deadline, pinDirectory: true, includeIgnored: false });
@@ -1240,6 +1330,14 @@ export async function runCodexWaveContinuation({
   const terminal = parseCodexTurnResult(result.stdout);
   if (!terminal.completed || result.threadId !== receipt.threadId) {
     throw new Error("runCodexWaveContinuation: resume did not complete on the exact retained thread");
+  }
+  const finalIgnoredUserConfig = await ignoredUserConfigSnapshot(isolatedHome.sessionHome);
+  if (!sameIgnoredUserConfig(finalIgnoredUserConfig, ignoredUserConfig)) {
+    throw new Error("runCodexWaveContinuation: ignored Codex user config changed during resume");
+  }
+  const finalSystemSkills = await systemSkillsSnapshot(isolatedHome.sessionHome);
+  if (!sameIgnoredUserConfig(finalSystemSkills, systemSkills)) {
+    throw new Error("runCodexWaveContinuation: native system skill tree changed during resume");
   }
   const headSha = await gitText(receipt.cwd, ["rev-parse", "HEAD"], deadline);
   const { receiptId: _priorReceiptId, ...nextReceipt } = receipt;

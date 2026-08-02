@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
@@ -20,16 +20,16 @@ if (!Number.isInteger(caseCount) || caseCount < 1 || caseCount > 10) throw new E
 const scriptRoot = dirname(fileURLToPath(import.meta.url));
 const projectRoot = dirname(scriptRoot);
 const tasks = [
-  ["add_offset", "return value + 7", "return value - 7", 5, 12],
-  ["subtract_offset", "return value - 4", "return value + 4", 13, 9],
-  ["double_value", "return value * 2", "return value + 2", 8, 16],
-  ["triple_value", "return value * 3", "return value * 2", 6, 18],
-  ["square_value", "return value * value", "return value + value", 7, 49],
-  ["absolute_value", "return Math.abs(value)", "return -value", 11, 11],
-  ["floor_value", "return Math.floor(value)", "return Math.ceil(value)", 4.8, 4],
-  ["ceil_value", "return Math.ceil(value)", "return Math.floor(value)", 4.2, 5],
-  ["bounded_value", "return Math.min(10, Math.max(0, value))", "return Math.max(10, value)", 14, 10],
-  ["negate_value", "return -value", "return value", 9, -9],
+  ["add_offset", "return value + 7", "return value - 7", 5, 12, -2],
+  ["subtract_offset", "return value - 4", "return value + 4", 13, 9, 17],
+  ["double_value", "return value * 2", "return value + 2", 8, 16, 10],
+  ["triple_value", "return value * 3", "return value * 2", 6, 18, 12],
+  ["square_value", "return value * value", "return value + value", 7, 49, 14],
+  ["absolute_value", "return Math.abs(value)", "return -value", 11, 11, -11],
+  ["floor_value", "return Math.floor(value)", "return Math.ceil(value)", 4.8, 4, 5],
+  ["ceil_value", "return Math.ceil(value)", "return Math.floor(value)", 4.2, 5, 4],
+  ["bounded_value", "return Math.min(10, Math.max(0, value))", "return Math.max(10, value)", 14, 10, 14],
+  ["negate_value", "return -value", "return value", 9, -9, 9],
 ];
 
 function run(command, argv, options = {}) {
@@ -37,7 +37,7 @@ function run(command, argv, options = {}) {
 }
 
 async function initializePair(root, task, index) {
-  const [name, , wrong, input, expected] = task;
+  const [name, , wrong, input, , baselineExpected] = task;
   const repo = join(root, "repo");
   const resumed = join(root, "resumed");
   const fresh = join(root, "fresh");
@@ -50,7 +50,7 @@ async function initializePair(root, task, index) {
     `import { ${name} } from "../src/operation.js";`,
     "",
     `test("${name} returns the required value", () => {`,
-    `  assert.equal(${name}(${JSON.stringify(input)}), ${JSON.stringify(expected)});`,
+    `  assert.equal(${name}(${JSON.stringify(input)}), ${JSON.stringify(baselineExpected)});`,
     "});",
     "",
   ].join("\n"));
@@ -94,18 +94,8 @@ function verify(cwd) {
   return { passed: true, command: "node --test test/operation.test.js", outputSha256: createHash("sha256").update(output).digest("hex") };
 }
 
-function verifyExpectedFailure(cwd) {
-  const command = "node --test test/operation.test.js";
-  const result = spawnSync(process.execPath, ["--test", "test/operation.test.js"], { cwd, encoding: "utf8" });
-  if (result.error) throw result.error;
-  if (result.status === 0) throw new Error(`${cwd}: benchmark fixture must fail before Codex dispatch`);
-  return {
-    passed: false,
-    command,
-    exitCode: result.status,
-    stdoutSha256: createHash("sha256").update(result.stdout || "").digest("hex"),
-    stderrSha256: createHash("sha256").update(result.stderr || "").digest("hex"),
-  };
+function verifyBaseline(cwd) {
+  return verify(cwd);
 }
 
 function brief({ name, correct, input, expected, cwd, baseSha, blocker }) {
@@ -161,17 +151,17 @@ try {
     const pairRoot = join(benchmarkRoot, `${String(index + 1).padStart(2, "0")}-${name}`);
     const fixture = await initializePair(pairRoot, task, index + 1);
     const baseline = {
-      resumed: verifyExpectedFailure(fixture.resumed),
-      fresh: verifyExpectedFailure(fixture.fresh),
+      resumed: verifyBaseline(fixture.resumed),
+      fresh: verifyBaseline(fixture.fresh),
     };
     const fixtureSha256 = createHash("sha256").update(await readFile(join(fixture.repo, "test", "operation.test.js"))).digest("hex");
     if (baselineOnly) {
       evidence.cases.push({ case: name, fixtureSha256, baseline });
-      process.stderr.write(`verified failing baseline ${index + 1}/${caseCount}: ${name}\n`);
+      process.stderr.write(`verified green pre-review baseline ${index + 1}/${caseCount}: ${name}\n`);
       continue;
     }
     const store = join(pairRoot, "protected-receipts");
-    const blocker = `test/operation.test.js demonstrates ${name}(${JSON.stringify(input)}) must return ${JSON.stringify(expected)}; fix only src/operation.js and run the focused test.`;
+    const blocker = `Review found the old expectation is obsolete. Update test/operation.test.js so ${name}(${JSON.stringify(input)}) must return ${JSON.stringify(expected)}, verify that regression fails, then fix src/operation.js and run the focused test.`;
     const seed = await productionTurn({
       id: `seed-${name}`,
       cwd: fixture.resumed,

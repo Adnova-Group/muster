@@ -7,6 +7,11 @@ import {
   resolveCodexReviewRouting, CODEX_EXEC_MODES
 } from "../src/wave-dispatch.js";
 
+const PRODUCTION_FEATURE_FENCE = [
+  "--disable", "plugins", "--disable", "remote_plugin", "--disable", "apps",
+  "--disable", "skill_search", "--disable", "skill_mcp_dependency_install",
+];
+
 // --- lane selection ---------------------------------------------------------
 
 test("resolveCodexDispatchLane is an unconditional process-only production selector", () => {
@@ -23,7 +28,8 @@ test("codexExecCall: always emits --json, and -C is what actually isolates", () 
   const call = codexExecCall({ prompt: "do the thing", cwd: "/w/item-1" });
   assert.equal(call.command, "codex");
   assert.deepEqual(call.argv, [
-    "--ask-for-approval", "never", "exec", "--json", "--ignore-user-config", "--ignore-rules",
+    "--ask-for-approval", "never", ...PRODUCTION_FEATURE_FENCE,
+    "exec", "--json", "--ignore-user-config", "--ignore-rules",
     "--strict-config", "--ephemeral", "-c", 'shell_environment_policy.inherit="none"',
     "--sandbox", "workspace-write",
     "-C", "/w/item-1", "--", "-",
@@ -39,7 +45,8 @@ test("codexExecCall: threads policy, model, schema, last-message and git-check f
     lastMessagePath: "/out.txt", sandbox: "read-only", approvalPolicy: "untrusted", skipGitCheck: true
   });
   assert.deepEqual(call.argv, [
-    "--ask-for-approval", "untrusted", "exec", "--json", "--ignore-user-config", "--ignore-rules",
+    "--ask-for-approval", "untrusted", ...PRODUCTION_FEATURE_FENCE,
+    "exec", "--json", "--ignore-user-config", "--ignore-rules",
     "--strict-config", "--ephemeral", "-c", 'shell_environment_policy.inherit="none"',
     "--sandbox", "read-only", "-C", "/w",
     "-m", "gpt-5.6-sol", "--output-schema", "/s.json", "-o", "/out.txt",
@@ -81,8 +88,9 @@ test("codexExecResumeCall: exec-level sandbox precedes the resume subcommand", (
     model: "gpt-5.6-sol",
     sandbox: "workspace-write",
   });
-  assert.deepEqual(call.argv.slice(0, 10), [
-    "--ask-for-approval", "never", "exec", "--sandbox", "workspace-write",
+  assert.deepEqual(call.argv.slice(0, 2 + PRODUCTION_FEATURE_FENCE.length + 8), [
+    "--ask-for-approval", "never", ...PRODUCTION_FEATURE_FENCE,
+    "exec", "--sandbox", "workspace-write",
     "resume", "--json", "--ignore-user-config", "--ignore-rules", "--strict-config",
   ]);
   assert.equal(call.stdin, "review delta");

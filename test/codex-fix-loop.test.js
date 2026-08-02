@@ -107,12 +107,10 @@ test("10-case production benchmark clears the median raw input-token and time-to
   assert.match(evidence.productionPath.continued, /runCodexWaveContinuation/);
   assert.ok(evidence.cases.every(entry =>
     entry.fixtureSha256 &&
-    entry.baseline?.fresh?.passed === false &&
-    entry.baseline?.resumed?.passed === false &&
-    entry.baseline.fresh.exitCode > 0 &&
-    entry.baseline.resumed.exitCode > 0 &&
-    entry.baseline.fresh.stdoutSha256 &&
-    entry.baseline.resumed.stdoutSha256 &&
+    entry.baseline?.fresh?.passed === true &&
+    entry.baseline?.resumed?.passed === true &&
+    entry.baseline.fresh.outputSha256 &&
+    entry.baseline.resumed.outputSha256 &&
     entry.seed.receiptId &&
     entry.seed.threadIdSha256 === entry.continued.threadIdSha256 &&
     entry.seed.stdoutSha256 &&

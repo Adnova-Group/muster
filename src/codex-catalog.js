@@ -38,8 +38,16 @@ export function adaptCatalogForCodex(catalog, installed) {
       continue;
     }
 
-    const nativeId = nativeSkillId(entry.id);
-    if (nativeId && liveSkills.has(nativeId)) {
+    const nativeName = nativeSkillId(entry.id);
+    const suffixMatches = nativeName
+      ? [...liveSkills].filter(id => id === nativeName || id.endsWith(`:${nativeName}`))
+      : [];
+    // Prefer an exact id. A single namespaced suffix is also unambiguous; if
+    // multiple plugins shadow the same basename, do not invent a winner.
+    const nativeId = suffixMatches.includes(nativeName)
+      ? nativeName
+      : suffixMatches.length === 1 ? suffixMatches[0] : null;
+    if (nativeId) {
       upstream.push({
         id: nativeId,
         kind: "external",

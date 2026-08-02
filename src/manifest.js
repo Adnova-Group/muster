@@ -163,7 +163,7 @@ export function validateManifest(m) {
 // than assuming every binding is unresolved (existing callers that don't run
 // resolveCapabilities() first get no false positives). Passing an explicit `[]` is a
 // deliberate "nothing is installed" inventory and will flag every binding.
-export function manifestWarnings(m, skillsInventory) {
+export function manifestWarnings(m, skillsInventory, opts = {}) {
   const warnings = [];
   const crew = Array.isArray(m?.crew) ? m.crew : [];
   if (crew.length > 0 && crew.every((c) => c && c.source === "inline")) {
@@ -175,12 +175,24 @@ export function manifestWarnings(m, skillsInventory) {
   }
 
   const plan = Array.isArray(m?.plan) ? m.plan : [];
-  // Namespace-insensitive (lastColonSegment), matching every other id comparison
-  // against a live inventory elsewhere in the codebase (see match.js). `null` means
-  // "no inventory was supplied" -> the per-binding resolution check below is skipped.
-  const inventorySegments = Array.isArray(skillsInventory)
-    ? new Set(skillsInventory.map((e) => lastColonSegment(String(e?.id ?? "")).toLowerCase()))
+  // Codex runtime ids are exact, namespaced callable identifiers. Other lanes keep
+  // the historical namespace-insensitive comparison. `null` means either no
+  // inventory was supplied or the native authority explicitly reported an
+  // incomplete inventory, so absence cannot truthfully be inferred.
+  const normalizeInventoryId = opts.exactSkillIds
+    ? (id) => String(id ?? "").trim().toLowerCase()
+    : (id) => lastColonSegment(String(id ?? "")).toLowerCase();
+  const inventorySegments = Array.isArray(skillsInventory) && opts.inventoryComplete !== false
+    ? new Set(skillsInventory.map((e) => normalizeInventoryId(e?.id)))
     : null;
+
+  if (Array.isArray(skillsInventory) && opts.inventoryComplete === false
+      && plan.some(p => Array.isArray(p?.skills) && p.skills.length)) {
+    warnings.push(
+      "skill inventory incomplete: the runtime capability authority could not fully enumerate callable skills; " +
+      "bound skill ids were not classified as absent."
+    );
+  }
 
   plan.forEach((p, i) => {
     if (!p || typeof p !== "object") return; // shape errors are validateManifest's job
@@ -193,7 +205,7 @@ export function manifestWarnings(m, skillsInventory) {
     if (inventorySegments) {
       skills.forEach((s, j) => {
         if (!s || typeof s.id !== "string" || !s.id.trim()) return; // shape errors handled by validateManifest
-        if (!inventorySegments.has(lastColonSegment(s.id).toLowerCase())) {
+        if (!inventorySegments.has(normalizeInventoryId(s.id))) {
           warnings.push(
             `plan task "${taskLabel}".skills[${j}].id "${s.id}": not found in resolveCapabilities().skills -- ` +
               "likely a hallucinated or uninstalled skill id (bound skills must resolve in the live inventory)."

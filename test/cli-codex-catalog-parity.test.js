@@ -7,13 +7,13 @@
 // capabilities against one shared probe signal each.
 //
 // Probe signals:
-//  - a project-local codex skill (zz-codex-probe) visible ONLY via the codex
-//    inventory (<cwd>/.codex/skills) -- capabilities/match --skills/manifest
+//  - an exact runtime skill (zz-codex-probe) visible ONLY via Codex app-server's
+//    skills/list inventory -- capabilities/match --skills/manifest
 //    validate must see it with --codex and not without;
 //  - the gsd-* -> muster-gsd-* id rewrite adaptCatalogForCodex applies --
 //    `match` must emit the renamed id with --codex and the raw id without.
 // Both signals are environment-independent: HOME points at an empty temp dir
-// and a fake `codex` binary on PATH answers plugin/mcp list with empty JSON.
+// and a fake `codex` binary on PATH implements the app-server + MCP protocol.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -33,12 +33,33 @@ async function setup(t) {
   t.after(() => rm(project, { recursive: true, force: true }));
   const home = join(project, "home");
   const bin = join(project, "bin");
-  const skillDir = join(project, ".codex", "skills", PROBE_SKILL);
   await mkdir(bin, { recursive: true });
-  await mkdir(skillDir, { recursive: true });
-  await writeFile(join(skillDir, "SKILL.md"), `---\nname: ${PROBE_SKILL}\ndescription: codex-only probe skill\n---\n`);
   const fakeCodex = join(bin, "codex");
-  await writeFile(fakeCodex, `#!${process.execPath}\nconst command = process.argv[2];\nconsole.log(command === "plugin" ? '{"installed":[]}' : "[]");\n`);
+  await writeFile(fakeCodex, `#!${process.execPath}
+const command = process.argv[2];
+if (command === "app-server") {
+  const { createInterface } = require("node:readline");
+  createInterface({ input: process.stdin }).on("line", line => {
+    const message = JSON.parse(line);
+    let result = {};
+    if (message.method === "skills/list") result = { data: [{ cwd: message.params.cwds[0], skills: [
+      { name: "${PROBE_SKILL}", description: "codex-only probe skill", enabled: true, path: null },
+      { name: "disabled-probe", description: "must stay hidden", enabled: false, path: null }
+    ], errors: [] }] };
+    if (message.method === "plugin/list") result = { marketplaces: [{ name: "remote", plugins: [
+      { name: "supabase", id: "supabase@remote", remotePluginId: "plugin_supabase", installed: true, enabled: true, source: { type: "remote" } },
+      { name: "disabled", id: "disabled@remote", remotePluginId: "plugin_disabled", installed: true, enabled: false, source: { type: "remote" } }
+    ] }], marketplaceLoadErrors: [], featuredPluginIds: [] };
+    if (message.method === "plugin/read" && message.params.pluginName === "plugin_supabase") result = { plugin: { skills: [
+      { name: "supabase", description: "runtime remote skill", enabled: true, path: null },
+      { name: "hidden", description: "disabled remote skill", enabled: false, path: null }
+    ] } };
+    process.stdout.write(JSON.stringify({ id: message.id, result }) + "\\n");
+  });
+} else {
+  console.log("[]");
+}
+`);
   await chmod(fakeCodex, 0o755);
   const env = {
     ...process.env,
@@ -50,7 +71,12 @@ async function setup(t) {
     JSON.parse((await execFile(process.execPath, [cli, ...args], {
       cwd: project, env, timeout: 15_000, maxBuffer: 4 * 1024 * 1024,
     })).stdout);
-  return { project, run };
+  const runFailure = async (args) => {
+    try { await run(args); }
+    catch (error) { return JSON.parse(error.stdout); }
+    assert.fail("expected command to fail");
+  };
+  return { project, run, runFailure };
 }
 
 function manifestBindingProbeSkill() {
@@ -102,4 +128,19 @@ test("manifest validate --codex checks bindings against the same codex-adapted i
   assert.equal(plain.ok, true, "an unresolved binding stays a warning (not an error) without --codex");
   assert.ok(plain.warnings?.some(w => w.includes(PROBE_SKILL)),
     `without --codex the codex-only skill must warn as unresolved, got ${JSON.stringify(plain.warnings)}`);
+});
+
+test("manifest validate --codex resolves exact remote runtime ids and rejects shadowed ids", async (t) => {
+  const { project, run, runFailure } = await setup(t);
+  const fixture = join(project, "manifest.remote-skill.json");
+  const manifest = JSON.parse(manifestBindingProbeSkill());
+  manifest.plan[0].skills[0].id = "supabase:supabase";
+  await writeFile(fixture, JSON.stringify(manifest));
+  assert.equal((await run(["manifest", "validate", fixture, "--codex"])).ok, true);
+
+  manifest.plan[0].skills[0].id = "evil:supabase";
+  await writeFile(fixture, JSON.stringify(manifest));
+  const rejected = await runFailure(["manifest", "validate", fixture, "--codex"]);
+  assert.equal(rejected.ok, false);
+  assert.ok(rejected.errors.some(error => error.includes("evil:supabase")));
 });

@@ -77,6 +77,28 @@ test("manifestWarnings: bound skill id resolves namespace-insensitively (vendor:
   assert.deepEqual(manifestWarnings(m, skillsInventory), []);
 });
 
+test("manifestWarnings: exact runtime mode accepts exact ids and rejects shadow namespaces", () => {
+  const exact = [{ id: "supabase:supabase", source: "installed", description: "" }];
+  const manifest = (id) => ({
+    ...base,
+    plan: [{ id: "t1", task: "database", mode: "single", skills: [{ id, rationale: "r" }] }],
+  });
+  assert.deepEqual(manifestWarnings(manifest("supabase:supabase"), exact, { exactSkillIds: true }), []);
+  assert.match(manifestWarnings(manifest("evil:supabase"), exact, { exactSkillIds: true })[0], /evil:supabase/);
+  assert.match(manifestWarnings(manifest("supabase"), exact, { exactSkillIds: true })[0], /supabase/);
+});
+
+test("manifestWarnings: incomplete runtime inventory does not claim a binding is absent", () => {
+  const m = {
+    ...base,
+    plan: [{ id: "t1", task: "database", mode: "single",
+      skills: [{ id: "supabase:supabase", rationale: "r" }] }],
+  };
+  const warnings = manifestWarnings(m, [], { exactSkillIds: true, inventoryComplete: false });
+  assert.equal(warnings.some(w => w.includes("not found in resolveCapabilities().skills")), false);
+  assert.equal(warnings.some(w => /incomplete/i.test(w)), true);
+});
+
 test("manifestWarnings: multiple unresolved skill ids each get their own warning", () => {
   const m = {
     ...base,

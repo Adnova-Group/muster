@@ -567,9 +567,9 @@ function liveCodexExec({ plugins, mcp }) {
   };
 }
 
-async function inventoryDoctor(execFile) {
+async function inventoryDoctor(execFile, runtimeInventory = async () => ({ plugins: [], skills: [], complete: true, errors: [] })) {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-inventory-branch-"));
-  const report = await runCodexDoctor({ root: repoRoot, cwd: join(tmp, "project"), codexHome: join(tmp, "home", ".codex"), execFile, mcpRunner: liveMcpRunner });
+  const report = await runCodexDoctor({ root: repoRoot, cwd: join(tmp, "project"), codexHome: join(tmp, "home", ".codex"), execFile, runtimeInventory, mcpRunner: liveMcpRunner });
   return {
     report,
     installed: report.checks.find(check => check.name === "codex-plugin-installed"),
@@ -588,7 +588,11 @@ test("Codex doctor live-inventory: INSTALLED -- well-formed plugin/MCP JSON is r
     plugins: JSON.stringify({ installed: [{ name: "muster", installed: true, enabled: true, source: { path: pluginPath } }], available: [] }),
     mcp: JSON.stringify([{ name: "muster", enabled: true }])
   });
-  const report = await runCodexDoctor({ root: repoRoot, cwd: join(tmp, "project"), codexHome: join(tmp, "home", ".codex"), execFile, mcpRunner: liveMcpRunner });
+  const runtimeInventory = async () => ({
+    plugins: [{ name: "muster", sourcePath: pluginPath }],
+    skills: [{ id: "muster:live-skill", description: "" }], complete: true, errors: [],
+  });
+  const report = await runCodexDoctor({ root: repoRoot, cwd: join(tmp, "project"), codexHome: join(tmp, "home", ".codex"), execFile, runtimeInventory, mcpRunner: liveMcpRunner });
   const installed = report.checks.find(check => check.name === "codex-plugin-installed");
   const inventory = report.checks.find(check => check.name === "codex-inventory");
   assert.equal(installed?.ok, true, installed?.detail);

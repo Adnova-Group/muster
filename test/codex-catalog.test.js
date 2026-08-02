@@ -3,7 +3,7 @@
 // packaged (install-time-generated, not committed) distribution surface.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
@@ -70,42 +70,52 @@ test("Codex capability catalog prefers enabled native upstream skills and namesp
   assert.equal(codexFallbackSkillId("gsd-plan-phase"), "muster-gsd-plan-phase");
 });
 
-test("Codex inventory is driven by live JSON and project/user directories", async () => {
+test("Codex capability catalog preserves the exact namespaced runtime skill id", () => {
+  const catalog = [
+    { id: "sp-plan", kind: "builtin", roles: ["plan"], rank: 50, provenance: { license: "MIT" } },
+  ];
+  const adapted = adaptCatalogForCodex(catalog, { skills: ["superpowers:writing-plans"] });
+  assert.ok(adapted.some(entry => entry.id === "superpowers:writing-plans" && entry.kind === "external"));
+  assert.ok(!adapted.some(entry => entry.id === "writing-plans" && entry.kind === "external"));
+});
+
+test("Codex inventory uses exact skill ids from the native runtime authority", async () => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-inventory-"));
   const plugin = join(tmp, "live-plugin");
-  await mkdir(join(plugin, "skills", "plugin-skill"), { recursive: true });
   await mkdir(join(plugin, "agents"), { recursive: true });
-  await mkdir(join(tmp, "project", ".codex", "skills", "project-skill"), { recursive: true });
-  await mkdir(join(tmp, "home", "skills", "user-skill"), { recursive: true });
   await mkdir(join(tmp, "project", ".codex", "agents"), { recursive: true });
-  await writeFile(join(plugin, "skills", "plugin-skill", "SKILL.md"), "---\nname: plugin-skill\ndescription: test\n---\n");
   await writeFile(join(plugin, "agents", "plugin-agent.toml"), "name = 'plugin-agent'\n");
-  await writeFile(join(tmp, "project", ".codex", "skills", "project-skill", "SKILL.md"), "---\nname: project-skill\ndescription: test\n---\n");
-  await writeFile(join(tmp, "home", "skills", "user-skill", "SKILL.md"), "---\nname: user-skill\ndescription: test\n---\n");
   await writeFile(join(tmp, "project", ".codex", "agents", "project-agent.toml"), "name = 'project-agent'\n");
-  const execFile = async (_bin, args) => {
-    if (args[0] === "plugin") return { stdout: JSON.stringify({ installed: [
-      { name: "muster", installed: true, enabled: true, source: { path: plugin } },
-      { name: "disabled-plugin", installed: true, enabled: false, source: { path: "/never-read" } }
-    ], available: [{ name: "stale", installed: false, enabled: true, source: { path: "/never-read" } }] }) };
-    return { stdout: JSON.stringify([{ name: "muster", enabled: true }, { name: "disabled-mcp", enabled: false }]) };
-  };
-  const inventory = await readCodexInventory({ cwd: join(tmp, "project"), codexHome: join(tmp, "home"), execFile });
-  assert.deepEqual(inventory.plugins, ["muster"]);
-  assert.deepEqual(new Set(inventory.skills), new Set(["plugin-skill", "project-skill", "user-skill"]));
+  const runtimeInventory = async () => ({
+    plugins: [{ name: "muster", sourcePath: plugin }, { name: "supabase", sourcePath: null }],
+    skills: [
+      { id: "muster:muster-go", description: "Run one outcome" },
+      { id: "supabase:supabase", description: "Use Supabase" },
+    ],
+    complete: true,
+    errors: [],
+  });
+  const execFile = async () => ({ stdout: JSON.stringify([{ name: "muster", enabled: true }, { name: "disabled-mcp", enabled: false }]) });
+  const inventory = await readCodexInventory({ cwd: join(tmp, "project"), codexHome: join(tmp, "home"), execFile, runtimeInventory });
+  assert.deepEqual(inventory.plugins, ["muster", "supabase"]);
+  assert.deepEqual(inventory.skills, ["muster:muster-go", "supabase:supabase"]);
+  assert.equal(inventory.skillDescriptions["supabase:supabase"], "Use Supabase");
+  assert.deepEqual(inventory.skillInventory, { source: "codex-app-server", complete: true, errors: [] });
   assert.deepEqual(inventory.mcpServers, ["muster"]);
   assert.deepEqual(new Set(inventory.agents), new Set(["plugin-agent", "project-agent"]));
 });
 
-test("Codex inventory excludes disabled plugins and MCP servers", async () => {
-  const execFile = async (_bin, args) => args[0] === "plugin"
-    ? { stdout: JSON.stringify({ installed: [{ name: "disabled", installed: true, enabled: false, source: { path: "/never-read" } }] }) }
-    : { stdout: JSON.stringify([{ name: "disabled", enabled: false }, { name: "active", enabled: true }]) };
-  const inventory = await readCodexInventory({ cwd: "/nonexistent", codexHome: "/nonexistent", execFile });
+test("Codex inventory exposes a failed native probe as incomplete, not authoritative absence", async () => {
+  const execFile = async () => ({ stdout: JSON.stringify([{ name: "disabled", enabled: false }, { name: "active", enabled: true }]) });
+  const runtimeInventory = async () => ({ plugins: [], skills: [], complete: false, errors: ["skills/list timed out"] });
+  const inventory = await readCodexInventory({ cwd: "/nonexistent", codexHome: "/nonexistent", execFile, runtimeInventory });
   assert.deepEqual(inventory.plugins, []);
   assert.deepEqual(inventory.skills, []);
   assert.deepEqual(inventory.agents, []);
   assert.deepEqual(inventory.mcpServers, ["active"]);
+  assert.deepEqual(inventory.skillInventory, {
+    source: "codex-app-server", complete: false, errors: ["skills/list timed out"],
+  });
 });
 
 test("packaged Codex MCP runtime registers the shared muster_* tools (CODEX_COUNTS.mcpTools)", async () => {

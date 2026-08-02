@@ -13,6 +13,9 @@ blocking the server event loop; this retains the old child process's
 terminability without its process or temporary-file transport. Tools outside
 this explicit allowlist keep the CLI boundary; in particular,
 `muster_backlog_publish` remains a child-process call with stdin handoff.
+Codex and ChatGPT Work builds emit the worker as an integrity-tracked runtime
+sidecar, and worker startup drops inherited Node flags while receiving only the
+server's filtered environment.
 
 ## Reproducible 12-call latency replay
 

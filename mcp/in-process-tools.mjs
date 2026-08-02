@@ -127,7 +127,11 @@ export async function invokeInProcessTool(name, args, { signal, environment = pr
   if (signal?.aborted) return { handled: true, result: { ok: false, text: "muster MCP request cancelled" } };
 
   return new Promise((resolve) => {
-    const worker = new Worker(workerUrl, { workerData: { name, args, environment } });
+    const worker = new Worker(workerUrl, {
+      workerData: { name, args, environment },
+      env: environment,
+      execArgv: [],
+    });
     let settled = false;
     const finish = (result) => {
       if (settled) return;

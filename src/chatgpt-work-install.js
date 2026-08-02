@@ -80,6 +80,7 @@ const ARTIFACT_PATHS = [
   ".mcp.json",
   ".codex-plugin/plugin.json",
   "runtime/chatgpt-work-server.mjs",
+  "runtime/in-process-worker.mjs",
   "runtime/muster.mjs",
   "runtime/sprint-protocol.md",
   "package.json",
@@ -404,12 +405,13 @@ async function prepareRuntimeAssets() {
   const bundled = {
     cli: join(moduleDir, "muster.mjs"),
     server: join(moduleDir, "chatgpt-work-server.mjs"),
+    worker: join(moduleDir, "in-process-worker.mjs"),
     sprintProtocol: join(moduleDir, "sprint-protocol.md"),
     catalog: join(moduleDir, "..", "catalog"),
     pipelines: join(moduleDir, "..", "pipelines"),
   };
   try {
-    for (const path of [bundled.cli, bundled.server, bundled.sprintProtocol]) {
+    for (const path of [bundled.cli, bundled.server, bundled.worker, bundled.sprintProtocol]) {
       const info = await lstat(path);
       if (info.isSymbolicLink() || !info.isFile()) throw new Error(`runtime asset is not an ordinary file: ${path}`);
     }
@@ -437,12 +439,18 @@ async function prepareRuntimeAssets() {
   await build({ ...bundleOptions, entryPoints: [join(root, "src", "cli.js")], outfile: join(dir, "muster.mjs"), banner: { js: requireBanner } });
   await build({
     ...bundleOptions,
+    entryPoints: [join(root, "mcp", "in-process-worker.mjs")],
+    outfile: join(dir, "in-process-worker.mjs"),
+  });
+  await build({
+    ...bundleOptions,
     entryPoints: [join(root, "mcp", "chatgpt-work-server.mjs")],
     outfile: join(dir, "chatgpt-work-server.mjs"),
   });
   return {
     cli: join(dir, "muster.mjs"),
     server: join(dir, "chatgpt-work-server.mjs"),
+    worker: join(dir, "in-process-worker.mjs"),
     sprintProtocol: join(root, "cowork", "sprint-protocol.md"),
     catalog: join(root, "catalog"),
     pipelines: join(root, "pipelines"),
@@ -458,6 +466,7 @@ async function stageWorkPlugin(config, assets, { configPath, pluginPath }) {
   await mkdir(runtime, { recursive: true, mode: 0o700 });
   await cp(assets.cli, join(runtime, "muster.mjs"));
   await cp(assets.server, join(runtime, "chatgpt-work-server.mjs"));
+  await cp(assets.worker, join(runtime, "in-process-worker.mjs"));
   await cp(assets.sprintProtocol, join(runtime, "sprint-protocol.md"));
   await cp(assets.catalog, join(plugin, "catalog"), { recursive: true });
   await cp(assets.pipelines, join(plugin, "pipelines"), { recursive: true });

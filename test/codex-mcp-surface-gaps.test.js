@@ -77,6 +77,13 @@ test("built Codex plugin's MCP server: muster_scope returns real scope JSON for 
   assert.ok(Array.isArray(body.signals) && body.signals.length > 0, "signals cite the deciding evidence");
 });
 
+test("built Codex plugin's MCP server executes a promoted worker-thread tool", async () => {
+  const manifest = { plan: [{ id: "a", task: "Build", mode: "single", deps: [] }] };
+  const r = await rpc(entry(), [INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_wave", arguments: { manifest } } }]);
+  assert.equal(r[2].result.isError, false, r[2].result.content[0].text);
+  assert.deepEqual(JSON.parse(r[2].result.content[0].text), [manifest.plan]);
+});
+
 test("built Codex plugin's MCP server: muster_assess uses Codex word-quantified success criteria", async () => {
   // "under three" is intentionally recognized only by assess --codex. The
   // neutral/Cowork argv reports no-success-criteria for this otherwise-clear

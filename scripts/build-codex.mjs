@@ -725,6 +725,7 @@ export async function buildCodexPlugin(options, retries = 1) {
         })
         && readFileSync(join(current.pluginRoot, "runtime", "muster.mjs")).length > 0
         && readFileSync(join(current.pluginRoot, "runtime", "muster-mcp.mjs")).length > 0
+        && readFileSync(join(current.pluginRoot, "runtime", "in-process-worker.mjs")).length > 0
         && readFileSync(join(current.pluginRoot, "skills", "muster", "SKILL.md")).length > 0
         && readFileSync(join(current.pluginRoot, "agents", "muster-builder.toml")).length > 0;
       if (current.inputDigest === inputDigest
@@ -843,6 +844,11 @@ async function buildCodexPluginOnce({ root, outDir }) {
     // itself — into the runtime it produces.
     const bundleOptions = { bundle: true, platform: "node", format: "esm", target: "node20", preserveSymlinks: true, external: ["esbuild", "../scripts/build-codex.mjs"] };
     await build({ ...bundleOptions, entryPoints: [join(root, "src", "cli.js")], outfile: join(runtime, "muster.mjs"), banner: { js: requireBanner } });
+    await build({
+      ...bundleOptions,
+      entryPoints: [join(root, "mcp", "in-process-worker.mjs")],
+      outfile: join(runtime, "in-process-worker.mjs"),
+    });
     await build({
       ...bundleOptions,
       entryPoints: [join(root, "mcp", "codex-server.mjs")],

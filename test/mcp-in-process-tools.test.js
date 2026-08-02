@@ -230,3 +230,15 @@ test("fusion reads only the injected sanitized environment", async () => {
     else process.env.MUSTER_FUSE_TOPK = prior;
   }
 });
+
+test("in-process workers ignore hostile inherited execArgv", async () => {
+  const prior = [...process.execArgv];
+  process.execArgv.push("--input-type=module");
+  try {
+    const manifest = { plan: [{ id: "a", task: "Build", mode: "single", deps: [] }] };
+    const response = await invokeInProcessTool("muster_wave", { manifest }, { environment: {} });
+    assert.equal(response.result.ok, true, response.result.text);
+  } finally {
+    process.execArgv.splice(0, process.execArgv.length, ...prior);
+  }
+});

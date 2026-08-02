@@ -75,7 +75,7 @@ if (profile === "full" || activationReceiptPath || installedRuntime) {
     // server startup here on "receipt artifact set mismatch".
     const artifactPaths = [
       ".app.json", ".codex-plugin/plugin.json", ".mcp.json",
-      "runtime/chatgpt-work-server.mjs", "runtime/muster.mjs", "runtime/sprint-protocol.md",
+      "runtime/chatgpt-work-server.mjs", "runtime/in-process-worker.mjs", "runtime/muster.mjs", "runtime/sprint-protocol.md",
       "package.json",
       ...[
         "agents.generated.yaml", "agents.manifest.json", "agents.muster.yaml",

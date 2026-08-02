@@ -18,7 +18,15 @@ const releaseCommit = execFileSync("git", ["rev-parse", "--verify", `${releaseRe
 // backlog grammar accepts any readable checklist path. Search tracked blobs so
 // a renamed roadmap/checklist cannot evade the CI gate, then independently read
 // each working-tree candidate through the repository's bounded no-follow API.
-const discovery = spawnSync("git", ["grep", "--cached", "-z", "-l", "-I", "-E", "^[[:space:]]*- \\[[xX]\\] ", "--"], {
+// Git's POSIX character classes do not cover every Unicode whitespace code
+// point consumed by JavaScript's `\s`. Discover a literal superset anywhere in
+// each tracked text blob, then let checkBacklogReceipts apply the exact anchored
+// parser grammar. False-positive candidate files are harmless; false negatives
+// would let a checked item evade the gate.
+const discovery = spawnSync("git", [
+  "grep", "--cached", "-z", "-l", "-I", "-F",
+  "-e", "- [x] ", "-e", "- [X] ", "--",
+], {
   cwd: process.cwd(), encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
 });
 if (discovery.error) throw discovery.error;

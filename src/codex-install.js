@@ -1620,6 +1620,7 @@ export async function hasMusterHookCommandAlias(config, expectedScripts, { cwds 
     if (!Array.isArray(groups)) continue;
     for (const group of groups) for (const command of groupCommands(group)) {
       if (!includeDirect && isMusterHookCommand(command)) continue;
+      if (hasUnresolvedShellExpansion(command)) return true;
       for (const candidate of shellPathCandidates(command)) {
         let filesystemCandidate = candidate;
         if (/^file:/i.test(candidate)) {
@@ -2656,7 +2657,18 @@ async function prepareCodexUninstall({ scope, cwd, home, execFile, runtimeIdenti
 }
 
 export async function runCodexUninstall({ scope = "project", dryRun = false, cwd = process.cwd(), home = homedir(), execFile, runtimeIdentity } = {}) {
-  cwd = await codexProjectRoot(cwd);
+  const invocationCwd = resolve(cwd);
+  const canonicalRoot = await codexProjectRoot(cwd);
+  if (scope === "project") {
+    const candidateRoots = [...new Set((await codexActivationConfigDirs(canonicalRoot, invocationCwd)).map(dirname))];
+    const ownedRoots = [];
+    for (const root of candidateRoots) if (await safeExists(join(root, ".codex", "agents", MANIFEST))
+      || await safeExists(join(root, ".codex", "muster", MANIFEST))) ownedRoots.push(root);
+    if (ownedRoots.length > 1) throw new Error(`Multiple Muster-owned Codex project scopes match this checkout: ${ownedRoots.join(", ")}. Uninstall each legacy scope from its own root.`);
+    cwd = ownedRoots[0] || canonicalRoot;
+  } else {
+    cwd = canonicalRoot;
+  }
   const executor = execFile || execFileDefault;
   let identity = runtimeIdentity;
   if (!identity && !execFile) try { identity = resolveCodexRuntimeIdentity(); } catch { /* Codex absent: local cleanup still proceeds without PATH probing */ }

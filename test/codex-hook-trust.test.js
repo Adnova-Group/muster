@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { codexProjectRoot, effectiveHookTrust, hasManagedRuntimeInventoryAlias, hookActivationSnapshot, musterHookTrustGaps, runCodexInstall } from "../src/codex-install.js";
+import { codexProjectRoot, effectiveHookTrust, hasManagedRuntimeInventoryAlias, hookActivationSnapshot, musterHookTrustGaps, runCodexInstall, runCodexUninstall } from "../src/codex-install.js";
 import { runCodexDoctor } from "../src/codex-doctor.js";
 import { repoRoot } from "../test-support/codex-helpers.js";
 
@@ -420,12 +420,35 @@ test("Codex project installs use the primary checkout config root from a linked 
   assert.match(markerRace.hookTrust.effective.error, /activation state changed/);
 
   await symlink(join(main, ".codex", "muster", "hooks", "muster-hook.mjs"), join(invocation, "relative-alias.mjs"));
-  mainHooks.hooks.Notification = [{ hooks: [{ type: "command", command: "node ./relative-alias.mjs" }] }];
+  mainHooks.hooks.Notification = [{ hooks: [{ type: "command", command: "cd . && node relative-alias.mjs" }] }];
   await writeFile(mainHooksPath, `${JSON.stringify(mainHooks, null, 2)}\n`);
   await assert.rejects(
     () => runCodexInstall({ cwd: invocation, home, repoRoot, execFile: absentCodex }),
     /aliased Muster hook|aliased to a live managed Muster runtime/
   );
+});
+
+test("Codex project uninstall reaches a pre-canonical linked-worktree scope", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-linked-uninstall-"));
+  const main = join(tmp, "main"), linked = join(tmp, "linked"), home = join(tmp, "home");
+  await mkdir(main, { recursive: true });
+  const git = (...args) => {
+    const result = spawnSync("git", args, { cwd: main, encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+  };
+  git("init"); git("config", "user.email", "muster@example.invalid"); git("config", "user.name", "Muster Test");
+  await writeFile(join(main, "README.md"), "fixture\n");
+  git("add", "README.md"); git("commit", "-m", "fixture"); git("worktree", "add", "-b", "legacy-linked", linked);
+  await runCodexInstall({ cwd: linked, home, repoRoot, execFile: absentCodex });
+  await rename(join(main, ".codex"), join(linked, ".codex"));
+  const registryPath = join(home, ".codex", "muster", "install-scopes.json");
+  const registry = JSON.parse(await readFile(registryPath, "utf8"));
+  registry.entries = registry.entries.map(entry => entry.scope === "project" ? { ...entry, configDir: join(linked, ".codex") } : entry);
+  await writeFile(registryPath, `${JSON.stringify(registry, null, 2)}\n`);
+
+  await mkdir(join(linked, "nested"));
+  await runCodexUninstall({ cwd: join(linked, "nested"), home, execFile: absentCodex });
+  await assert.rejects(readFile(join(linked, ".codex", "muster", ".muster-managed.json")), error => error.code === "ENOENT");
 });
 
 test("effectiveHookTrust rejects duplicate scope and managed hook inventory records", () => {

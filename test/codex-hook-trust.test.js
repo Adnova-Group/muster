@@ -392,9 +392,11 @@ test("Codex project installs use the primary checkout config root from a linked 
   git("add", "README.md");
   git("commit", "-m", "fixture");
   git("worktree", "add", "-b", "linked-fixture", linked);
+  const invocation = join(linked, "packages", "pkg");
+  await mkdir(invocation, { recursive: true });
 
-  assert.equal(await codexProjectRoot(linked), main);
-  const installed = await runCodexInstall({ cwd: linked, home, repoRoot, execFile: absentCodex });
+  assert.equal(await codexProjectRoot(invocation), main);
+  const installed = await runCodexInstall({ cwd: invocation, home, repoRoot, execFile: absentCodex });
   assert.equal(installed.files.some(operation => operation.path.startsWith(join(main, ".codex"))), true);
   const mainHooksPath = join(main, ".codex", "hooks.json");
   const mainHooks = JSON.parse(await readFile(mainHooksPath, "utf8"));
@@ -410,17 +412,17 @@ test("Codex project installs use the primary checkout config root from a linked 
         hooks: { Stop: [{ hooks: [{ type: "command", command: `node ${join(main, ".codex", "muster", "hooks", "muster-hook.mjs")}` }] }] }
       }, null, 2));
     }
-    return inventoryFor(linked, mainHooksPath, installed.hookTrust.results);
+    return inventoryFor(invocation, mainHooksPath, installed.hookTrust.results);
   };
-  const markerRace = await runCodexInstall({ cwd: linked, home, repoRoot, execFile: absentCodex, hookInventory: markerInventory });
+  const markerRace = await runCodexInstall({ cwd: invocation, home, repoRoot, execFile: absentCodex, hookInventory: markerInventory });
   assert.equal(markerRace.ok, false);
   assert.match(markerRace.hookTrust.effective.error, /activation state changed/);
 
-  await symlink(join(main, ".codex", "muster", "hooks", "muster-hook.mjs"), join(linked, "relative-alias.mjs"));
+  await symlink(join(main, ".codex", "muster", "hooks", "muster-hook.mjs"), join(invocation, "relative-alias.mjs"));
   mainHooks.hooks.Notification = [{ hooks: [{ type: "command", command: "node ./relative-alias.mjs" }] }];
   await writeFile(mainHooksPath, `${JSON.stringify(mainHooks, null, 2)}\n`);
   await assert.rejects(
-    () => runCodexInstall({ cwd: linked, home, repoRoot, execFile: absentCodex }),
+    () => runCodexInstall({ cwd: invocation, home, repoRoot, execFile: absentCodex }),
     /aliased Muster hook|aliased to a live managed Muster runtime/
   );
 });

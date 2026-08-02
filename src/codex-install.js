@@ -52,6 +52,30 @@ export async function codexProjectRoot(cwd) {
     return invocationRoot;
   }
 }
+export async function codexInvocationRoot(cwd) {
+  const invocationCwd = resolve(cwd);
+  try {
+    const { stdout } = await execFileDefault("git", ["rev-parse", "--path-format=absolute", "--show-toplevel"], { cwd: invocationCwd });
+    const lines = String(stdout).trim().split(/\r?\n/);
+    if (lines.length !== 1 || !isAbsolute(lines[0])) return invocationCwd;
+    const root = resolve(lines[0]);
+    const rel = relative(root, invocationCwd);
+    return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`)) ? root : invocationCwd;
+  } catch {
+    return invocationCwd;
+  }
+}
+
+export async function codexInvocationConfigDirs(cwd) {
+  const invocationCwd = resolve(cwd), root = await codexInvocationRoot(invocationCwd);
+  const dirs = [join(root, ".codex")];
+  let current = root;
+  for (const part of relative(root, invocationCwd).split(sep).filter(Boolean)) {
+    current = join(current, part);
+    dirs.push(join(current, ".codex"));
+  }
+  return [...new Set(dirs)];
+}
 async function ordinaryDirectoryPath(path, { create = false } = {}) {
   const absolute = resolve(path), root = parse(absolute).root;
   let current = root;
@@ -194,8 +218,8 @@ export async function hookActivationSnapshot({ home, cwd, inventoryCwd = cwd, us
     }
   }
   const dirs = new Set([userCodexHome, join(cwd, ".codex"), ...entries.map(entry => resolve(entry.configDir))]);
-  const invocationConfigDir = join(inventoryCwd, ".codex");
-  if (resolve(inventoryCwd) !== resolve(cwd)) dirs.add(invocationConfigDir);
+  const invocationConfigDirs = await codexInvocationConfigDirs(inventoryCwd);
+  for (const dir of invocationConfigDirs) dirs.add(dir);
   const paths = [registryPath];
   for (const dir of dirs) paths.push(
     join(dir, "hooks.json"),
@@ -206,9 +230,7 @@ export async function hookActivationSnapshot({ home, cwd, inventoryCwd = cwd, us
   );
   const files = new Map([[registryPath, registryFile]]);
   for (const path of [...new Set(paths)].sort()) if (path !== registryPath) files.set(path, await activationFileSnapshot(path));
-  if (resolve(inventoryCwd) !== resolve(cwd)) {
-    files.set(invocationConfigDir, await activationDirectorySnapshot(invocationConfigDir));
-  }
+  for (const invocationConfigDir of invocationConfigDirs) files.set(invocationConfigDir, await activationDirectorySnapshot(invocationConfigDir));
   return files;
 }
 
@@ -233,12 +255,12 @@ async function liveManagedHookScripts(home, extraConfigDirs = []) {
 
 async function validateManagedHookAliasGraph({ home, cwd, inventoryCwd = cwd, entries, currentDir, currentConfig }) {
   const currentProjectDir = join(cwd, ".codex");
-  const invocationProjectDir = join(inventoryCwd, ".codex");
+  const invocationProjectDirs = await codexInvocationConfigDirs(inventoryCwd);
   const registeredDirs = new Set(entries.map(entry => resolve(entry.configDir)));
   const scopes = [
     { scope: "user", configDir: codexHome(home) },
     { scope: "project", configDir: currentProjectDir },
-    ...(resolve(invocationProjectDir) === resolve(currentProjectDir) ? [] : [{ scope: "project", configDir: invocationProjectDir }]),
+    ...invocationProjectDirs.filter(dir => resolve(dir) !== resolve(currentProjectDir)).map(configDir => ({ scope: "project", configDir })),
     ...entries,
     ...(currentDir ? [{ scope: currentDir === codexHome(home) ? "user" : "project", configDir: currentDir }] : [])
   ];
@@ -255,9 +277,11 @@ async function validateManagedHookAliasGraph({ home, cwd, inventoryCwd = cwd, en
         throw new Error(`Codex hook configuration conflict: ${configPath} is malformed while validating managed runtime aliases.`);
       }
     }
-    const cwds = entry.scope === "user" ? [...new Set([cwd, inventoryCwd, ...projectCwds])]
-      : entry.configDir === resolve(currentProjectDir) ? [...new Set([cwd, inventoryCwd])] : [dirname(entry.configDir)];
-    const unownedCurrentProject = [currentProjectDir, invocationProjectDir].some(dir => entry.configDir === resolve(dir))
+    const invocationCwds = invocationProjectDirs.map(dirname);
+    const cwds = entry.scope === "user" ? [...new Set([cwd, inventoryCwd, ...invocationCwds, ...projectCwds])]
+      : [currentProjectDir, ...invocationProjectDirs].some(dir => entry.configDir === resolve(dir))
+        ? [...new Set([cwd, inventoryCwd, ...invocationCwds])] : [dirname(entry.configDir)];
+    const unownedCurrentProject = [currentProjectDir, ...invocationProjectDirs].some(dir => entry.configDir === resolve(dir))
       && entry.configDir !== resolve(currentDir || "") && !registeredDirs.has(entry.configDir);
     if (unownedCurrentProject && Object.values(config.hooks || {}).some(groups => Array.isArray(groups)
       && groups.some(group => groupCommands(group).some(isMusterHookCommand)))) {

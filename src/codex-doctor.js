@@ -10,7 +10,7 @@ import { codexAvailable, readCodexInventory } from "./codex-inventory.js";
 import { codexVersionMatches, resolveCodexRuntimeIdentity, runCodexCommand } from "./codex-runtime-identity.js";
 import { exists } from "./fs-util.js";
 import { parseAgentProfileToml, resolveCodexPlugin } from "./codex-release.js";
-import { codexHookStateKeys, codexProjectRoot, effectiveHookTrust, expectedCodexHookInstall, hasManagedRuntimeInventoryAlias, hasMusterHookCommandAlias, hookActivationSnapshot, inventoryAliasCandidateSnapshot, isMusterHookCommand, musterHookTrustGaps, parseHookCommand, readCodexHookInventory, reconcileConfigTomlHookState, reconcileScopeRegistryEntries, sameAliasCandidateSnapshot, sameHookActivationSnapshot } from "./codex-install.js";
+import { codexHookStateKeys, codexInvocationConfigDirs, codexProjectRoot, effectiveHookTrust, expectedCodexHookInstall, hasManagedRuntimeInventoryAlias, hasMusterHookCommandAlias, hookActivationSnapshot, inventoryAliasCandidateSnapshot, isMusterHookCommand, musterHookTrustGaps, parseHookCommand, readCodexHookInventory, reconcileConfigTomlHookState, reconcileScopeRegistryEntries, sameAliasCandidateSnapshot, sameHookActivationSnapshot } from "./codex-install.js";
 import { readNoFollowRegular } from "./fs-safe.js";
 import {
   CODEX_THREAD_LIMIT_REMEDIATION,
@@ -715,6 +715,7 @@ function isHooksSkippedManifest(owner, packageVersion) {
 export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, execFile, runtimeIdentity, hookInventory, mcpRunner = runMcpHandshake, env = process.env, platform = process.platform, nodeExecPath = process.execPath, readConfigToml = path => readRegularFile(path, "utf8", DOCTOR_CONFIG_READ_MAX_BYTES) } = {}) {
   const inventoryCwd = resolve(cwd);
   cwd = await codexProjectRoot(cwd);
+  const invocationConfigDirs = await codexInvocationConfigDirs(inventoryCwd);
   const base = root instanceof URL ? fileURLToPath(root) : (root || process.cwd());
   // The npm CLI runs from the package root; the bundled runtime runs from the
   // plugin root itself. Support both layouts without requiring npm at runtime.
@@ -943,7 +944,7 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
     checks.push({ name: "codex-hook-state", ok: false, detail: `could not inspect config.toml [hooks.state]: ${error.message}` });
   }
   const scopeHomes = new Map([[join(cwd, ".codex"), false], [userCodexHome, false]]);
-  if (inventoryCwd !== cwd) scopeHomes.set(join(inventoryCwd, ".codex"), false);
+  for (const dir of invocationConfigDirs) scopeHomes.set(dir, false);
   for (const dir of registeredScopes.dirs) scopeHomes.set(dir, true);
   const hookHomes = [...scopeHomes.keys()];
   // The handshake spawns `plugin`'s bundled MCP entrypoint -- a runtime claim
@@ -1042,7 +1043,7 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   const hookCauseFailures = [];
   const managedHookScripts = [...hookHomes].map(dir => join(dir, "muster", "hooks", "muster-hook.mjs"));
   const managedProjectCwds = [...hookHomes].filter(dir => dir !== userCodexHome).map(dirname);
-  const currentProjectHookHomes = new Set([join(cwd, ".codex"), join(inventoryCwd, ".codex")]);
+  const currentProjectHookHomes = new Set([join(cwd, ".codex"), ...invocationConfigDirs]);
   for (const dir of hookHomes) {
     const manifestPath = join(dir, "muster", ".muster-managed.json");
     const registered = scopeHomes.get(dir);
@@ -1053,7 +1054,7 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
           const config = await readRegularJson(configPath);
           if (config) {
             const carriesMusterGroups = Object.values(config?.hooks || {}).some(groups => Array.isArray(groups) && groups.some(isMusterHookGroup));
-            const alias = await hasMusterHookCommandAlias(config, managedHookScripts, { cwds: [...new Set([cwd, inventoryCwd])] });
+            const alias = await hasMusterHookCommandAlias(config, managedHookScripts, { cwds: [...new Set([cwd, inventoryCwd, ...invocationConfigDirs.map(dirname)])] });
             if (carriesMusterGroups || alias) {
               staleHookScopes.push(dir);
               mismatchHookScopes.push({ dir, path: configPath });

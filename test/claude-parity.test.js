@@ -1360,5 +1360,7 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // orchestrator, go/go-backlog, runner, and review-gate prose now preserve
   // findings and continue materially changed candidates; fixed attempt caps
   // no longer terminate progressing work. File count remains unchanged.
-  assert.equal(hash.digest("hex"), "6ad7efb19ad37694646e20bbdf57e353dc344d1c840872f9912d4aa2c6f59bb0");
+  // Re-pin #43 binds lifecycle receipts, in-flight work, and destructive
+  // approval evidence to exact candidate/base identities. File count remains unchanged.
+  assert.equal(hash.digest("hex"), "dea381a67a5d871790405c5197b49ce219d44c024a28769265f5aca62ffc861a");
 });

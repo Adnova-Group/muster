@@ -27,6 +27,7 @@ test("Kimi resumes use parent evidence and cannot dispatch a 101st continuation"
   assert.throws(() => kimiResumeState({ attempts: [{
     candidateFingerprint: "agent-selected", errorFingerprint: "also-untrusted",
   }] }), /parent-computed/);
+  assert.throws(() => kimiResumeState({ attempts, outcomes: ["reset"] }), /unsupported.*outcomes/);
 });
 import { KIMI_LANES, kimiLaneEnv } from "../src/kimi.js";
 

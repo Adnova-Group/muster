@@ -35,6 +35,7 @@
 // try/catch of its own.
 import { computeWaves } from "./wave.js";
 import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 
 export const SPRINT_PARALLEL_DEFAULT = 5;
 export const SPRINT_PARALLEL_MAX = 10;
@@ -167,10 +168,11 @@ function sha256(value) {
 }
 
 export function buildSprintReceipt({ id, itemId, phase, status = "completed", attempt = 1,
-  candidateSha, findings = [], terminalReason, verifyCandidate } = {}) {
+  candidateSha, findings = [], terminalReason, implementationAttempt, approvalDigest, worktreePath } = {}) {
   if (!["implementation", "review", "integration"].includes(phase)) throw new TypeError("invalid sprint receipt phase");
   if (!CANDIDATE_SHA_RE.test(candidateSha ?? "")) throw new TypeError("candidateSha must be a git object id");
-  if (typeof verifyCandidate !== "function" || verifyCandidate(candidateSha) !== true) {
+  if (typeof worktreePath !== "string" || !worktreePath
+    || execFileSync("git", ["rev-parse", "HEAD"], { cwd: worktreePath, encoding: "utf8" }).trim() !== candidateSha) {
     throw new TypeError("candidateSha must be verified against the item worktree HEAD");
   }
   if (!Array.isArray(findings)) throw new TypeError("findings must be an array");
@@ -178,6 +180,8 @@ export function buildSprintReceipt({ id, itemId, phase, status = "completed", at
     id, itemId, phase, status, attempt, candidateSha,
     progressFingerprint: sha256(JSON.stringify(findings)),
     ...(terminalReason === undefined ? {} : { terminalReason }),
+    ...(implementationAttempt === undefined ? {} : { implementationAttempt }),
+    ...(approvalDigest === undefined ? {} : { approvalDigest }),
   };
 }
 
@@ -190,7 +194,12 @@ export function integrationApprovalDigest(authorization) {
     throw new TypeError("authorization heads must be git object ids");
   }
   if (!["merge-local", "merge-push"].includes(authorization.operation)) throw new TypeError("authorization operation is invalid");
-  return sha256(fields.map((field) => `${field}\0${authorization[field]}`).join("\0"));
+  const identityFields = authorization.approvedBy === undefined && authorization.approvedAt === undefined
+    ? [] : ["approvedBy", "approvedAt"];
+  if (identityFields.some((field) => typeof authorization[field] !== "string" || !authorization[field])) {
+    throw new TypeError("approval identity and freshness must be supplied together");
+  }
+  return sha256([...fields, ...identityFields].map((field) => `${field}\0${authorization[field]}`).join("\0"));
 }
 
 function invalidReconciliation(errors) {
@@ -408,6 +417,7 @@ function canonicalReceipts(receipts, itemIds) {
       ...(raw.candidateSha === undefined ? {} : { candidateSha: raw.candidateSha }),
       ...(raw.terminalReason === undefined ? {} : { terminalReason: raw.terminalReason }),
       ...(raw.approvalDigest === undefined ? {} : { approvalDigest: raw.approvalDigest }),
+      ...(raw.implementationAttempt === undefined ? {} : { implementationAttempt: raw.implementationAttempt }),
     };
     let valid = true;
     if (typeof receipt.id !== "string" || !receipt.id.trim() || receipt.id.length > SPRINT_RECONCILE_LIMITS.idLength) {
@@ -438,9 +448,14 @@ function canonicalReceipts(receipts, itemIds) {
       errors.push(`receipt '${receipt.id}' candidateSha must be a lowercase git object id`);
       valid = false;
     }
-    if (["implementation", "review", "integration"].includes(receipt.phase)
-      && receipt.status === "completed" && receipt.candidateSha === undefined) {
-      errors.push(`receipt '${receipt.id}' must bind completed ${receipt.phase} to candidateSha`);
+    if ((receipt.phase === "implementation" && receipt.status === "completed"
+      || ["review", "integration"].includes(receipt.phase)) && receipt.candidateSha === undefined) {
+      errors.push(`receipt '${receipt.id}' must bind ${receipt.phase} to candidateSha`);
+      valid = false;
+    }
+    if (receipt.phase === "review" && (!Number.isInteger(receipt.implementationAttempt)
+      || receipt.implementationAttempt < 1 || receipt.implementationAttempt > SPRINT_RECONCILE_LIMITS.attempt)) {
+      errors.push(`receipt '${receipt.id}' must bind review to implementationAttempt`);
       valid = false;
     }
     if (receipt.approvalDigest !== undefined && !DIGEST_RE.test(receipt.approvalDigest)) {
@@ -519,14 +534,25 @@ function canonicalInFlight(inFlight, itemIds) {
       errors.push(`inFlight ${entry.phase} for '${entry.itemId}' must bind candidateSha`);
       continue;
     }
+    if (entry.phase === "review" && (!Number.isInteger(entry.implementationAttempt)
+      || entry.implementationAttempt < 1 || entry.implementationAttempt > SPRINT_RECONCILE_LIMITS.attempt)) {
+      errors.push(`inFlight review for '${entry.itemId}' must bind implementationAttempt`);
+      continue;
+    }
     if (entry.phase === "integration" && !DIGEST_RE.test(entry.approvalDigest ?? "")) {
       errors.push(`inFlight integration for '${entry.itemId}' must bind approvalDigest`);
       continue;
     }
     const key = phaseKey(entry.itemId, entry.phase);
     const prior = byPhase.get(key);
-    if (prior && prior.attempt !== entry.attempt) {
-      errors.push(`inFlight entry for '${entry.itemId}' phase '${entry.phase}' has conflicting attempts`);
+    const comparable = {
+      itemId: entry.itemId, phase: entry.phase, attempt: entry.attempt,
+      ...(entry.candidateSha === undefined ? {} : { candidateSha: entry.candidateSha }),
+      ...(entry.approvalDigest === undefined ? {} : { approvalDigest: entry.approvalDigest }),
+      ...(entry.implementationAttempt === undefined ? {} : { implementationAttempt: entry.implementationAttempt }),
+    };
+    if (prior && JSON.stringify(prior) !== JSON.stringify(comparable)) {
+      errors.push(`inFlight entry for '${entry.itemId}' phase '${entry.phase}' has conflicting identity`);
       continue;
     }
     if (!prior) {
@@ -534,6 +560,7 @@ function canonicalInFlight(inFlight, itemIds) {
         itemId: entry.itemId, phase: entry.phase, attempt: entry.attempt,
         ...(entry.candidateSha === undefined ? {} : { candidateSha: entry.candidateSha }),
         ...(entry.approvalDigest === undefined ? {} : { approvalDigest: entry.approvalDigest }),
+        ...(entry.implementationAttempt === undefined ? {} : { implementationAttempt: entry.implementationAttempt }),
       };
       normalized.push(value);
       byPhase.set(key, value);
@@ -546,7 +573,7 @@ function canonicalInFlight(inFlight, itemIds) {
 // this function owns the executable decision about whether a wake means dispatch,
 // wait, terminal, or escalated. Callers pass the complete receipts currently
 // available on every wake, then dispatch every returned action before waiting again.
-export function reconcileSprintProgress(plan, progress = {}) {
+export function reconcileSprintProgress(plan, progress = {}, { verifyApproval } = {}) {
   const planResult = validateSprintPlan(plan);
   if (planResult.errors.length > 0) return invalidReconciliation(planResult.errors);
   if (!isRecord(progress)) return invalidReconciliation(["progress must be an object"]);
@@ -581,6 +608,9 @@ export function reconcileSprintProgress(plan, progress = {}) {
   for (const approval of approvals) {
     try {
       if (!itemIds.has(approval?.itemId) || typeof approval.approvedBy !== "string" || !approval.approvedBy
+        || typeof approval.approvedAt !== "string" || !approval.approvedAt
+        || typeof approval.evidence !== "string" || !approval.evidence
+        || typeof verifyApproval !== "function" || verifyApproval(approval) !== true
         || approval.digest !== integrationApprovalDigest(approval)) {
         return invalidReconciliation([`approval for '${approval?.itemId}' is not bound to its identity tuple`]);
       }
@@ -623,6 +653,7 @@ export function reconcileSprintProgress(plan, progress = {}) {
       attempt: receipt.attempt,
       terminalReason: receipt.terminalReason,
       candidateSha: receipt.candidateSha,
+      implementationAttempt: receipt.implementationAttempt,
     };
     if (receipt.terminalReason) return { status: "blocked", attempt: receipt.attempt, terminalReason: receipt.terminalReason };
     const outcomes = (receiptResult.byPhase.get(phaseKey(itemId, phase)) ?? [])
@@ -640,6 +671,7 @@ export function reconcileSprintProgress(plan, progress = {}) {
         status: phase === "review" ? "repair_ready" : "ready",
         attempt: receipt.attempt + 1,
         failedAttempt: receipt.attempt,
+        implementationAttempt: receipt.implementationAttempt,
         candidateSha: receipt.candidateSha,
       }
       : { status: "blocked", attempt: receipt.attempt, terminalReason: recovery.reason };
@@ -676,7 +708,7 @@ export function reconcileSprintProgress(plan, progress = {}) {
         } else if (review?.status === "repair_ready") {
           // A repair that leaves the rejected exact head unchanged is itself a
           // second identical recovery outcome and stops deterministically.
-          state = implementation.attempt > review.failedAttempt ? "blocked" : "implementation_repair_ready";
+          state = implementation.attempt > review.implementationAttempt ? "blocked" : "implementation_repair_ready";
         } else if (review?.status !== "completed") {
           state = review?.status === "in_flight" ? "review_in_flight" : "review_ready";
         } else if (!["merge-local", "merge-push"].includes(source.disposition)) {
@@ -708,7 +740,7 @@ export function reconcileSprintProgress(plan, progress = {}) {
           ?? phaseState(itemId, "implementation")?.terminalReason
           ?? (phaseState(itemId, "review", phaseState(itemId, "implementation")?.candidateSha)?.status === "repair_ready"
             && phaseState(itemId, "implementation")?.attempt
-              > phaseState(itemId, "review", phaseState(itemId, "implementation")?.candidateSha)?.failedAttempt
+              > phaseState(itemId, "review", phaseState(itemId, "implementation")?.candidateSha)?.implementationAttempt
             ? "no-progress" : null)
           ?? (["review", "integration"].some((phase) => phaseState(itemId, phase, phaseState(itemId, "implementation")?.candidateSha)?.status === "stale_in_flight")
             ? "stale-candidate-binding" : null)
@@ -727,10 +759,24 @@ export function reconcileSprintProgress(plan, progress = {}) {
   const causalErrors = [];
   for (const flight of inFlight) {
     const item = items[flight.itemId];
-    const implementationCandidate = phaseState(flight.itemId, "implementation")?.candidateSha;
+    const implementationState = phaseState(flight.itemId, "implementation");
+    const implementationCandidate = implementationState?.candidateSha;
     if (flight.phase !== "implementation" && flight.candidateSha !== implementationCandidate) {
       causalErrors.push(`inFlight ${flight.phase} for '${flight.itemId}' is bound to a stale candidate`);
       continue;
+    }
+    if (flight.phase === "review" && flight.implementationAttempt !== implementationState?.attempt) {
+      causalErrors.push(`inFlight review for '${flight.itemId}' is bound to a stale implementation attempt`);
+      continue;
+    }
+    if (flight.phase === "integration") {
+      const approval = approvalByItem.get(flight.itemId);
+      const target = integrationTargets[flight.itemId];
+      if (!approval || !target || approval.digest !== flight.approvalDigest
+        || approval.workHeadSha !== flight.candidateSha) {
+        causalErrors.push(`inFlight integration for '${flight.itemId}' lacks matching trusted approval evidence`);
+        continue;
+      }
     }
     const latestReceipt = receiptResult.latestByPhase.get(phaseKey(flight.itemId, flight.phase));
     // A receipt for this attempt (or a newer one) settles the adapter's stale
@@ -785,6 +831,7 @@ export function reconcileSprintProgress(plan, progress = {}) {
         type: "dispatch", itemId, phase: "review", wave: item.wave,
         ...(attempt > 1 ? { attempt } : {}),
         ...(implementation.candidateSha ? { candidateSha: implementation.candidateSha } : {}),
+        implementationAttempt: implementation.attempt,
       });
     }
   }
@@ -817,12 +864,14 @@ export function reconcileSprintProgress(plan, progress = {}) {
       };
       const digest = integrationApprovalDigest(authorization);
       const approval = approvalByItem.get(nextIntegration);
-      if (!approval || approval.digest !== digest) {
+      const approvalMatches = approval && ["itemId", "workBranch", "workHeadSha", "baseBranch", "baseHeadSha", "operation"]
+        .every((field) => approval[field] === authorization[field]);
+      if (!approvalMatches) {
         actions.push({ type: "approval", phase: "integration", wave: waveSchedule.wave, authorization, digest });
       } else {
         actions.push({
           type: "dispatch", itemId: nextIntegration, phase: "integration", wave: waveSchedule.wave,
-          candidateSha: implementation.candidateSha, approvalDigest: digest,
+          candidateSha: implementation.candidateSha, approvalDigest: approval.digest,
         });
       }
     }

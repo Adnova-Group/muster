@@ -71,10 +71,13 @@ export function specGateRecoveryState({ rounds = [], done: callerDone, ...option
     return { continue: true, reason: "initial", noProgressCount: 0, action: { type: "independent-spec-review" } };
   }
   if (latest.verdict === "PASS") {
-    const invalidatedSameCandidate = rounds.slice(0, -1).some((round) =>
+    const invalidatingRound = rounds.slice(0, -1).findLast((round) =>
       round.verdict === "FAIL" && round.candidateFingerprint === latest.candidateFingerprint);
-    if (invalidatedSameCandidate) {
-      return { continue: false, reason: "no-progress", noProgressCount: 2, findings: [] };
+    if (invalidatingRound) {
+      return {
+        continue: false, reason: "no-progress", noProgressCount: 2,
+        findings: invalidatingRound.findings, evidenceDigest: invalidatingRound.evidenceDigest,
+      };
     }
     return { continue: false, reason: "done", noProgressCount: 0, findings: [] };
   }

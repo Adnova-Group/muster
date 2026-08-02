@@ -12,7 +12,7 @@ import { validateVerdicts } from "./verdict-schema.js";
 import { pickWinner } from "./tournament.js";
 import { homedir } from "node:os";
 import { constants as fsConstants } from "node:fs";
-import { createHash } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { lstat, readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { runDoctor } from "./doctor.js";
@@ -646,6 +646,8 @@ async function main() {
       const r = reconcileSprintProgress(input.plan, {
         receipts: input.receipts,
         inFlight: input.inFlight,
+        integrationTargets: input.integrationTargets,
+        approvals: input.approvals,
         recovery: {
           ...(process.env.MUSTER_RECOVERY_NO_PROGRESS_LIMIT === undefined ? {} : {
             noProgressLimit: Number(process.env.MUSTER_RECOVERY_NO_PROGRESS_LIMIT),
@@ -653,6 +655,13 @@ async function main() {
           ...(process.env.MUSTER_RECOVERY_MAX_CONTINUATIONS === undefined ? {} : {
             maxContinuations: Number(process.env.MUSTER_RECOVERY_MAX_CONTINUATIONS),
           }),
+        },
+      }, {
+        verifyApproval: (approval) => {
+          const secret = process.env.MUSTER_INTEGRATION_APPROVAL_SECRET;
+          if (typeof secret !== "string" || secret.length < 16 || !/^[0-9a-f]{64}$/.test(approval.evidence ?? "")) return false;
+          const expected = createHmac("sha256", secret).update(approval.digest).digest();
+          return timingSafeEqual(expected, Buffer.from(approval.evidence, "hex"));
         },
       });
       out(r);

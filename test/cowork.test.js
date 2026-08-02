@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
+import { integrationApprovalDigest } from "../src/sprint-waves.js";
 import { readFile } from "node:fs/promises";
 import { mkdtempSync, writeFileSync, readFileSync, rmSync, renameSync, readdirSync, mkdirSync, copyFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -841,7 +842,7 @@ test("json verb: muster_sprint_reconcile drains a completion wake and exposes re
         arguments: {
           plan,
           inFlight: [{ itemId: "a", phase: "implementation", attempt: 1 }],
-          receipts: [{ id: "impl-a", itemId: "a", phase: "implementation", status: "completed" }],
+          receipts: [{ id: "impl-a", itemId: "a", phase: "implementation", status: "completed", candidateSha: "a".repeat(40) }],
         },
       },
     },
@@ -850,8 +851,51 @@ test("json verb: muster_sprint_reconcile drains a completion wake and exposes re
 
   assert.equal(reconciled[2].result.isError, false);
   assert.equal(res.next, "dispatch");
-  assert.deepEqual(res.actions, [{ type: "dispatch", itemId: "a", phase: "review", wave: 1 }]);
+  assert.deepEqual(res.actions, [{
+    type: "dispatch", itemId: "a", phase: "review", wave: 1,
+    candidateSha: "a".repeat(40), implementationAttempt: 1,
+  }]);
   assert.equal(res.wait.eligible, false);
+});
+
+test("json verb: muster_sprint_reconcile forwards exact-head integration approval evidence", async () => {
+  const backlog = "- [ ] Merge A {id: a} {deps: none} {disposition: merge-local}";
+  const planned = await rpc([
+    INIT,
+    { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_sprint_waves", arguments: { backlog } } },
+  ]);
+  const plan = JSON.parse(planned[2].result.content[0].text);
+  const workHeadSha = "a".repeat(40);
+  const baseHeadSha = "b".repeat(40);
+  const approval = {
+    itemId: "a", workBranch: "work/a", workHeadSha, baseBranch: "main", baseHeadSha,
+    operation: "merge-local", approvedBy: "human", approvedAt: "2026-08-01T12:00:00Z",
+  };
+  approval.digest = integrationApprovalDigest(approval);
+  const secret = "0123456789abcdef0123456789abcdef";
+  approval.evidence = createHmac("sha256", secret).update(approval.digest).digest("hex");
+  const response = await rpc([
+    INIT,
+    { jsonrpc: "2.0", id: 2, method: "tools/call", params: {
+      name: "muster_sprint_reconcile",
+      arguments: {
+        plan,
+        receipts: [
+          { id: "impl-a", itemId: "a", phase: "implementation", status: "completed", candidateSha: workHeadSha },
+          { id: "review-a", itemId: "a", phase: "review", status: "completed", candidateSha: workHeadSha, implementationAttempt: 1 },
+        ],
+        inFlight: [],
+        integrationTargets: { a: { workBranch: "work/a", baseBranch: "main", baseHeadSha } },
+        approvals: [approval],
+      },
+    } },
+  ], { env: { MUSTER_INTEGRATION_APPROVAL_SECRET: secret } });
+  const result = JSON.parse(response[2].result.content[0].text);
+  assert.equal(response[2].result.isError, false);
+  assert.deepEqual(result.actions, [{
+    type: "dispatch", itemId: "a", phase: "integration", wave: 1,
+    candidateSha: workHeadSha, approvalDigest: approval.digest,
+  }]);
 });
 
 test("json verb: muster_sprint_reconcile returns isError with structured validation errors for a forged plan", async () => {

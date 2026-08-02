@@ -168,7 +168,8 @@ test("a rejected spec candidate cannot be resurrected by a later PASS or caller 
   };
   const pass = { ...fail, findings: [], verdict: "PASS" };
   assert.deepEqual(specGateRecoveryState({ rounds: [fail, pass] }), {
-    continue: false, reason: "no-progress", noProgressCount: 2, findings: [],
+    continue: false, reason: "no-progress", noProgressCount: 2,
+    findings: SAFETY_FINDINGS, evidenceDigest: EVIDENCE_DIGEST,
   });
   assert.throws(() => specGateRecoveryState({ rounds: [fail], done: true }), /explicit independent PASS/);
 });

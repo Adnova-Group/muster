@@ -119,6 +119,9 @@ function translateCodexProse(text) {
 }
 function translatePluginPaths(text) {
   return text
+    .replaceAll("${PLUGIN_ROOT}/plugin/commands/", `${"${PLUGIN_ROOT}"}/commands/`)
+    .replaceAll("${PLUGIN_ROOT}/plugin/skills/", `${"${PLUGIN_ROOT}"}/internal-skills/`)
+    .replaceAll("${PLUGIN_ROOT}/plugin/hooks/", `${"${PLUGIN_ROOT}"}/hooks/`)
     .replaceAll("plugin/commands/", `${"${PLUGIN_ROOT}"}/commands/`)
     .replaceAll("plugin/skills/", `${"${PLUGIN_ROOT}"}/internal-skills/`)
     .replaceAll("plugin/hooks/", `${"${PLUGIN_ROOT}"}/hooks/`);
@@ -651,7 +654,7 @@ function codexSkill(source, id, contract) {
         "1. Select one code reviewer for ordinary waves. Add the security reviewer only when the task is security-scoped or the diff touches authentication, authorization, secrets, cryptography, shell execution, network boundaries, installers, or lifecycle hooks. Add a surface reviewer only when its definition-of-done gate fires. Never dispatch two reviewers for the same quality dimension; always use at least one reviewer."
       )
       ;
-    const fixLoopPrefixRe = /6\. If `blocked`:[^\n]*\n\s+On Codex,[\s\S]*?available\. Cap at/;
+    const fixLoopPrefixRe = /6\. If `blocked`: re-dispatch the implementer with the blocker notes, then re-review\. Cap at/;
     if (!fixLoopPrefixRe.test(body)) throw new Error("review-gate fix-loop context anchor not found for Codex rewrite");
     body = body.replace(
       fixLoopPrefixRe,

@@ -943,6 +943,7 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
     checks.push({ name: "codex-hook-state", ok: false, detail: `could not inspect config.toml [hooks.state]: ${error.message}` });
   }
   const scopeHomes = new Map([[join(cwd, ".codex"), false], [userCodexHome, false]]);
+  if (inventoryCwd !== cwd) scopeHomes.set(join(inventoryCwd, ".codex"), false);
   for (const dir of registeredScopes.dirs) scopeHomes.set(dir, true);
   const hookHomes = [...scopeHomes.keys()];
   // The handshake spawns `plugin`'s bundled MCP entrypoint -- a runtime claim
@@ -1041,18 +1042,18 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   const hookCauseFailures = [];
   const managedHookScripts = [...hookHomes].map(dir => join(dir, "muster", "hooks", "muster-hook.mjs"));
   const managedProjectCwds = [...hookHomes].filter(dir => dir !== userCodexHome).map(dirname);
-  const currentProjectHookHome = join(cwd, ".codex");
+  const currentProjectHookHomes = new Set([join(cwd, ".codex"), join(inventoryCwd, ".codex")]);
   for (const dir of hookHomes) {
     const manifestPath = join(dir, "muster", ".muster-managed.json");
     const registered = scopeHomes.get(dir);
     if (!registered && !(await exists(manifestPath))) {
-      if (dir === currentProjectHookHome) {
+      if (currentProjectHookHomes.has(dir)) {
         const configPath = join(dir, "hooks.json");
         try {
           const config = await readRegularJson(configPath);
           if (config) {
             const carriesMusterGroups = Object.values(config?.hooks || {}).some(groups => Array.isArray(groups) && groups.some(isMusterHookGroup));
-            const alias = await hasMusterHookCommandAlias(config, managedHookScripts, { cwds: [cwd] });
+            const alias = await hasMusterHookCommandAlias(config, managedHookScripts, { cwds: [...new Set([cwd, inventoryCwd])] });
             if (carriesMusterGroups || alias) {
               staleHookScopes.push(dir);
               mismatchHookScopes.push({ dir, path: configPath });

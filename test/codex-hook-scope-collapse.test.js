@@ -7,7 +7,7 @@
 // hook scope. See prepareHooks' userScopeHooksHealthy in src/codex-install.js.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { link, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { link, lstat, mkdir, mkdtemp, readdir, readFile, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CODEX_COUNTS } from "../src/codex.js";
@@ -627,7 +627,7 @@ test("Codex install adversarial: a failed transaction mid-migration restores the
   assert.equal(await readFile(projectRuntimePath, "utf8"), beforeRuntime, "project hook runtime is restored byte-identically");
 });
 
-test("Codex install rollback preserves an external edit made after Muster's transaction write", async t => {
+test("Codex install rollback preserves an unsafe external replacement and the original failure", async t => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-rollback-external-edit-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));
   const cwd = join(tmp, "project"), home = join(tmp, "home");
@@ -635,13 +635,16 @@ test("Codex install rollback preserves an external edit made after Muster's tran
   const userResult = await installTrustedUser({ cwd, home });
   const hooksPath = join(cwd, ".codex", "hooks.json");
   const external = JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: "node /external/hook.mjs" }] }] } }, null, 2) + "\n";
+  const externalPath = join(tmp, "external-hooks.json");
+  await writeFile(externalPath, external);
   const failingExecFile = async (_bin, args) => {
     if (args[0] === "--version") return { stdout: "codex-cli test" };
     if (args.slice(0, 3).join(" ") === "plugin marketplace list") return { stdout: JSON.stringify({ marketplaces: [] }) };
     if (args.slice(0, 3).join(" ") === "plugin marketplace add") return { stdout: "" };
     if (args.slice(0, 3).join(" ") === "plugin list --available") return { stdout: JSON.stringify({ installed: [], available: [] }) };
     if (args.slice(0, 2).join(" ") === "plugin add") {
-      await writeFile(hooksPath, external);
+      await unlink(hooksPath);
+      await symlink(externalPath, hooksPath);
       throw new Error("registration failed after external edit");
     }
     if (args.slice(0, 3).join(" ") === "plugin marketplace remove") return { stdout: "" };
@@ -653,6 +656,7 @@ test("Codex install rollback preserves an external edit made after Muster's tran
     /registration failed after external edit/
   );
   assert.equal(await readFile(hooksPath, "utf8"), external);
+  assert.equal((await lstat(hooksPath)).isSymbolicLink(), true);
 });
 
 test("Codex uninstall: a canonical-scope-skipped project scope uninstalls cleanly as a no-op on hooks (agents still removed)", async t => {

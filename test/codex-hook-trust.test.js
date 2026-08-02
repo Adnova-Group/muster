@@ -401,11 +401,14 @@ test("Codex project installs use the primary checkout config root from a linked 
   assert.equal(mainHooks.hooks.Stop.length > 0, true);
   await assert.rejects(readFile(join(linked, ".codex", "hooks.json")), error => error.code === "ENOENT");
 
-  let markerCreated = false;
+  await mkdir(join(linked, ".codex"));
+  let markerInventoryReads = 0;
   const markerInventory = async () => {
-    if (!markerCreated) {
-      markerCreated = true;
-      await mkdir(join(linked, ".codex"));
+    markerInventoryReads++;
+    if (markerInventoryReads === 2) {
+      await writeFile(join(linked, ".codex", "hooks.json"), JSON.stringify({
+        hooks: { Stop: [{ hooks: [{ type: "command", command: `node ${join(main, ".codex", "muster", "hooks", "muster-hook.mjs")}` }] }] }
+      }, null, 2));
     }
     return inventoryFor(linked, mainHooksPath, installed.hookTrust.results);
   };

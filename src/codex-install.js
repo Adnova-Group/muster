@@ -194,6 +194,8 @@ export async function hookActivationSnapshot({ home, cwd, inventoryCwd = cwd, us
     }
   }
   const dirs = new Set([userCodexHome, join(cwd, ".codex"), ...entries.map(entry => resolve(entry.configDir))]);
+  const invocationConfigDir = join(inventoryCwd, ".codex");
+  if (resolve(inventoryCwd) !== resolve(cwd)) dirs.add(invocationConfigDir);
   const paths = [registryPath];
   for (const dir of dirs) paths.push(
     join(dir, "hooks.json"),
@@ -205,7 +207,6 @@ export async function hookActivationSnapshot({ home, cwd, inventoryCwd = cwd, us
   const files = new Map([[registryPath, registryFile]]);
   for (const path of [...new Set(paths)].sort()) if (path !== registryPath) files.set(path, await activationFileSnapshot(path));
   if (resolve(inventoryCwd) !== resolve(cwd)) {
-    const invocationConfigDir = join(inventoryCwd, ".codex");
     files.set(invocationConfigDir, await activationDirectorySnapshot(invocationConfigDir));
   }
   return files;
@@ -232,10 +233,12 @@ async function liveManagedHookScripts(home, extraConfigDirs = []) {
 
 async function validateManagedHookAliasGraph({ home, cwd, inventoryCwd = cwd, entries, currentDir, currentConfig }) {
   const currentProjectDir = join(cwd, ".codex");
+  const invocationProjectDir = join(inventoryCwd, ".codex");
   const registeredDirs = new Set(entries.map(entry => resolve(entry.configDir)));
   const scopes = [
     { scope: "user", configDir: codexHome(home) },
     { scope: "project", configDir: currentProjectDir },
+    ...(resolve(invocationProjectDir) === resolve(currentProjectDir) ? [] : [{ scope: "project", configDir: invocationProjectDir }]),
     ...entries,
     ...(currentDir ? [{ scope: currentDir === codexHome(home) ? "user" : "project", configDir: currentDir }] : [])
   ];
@@ -254,7 +257,7 @@ async function validateManagedHookAliasGraph({ home, cwd, inventoryCwd = cwd, en
     }
     const cwds = entry.scope === "user" ? [...new Set([cwd, inventoryCwd, ...projectCwds])]
       : entry.configDir === resolve(currentProjectDir) ? [...new Set([cwd, inventoryCwd])] : [dirname(entry.configDir)];
-    const unownedCurrentProject = entry.configDir === resolve(currentProjectDir)
+    const unownedCurrentProject = [currentProjectDir, invocationProjectDir].some(dir => entry.configDir === resolve(dir))
       && entry.configDir !== resolve(currentDir || "") && !registeredDirs.has(entry.configDir);
     if (unownedCurrentProject && Object.values(config.hooks || {}).some(groups => Array.isArray(groups)
       && groups.some(group => groupCommands(group).some(isMusterHookCommand)))) {
@@ -2056,7 +2059,10 @@ async function transactionRemove(written, path) {
 async function restoreFilesystem(originals, changed, written) {
   for (const destination of [...changed].reverse()) {
     const expected = written.get(destination);
-    if (!expected || !samePhysicalFile(expected, await physicalFileSnapshot(destination))) continue;
+    let current;
+    try { current = await physicalFileSnapshot(destination); }
+    catch { continue; }
+    if (!expected || !samePhysicalFile(expected, current)) continue;
     if (originals.get(destination) === null) await removeSafe(destination);
     else await atomicWriteSafe(destination, originals.get(destination));
   }

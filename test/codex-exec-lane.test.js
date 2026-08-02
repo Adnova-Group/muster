@@ -4,7 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   resolveCodexDispatchLane, codexExecCall, interpretCodexExecExit, codexReviewCall, CODEX_EXEC_MODES
-} from "../src/wave-dispatch.js";
+} from "../src/codex-dispatch.js";
 
 // --- lane selection ---------------------------------------------------------
 

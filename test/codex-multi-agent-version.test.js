@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { codexSpawnAgentCall, codexWaitAgentCall, resolveCodexMultiAgentVersion, CODEX_MULTI_AGENT_VERSIONS, CODEX_WAIT_TIMEOUT_MS } from "../src/wave-dispatch.js";
+import { codexSpawnAgentCall, codexWaitAgentCall, resolveCodexMultiAgentVersion, CODEX_MULTI_AGENT_VERSIONS, CODEX_WAIT_TIMEOUT_MS } from "../src/codex-dispatch.js";
 import { readCodexMultiAgentVersion } from "../src/codex-inventory.js";
 
 test("resolveCodexMultiAgentVersion: override wins, then catalog, then a v1 floor", () => {

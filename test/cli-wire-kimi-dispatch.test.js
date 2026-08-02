@@ -7,8 +7,8 @@
  *   kimi-session-usage     -> src/kimi-receipts.js's captureSessionId /
  *                             resolveSessionForCwd / readSessionUsage
  *   kimi-summarize-receipts -> src/kimi-receipts.js's summarizeItemReceipts
- *   codex-spawn-packet     -> src/wave-dispatch.js's codexSpawnAgentCall
- *   codex-wait-packet      -> src/wave-dispatch.js's codexWaitAgentCall
+ *   codex-spawn-packet     -> src/codex-dispatch.js's codexSpawnAgentCall
+ *   codex-wait-packet      -> src/codex-dispatch.js's codexWaitAgentCall
  *
  * These verbs are the ONLY path by which the model layer reaches those
  * builders (the two-layer boundary): the prose commands/reference files name

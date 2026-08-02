@@ -6,7 +6,7 @@ import { KIMI_LANES, kimiLaneEnv, kimiPreferenceForAgentId } from "./kimi.js";
 // ───────────────────────────────────────────────────────────────────────────
 // Kimi-native dispatch: AgentSwarm (waves) + /goal (the run loop)
 //
-// The harness-native counterpart to wave-dispatch.js's Codex spawn_agent lane.
+// The harness-native counterpart to codex-dispatch.js's spawn_agent lane.
 // Where Codex offers only per-agent spawn (muster supplies the fan-out, the
 // barrier, and the aggregation), Kimi ships BOTH halves natively:
 //

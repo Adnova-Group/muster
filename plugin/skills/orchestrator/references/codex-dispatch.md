@@ -22,7 +22,7 @@ subagent collaboration itself, never a prose-loop substitute for the Claude-only
 0.145.0). Codex resolves its subagent API per MODEL from the catalog's `multi_agent_version`, and
 the live catalog puts `gpt-5.6-sol`/`terra` on v2 but `gpt-5.6-luna` -- muster's core tier -- on
 v1. Never hardcode one shape; build both packets through `$MUSTER_CLI codex-spawn-packet` /
-`codex-wait-packet` (src/wave-dispatch.js's `codexSpawnAgentCall`/`codexWaitAgentCall`),
+`codex-wait-packet` (src/codex-dispatch.js's `codexSpawnAgentCall`/`codexWaitAgentCall`),
 which resolve the version and fail closed to v1 rather than guessing v2
 (docs/research/codex-cli.md sec 10.1): `codex-spawn-packet --task-id <task id> --agent-type
 <chosen.id> [--message-file <brief file>] [--version v1|v2] [--fork-turns <none|N>]` prints the
@@ -53,7 +53,7 @@ integer string is the useful middle -- it keeps that many turns of context AND s
 a context fork and never use `"all"`: a forked history is copied into every spawned agent, so the
 standing quota policy (the 2026-07-15 quota-amplification fix) keeps `"none"` the spawn default.
 
-`resolveCodexWaveDispatch({ multiAgent, env })` (`src/wave-dispatch.js`) selects between this and a
+`resolveCodexWaveDispatch({ multiAgent, env })` (`src/codex-dispatch.js`) selects between this and a
 sequential-inline floor purely on the session's own `features.multi_agent` signal -- same
 DECLARED-not-auto-probed shape as the wave-dispatch capability check in SKILL.md, inverted: Codex
 ships `multi_agent` default-on, so only an explicit `multiAgent: false` (or
@@ -65,7 +65,7 @@ custom-agent TOML profile (`.codex/agents/<id>.toml`) that pins that role's mode
 effort, and sandbox; losing that pin by silently falling back to a generic agent is the exact
 anti-pattern the codex burn taught muster to guard against. Only an ACTUALLY-rejected
 `spawn_agent` call proves a profile unavailable -- never infer unavailability from a simplified
-displayed tool signature. `assertCodexSpawnAgentAccepted` in `src/wave-dispatch.js` throws a
+displayed tool signature. `assertCodexSpawnAgentAccepted` in `src/codex-dispatch.js` throws a
 registration diagnostic naming the `agent_type` and task on a rejection, and the run STOPS on that
 task rather than silently re-dispatching on a generic/default agent. Fix the registration
 (reinstall the profile, verify `.codex/agents/`), then re-dispatch that one task.

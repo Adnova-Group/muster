@@ -181,7 +181,7 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // bullets above it, nor any other named section. The new subsection documents that Codex rides
   // its OWN native primitive (`collaboration.spawn_agent`/`wait_agent`/`list_agents`,
   // `fork_turns: "none"`, `agent_type`) rather than a prose-loop substitute for the Claude-only
-  // `Workflow` tool, names `src/wave-dispatch.js`'s new `resolveCodexWaveDispatch` (spawn_agent
+  // `Workflow` tool, names `src/codex-dispatch.js`'s `resolveCodexWaveDispatch` (spawn_agent
   // vs sequential-inline, gated on Codex's own `features.multi_agent`, default-on -- inverse of
   // agent-teams' default-off) and `assertCodexSpawnAgentAccepted` (the fail-closed guard: a
   // rejected profile throws a registration diagnostic naming the `agent_type`/task rather than
@@ -1358,5 +1358,7 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // File count remains unchanged.
   // 2026-08-02 re-pin #42 (desktop harness support): init.md distinguishes the
   // ChatGPT Desktop shell, Codex Desktop, and ChatGPT Work init handoffs.
-  assert.equal(hash.digest("hex"), "d3d5c3c5bd2c83dbe56f84ccad1e8a4ee4f4c5571cefbd193922d4cd95f3b61a");
+  // 2026-08-02 re-pin #43 (wave-dispatch split): codex-dispatch.md points its
+  // implementation citations at the extracted src/codex-dispatch.js module.
+  assert.equal(hash.digest("hex"), "038fe761ecd169f642fa09387feaf5b817e70b196e8843d13a4809c059578575");
 });

@@ -64,7 +64,8 @@ import { detectScope } from "./scope.js";
 import { runHygiene, renderHygieneReport, DEFAULT_WORKTREE_THRESHOLD } from "./hygiene.js";
 import { resolveMusterCli } from "./cli-resolve.js";
 import { planGateCadence, DEFAULT_REVIEW_DIFF_THRESHOLD } from "./gate-cadence.js";
-import { resolveWaveDispatch, resolveWorktreeIsolation, makeGitShaVerifier, codexSpawnAgentCall, codexWaitAgentCall } from "./wave-dispatch.js";
+import { resolveWaveDispatch, resolveWorktreeIsolation, makeGitShaVerifier } from "./wave-dispatch.js";
+import { codexSpawnAgentCall, codexWaitAgentCall } from "./codex-dispatch.js";
 import { kimiGoalInvocation, kimiProcessDispatch } from "./kimi-dispatch.js";
 import { captureSessionId, resolveSessionForCwd, readSessionUsage, summarizeItemReceipts, DEFAULT_SESSION_INDEX } from "./kimi-receipts.js";
 import { resolvePlanSurface } from "./plan-surface.js";
@@ -447,7 +448,7 @@ async function main() {
     // ── harness-native dispatch packets + session receipts (kimi/codex lanes) ──
     // The model layer reaches these builders ONLY through these verbs (the
     // two-layer boundary): each verb prints the descriptor src/kimi-dispatch.js /
-    // src/kimi-receipts.js / src/wave-dispatch.js constructs, and the prose
+    // src/kimi-receipts.js / src/codex-dispatch.js constructs, and the prose
     // spawns/records from the printed JSON. Builder validation errors throw and
     // surface through main()'s catch as fail() -- only MISSING cli args fail here.
     } else if (cmd === "kimi-goal-invocation") {
@@ -550,7 +551,7 @@ async function main() {
       const items = JSON.parse(await readFile(canonical, "utf8"));
       process.stdout.write((await summarizeItemReceipts(items)).join("\n") + "\n");
     } else if (cmd === "codex-spawn-packet") {
-      // The version-aware spawn_agent constructor (src/wave-dispatch.js): prints
+      // The version-aware spawn_agent constructor (src/codex-dispatch.js): prints
       // the exact call JSON for the target model's API version, failing closed to
       // v1 when --version is absent (never guessing v2 at a v1 model).
       const usage = "codex-spawn-packet --task-id <id> --agent-type <id> [--message <text> | --message-file <file>] [--version v1|v2] [--fork-turns <none|N>]";

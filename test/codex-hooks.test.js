@@ -4,9 +4,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { cp, mkdir, readdir, readFile, rm, unlink, utimes, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, readdir, readFile, rm, stat, unlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { runCodexInstall, runCodexUninstall } from "../src/codex-install.js";
 import { repoRoot, runCodexHook, selectedPluginRoot } from "../test-support/codex-helpers.js";
 import { trackedMkdtemp as mkdtemp } from "../test-support/helpers.js";
@@ -23,6 +24,58 @@ import { uniqueSid } from "./test-support/hook-helpers.js";
 // coincidence between a Claude session and a Codex session can never
 // collide). Tests compute the same path to assert on/clean up state directly.
 const borderStateFile = sessionId => join(tmpdir(), `muster-codex-border-${sessionId.replace(/[^a-zA-Z0-9_-]/g, "")}`);
+
+function runMarkerReplacementRace({ hookPath, marker, victim, replacement, payload, cwd }) {
+  const hookUrl = pathToFileURL(hookPath).href;
+  const script = `
+    import fs from "node:fs";
+    import { execFileSync } from "node:child_process";
+    import { syncBuiltinESMExports } from "node:module";
+    const marker = ${JSON.stringify(marker)};
+    const victim = ${JSON.stringify(victim)};
+    const replacement = ${JSON.stringify(replacement)};
+    let replaced = false;
+    const replaceMarker = () => {
+      if (replaced) return;
+      replaced = true;
+      fs.unlinkSync(marker);
+      if (replacement === "symlink") fs.symlinkSync(victim, marker);
+      else execFileSync("mkfifo", [marker]);
+    };
+    const realLstatSync = fs.lstatSync;
+    fs.lstatSync = (path, ...args) => {
+      const result = realLstatSync(path, ...args);
+      if (path === marker) replaceMarker();
+      return result;
+    };
+    const realOpenSync = fs.openSync;
+    fs.openSync = (path, ...args) => {
+      const fd = realOpenSync(path, ...args);
+      if (path === marker) replaceMarker();
+      return fd;
+    };
+    syncBuiltinESMExports();
+    await import(${JSON.stringify(hookUrl)});
+  `;
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ["--input-type=module", "--eval", script], {
+      cwd,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    let stdout = "", stderr = "", timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; child.kill("SIGKILL"); }, 2_000);
+    child.stdout.setEncoding("utf8"); child.stdout.on("data", chunk => { stdout += chunk; });
+    child.stderr.setEncoding("utf8"); child.stderr.on("data", chunk => { stderr += chunk; });
+    child.on("error", reject);
+    child.on("exit", code => {
+      clearTimeout(timer);
+      if (timedOut) reject(new Error(`${replacement} replacement race hung the hook`));
+      else if (code !== 0) reject(new Error(stderr || `race probe exited ${code}`));
+      else resolve(stdout);
+    });
+    child.stdin.end(JSON.stringify(payload));
+  });
+}
 
 test("Codex distribution installs supported lifecycle hooks without advertising inert plugin hooks", async () => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-"));
@@ -108,6 +161,63 @@ test("Codex hook exports no lock/quarantine/retirement machinery and creates no 
     child.stdin.end();
   });
   assert.deepEqual(JSON.parse(stdout), [], "the simplified hook must export no lock/quarantine/retirement machinery");
+});
+
+test("Codex hook marker writes stay pinned to the opened descriptor across symlink and FIFO replacement races", { skip: process.platform === "win32" }, async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-marker-race-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const hookPath = join(repoRoot, "codex", "hooks", "muster-hook.mjs");
+
+  for (const replacement of ["fifo", "symlink"]) {
+    const sessionId = uniqueSid(`marker-${replacement}-race`);
+    const marker = borderStateFile(sessionId);
+    const victim = join(tmp, `${replacement}-victim.txt`);
+    t.after(() => unlink(marker).catch(() => {}));
+    await writeFile(marker, JSON.stringify({ touched: ["before"], nudged: true }));
+    await writeFile(victim, "victim-bytes-must-not-change\n");
+
+    await runMarkerReplacementRace({
+      hookPath,
+      marker,
+      victim,
+      replacement,
+      payload: { hook_event_name: "SessionStart", session_id: sessionId, source: "startup", cwd: tmp },
+      cwd: tmp,
+    });
+
+    assert.equal(await readFile(victim, "utf8"), "victim-bytes-must-not-change\n", `${replacement} replacement must change zero target bytes`);
+    await unlink(marker);
+  }
+});
+
+test("Codex hook creates and repairs marker files as private regular files", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-marker-mode-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const hookPath = join(repoRoot, "codex", "hooks", "muster-hook.mjs");
+  const sessionId = uniqueSid("marker-private");
+  const marker = borderStateFile(sessionId);
+  t.after(() => unlink(marker).catch(() => {}));
+
+  await writeFile(marker, "old\n");
+  await chmod(marker, 0o666);
+  await runCodexHook(
+    { hook_event_name: "SessionStart", session_id: sessionId, source: "startup", cwd: tmp },
+    tmp,
+    hookPath,
+  );
+
+  const markerStat = await stat(marker);
+  assert.equal(markerStat.isFile(), true, "the marker must be a regular file");
+  assert.equal(markerStat.mode & 0o777, 0o600, "the marker must be private even when an existing file was permissive");
+
+  await unlink(marker);
+  await runCodexHook(
+    { hook_event_name: "SessionStart", session_id: sessionId, source: "startup", cwd: tmp },
+    tmp,
+    hookPath,
+    { MUSTER_TEST_FORCE_NO_NOFOLLOW: "1" },
+  );
+  await assert.rejects(stat(marker), { code: "ENOENT" }, "marker creation must fail closed when O_NOFOLLOW is unavailable");
 });
 
 test("codex/hooks/muster-hook.mjs and its tracked .codex install copy stay byte-identical", async () => {

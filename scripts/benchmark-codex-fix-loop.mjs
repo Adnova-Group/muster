@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
@@ -13,6 +13,7 @@ const outputIndex = process.argv.indexOf("--output");
 const outputPath = outputIndex >= 0 ? resolve(process.argv[outputIndex + 1]) : null;
 const casesIndex = process.argv.indexOf("--cases");
 const caseCount = casesIndex >= 0 ? Number(process.argv[casesIndex + 1]) : 10;
+const baselineOnly = process.argv.includes("--baseline-only");
 if (!outputPath) throw new Error("--output <path> is required");
 if (!Number.isInteger(caseCount) || caseCount < 1 || caseCount > 10) throw new Error("--cases must be an integer from 1 to 10");
 
@@ -24,7 +25,7 @@ const tasks = [
   ["double_value", "return value * 2", "return value + 2", 8, 16],
   ["triple_value", "return value * 3", "return value * 2", 6, 18],
   ["square_value", "return value * value", "return value + value", 7, 49],
-  ["absolute_value", "return Math.abs(value)", "return -value", -11, 11],
+  ["absolute_value", "return Math.abs(value)", "return -value", 11, 11],
   ["floor_value", "return Math.floor(value)", "return Math.ceil(value)", 4.8, 4],
   ["ceil_value", "return Math.ceil(value)", "return Math.floor(value)", 4.2, 5],
   ["bounded_value", "return Math.min(10, Math.max(0, value))", "return Math.max(10, value)", 14, 10],
@@ -93,6 +94,20 @@ function verify(cwd) {
   return { passed: true, command: "node --test test/operation.test.js", outputSha256: createHash("sha256").update(output).digest("hex") };
 }
 
+function verifyExpectedFailure(cwd) {
+  const command = "node --test test/operation.test.js";
+  const result = spawnSync(process.execPath, ["--test", "test/operation.test.js"], { cwd, encoding: "utf8" });
+  if (result.error) throw result.error;
+  if (result.status === 0) throw new Error(`${cwd}: benchmark fixture must fail before Codex dispatch`);
+  return {
+    passed: false,
+    command,
+    exitCode: result.status,
+    stdoutSha256: createHash("sha256").update(result.stdout || "").digest("hex"),
+    stderrSha256: createHash("sha256").update(result.stderr || "").digest("hex"),
+  };
+}
+
 function brief({ name, correct, input, expected, cwd, baseSha, blocker }) {
   const context = Array.from({ length: 50 }, (_, line) =>
     `${name}-constraint-${line + 1}: preserve the exported API, make the smallest correct edit, and keep the focused node:test regression green.`
@@ -145,6 +160,16 @@ try {
     const [name, correct, , input, expected] = task;
     const pairRoot = join(benchmarkRoot, `${String(index + 1).padStart(2, "0")}-${name}`);
     const fixture = await initializePair(pairRoot, task, index + 1);
+    const baseline = {
+      resumed: verifyExpectedFailure(fixture.resumed),
+      fresh: verifyExpectedFailure(fixture.fresh),
+    };
+    const fixtureSha256 = createHash("sha256").update(await readFile(join(fixture.repo, "test", "operation.test.js"))).digest("hex");
+    if (baselineOnly) {
+      evidence.cases.push({ case: name, fixtureSha256, baseline });
+      process.stderr.write(`verified failing baseline ${index + 1}/${caseCount}: ${name}\n`);
+      continue;
+    }
     const store = join(pairRoot, "protected-receipts");
     const blocker = `test/operation.test.js demonstrates ${name}(${JSON.stringify(input)}) must return ${JSON.stringify(expected)}; fix only src/operation.js and run the focused test.`;
     const seed = await productionTurn({
@@ -183,20 +208,21 @@ try {
     if (seed.threadIdSha256 !== continued.threadIdSha256) throw new Error(`${name}: continuation thread identity changed`);
     evidence.cases.push({
       case: name,
-      fixtureSha256: createHash("sha256").update(await readFile(join(fixture.repo, "test", "operation.test.js"))).digest("hex"),
+      fixtureSha256,
+      baseline,
       seed,
       fresh,
       continued,
     });
     process.stderr.write(`completed ${index + 1}/${caseCount}: ${name}\n`);
   }
-  evidence.summary = benchmarkCodexFixLoops(evidence.cases);
-  evidence.totalUsage = evidence.cases.reduce((total, entry) => ({
+  if (!baselineOnly) evidence.summary = benchmarkCodexFixLoops(evidence.cases);
+  if (!baselineOnly) evidence.totalUsage = evidence.cases.reduce((total, entry) => ({
     inputTokens: total.inputTokens + entry.fresh.usage.input_tokens + entry.continued.usage.input_tokens,
     cachedInputTokens: total.cachedInputTokens + (entry.fresh.usage.cached_input_tokens ?? 0) + (entry.continued.usage.cached_input_tokens ?? 0),
     outputTokens: total.outputTokens + entry.fresh.usage.output_tokens + entry.continued.usage.output_tokens,
   }), { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0 });
-  evidence.cost = { amountUsd: null, note: "Codex usage events expose tokens, not billed USD; exact cost requires the account billing ledger." };
+  if (!baselineOnly) evidence.cost = { amountUsd: null, note: "Codex usage events expose tokens, not billed USD; exact cost requires the account billing ledger." };
   await mkdir(dirname(outputPath), { recursive: true });
   await writeFile(outputPath, JSON.stringify(evidence, null, 2) + "\n");
 } finally {

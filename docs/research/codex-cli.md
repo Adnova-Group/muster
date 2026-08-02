@@ -404,10 +404,12 @@ returned 1 with the project config path plus TOML line/column for malformed TOML
 --strict-config` is not a substitute: its ordinary report accepted an unknown root field during the
 same probe.
 
-Muster therefore uses the app-server parser behind a 2.5-second timeout and 64 KiB per-stream caps,
-closes stdin without sending an initialize or thread/start request, drains both output streams, and
-rejects any JSON thread/turn lifecycle event even on exit 0. Install validation runs after the full
-filesystem transaction is staged and before plugin registration; failure restores the snapshotted
+Muster therefore launches the already-pinned Node/Codex runtime identity, uses a dedicated process
+group behind a 2.5-second timeout and 64 KiB per-stream caps, closes stdin without sending an
+initialize or thread/start request, confirms process close, drains both output streams, and rejects
+any JSON thread/turn lifecycle event even on exit 0. Install validation runs after the full
+filesystem transaction is staged and before plugin registration; descriptor-pinned pre/post
+snapshots bind success to unchanged config inodes and bytes, while failure restores raw snapshotted
 bytes. A second pass supplies project trust only in an ephemeral `CODEX_HOME`, validating an
 otherwise-untrusted project config without persisting trust. Doctor reuses the same boundary.
 

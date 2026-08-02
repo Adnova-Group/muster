@@ -2,7 +2,7 @@ import { constants as fsConstants } from "node:fs";
 import { link, lstat, mkdir, open, readFile, readdir, realpath, rename, rmdir, stat, unlink } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { exists, readdirSafe } from "./fs-util.js";
-import { atomicWrite } from "./fs-safe.js";
+import { atomicWrite, readNoFollowRegular } from "./fs-safe.js";
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -1197,15 +1197,33 @@ async function prepareHooks({ scope, cwd, home, hookSourceRoot, packageVersion, 
 
 async function snapshot(originals, changed, path) {
   if (originals.has(path)) return;
-  originals.set(path, await safeExists(path) ? await readSafe(path, "utf8") : null);
+  const exact = await exactFileSnapshot(path);
+  originals.set(path, exact.exists ? exact.bytes : null);
   changed.push(path);
 }
 
-async function restoreFilesystem(originals, changed) {
+async function restoreFilesystem(originals, changed, { skip = new Set() } = {}) {
   for (const destination of [...changed].reverse()) {
+    if (skip.has(destination)) continue;
     if (originals.get(destination) === null) await removeSafe(destination);
     else await atomicWriteSafe(destination, originals.get(destination));
   }
+}
+
+async function exactFileSnapshot(path) {
+  const expectedInfo = await regularFileState(path);
+  if (!expectedInfo) return { exists: false, bytes: null, dev: null, ino: null };
+  const { bytes, info } = await readNoFollowRegular(path, {
+    maxBytes: expectedInfo.size,
+    label: path,
+    expectedInfo
+  });
+  return { exists: true, bytes, dev: info.dev, ino: info.ino };
+}
+
+function sameExactFileSnapshot(left, right) {
+  return left.exists === right.exists
+    && (!left.exists || (left.dev === right.dev && left.ino === right.ino && left.bytes.equals(right.bytes)));
 }
 
 function normalizedLocalRoot(value) {
@@ -1391,6 +1409,7 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
   const { files, profileContents, declarations, distributionRoot, dir, manifestPath, declarationConfigPath, declarationOwnership, threadLimitConfigPath, threadLimitManifestPath, packageVersion, hooks, staleFiles, present, planned } =
     await prepareCodexInstall({ scope, dryRun, cwd, home, repoRoot, execFile: executor, runtimeIdentity: identity, allowInjected: Boolean(execFile), nodeExecPath });
   let originals, changed;
+  const rollbackConflicts = new Set();
   let actions = [];
   const prunedScopes = [], prunedHookState = [], prunedProjectTrust = [];
   if (!dryRun) {
@@ -1563,10 +1582,28 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
         // Production always takes the bounded native parser path; tests with an
         // injected command runner opt into this boundary explicitly.
         const configParser = strictConfigRunner || (!execFile ? runCodexStrictConfigCheck : null);
-        if (configParser) await configParser({ cwd, codexHome: codexHome(home) });
+        if (configParser) {
+          const validationTargets = [...new Set([threadLimitConfigPath, declarationConfigPath])];
+          const validationSnapshots = new Map();
+          for (const path of validationTargets) validationSnapshots.set(path, await exactFileSnapshot(path));
+          let validationError = null;
+          try { await configParser({ cwd, codexHome: codexHome(home), runtimeIdentity: identity }); }
+          catch (error) { validationError = error; }
+          for (const path of validationTargets) {
+            let current;
+            try { current = await exactFileSnapshot(path); }
+            catch { current = { exists: false, bytes: null, dev: null, ino: null }; }
+            if (!sameExactFileSnapshot(validationSnapshots.get(path), current)) rollbackConflicts.add(path);
+          }
+          if (rollbackConflicts.size) {
+            throw new Error(`Codex config changed during strict validation: ${[...rollbackConflicts].join(", ")}; concurrent bytes were preserved`,
+              validationError ? { cause: validationError } : undefined);
+          }
+          if (validationError) throw validationError;
+        }
         actions = present ? await registerPlugin(executor, distributionRoot, { dryRun: false, runtimeIdentity: identity }) : [];
       } catch (error) {
-        await restoreFilesystem(originals, changed);
+        await restoreFilesystem(originals, changed, { skip: rollbackConflicts });
         throw error;
       }
     }, scopeLockOptions);

@@ -726,7 +726,7 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
     : identityError ? identityError.message : "codex not found — profiles can be installed, plugin registration is skipped" });
   const configParser = strictConfigRunner || (!execFile ? runCodexStrictConfigCheck : null);
   if (configParser) try {
-    const parsed = await configParser({ cwd, codexHome: codexHome || env.CODEX_HOME || join(homedir(), ".codex"), env });
+    const parsed = await configParser({ cwd, codexHome: codexHome || env.CODEX_HOME || join(homedir(), ".codex"), runtimeIdentity: identity, env });
     checks.push({ name: "codex-config-strict", ok: parsed?.ok === true && parsed?.modelTurnEvents === 0,
       detail: "Codex app-server strict parser accepted shared and project config with zero model-turn events" });
   } catch (error) {

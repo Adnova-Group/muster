@@ -10,6 +10,13 @@ import { runCodexStrictConfigCheck } from "../src/codex-strict-config.js";
 import { runCodexInstall } from "../src/codex-install.js";
 import { runCodexDoctor } from "../src/codex-doctor.js";
 import { repoRoot } from "../test-support/codex-helpers.js";
+import { resolveCodexRuntimeIdentity } from "../src/codex-runtime-identity.js";
+
+const PINNED_IDENTITY = Object.freeze({
+  node: "/trusted/node",
+  codex: "/trusted/codex",
+  version: "test"
+});
 
 function fakeSpawn({ code = 0, stderr = "", stdout = "", hang = false } = {}) {
   const calls = [];
@@ -47,12 +54,14 @@ test("strict config: valid config closes app-server stdin and emits zero model t
   const result = await runCodexStrictConfigCheck({
     cwd: "/workspace/project",
     codexHome: "/workspace/codex-home",
+    runtimeIdentity: PINNED_IDENTITY,
     spawn,
     timeoutMs: 100
   });
   assert.deepEqual(result, { ok: true, modelTurnEvents: 0 });
   assert.equal(spawn.calls.length, 2, "shared config and otherwise-untrusted project config are both parsed");
-  assert.deepEqual(spawn.calls[0].args, ["app-server", "--strict-config", "--listen", "stdio://"]);
+  assert.equal(spawn.calls[0].command, PINNED_IDENTITY.node);
+  assert.deepEqual(spawn.calls[0].args, [PINNED_IDENTITY.codex, "app-server", "--strict-config", "--listen", "stdio://"]);
   assert.equal(spawn.calls[0].options.cwd, "/workspace/project");
   assert.equal(spawn.calls[0].options.env.CODEX_HOME, "/workspace/codex-home");
   assert.equal(spawn.calls[0].child.stdin.writableEnded, true);
@@ -67,7 +76,7 @@ test("strict config: unknown keys and malformed TOML preserve native file:line d
     await t.test(diagnostic.includes("unknown") ? "unknown key" : "malformed TOML", async () => {
       const spawn = fakeSpawn({ code: 1, stderr: diagnostic });
       await assert.rejects(
-        runCodexStrictConfigCheck({ cwd: "/tmp/project", codexHome: "/tmp", spawn, timeoutMs: 100 }),
+        runCodexStrictConfigCheck({ cwd: "/tmp/project", codexHome: "/tmp", runtimeIdentity: PINNED_IDENTITY, spawn, timeoutMs: 100 }),
         new RegExp(diagnostic.includes("unknown")
           ? String.raw`/tmp/config\.toml:7:1: unknown configuration field \x60mystery\x60`
           : String.raw`/tmp/config\.toml:9:4: unclosed table`)
@@ -79,20 +88,20 @@ test("strict config: unknown keys and malformed TOML preserve native file:line d
 test("strict config: parser absence, timeout, capped output, and model-turn events fail closed", async t => {
   await t.test("missing app-server", async () => {
     const spawn = fakeSpawn({ code: 2, stderr: "error: unrecognized subcommand 'app-server'\n" });
-    await assert.rejects(runCodexStrictConfigCheck({ cwd: "/tmp/project", codexHome: "/tmp", spawn, timeoutMs: 100 }), /unrecognized subcommand 'app-server'/);
+    await assert.rejects(runCodexStrictConfigCheck({ cwd: "/tmp/project", codexHome: "/tmp", runtimeIdentity: PINNED_IDENTITY, spawn, timeoutMs: 100 }), /unrecognized subcommand 'app-server'/);
   });
   await t.test("timeout", async () => {
     const spawn = fakeSpawn({ hang: true });
-    await assert.rejects(runCodexStrictConfigCheck({ cwd: "/tmp/project", codexHome: "/tmp", spawn, timeoutMs: 5 }), /timed out after 5ms/);
+    await assert.rejects(runCodexStrictConfigCheck({ cwd: "/tmp/project", codexHome: "/tmp", runtimeIdentity: PINNED_IDENTITY, spawn, timeoutMs: 5 }), /timed out after 5ms/);
     assert.equal(spawn.calls[0].child.killed, true);
   });
   await t.test("output cap counts bytes", async () => {
     const spawn = fakeSpawn({ stdout: "€".repeat(30_000) });
-    await assert.rejects(runCodexStrictConfigCheck({ cwd: "/tmp/project", codexHome: "/tmp", spawn, timeoutMs: 100 }), /65536-byte stdout limit/);
+    await assert.rejects(runCodexStrictConfigCheck({ cwd: "/tmp/project", codexHome: "/tmp", runtimeIdentity: PINNED_IDENTITY, spawn, timeoutMs: 100 }), /65536-byte stdout limit/);
   });
   await t.test("model-turn event", async () => {
     const spawn = fakeSpawn({ stdout: '{"method":"turn/started","params":{}}\n' });
-    await assert.rejects(runCodexStrictConfigCheck({ cwd: "/tmp/project", codexHome: "/tmp", spawn, timeoutMs: 100 }), /model-turn event/);
+    await assert.rejects(runCodexStrictConfigCheck({ cwd: "/tmp/project", codexHome: "/tmp", runtimeIdentity: PINNED_IDENTITY, spawn, timeoutMs: 100 }), /model-turn event/);
   });
 });
 
@@ -111,7 +120,7 @@ test("strict config: waits for drained streams before accepting zero model turns
     return child;
   };
   await assert.rejects(
-    runCodexStrictConfigCheck({ cwd: "/tmp/project", codexHome: "/tmp", spawn: delayedSpawn, timeoutMs: 100 }),
+    runCodexStrictConfigCheck({ cwd: "/tmp/project", codexHome: "/tmp", runtimeIdentity: PINNED_IDENTITY, spawn: delayedSpawn, timeoutMs: 100 }),
     /model-turn event/
   );
 });
@@ -123,20 +132,52 @@ test("strict config: real Codex validates unknown and malformed config without a
   await mkdir(codexHome);
   await writeFile(join(codexHome, "config.toml"), "model = \"gpt-5.6-sol\"\n");
 
-  const valid = await runCodexStrictConfigCheck({ cwd, codexHome, timeoutMs: 2_500 });
+  let runtimeIdentity;
+  try { runtimeIdentity = resolveCodexRuntimeIdentity(); }
+  catch { t.skip("trusted Codex runtime identity is unavailable"); return; }
+  const valid = await runCodexStrictConfigCheck({ cwd, codexHome, runtimeIdentity, timeoutMs: 2_500 });
   assert.deepEqual(valid, { ok: true, modelTurnEvents: 0 });
 
   await writeFile(join(cwd, ".codex", "config.toml"), "unknown_muster_key = true\n");
   await assert.rejects(
-    runCodexStrictConfigCheck({ cwd, codexHome, timeoutMs: 2_500 }),
+    runCodexStrictConfigCheck({ cwd, codexHome, runtimeIdentity, timeoutMs: 2_500 }),
     new RegExp(`${cwd.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/\\.codex/config\\.toml:1:1: unknown configuration field`)
   );
 
   await writeFile(join(cwd, ".codex", "config.toml"), "[broken\nkey = true\n");
   await assert.rejects(
-    runCodexStrictConfigCheck({ cwd, codexHome, timeoutMs: 2_500 }),
+    runCodexStrictConfigCheck({ cwd, codexHome, runtimeIdentity, timeoutMs: 2_500 }),
     new RegExp(`project config file ${cwd.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/\\.codex/config\\.toml: TOML parse error at line 1, column 8`)
   );
+});
+
+test("strict config: default process launch refuses an unpinned runtime", async () => {
+  await assert.rejects(
+    runCodexStrictConfigCheck({ cwd: "/tmp/project", codexHome: "/tmp", validateProjectConfig: false }),
+    /trusted Codex runtime identity is required/
+  );
+});
+
+test("strict config: timeout does not settle until the parser closes", async () => {
+  let child;
+  const spawn = () => {
+    child = new EventEmitter();
+    child.stdin = new PassThrough();
+    child.stdout = new PassThrough();
+    child.stderr = new PassThrough();
+    child.kill = () => { child.killed = true; return true; };
+    return child;
+  };
+  let settled = false;
+  const pending = runCodexStrictConfigCheck({
+    cwd: "/tmp/project", codexHome: "/tmp", runtimeIdentity: PINNED_IDENTITY,
+    spawn, timeoutMs: 5, validateProjectConfig: false
+  }).finally(() => { settled = true; });
+  await new Promise(resolve => setTimeout(resolve, 15));
+  assert.equal(child.killed, true);
+  assert.equal(settled, false, "rollback cannot start before parser close is confirmed");
+  child.stdout.end(); child.stderr.end(); child.emit("close", null, "SIGKILL");
+  await assert.rejects(pending, /timed out after 5ms/);
 });
 
 test("strict config: install validates the complete write and restores config bytes on failure", async () => {
@@ -169,6 +210,39 @@ test("strict config: install validates the complete write and restores config by
   assert.deepEqual(await readFile(sharedPath), sharedOriginal);
   assert.deepEqual(await readFile(projectPath), projectOriginal);
   await assert.rejects(readFile(join(cwd, ".codex", "agents", ".muster-managed.json")), /ENOENT/);
+});
+
+test("strict config: rollback preserves malformed config bytes exactly", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-strict-binary-rollback-"));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), codexHome = join(home, ".codex");
+  const sharedPath = join(codexHome, "config.toml"), projectPath = join(cwd, ".codex", "config.toml");
+  const sharedOriginal = Buffer.from([0x23, 0x20, 0xff, 0x0a]);
+  const projectOriginal = Buffer.from([0x23, 0x20, 0xfe, 0x0a]);
+  await mkdir(codexHome, { recursive: true });
+  await mkdir(join(cwd, ".codex"), { recursive: true });
+  await writeFile(sharedPath, sharedOriginal);
+  await writeFile(projectPath, projectOriginal);
+  await assert.rejects(runCodexInstall({
+    cwd, home, repoRoot,
+    execFile: async () => { throw new Error("codex absent"); },
+    strictConfigRunner: async () => { throw new Error(`${sharedPath}:1:3: invalid UTF-8`); }
+  }), /invalid UTF-8/);
+  assert.deepEqual(await readFile(sharedPath), sharedOriginal);
+  assert.deepEqual(await readFile(projectPath), projectOriginal);
+});
+
+test("strict config: concurrent config replacement blocks success without overwriting the writer", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-strict-concurrent-"));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), projectPath = join(cwd, ".codex", "config.toml");
+  await mkdir(join(cwd, ".codex"), { recursive: true });
+  await writeFile(projectPath, "model = \"before\"\n");
+  const concurrent = Buffer.from("unknown_after_validation = true\n");
+  await assert.rejects(runCodexInstall({
+    cwd, home, repoRoot,
+    execFile: async () => { throw new Error("codex absent"); },
+    strictConfigRunner: async () => { await writeFile(projectPath, concurrent); return { ok: true, modelTurnEvents: 0 }; }
+  }), /config changed during strict validation/);
+  assert.deepEqual(await readFile(projectPath), concurrent, "rollback must not overwrite a concurrent writer");
 });
 
 test("strict config: doctor reports the same non-billable parser boundary", async () => {

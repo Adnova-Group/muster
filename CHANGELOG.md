@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Codex installs now fail closed on native strict configuration validation.** After every shared and scoped `config.toml` mutation is staged, Muster runs bounded `codex app-server --strict-config --listen stdio://` checks with closed stdin. Unknown fields and malformed TOML retain Codex's file/position diagnostics, any failure restores the original config bytes and managed files, and valid checks reject any observed thread/turn event so validation cannot silently become billable. `muster doctor --codex` uses the same parser boundary.
+- **Codex installs now fail closed on native strict configuration validation.** After every shared and scoped `config.toml` mutation is staged, Muster runs bounded `codex app-server --strict-config --listen stdio://` checks with closed stdin through the already-pinned Codex runtime. Unknown fields and malformed TOML retain Codex's file/position diagnostics, any failure restores the original raw bytes and managed files, concurrent config replacement blocks success without overwriting the writer, and valid checks reject any observed thread/turn event so validation cannot silently become billable. `muster doctor --codex` uses the same parser boundary.
 
 ## [0.6.0] - 2026-07-31
 

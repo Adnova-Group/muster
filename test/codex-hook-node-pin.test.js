@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 import { cp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { formatCodexWindowsPath, parseHookCommand, runCodexInstall } from "../src/codex-install.js";
+import { formatCodexWindowsPath, isMusterHookCommand, parseHookCommand, runCodexInstall } from "../src/codex-install.js";
 import { runCodexDoctor } from "../src/codex-doctor.js";
 import { repoRoot } from "../test-support/codex-helpers.js";
 import { trackedMkdtemp as mkdtemp } from "../test-support/helpers.js";
@@ -84,6 +84,26 @@ test("parseHookCommand round-trips the pinned two-token shape for both POSIX and
   // Malformed shapes (wrong token count) parse to null so a consumer can reject.
   assert.equal(parseHookCommand("'/only-one-token'"), null);
   assert.equal(parseHookCommand("'/a' '/b' '/c'"), null);
+});
+
+test("Muster hook ownership recognizes normalized runtimes and fails closed on ambiguous references", () => {
+  for (const script of [
+    "/scope/muster/./hooks/muster-hook.mjs",
+    "/scope/muster/sub/../hooks/muster-hook.mjs",
+    "/scope//muster///hooks/muster-hook.mjs"
+  ]) assert.equal(isMusterHookCommand(`'/usr/bin/node' '${script}'`), true);
+  assert.equal(isMusterHookCommand('"C:\\Node.exe" "C:\\Scope\\MUSTER\\hooks\\..\\hooks\\MUSTER-HOOK.MJS"'), true);
+  assert.equal(isMusterHookCommand("true; node /scope/muster/hooks/muster-hook.mjs --duplicate"), true);
+  assert.equal(isMusterHookCommand('C:\\Node.exe C:\\Scope\\muster\\hooks\\muster-hook.mjs --duplicate'), true);
+  assert.equal(isMusterHookCommand("node relative/muster/hooks/muster-hook.mjs"), true);
+  assert.equal(isMusterHookCommand("node /scope/other.mjs /scope/muster/hooks/muster-hook.mjs"), true);
+  assert.equal(parseHookCommand("true; node '/scope/muster/hooks/muster-hook.mjs'"), null);
+  assert.equal(parseHookCommand("node; '/scope/muster/hooks/muster-hook.mjs'"), null);
+  assert.equal(parseHookCommand("'/usr/bin/node'\n'/scope/muster/hooks/muster-hook.mjs'"), null);
+  assert.deepEqual(parseHookCommand('"/usr/bin/no\\de" "/scope/muster/hooks/muster-hook.mjs"'), {
+    interpreter: "/usr/bin/no\\de", script: "/scope/muster/hooks/muster-hook.mjs"
+  });
+  assert.equal(parseHookCommand('"C:\\Node.exe""C:\\Scope\\muster\\hooks\\muster-hook.mjs"', { windows: true }), null);
 });
 
 test("Codex doctor flags a managed hook whose pinned Node interpreter no longer exists (POSIX)", async () => {

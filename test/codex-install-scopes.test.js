@@ -210,6 +210,13 @@ test("Codex install-scope reconciliation case-normalizes duplicate scopes, keepi
     { scope: "project", configDir: "/case/Project" },
     { scope: "project", configDir: "/other/dir" }
   ]);
+  await assert.rejects(
+    () => reconcileScopeRegistryEntries([
+      { scope: "project", configDir: "/case/project" },
+      { scope: "user", configDir: "/case/Project" }
+    ], { lstatFn, readdirFn }),
+    /one physical directory.*both project and user scope/
+  );
 });
 
 test("Codex concurrent uninstalls retain the plugin until one final removal", async () => {

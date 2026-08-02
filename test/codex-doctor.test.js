@@ -4,6 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
+import { createHash } from "node:crypto";
 import { cp, link, mkdir, readFile, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -53,16 +54,46 @@ test("Codex doctor: a canonical-scope-skipped project scope is coherent and excl
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-collapse-doctor-"));
   const cwd = join(tmp, "project"), home = join(tmp, "home"), codexHome = join(home, ".codex");
   const absent = async () => { throw new Error("not found"); };
-  await runCodexInstall({ scope: "user", cwd, home, repoRoot, execFile: absent });
-  const projectInstall = await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absent });
+  const userInstall = await runCodexInstall({ scope: "user", cwd, home, repoRoot, execFile: absent });
+  const userConfigPath = join(codexHome, "config.toml");
+  const userHooksPath = join(codexHome, "hooks.json");
+  const exactTrust = userInstall.hookTrust.results.map(hook =>
+    `[hooks.state."${userHooksPath}:${hook.key}"]\ntrusted_hash = "${hook.currentHash}"\n`).join("\n");
+  await writeFile(userConfigPath, `${await readFile(userConfigPath, "utf8")}\n${exactTrust}`);
+  const hookInventory = async () => ({ ok: true, data: [{ cwd, warnings: [], errors: [], hooks: userInstall.hookTrust.results.map(hook => ({
+    key: `${userHooksPath}:${hook.key}`,
+    enabled: true,
+    trustStatus: "trusted",
+    currentHash: hook.currentHash
+  })) }] });
+  const projectInstall = await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absent, hookInventory });
   assert.equal(projectInstall.hooksSkipped, "user-scope-canonical");
 
-  const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent });
+  const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent, hookInventory });
   const hooks = report.checks.find(check => check.name === "codex-hooks");
   const overlap = report.checks.find(check => check.name === "codex-hooks-overlap");
   assert.equal(hooks?.ok, true, hooks?.detail);
   assert.equal(overlap?.ok, true, overlap?.detail);
   assert.doesNotMatch(overlap?.detail || "", /fire from \d+ scopes/);
+
+  const projectManifestPath = join(cwd, ".codex", "muster", ".muster-managed.json");
+  const pristineManifest = JSON.parse(await readFile(projectManifestPath, "utf8"));
+  for (const [name, mutate] of [
+    ["stale package version", manifest => { manifest.packageVersion = "0.0.0-stale"; }],
+    ["missing hook hash", manifest => { delete manifest.hookHash; }],
+    ["malformed config-created receipt", manifest => { manifest.hookConfigCreated = "false"; }]
+  ]) {
+    const corrupted = structuredClone(pristineManifest);
+    mutate(corrupted);
+    await writeFile(projectManifestPath, `${JSON.stringify(corrupted, null, 2)}\n`);
+    const corruptedReport = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent, hookInventory });
+    assert.equal(
+      corruptedReport.checks.find(check => check.name === "codex-hooks")?.ok,
+      false,
+      `canonical-scope-skipped manifest must reject ${name}`
+    );
+  }
+  await writeFile(projectManifestPath, `${JSON.stringify(pristineManifest, null, 2)}\n`);
 });
 
 test("Codex doctor: a canonical-scope-skipped manifest whose hooks.json still carries a stray Muster group is reported stale, not silently coherent", async () => {
@@ -189,6 +220,51 @@ test("Codex doctor fails closed when a managed hook runtime file is tampered (ha
   }
 });
 
+test("Codex doctor compares hook manifests and runtime to the selected package, not mutable ownership claims", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-doctor-canonical-hooks-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), codexHome = join(home, ".codex");
+  const absent = async () => { throw new Error("not found"); };
+  await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absent });
+  await runCodexInstall({ scope: "user", cwd, home, repoRoot, execFile: absent });
+  const manifestPath = join(codexHome, "muster", ".muster-managed.json");
+  const hooksPath = join(codexHome, "hooks.json");
+  const runtimeDir = join(codexHome, "muster", "hooks");
+  const pristineManifest = await readFile(manifestPath, "utf8");
+  const pristineHooks = await readFile(hooksPath, "utf8");
+
+  const runtimePath = join(runtimeDir, "action-guard.mjs");
+  const pristineRuntime = await readFile(runtimePath, "utf8");
+  await writeFile(runtimePath, "// attacker-controlled no-op\n");
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  const hash = createHash("sha256");
+  for (const file of ["hooks/muster-hook.mjs", "hooks/action-guard.mjs"]) {
+    hash.update(file).update("\0").update(await readFile(join(codexHome, "muster", file)));
+  }
+  manifest.hookHash = hash.digest("hex");
+  await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
+  let report = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent });
+  assert.equal(report.checks.find(check => check.name === "codex-hooks")?.ok, false, "coherent attacker bytes are not canonical package bytes");
+
+  await writeFile(runtimePath, pristineRuntime);
+  const incompleteManifest = JSON.parse(pristineManifest);
+  const incompleteHooks = JSON.parse(pristineHooks);
+  delete incompleteManifest.hookGroups.Stop;
+  delete incompleteHooks.hooks.Stop;
+  await writeFile(manifestPath, JSON.stringify(incompleteManifest, null, 2) + "\n");
+  await writeFile(hooksPath, JSON.stringify(incompleteHooks, null, 2) + "\n");
+  report = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent });
+  assert.equal(report.checks.find(check => check.name === "codex-hooks")?.ok, false, "a coherent but incomplete ownership claim is not the canonical package group set");
+
+  const emptyManifest = JSON.parse(pristineManifest);
+  emptyManifest.files = [];
+  emptyManifest.hookGroups = {};
+  await writeFile(manifestPath, JSON.stringify(emptyManifest, null, 2) + "\n");
+  await writeFile(hooksPath, JSON.stringify({ hooks: {} }, null, 2) + "\n");
+  report = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent });
+  assert.equal(report.checks.find(check => check.name === "codex-hooks")?.ok, false, "a user scope can never be canonical-scope-skipped");
+});
+
 test("Codex doctor inspects stale registered project scopes outside the current project", async () => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-doctor-managed-scopes-"));
   const home = join(tmp, "home"), cwd = join(tmp, "current-project"), codexHome = join(home, ".codex");
@@ -213,6 +289,68 @@ test("Codex doctor inspects stale registered project scopes outside the current 
   assert.match(generation?.detail || "", new RegExp(profilesScope.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.equal(hooks?.ok, false);
   assert.match(hooks?.detail || "", new RegExp(hooksScope.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+});
+
+test("Codex doctor verifies a healthy registered hook scope against its own project inventory", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-doctor-remote-hook-trust-"));
+  const home = join(tmp, "home"), cwd = join(tmp, "current-project"), remote = join(tmp, "remote-project"), codexHome = join(home, ".codex");
+  const absent = async () => { throw new Error("not found"); };
+  const installed = await runCodexInstall({ cwd: remote, home, repoRoot, execFile: absent });
+  const hooksJsonPath = join(remote, ".codex", "hooks.json");
+  const trustText = installed.hookTrust.results.map(result =>
+    `[hooks.state."${hooksJsonPath}:${result.key}"]\ntrusted_hash = "${result.currentHash}"\n`).join("\n");
+  const configPath = join(codexHome, "config.toml");
+  await writeFile(configPath, `${await readFile(configPath, "utf8")}\n${trustText}`);
+  let requestedCwds = [];
+  const hookInventory = async ({ cwds }) => {
+    requestedCwds = cwds;
+    return { ok: true, data: [{ cwd: remote, warnings: [], errors: [], hooks: installed.hookTrust.results.map(result => ({
+      key: `${hooksJsonPath}:${result.key}`,
+      enabled: true,
+      trustStatus: "trusted",
+      currentHash: result.currentHash
+    })) }] };
+  };
+
+  const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent, hookInventory });
+  const trust = report.checks.find(check => check.name === "codex-hook-trust");
+  assert.deepEqual(requestedCwds, [remote]);
+  assert.equal(trust?.ok, true, trust?.detail);
+});
+
+test("Codex doctor verifies canonical user hooks in every skipped project context", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-doctor-skipped-project-context-"));
+  const home = join(tmp, "home"), cwd = join(tmp, "current"), remote = join(tmp, "remote"), codexHome = join(home, ".codex");
+  const absent = async () => { throw new Error("not found"); };
+  const user = await runCodexInstall({ scope: "user", cwd: remote, home, repoRoot, execFile: absent });
+  const userHooksPath = join(codexHome, "hooks.json");
+  const configPath = join(codexHome, "config.toml");
+  const trustText = user.hookTrust.results.map(result =>
+    `[hooks.state."${userHooksPath}:${result.key}"]\ntrusted_hash = "${result.currentHash}"\n`).join("\n");
+  await writeFile(configPath, `${await readFile(configPath, "utf8")}\n${trustText}`);
+  const activeHooks = user.hookTrust.results.map(result => ({
+    key: `${userHooksPath}:${result.key}`,
+    enabled: true,
+    trustStatus: "trusted",
+    currentHash: result.currentHash
+  }));
+  const activeRemoteInventory = async () => ({ ok: true, data: [{ cwd: remote, warnings: [], errors: [], hooks: activeHooks }] });
+  const skipped = await runCodexInstall({ scope: "project", cwd: remote, home, repoRoot, execFile: absent, hookInventory: activeRemoteInventory });
+  assert.equal(skipped.hooksSkipped, "user-scope-canonical");
+
+  let requestedCwds = [];
+  const contextInventory = async ({ cwds }) => {
+    requestedCwds = cwds;
+    return { ok: true, data: [
+      { cwd, warnings: [], errors: [], hooks: activeHooks },
+      { cwd: remote, warnings: [], errors: [], hooks: [] }
+    ] };
+  };
+  const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absent, hookInventory: contextInventory });
+  const trust = report.checks.find(check => check.name === "codex-hook-trust");
+  assert.deepEqual(new Set(requestedCwds), new Set([cwd, remote]));
+  assert.equal(trust?.ok, false);
+  assert.match(trust?.detail || "", new RegExp(remote.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 });
 
 test("Codex doctor gives an actionable legacy pre-0.5.x diagnostic instead of an opaque generation/hooks mismatch", async () => {

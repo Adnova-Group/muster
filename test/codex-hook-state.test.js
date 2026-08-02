@@ -32,7 +32,7 @@
 //       function's comment for why).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { link, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { reconcileConfigTomlHookState, runCodexInstall, runCodexUninstall } from "../src/codex-install.js";
@@ -97,6 +97,69 @@ test("Codex config.toml hook-state: reconcile leaves non-Muster hook entries unt
   assert.doesNotMatch(result.text, /\/repo\/\.codex/, "the pruned Muster scope's own entry is removed");
   assert.match(result.text, /other-tool/, "an unrelated tool's hooks.json entry is never touched");
   assert.match(result.text, /muster@muster/, "the plugin-bundled trust key (no scope registry path) is never touched");
+});
+
+test("Codex config.toml hook-state: header-shaped multiline string content is never pruned or corrupted", () => {
+  const registered = [{ scope: "project", configDir: "/repo/.codex" }];
+  const fakeSection = `[hooks.state."/repo/.codex/hooks.json:pre_tool_use:0:0"]\ntrusted_hash = "sha256:exact"`;
+  const documents = [
+    `note = """\n${fakeSection} # """\nmodel = "gpt-5.6-sol"\n`,
+    `note = '''\n${fakeSection} # '''\nmodel = "gpt-5.6-sol"\n`,
+    `note = """\nescaped delimiter: \\"""\n${fakeSection}\n"""\nmodel = "gpt-5.6-sol"\n`
+  ];
+  for (const text of documents) {
+    const result = reconcileConfigTomlHookState(text, registered, []);
+    assert.equal(result.text, text, "multiline string bytes must survive exactly");
+    assert.deepEqual(result.prunedHookState, []);
+  }
+});
+
+test("Codex config.toml hook-state: quoted closing brackets in following table headers survive pruning", () => {
+  const registered = [{ scope: "project", configDir: "/repo/.codex" }];
+  for (const following of [
+    `[foo."]"]\nvalue = 1\n`,
+    `[foo.'a]b']\nvalue = 2\n`,
+    `[[foo."]"]]\nvalue = 3\n`
+  ]) {
+    const stale = hookStateBlock("/repo/.codex/hooks.json", ["pre_tool_use"]);
+    const text = `${stale}\n${following}`;
+    const result = reconcileConfigTomlHookState(text, registered, []);
+    assert.equal(result.text, following);
+    assert.equal(result.prunedHookState.length, 1);
+  }
+});
+
+test("Codex config.toml hook-state: malformed quoted table keys fail closed without mutation", () => {
+  const registered = [{ scope: "project", configDir: "/repo/.codex" }];
+  for (const header of [String.raw`[foo."bad\q"]`, String.raw`[foo."bad\uZZZZ"]`, String.raw`[foo."bad\uD800"]`]) {
+    const text = `${hookStateBlock("/repo/.codex/hooks.json", ["pre_tool_use"])}${header}\nvalue = 1\n`;
+    const result = reconcileConfigTomlHookState(text, registered, []);
+    assert.equal(result.parseOk, false, header);
+    assert.equal(result.text, text, header);
+    assert.deepEqual(result.prunedHookState, [], header);
+  }
+});
+
+test("Codex config.toml hook-state: nested arrays are not mistaken for table boundaries", () => {
+  const registered = [{ scope: "project", configDir: "/repo/.codex" }];
+  const text = `${hookStateBlock("/repo/.codex/hooks.json", ["pre_tool_use"])}matrix = [\n  [1, 2],\n  [3, 4]\n]\n[projects."/safe"]\ntrust_level = "trusted"\n`;
+  const result = reconcileConfigTomlHookState(text, registered, []);
+  assert.equal(result.parseOk, true);
+  assert.equal(result.text, `[projects."/safe"]\ntrust_level = "trusted"\n`);
+
+  const unsupported = `${hookStateBlock("/repo/.codex/hooks.json", ["pre_tool_use"])}matrix = [\n  [1, 2]\n`;
+  const refused = reconcileConfigTomlHookState(unsupported, registered, []);
+  assert.equal(refused.parseOk, false);
+  assert.equal(refused.text, unsupported);
+});
+
+test("Codex config.toml hook-state: four-quote multiline endings and mixed newlines round-trip", () => {
+  const registered = [{ scope: "project", configDir: "/repo/.codex" }];
+  const stale = `[hooks.state."/repo/.codex/hooks.json:pre_tool_use:0:0"]\r\ntrusted_hash = "sha256:old"\r\n`;
+  const following = `[projects."/safe"]\nnote = """"leading\ntrailing""""\nother = ''''literal\r\nvalue''''\r\n`;
+  const result = reconcileConfigTomlHookState(stale + following, registered, []);
+  assert.equal(result.parseOk, true);
+  assert.equal(result.text, following);
 });
 
 test("Codex config.toml [projects]: reconcile NEVER prunes a [projects] entry, even alongside its stale paired hooks.state entry (blocker 2a regression)", () => {
@@ -405,6 +468,152 @@ test("Codex uninstall --scope project prunes only its own exact [hooks.state] ke
   assert.ok(result.prunedHookState.some(item => item.event === "session_start" && item.groupIndex === 0), "the pruned entry is reported as muster's exact group index 0");
 });
 
+test("Codex uninstall prunes the departing scope's whole hooks.state path when its managed hooks.json is already missing", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hookstate-missing-config-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), codexHomeDir = join(home, ".codex");
+  await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absentCodex });
+  const configTomlPath = join(codexHomeDir, "config.toml");
+  const hooksJsonPath = join(cwd, ".codex", "hooks.json");
+  const before = await readFile(configTomlPath, "utf8");
+  await writeFile(configTomlPath, `${before}\n${hookStateBlock(hooksJsonPath)}\n`);
+  await rm(hooksJsonPath);
+
+  const result = await runCodexUninstall({ scope: "project", cwd, home, execFile: absentCodex });
+  const after = await readFile(configTomlPath, "utf8").catch(error => error.code === "ENOENT" ? "" : Promise.reject(error));
+  assert.doesNotMatch(after, new RegExp(escapeRegex(hooksJsonPath)), "all orphaned trust records for the absent managed hooks.json are removed");
+  assert.equal(result.prunedHookState.length, HOOK_EVENTS.length);
+});
+
+test("Codex uninstall prunes the whole hooks.state path when the managed hooks.json has no live hooks", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hookstate-empty-config-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), codexHomeDir = join(home, ".codex");
+  await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absentCodex });
+  const configTomlPath = join(codexHomeDir, "config.toml");
+  const hooksJsonPath = join(cwd, ".codex", "hooks.json");
+  await writeFile(configTomlPath, `${await readFile(configTomlPath, "utf8")}\n${hookStateBlock(hooksJsonPath)}\n`);
+  await writeFile(hooksJsonPath, `${JSON.stringify({ hooks: {} }, null, 2)}\n`);
+
+  const result = await runCodexUninstall({ scope: "project", cwd, home, execFile: absentCodex });
+  const after = await readFile(configTomlPath, "utf8").catch(error => error.code === "ENOENT" ? "" : Promise.reject(error));
+  assert.doesNotMatch(after, new RegExp(escapeRegex(hooksJsonPath)));
+  assert.equal(result.prunedHookState.length, HOOK_EVENTS.length);
+});
+
+test("Codex uninstall fails closed when only some manifest-owned hook positions can be derived", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hookstate-partial-config-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), codexHomeDir = join(home, ".codex");
+  await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absentCodex });
+  const hooksJsonPath = join(cwd, ".codex", "hooks.json");
+  const hooksConfig = JSON.parse(await readFile(hooksJsonPath, "utf8"));
+  delete hooksConfig.hooks.Stop;
+  await writeFile(hooksJsonPath, `${JSON.stringify(hooksConfig, null, 2)}\n`);
+  const configTomlPath = join(codexHomeDir, "config.toml");
+  await writeFile(configTomlPath, `${await readFile(configTomlPath, "utf8")}\n${hookStateBlock(hooksJsonPath)}\n`);
+
+  await assert.rejects(() => runCodexUninstall({ scope: "project", cwd, home, execFile: absentCodex }), /not every Muster-owned hook position can be identified/);
+  assert.match(await readFile(configTomlPath, "utf8"), new RegExp(escapeRegex(hooksJsonPath)), "trust state is untouched on the conflict");
+});
+
+test("Codex uninstall preserves original hook indices while pruning multiple owned groups", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hookstate-original-indices-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), codexHomeDir = join(home, ".codex");
+  await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absentCodex });
+  const hooksJsonPath = join(cwd, ".codex", "hooks.json");
+  const hookManifestPath = join(cwd, ".codex", "muster", ".muster-managed.json");
+  const hooksConfig = JSON.parse(await readFile(hooksJsonPath, "utf8"));
+  const hookManifest = JSON.parse(await readFile(hookManifestPath, "utf8"));
+  const ownedA = hooksConfig.hooks.Stop[0];
+  const ownedB = { ...ownedA, matcher: "second-owned-group" };
+  const foreign = { hooks: [{ type: "command", command: "node /foreign/hook.mjs" }] };
+  hooksConfig.hooks.Stop = [ownedA, foreign, ownedB];
+  hookManifest.hookGroups.Stop = [ownedA, ownedB];
+  await writeFile(hooksJsonPath, `${JSON.stringify(hooksConfig, null, 2)}\n`);
+  await writeFile(hookManifestPath, `${JSON.stringify(hookManifest, null, 2)}\n`);
+  const configTomlPath = join(codexHomeDir, "config.toml");
+  await writeFile(configTomlPath, `${await readFile(configTomlPath, "utf8")}\n${hookStateBlock(hooksJsonPath, [])}`
+    + `[hooks.state."${hooksJsonPath}:stop:0:0"]\ntrusted_hash = "sha256:${"0".repeat(64)}"\n\n`
+    + `[hooks.state."${hooksJsonPath}:stop:1:0"]\ntrusted_hash = "sha256:foreign"\n\n`
+    + `[hooks.state."${hooksJsonPath}:stop:2:0"]\ntrusted_hash = "sha256:${"0".repeat(64)}"\n`);
+
+  const result = await runCodexUninstall({ scope: "project", cwd, home, execFile: absentCodex });
+  const after = await readFile(configTomlPath, "utf8");
+  assert.doesNotMatch(after, new RegExp(`${escapeRegex(hooksJsonPath)}:stop:(?:0|2):0`));
+  assert.match(after, new RegExp(`${escapeRegex(hooksJsonPath)}:stop:1:0`));
+  assert.deepEqual(result.prunedHookState.map(item => item.groupIndex).sort(), [0, 2]);
+});
+
+test("Codex uninstall rejects a duplicate Muster group left outside manifest ownership", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hookstate-uninstall-duplicate-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const cwd = join(tmp, "project"), home = join(tmp, "home");
+  await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absentCodex });
+  const hooksJsonPath = join(cwd, ".codex", "hooks.json");
+  const config = JSON.parse(await readFile(hooksJsonPath, "utf8"));
+  config.hooks.Stop.push(config.hooks.Stop[0]);
+  await writeFile(hooksJsonPath, `${JSON.stringify(config, null, 2)}\n`);
+
+  await assert.rejects(() => runCodexUninstall({ scope: "project", cwd, home, execFile: absentCodex }), /duplicate or unmanaged Muster hook/);
+  await readFile(join(cwd, ".codex", "muster", ".muster-managed.json"), "utf8");
+});
+
+test("Codex uninstall rejects a leftover hook physically aliasing its managed runtime", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hookstate-uninstall-alias-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const cwd = join(tmp, "project"), home = join(tmp, "home");
+  await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absentCodex });
+  const hooksJsonPath = join(cwd, ".codex", "hooks.json");
+  const runtimePath = join(cwd, ".codex", "muster", "hooks", "muster-hook.mjs");
+  const aliasPath = join(tmp, "foreign-hook.mjs");
+  await link(runtimePath, aliasPath);
+  const config = JSON.parse(await readFile(hooksJsonPath, "utf8"));
+  config.hooks.Stop.push({ hooks: [{ type: "command", command: `node ${aliasPath}` }] });
+  await writeFile(hooksJsonPath, `${JSON.stringify(config, null, 2)}\n`);
+
+  await assert.rejects(() => runCodexUninstall({ scope: "project", cwd, home, execFile: absentCodex }), /aliased Muster hook/);
+  await readFile(runtimePath, "utf8");
+});
+
+test("Codex uninstall resolves leftover runtime aliases from the original nested invocation CWD", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hookstate-uninstall-relative-alias-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const cwd = join(tmp, "project"), nested = join(cwd, "packages", "pkg"), home = join(tmp, "home");
+  await mkdir(nested, { recursive: true });
+  await runCodexInstall({ scope: "user", cwd, home, repoRoot, execFile: absentCodex });
+  const hooksJsonPath = join(home, ".codex", "hooks.json");
+  const runtimePath = join(home, ".codex", "muster", "hooks", "muster-hook.mjs");
+  await link(runtimePath, join(nested, "relative-hook.mjs"));
+  const config = JSON.parse(await readFile(hooksJsonPath, "utf8"));
+  config.hooks.Stop.push({ hooks: [{ type: "command", command: "node ./relative-hook.mjs" }] });
+  await writeFile(hooksJsonPath, `${JSON.stringify(config, null, 2)}\n`);
+
+  await assert.rejects(() => runCodexUninstall({ scope: "user", cwd: nested, home, execFile: absentCodex }), /aliased Muster hook/);
+  await readFile(runtimePath, "utf8");
+});
+
+test("Codex uninstall rejects hook configuration drift between preparation and the registry transaction", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hookstate-uninstall-race-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const cwd = join(tmp, "project"), home = join(tmp, "home");
+  await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absentCodex });
+  const hooksJsonPath = join(cwd, ".codex", "hooks.json");
+  const replacement = `${JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: "node /foreign/hook.mjs" }] }] } }, null, 2)}\n`;
+  const changingCodex = async (_binary, args) => {
+    if (args[0] === "--version") {
+      await writeFile(hooksJsonPath, replacement);
+      return { stdout: "codex-cli test" };
+    }
+    throw new Error(`unexpected command: ${args.join(" ")}`);
+  };
+
+  await assert.rejects(() => runCodexUninstall({ scope: "project", cwd, home, execFile: changingCodex }), /hook ownership concurrent state change/);
+  assert.equal(await readFile(hooksJsonPath, "utf8"), replacement);
+  await readFile(join(cwd, ".codex", "muster", ".muster-managed.json"), "utf8");
+});
+
 // -- Doctor integration (fix D) ------------------------------------------------
 
 test("Codex doctor reports over-registration when a stale scope's hook trust entries are still present (regression 6)", async t => {
@@ -451,4 +660,17 @@ test("Codex doctor reports codex-hook-state ok:true when config.toml is absent e
   const check = report.checks.find(item => item.name === "codex-hook-state");
   assert.equal(check?.ok, true);
   assert.match(check?.detail || "", /not found/);
+});
+
+test("Codex doctor fails hook-state inspection closed on unsupported TOML boundaries", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hookstate-doctor-unsafe-toml-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), codexHomeDir = join(home, ".codex");
+  await runCodexInstall({ cwd, home, repoRoot, execFile: absentCodex });
+  const configPath = join(codexHomeDir, "config.toml");
+  await writeFile(configPath, `${await readFile(configPath, "utf8")}\nunsupported = [\n  [1, 2]\n`);
+  const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome: codexHomeDir, execFile: absentCodex });
+  const check = report.checks.find(item => item.name === "codex-hook-state");
+  assert.equal(check?.ok, false);
+  assert.match(check?.detail || "", /could not safely parse|could not inspect/i);
 });

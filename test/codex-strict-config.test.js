@@ -439,7 +439,7 @@ test("strict config: native plugin config mutations are staged and included in t
       validated = configSnapshots.shared.bytes.toString("utf8");
       return { ok: true, modelTurnEvents: 0 };
     } });
-  assert.equal(result.ok, true);
+  assert.equal(result.plugin.registered, true);
   assert.match(validated, /\[marketplaces\.muster\]/);
   assert.match(validated, /\[plugins\."muster@muster"\]/);
   assert.deepEqual(await readFile(sharedPath, "utf8"), validated);
@@ -542,7 +542,7 @@ test("strict config: a post-commit writer holding the retired inode remains rece
   try {
     const result = await runCodexInstall({ cwd, home, repoRoot, execFile: executor,
       strictConfigRunner: async () => ({ ok: true, modelTurnEvents: 0 }) });
-    assert.equal(result.ok, true);
+    assert.equal(result.plugin.registered, true);
     await held.truncate(0);
     await held.write(concurrent, 0, concurrent.length, 0);
   } finally { await held.close(); }

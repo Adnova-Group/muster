@@ -10,7 +10,7 @@ import { codexAvailable, readCodexInventory } from "./codex-inventory.js";
 import { codexVersionMatches, resolveCodexRuntimeIdentity, runCodexCommand } from "./codex-runtime-identity.js";
 import { exists } from "./fs-util.js";
 import { parseAgentProfileToml, resolveCodexPlugin } from "./codex-release.js";
-import { musterHookTrustGaps, parseHookCommand, reconcileConfigTomlHookState, reconcileScopeRegistryEntries } from "./codex-install.js";
+import { codexActivationConfigDirs, codexHookStateKeys, codexProjectRoot, effectiveHookTrust, expectedCodexHookInstall, hasManagedRuntimeInventoryAlias, hasMusterHookCommandAlias, hookActivationSnapshot, inventoryAliasCandidateSnapshot, isMusterHookCommand, musterHookTrustGaps, parseHookCommand, readCodexHookInventory, reconcileConfigTomlHookState, reconcileScopeRegistryEntries, sameAliasCandidateSnapshot, sameHookActivationSnapshot } from "./codex-install.js";
 import { readNoFollowRegular } from "./fs-safe.js";
 import {
   CODEX_THREAD_LIMIT_REMEDIATION,
@@ -232,7 +232,7 @@ function canonical(value) {
 
 const same = (left, right) => JSON.stringify(canonical(left)) === JSON.stringify(canonical(right));
 const groupCommands = group => (group?.hooks || []).flatMap(hook => [hook?.command, hook?.commandWindows, hook?.command_windows]);
-const isMusterHookGroup = group => groupCommands(group).some(command => typeof command === "string" && command.replaceAll("\\", "/").includes("/muster/hooks/muster-hook.mjs"));
+const isMusterHookGroup = group => groupCommands(group).some(isMusterHookCommand);
 const MCP_TIMEOUT_MS = 5_000;
 // A misbehaving or compromised MCP child could stream unbounded output into the
 // doctor process (memory blowup) and get raw bytes echoed into a check detail.
@@ -491,7 +491,12 @@ async function registeredManagedScopes(home) {
     }
     seen.add(`${entry.scope}:${dir}`);
     try {
-      const managedDirectories = [dir, join(dir, "agents"), join(dir, "muster"), join(dir, "muster", "hooks")];
+      // A canonical-scope-skipped project deliberately has no muster/hooks
+      // runtime directory; its manifest is still a live registry obligation
+      // that doctor must inspect. Require the common managed directories here
+      // and let the hook-manifest scan below distinguish a valid skip from a
+      // non-skipped scope whose runtime directory is missing.
+      const managedDirectories = [dir, join(dir, "agents"), join(dir, "muster")];
       if ((await Promise.all(managedDirectories.map(ordinaryDirectoryPath))).every(Boolean)) dirs.push(dir);
       else issues.push(`registered managed scope is missing required content: ${dir}`);
     } catch (error) {
@@ -670,6 +675,25 @@ function ownsExactHookGroups(config, owner) {
   return actual.length === 0;
 }
 
+function canonicalHookGroupShape(hookGroups) {
+  if (!hookGroups || typeof hookGroups !== "object" || Array.isArray(hookGroups)) return null;
+  const shaped = {};
+  for (const [event, groups] of Object.entries(hookGroups)) {
+    if (!Array.isArray(groups)) return null;
+    shaped[event] = groups.map(group => {
+      if (!group || typeof group !== "object" || Array.isArray(group) || !Array.isArray(group.hooks)) return null;
+      return { ...group, hooks: group.hooks.map(hook => {
+        if (!hook || typeof hook !== "object" || Array.isArray(hook)) return null;
+        const next = { ...hook };
+        for (const key of ["command", "commandWindows", "command_windows"]) if (Object.hasOwn(next, key)) next[key] = `<${key}>`;
+        return next;
+      }) };
+    });
+    if (shaped[event].includes(null) || shaped[event].some(group => group.hooks.includes(null))) return null;
+  }
+  return shaped;
+}
+
 // Canonical-scope collapse (2026-07-18, codex-hook-scope-collapse): a
 // project scope installed under a healthy user scope writes exactly this
 // manifest shape (see src/codex-install.js's prepareHooks/
@@ -677,13 +701,23 @@ function ownsExactHookGroups(config, owner) {
 // ownsExactHookGroups above always returns false for it (expected.length
 // === 0 is an explicit false there), which would otherwise make the
 // coherence loop below misreport a deliberately hooks-free scope as stale.
-function isHooksSkippedManifest(owner) {
-  return owner?.owner === "muster" && owner.format === 1 && Array.isArray(owner.files) && owner.files.length === 0
+function isHooksSkippedManifest(owner, packageVersion) {
+  const canonicalKeys = ["files", "format", "hookConfigCreated", "hookGroups", "hookHash", "owner", "packageVersion"];
+  return owner?.owner === "muster" && owner.format === 1
+    && Object.keys(owner).sort().every((key, index) => key === canonicalKeys[index])
+    && Object.keys(owner).length === canonicalKeys.length
+    && Array.isArray(owner.files) && owner.files.length === 0
+    && owner.packageVersion === packageVersion
+    && owner.hookHash === createHash("sha256").digest("hex")
+    && typeof owner.hookConfigCreated === "boolean"
     && owner.hookGroups && typeof owner.hookGroups === "object" && !Array.isArray(owner.hookGroups)
     && Object.keys(owner.hookGroups).length === 0;
 }
 
-export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, execFile, strictConfigRunner, runtimeIdentity, mcpRunner = runMcpHandshake, env = process.env, platform = process.platform, nodeExecPath = process.execPath, readConfigToml = path => readRegularFile(path, "utf8", DOCTOR_CONFIG_READ_MAX_BYTES) } = {}) {
+export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, execFile, strictConfigRunner, runtimeIdentity, hookInventory, mcpRunner = runMcpHandshake, env = process.env, platform = process.platform, nodeExecPath = process.execPath, readConfigToml = path => readRegularFile(path, "utf8", DOCTOR_CONFIG_READ_MAX_BYTES) } = {}) {
+  const inventoryCwd = resolve(cwd);
+  cwd = await codexProjectRoot(cwd);
+  const invocationConfigDirs = await codexActivationConfigDirs(cwd, inventoryCwd);
   const base = root instanceof URL ? fileURLToPath(root) : (root || process.cwd());
   // The npm CLI runs from the package root; the bundled runtime runs from the
   // plugin root itself. Support both layouts without requiring npm at runtime.
@@ -856,6 +890,7 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
       : "bundled runtime and MCP entrypoint present" });
   }
   const userCodexHome = codexHome || process.env.CODEX_HOME || join(homedir(), ".codex");
+  const activationProofStart = await hookActivationSnapshot({ cwd, inventoryCwd, userCodexHome });
   const registeredScopes = await registeredManagedScopes(userCodexHome);
   checks.push({ name: "codex-managed-scopes", ok: registeredScopes.issues.length === 0, detail: registeredScopes.issues.length
     ? `${registeredScopes.issues.join("; ")}; rerun muster install codex for the affected scope`
@@ -920,7 +955,8 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
       // entirely (a leftover Codex trusted-directory record is harmless;
       // muster cannot reliably attribute it as its own), so
       // reconcileConfigTomlHookState's prunedProjects is always empty.
-      const { prunedHookState } = reconcileConfigTomlHookState(text, registeredEntries, keptEntries);
+      const { prunedHookState, parseOk } = reconcileConfigTomlHookState(text, registeredEntries, keptEntries);
+      if (!parseOk) throw new Error("config.toml could not be safely parsed for hook-state boundaries");
       const overRegistered = prunedHookState.length > 0;
       const staleConfigDirs = [...new Set(prunedHookState.map(item => item.configDir))];
       checks.push({ name: "codex-hook-state", ok: !overRegistered, detail: overRegistered
@@ -931,6 +967,7 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
     checks.push({ name: "codex-hook-state", ok: false, detail: `could not inspect config.toml [hooks.state]: ${error.message}` });
   }
   const scopeHomes = new Map([[join(cwd, ".codex"), false], [userCodexHome, false]]);
+  for (const dir of invocationConfigDirs) scopeHomes.set(dir, false);
   for (const dir of registeredScopes.dirs) scopeHomes.set(dir, true);
   const hookHomes = [...scopeHomes.keys()];
   // The handshake spawns `plugin`'s bundled MCP entrypoint -- a runtime claim
@@ -1018,6 +1055,8 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   // Muster-owned hook groups that are correctly installed but carry NO
   // config.toml [hooks.state] trust entry -- i.e. Codex is skipping them.
   const hookTrustGaps = [];
+  const hookTrustTargets = [];
+  const skippedProjectHookCwds = [];
   // A present-but-incoherent scope (owner/version/groups/hash MISMATCH) with the
   // specific offending path (the runtime dir for a hash mismatch, else the
   // manifest); and the caught MISSING/MALFORMED/OTHER failures with their paths.
@@ -1025,10 +1064,33 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   // drives aggregate health exactly as before, so no verdict/count changes.
   const mismatchHookScopes = [];
   const hookCauseFailures = [];
+  const managedHookScripts = [...hookHomes].map(dir => join(dir, "muster", "hooks", "muster-hook.mjs"));
+  const managedProjectCwds = [...hookHomes].filter(dir => dir !== userCodexHome).map(dirname);
+  const currentProjectHookHomes = new Set([join(cwd, ".codex"), ...invocationConfigDirs]);
   for (const dir of hookHomes) {
     const manifestPath = join(dir, "muster", ".muster-managed.json");
     const registered = scopeHomes.get(dir);
-    if (!registered && !(await exists(manifestPath))) continue;
+    if (!registered && !(await exists(manifestPath))) {
+      if (currentProjectHookHomes.has(dir)) {
+        const configPath = join(dir, "hooks.json");
+        try {
+          const config = await readRegularJson(configPath);
+          if (config) {
+            const carriesMusterGroups = Object.values(config?.hooks || {}).some(groups => Array.isArray(groups) && groups.some(isMusterHookGroup));
+            const alias = await hasMusterHookCommandAlias(config, managedHookScripts, { cwds: [...new Set([cwd, inventoryCwd, ...invocationConfigDirs.map(dirname)])] });
+            if (carriesMusterGroups || alias) {
+              staleHookScopes.push(dir);
+              mismatchHookScopes.push({ dir, path: configPath });
+            }
+          }
+        } catch (error) {
+          const { cause, path } = classifyScopeReadError(error, configPath);
+          staleHookScopes.push(dir);
+          hookCauseFailures.push({ dir, cause, path, message: error.message });
+        }
+      }
+      continue;
+    }
     // Every scope -- registered AND unregistered current-project/user -- reads
     // its hook manifest, hooks.json, and hook runtime through the same
     // no-follow bounded reader (readRegularJson/readRegularFile). A
@@ -1045,26 +1107,39 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
       readingPath = configPath;
       const config = await readRegularJson(configPath);
       if (!config) throw missingScopeFile("managed hook configuration", configPath);
-      if (isHooksSkippedManifest(owner)) {
+      const aliasCwds = dir === userCodexHome ? [...new Set([cwd, inventoryCwd, ...managedProjectCwds])]
+        : resolve(dirname(dir)) === cwd ? [...new Set([cwd, inventoryCwd])] : [dirname(dir)];
+      const aliasedMusterCommand = await hasMusterHookCommandAlias(config, managedHookScripts, { cwds: aliasCwds });
+      if (dir !== userCodexHome && isHooksSkippedManifest(owner, selected?.packageVersion)) {
         // Coherent-and-non-firing: no runtime dir is expected, so it is
         // never pushed to hookStatuses (would count toward the overlap
         // dedupe check) OR staleHookScopes (would fail codex-hooks) --
         // unless its hooks.json still somehow carries a live Muster group
         // its own manifest no longer declares, which is genuine drift.
         const carriesMusterGroups = Object.values(config?.hooks || {}).some(groups => Array.isArray(groups) && groups.some(isMusterHookGroup));
-        if (carriesMusterGroups) throw new Error(`canonical-scope-skipped hook manifest still carries a Muster hook group: ${configPath}`);
+        if (carriesMusterGroups || aliasedMusterCommand) throw new Error(`canonical-scope-skipped hook manifest still carries a Muster hook group: ${configPath}`);
+        if (dir !== userCodexHome) skippedProjectHookCwds.push(dirname(dir));
         continue;
       }
       const hookFiles = ["muster-hook.mjs", "action-guard.mjs"];
       const runtimeDir = join(dir, "muster", "hooks");
+      const expected = selected ? await expectedCodexHookInstall({
+        dir,
+        hookSourceRoot: join(selected.pluginRoot, "runtime", "install-hooks"),
+        nodeExecPath
+      }) : null;
       readingPath = runtimeDir;
       const runtime = await Promise.all(hookFiles.map(file => readRegularFile(join(runtimeDir, file))));
       if (runtime.some(file => file === null)) throw missingScopeFile("managed hook runtime", runtimeDir);
       const hash = createHash("sha256");
       for (let index = 0; index < hookFiles.length; index++) hash.update(`hooks/${hookFiles[index]}`).update("\0").update(runtime[index]);
       const digest = hash.digest("hex");
-      const coherent = owner.owner === "muster" && ownsExactHookGroups(config, owner) && owner.packageVersion === selected?.packageVersion
-        && owner.hookHash === digest;
+      const coherent = owner.owner === "muster" && expected
+        && !aliasedMusterCommand
+        && same(owner.files, expected.files)
+        && same(canonicalHookGroupShape(owner.hookGroups), canonicalHookGroupShape(expected.hookGroups))
+        && ownsExactHookGroups(config, owner) && owner.packageVersion === selected?.packageVersion
+        && owner.hookHash === expected.hookHash && digest === expected.hookHash;
       if (coherent) {
         hookStatuses.push(dir);
         // Persisted-interpreter capture (run-5 security audit Med #5): each
@@ -1089,15 +1164,23 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
         // still be silently not firing. Coherence proves the bytes are right;
         // only a [hooks.state] entry proves Codex will actually run them.
         const gaps = musterHookTrustGaps({
-          configTomlText, hooksJsonPath: configPath, config, hookGroups: owner.hookGroups
+          configTomlText, hooksJsonPath: configPath, config, hookGroups: expected.hookGroups
         });
-        if (gaps.untrusted.length) hookTrustGaps.push({ dir, untrusted: gaps.untrusted });
+        const blocked = gaps.results.filter(result => result.status !== "trusted");
+        hookTrustTargets.push({
+          dir,
+          cwd: dir === userCodexHome ? cwd : dirname(dir),
+          configPath,
+          results: gaps.results,
+          knownKeys: codexHookStateKeys(config)
+        });
+        if (blocked.length || gaps.stale.length) hookTrustGaps.push({ dir, results: blocked, stale: gaps.stale });
       } else {
         staleHookScopes.push(dir);
         // Present + parsed but not coherent: a MISMATCH. Name the runtime dir
         // when the managed runtime's sha differs (a HASH MISMATCH), else the
         // manifest (a version/owned-group mismatch).
-        mismatchHookScopes.push({ dir, path: owner.hookHash !== digest ? runtimeDir : manifestPath });
+        mismatchHookScopes.push({ dir, path: !expected || digest !== expected.hookHash || owner.hookHash !== digest ? runtimeDir : manifestPath });
       }
     } catch (error) {
       const { cause, path } = classifyScopeReadError(error, readingPath);
@@ -1171,11 +1254,62 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   // which is the exact failure mode muster's guard design exists to prevent.
   // Remediation is a human trusting the hook in Codex, never
   // --dangerously-bypass-hook-trust.
-  const untrustedCount = hookTrustGaps.reduce((total, item) => total + item.untrusted.length, 0);
+  const inventoryReader = hookInventory || readCodexHookInventory;
+  // A skipped project delegates to the canonical user hooks, but Codex loads
+  // that user configuration independently for every CWD. Preserve each
+  // skipped project as an activation obligation instead of checking the user
+  // target only in doctor's invocation directory.
+  const effectiveTargets = [...hookTrustTargets];
+  for (const target of effectiveTargets) if (resolve(target.cwd) === cwd) target.cwd = inventoryCwd;
+  const userTrustTarget = hookTrustTargets.find(target => target.dir === userCodexHome);
+  if (userTrustTarget) for (const skippedCwd of skippedProjectHookCwds) {
+    const effectiveCwd = resolve(skippedCwd) === cwd ? inventoryCwd : skippedCwd;
+    if (!effectiveTargets.some(target => target.dir === userCodexHome && target.cwd === effectiveCwd)) {
+      effectiveTargets.push({ ...userTrustTarget, cwd: effectiveCwd });
+    }
+  }
+  const inventoryCwds = [...new Set(effectiveTargets.map(target => target.cwd))];
+  const activationBefore = effectiveTargets.length ? activationProofStart : null;
+  const inventoryArgs = { runtimeIdentity: identity, cwds: inventoryCwds, env: { ...env, CODEX_HOME: userCodexHome } };
+  const inventory = effectiveTargets.length ? await inventoryReader(inventoryArgs) : null;
+  const aliasCandidatesBefore = effectiveTargets.length ? await Promise.all(effectiveTargets.map(target => inventoryAliasCandidateSnapshot(inventory, {
+    cwd: target.cwd, hooksJsonPath: target.configPath
+  }))) : [];
+  const confirmedInventory = effectiveTargets.length ? await inventoryReader(inventoryArgs) : null;
+  const aliasCandidatesAfter = effectiveTargets.length ? await Promise.all(effectiveTargets.map(target => inventoryAliasCandidateSnapshot(confirmedInventory, {
+    cwd: target.cwd, hooksJsonPath: target.configPath
+  }))) : [];
+  const inventoryAliases = effectiveTargets.length ? await Promise.all(effectiveTargets.map(target => hasManagedRuntimeInventoryAlias(confirmedInventory, {
+    cwd: target.cwd, hooksJsonPath: target.configPath, activationSnapshot: activationBefore
+  }))) : [];
+  const aliasCandidatesClosing = effectiveTargets.length ? await Promise.all(effectiveTargets.map(target => inventoryAliasCandidateSnapshot(confirmedInventory, {
+    cwd: target.cwd, hooksJsonPath: target.configPath
+  }))) : [];
+  const inventoryStable = !effectiveTargets.length || (same(inventory, confirmedInventory)
+    && aliasCandidatesBefore.every((snapshot, index) => sameAliasCandidateSnapshot(snapshot, aliasCandidatesAfter[index]))
+    && aliasCandidatesAfter.every((snapshot, index) => sameAliasCandidateSnapshot(snapshot, aliasCandidatesClosing[index])));
+  const activationAfter = effectiveTargets.length ? await hookActivationSnapshot({ cwd, inventoryCwd, userCodexHome }) : null;
+  const activationStable = !effectiveTargets.length || sameHookActivationSnapshot(activationBefore, activationAfter);
+  const effectiveFailures = effectiveTargets.map((target, index) => ({
+    dir: target.dir,
+    cwd: target.cwd,
+    effective: inventoryAliases[index]
+      ? { verified: true, ok: false, error: "Codex hooks/list reported another source invoking the managed Muster runtime", results: [] }
+      : activationStable && inventoryStable
+      ? effectiveHookTrust(confirmedInventory, target.cwd, target.configPath, target.results, { knownKeys: target.knownKeys })
+      : { verified: true, ok: false, error: "Codex hook activation state changed during hooks/list verification", results: [] }
+  })).filter(item => !item.effective.ok);
+  const untrustedCount = hookTrustGaps.reduce((total, item) => total + item.results.length + item.stale.length, 0)
+    + effectiveFailures.reduce((total, item) => total + Math.max(1, item.effective.results.filter(result => result.status !== "active").length), 0);
+  const persistedDetail = hookTrustGaps.map(item => `${item.dir} (${[
+    ...item.results.map(result => `${result.key}=${result.status}`),
+    ...item.stale.map(key => `${key}=stale`)
+  ].join(", ")})`);
+  const effectiveDetail = effectiveFailures.map(item => `${item.dir} for ${item.cwd} (effective=${item.effective.error || item.effective.results.filter(result => result.status !== "active").map(result => result.key).join(",")})`);
   checks.push({ name: "codex-hook-trust", ok: untrustedCount === 0, detail: untrustedCount
-    ? `${untrustedCount} Muster-owned Codex hook${untrustedCount === 1 ? " is" : "s are"} installed but NOT trusted, so Codex is skipping ${untrustedCount === 1 ? "it" : "them"}: ${hookTrustGaps.map(item => `${item.dir} (${item.untrusted.join(", ")})`).join("; ")}. Codex trusts hooks per content hash and skips new or changed hooks until reviewed -- open Codex and approve the hook review to restore ${untrustedCount === 1 ? "it" : "them"}`
+    ? `${untrustedCount} Muster-owned Codex hook trust or activation check${untrustedCount === 1 ? " is" : "s are"} blocked: ${[...persistedDetail, ...effectiveDetail].join("; ")}. Codex runs a hook only when it is enabled, its trusted_hash equals the exact current hash, and hooks/list reports it active -- open Codex, run /hooks, trust the exact current definitions, then rerun muster doctor --codex`
     : hookStatuses.length
-    ? `all Muster-owned Codex hooks in ${hookStatuses.length} scope(s) carry a config.toml trust entry`
+    ? `all Muster-owned Codex hooks in ${hookStatuses.length} scope(s) have the exact current hash and enabled state`
     : "no managed Codex hooks to verify trust for" });
   // The installed plugin cache must be the hooks-free Codex flavor: Codex
   // >=0.144.5 fires a plugin's default hooks/hooks.json on every lifecycle

@@ -187,7 +187,7 @@ const inventoryFor = (cwd, hooksJsonPath, results) => ({ ok: true, data: [{ cwd,
 test("effectiveHookTrust rejects duplicate scope and managed hook inventory records", () => {
   const cwd = "/repo", hooksJsonPath = "/repo/.codex/hooks.json";
   const exactHash = `sha256:${"a".repeat(64)}`;
-  const results = [{ key: "stop:0:0", currentHash: exactHash }];
+  const results = [{ key: "stop:0:0", currentHash: exactHash, trustedHash: exactHash, enabled: true, status: "trusted" }];
   const record = { cwd, warnings: [], errors: [], hooks: [{
     key: `${hooksJsonPath}:stop:0:0`, enabled: true, trustStatus: "trusted", currentHash: exactHash
   }] };
@@ -235,6 +235,37 @@ test("effectiveHookTrust rejects duplicate scope and managed hook inventory reco
     const cleanRecord = { ...structuredClone(record), cwd: recordCwd };
     assert.equal(effectiveHookTrust({ ok: true, data: [cleanRecord] }, requested, hooksJsonPath, results, { knownKeys: ["stop:0:0"] }).ok, false);
   }
+  for (const alias of [`${cwd}/.codex/./hooks.json`, `${cwd}/.codex/sub/../hooks.json`]) {
+    const aliased = structuredClone(record);
+    aliased.hooks.push({ ...structuredClone(aliased.hooks[0]), key: `${alias}:stop:1:0` });
+    assert.equal(effectiveHookTrust({ ok: true, data: [aliased] }, cwd, hooksJsonPath, results, { knownKeys: ["stop:0:0"] }).ok, false);
+  }
+  for (const noncanonicalPosition of ["stop:00:0", "stop:0:00", `stop:${Number.MAX_SAFE_INTEGER + 1}:0`]) {
+    const malformedPosition = structuredClone(record);
+    malformedPosition.hooks[0].key = `${hooksJsonPath}:${noncanonicalPosition}`;
+    assert.equal(effectiveHookTrust({ ok: true, data: [malformedPosition] }, cwd, hooksJsonPath, results, { knownKeys: ["stop:0:0"] }).ok, false);
+    assert.equal(effectiveHookTrust({ ok: true, data: [record] }, cwd, hooksJsonPath, [{ ...results[0], key: noncanonicalPosition }], { knownKeys: [noncanonicalPosition] }).ok, false);
+    assert.equal(effectiveHookTrust({ ok: true, data: [malformedPosition] }, cwd, hooksJsonPath, [{ ...results[0], key: noncanonicalPosition }], { knownKeys: [noncanonicalPosition] }).ok, false);
+  }
+  for (const malformedResult of [
+    { key: results[0].key, currentHash: exactHash },
+    { ...results[0], trustedHash: 1 },
+    { ...results[0], enabled: "true" },
+    { ...results[0], status: 1 },
+    { ...results[0], surplus: true }
+  ]) assert.equal(effectiveHookTrust({ ok: true, data: [record] }, cwd, hooksJsonPath, [malformedResult], { knownKeys: ["stop:0:0"] }).ok, false);
+  const sparseResults = [results[0], ,];
+  const sparseKnownKeys = ["stop:0:0", ,];
+  const sparseData = [record, ,];
+  const sparseHooks = structuredClone(record);
+  sparseHooks.hooks = [sparseHooks.hooks[0], ,];
+  assert.equal(effectiveHookTrust({ ok: true, data: [record] }, cwd, hooksJsonPath, sparseResults, { knownKeys: ["stop:0:0"] }).ok, false);
+  assert.equal(effectiveHookTrust({ ok: true, data: [record] }, cwd, hooksJsonPath, results, { knownKeys: sparseKnownKeys }).ok, false);
+  assert.equal(effectiveHookTrust({ ok: true, data: sparseData }, cwd, hooksJsonPath, results, { knownKeys: ["stop:0:0"] }).ok, false);
+  assert.equal(effectiveHookTrust({ ok: true, data: [sparseHooks] }, cwd, hooksJsonPath, results, { knownKeys: ["stop:0:0"] }).ok, false);
+  assert.equal(effectiveHookTrust({ ok: true, data: [record], surplus: true }, cwd, hooksJsonPath, results, { knownKeys: ["stop:0:0"] }).ok, false);
+  assert.equal(effectiveHookTrust({ ok: true, data: [{ ...record, surplus: true }] }, cwd, hooksJsonPath, results, { knownKeys: ["stop:0:0"] }).ok, false);
+  assert.equal(effectiveHookTrust({ ok: true, data: [{ ...record, hooks: [{ ...record.hooks[0], surplus: true }] }] }, cwd, hooksJsonPath, results, { knownKeys: ["stop:0:0"] }).ok, false);
 });
 
 test("Codex reinstall rejects an exact duplicate Muster group left outside manifest ownership", async () => {

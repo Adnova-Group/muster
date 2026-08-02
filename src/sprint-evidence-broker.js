@@ -68,7 +68,7 @@ function verifyFreshApproval(approval, assignment, receipt, publicKey, runId, no
 }
 
 export function authenticateSprintBrokerCallback(token, state) {
-  if (typeof token !== "string" || token.length < 16) throw new Error("broker callback authentication failed");
+  if (typeof token !== "string" || !/^[0-9a-f]{64}$/.test(token)) throw new Error("broker callback authentication failed");
   const digest = createHash("sha256").update(token).digest("hex");
   const match = Object.entries(state?.callbackPrincipals ?? {}).find(([candidate]) => {
     if (!/^[0-9a-f]{64}$/.test(candidate)) return false;
@@ -77,7 +77,7 @@ export function authenticateSprintBrokerCallback(token, state) {
   if (!match || !match[1] || typeof match[1].actorId !== "string" || !Array.isArray(match[1].purposes)) {
     throw new Error("broker callback authentication failed");
   }
-  return match[1];
+  return { ...match[1], tokenDigest: digest };
 }
 
 export function issueSprintReceipt(request, {
@@ -102,6 +102,7 @@ export function issueSprintApproval(request, {
 } = {}) {
   exactOwnKeys(request, APPROVAL_KEYS, "approval request");
   const { assignment, worktreePath } = assignmentFor(state, request.itemId, "approval", principal);
+  const capability = principal.oneTimeApproval;
   const target = assignment.integrationTarget;
   const expected = {
     itemId: request.itemId, workBranch: assignment.branch,
@@ -109,11 +110,15 @@ export function issueSprintApproval(request, {
     baseBranch: target?.baseBranch, baseHeadSha: target?.baseHeadSha, operation: target?.operation,
   };
   if (Object.entries(expected).some(([key, value]) => request[key] !== value)
-    || assignment.approvalActionDigest !== integrationApprovalDigest(request)) {
+    || assignment.approvalActionDigest !== integrationApprovalDigest(request)
+    || capability?.runId !== state.runId || capability?.actorId !== principal.actorId
+    || capability?.itemId !== request.itemId || capability?.approvalActionDigest !== assignment.approvalActionDigest
+    || !Number.isFinite(Date.parse(capability?.humanEventAt)) || !Number.isFinite(Date.parse(capability?.expiresAt))
+    || Date.parse(capability.humanEventAt) > now || Date.parse(capability.expiresAt) < now) {
     throw new Error("approval request does not match the prior trusted approval action");
   }
   const approval = {
-    ...request, approvedBy: principal.actorId, approvedAt: new Date(now).toISOString(),
+    ...request, approvedBy: principal.actorId, approvedAt: capability.humanEventAt,
     runId: state.runId, nonce: randomUUID(),
   };
   const digest = integrationApprovalDigest(approval);

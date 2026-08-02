@@ -149,6 +149,57 @@ All supported configuration is environment variables set in the Route A `env` bl
 
 For sprint lifecycle evidence, generate two Ed25519 keypairs and a fresh run UUID. Run `scripts/sprint-evidence-broker.mjs <protected-config.json>` as a separately privileged host service account; its owner-only config points to owner-only private-key files, adapter-owned assignment state, and a private socket or Windows named pipe. The Cowork MCP process receives only the public keys. A host mailbox or authenticated-human callback invokes `scripts/sprint-evidence-callback.mjs` with that socket and its actor-specific `MUSTER_EVIDENCE_CALLBACK_TOKEN`. The broker hashes the token into the adapter-owned principal map, verifies the assigned worktree/repository/branch/phase and prior approval action, and signs with its private key. Do not place private keys, callback tokens, or assignment state in the Cowork server environment, MCP arguments, or model-readable files. If the host cannot run the privileged service and callbacks, use the sequential fallback; authenticated parallel sprint lifecycle is unavailable rather than silently weakened.
 
+The protected broker config schema is:
+
+```json
+{
+  "socketPath": "/run/user/1000/muster-evidence.sock",
+  "statePath": "/var/lib/muster/run-uuid/state.json",
+  "receiptPrivateKeyPath": "/var/lib/muster/run-uuid/receipt-private.pem",
+  "approvalPrivateKeyPath": "/var/lib/muster/run-uuid/approval-private.pem",
+  "approvalPublicKeyPath": "/var/lib/muster/run-uuid/approval-public.pem"
+}
+```
+
+The owner-only state file is versioned. `callbackPrincipals` keys are SHA-256 digests of independent high-entropy callback tokens; each principal's `purposes` may contain only its authenticated phases. Every item records its exact assigned worktree, common Git directory, branch, phase actors, current integration target, and—only after reconciliation emits it—the current `approvalActionDigest`:
+
+```json
+{
+  "version": 2,
+  "runId": "run-uuid",
+  "callbackPrincipals": {
+    "<sha256-runner-token>": { "actorId": "runner-a", "purposes": ["implementation"] },
+    "<sha256-reviewer-token>": { "actorId": "reviewer-a", "purposes": ["review"] },
+    "<sha256-human-token>": {
+      "actorId": "human-a",
+      "purposes": ["approval"],
+      "oneTimeApproval": {
+        "runId": "run-uuid",
+        "actorId": "human-a",
+        "itemId": "a",
+        "approvalActionDigest": "<64-hex-from-reconcile>",
+        "humanEventAt": "2026-08-01T12:00:00.000Z",
+        "expiresAt": "2026-08-01T12:15:00.000Z"
+      }
+    }
+  },
+  "items": {
+    "a": {
+      "worktreePath": "/srv/muster/.worktrees/a",
+      "gitCommonDir": "/srv/muster/.git",
+      "branch": "muster/a",
+      "actors": { "implementation": "runner-a", "review": "reviewer-a", "integration": "integrator-a", "approval": "human-a" },
+      "integrationTarget": { "baseBranch": "main", "baseHeadSha": "<40-or-64-hex>", "operation": "merge-local" },
+      "approvalActionDigest": "<64-hex-from-reconcile>"
+    }
+  }
+}
+```
+
+Initialize under the broker service account with `umask 077`, generate each key with `openssl genpkey -algorithm Ed25519`, derive the public PEM with `openssl pkey -pubout`, write config/state mode `0600`, and start `node scripts/sprint-evidence-broker.mjs /protected/config.json`. To admit an item, rotate a callback, or record a newly emitted approval action, write the complete next state to an owner-only sibling temp file with `version` incremented, `fsync` it, then atomically rename it over `state.json`. The broker reopens and validates the protected file on every callback; it rejects version rollback, same-version content changes, and in-place `runId` changes. Rotate a run by stopping the service and starting a new protected config/state/key set with a new `runId`; never reuse callback tokens across runs.
+
+Receipt callback tokens are canonical 64-character lowercase hex values representing at least 32 random bytes. Human approval uses a distinct one-time token whose principal embeds the exact run, actor, item, emitted action digest, trusted human-event timestamp, and expiry. The broker preserves that human timestamp, atomically removes the capability and increments state version before returning the signature, so duplicate/replayed approval calls fail; a crash after consumption requires a new human event rather than recreating freshness. The service requires a service-owned `0700` state/config directory, owner-owned `0600` files, and creates the Unix socket as `0600`; Windows currently fails closed until an ACL-hardened named-pipe adapter exists.
+
 ### How capabilities resolve
 
 `muster_capabilities` runs with `--cowork`, resolving providers from Cowork's own invocable surface. By default a chosen provider is either an MCP server registered with Cowork or `inline` execution by the current Cowork agent; Claude Code agents, skills, and plugin-shipped MCP definitions merely present under `~/.claude/plugins` are not advertised because Cowork's classic MCP-only registry does not load them.

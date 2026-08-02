@@ -681,9 +681,9 @@ test("sprint-reconcile CLI round-trips exact-head approval into integration disp
 
 test("privileged IPC broker binds callback capabilities, assignments, and fresh approval", async () => {
   const dir = await mkdtemp(join(tmpdir(), "muster-sprint-issuers-"));
-  const runnerToken = "runner-host-callback-token-012345";
-  const humanToken = "human-host-callback-token-0123456";
-  const integrationToken = "integration-host-callback-token";
+  const runnerToken = "11".repeat(32);
+  const humanToken = "22".repeat(32);
+  const integrationToken = "33".repeat(32);
   const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: repoRoot, encoding: "utf8" }).trim();
   const branch = execFileSync("git", ["symbolic-ref", "--short", "HEAD"], { cwd: repoRoot, encoding: "utf8" }).trim();
   const common = resolve(repoRoot, execFileSync("git", ["rev-parse", "--git-common-dir"], { cwd: repoRoot, encoding: "utf8" }).trim());
@@ -692,8 +692,8 @@ test("privileged IPC broker binds callback capabilities, assignments, and fresh 
     itemId: "a", workBranch: branch, workHeadSha: head,
     baseBranch: "main", baseHeadSha, operation: "merge-local",
   };
-  const assignments = {
-    runId: RUN_ID,
+  let assignments = {
+    version: 1, runId: RUN_ID,
     callbackPrincipals: {
       [createHash("sha256").update(runnerToken).digest("hex")]: { actorId: "runner-a", purposes: ["implementation"] },
       [createHash("sha256").update(humanToken).digest("hex")]: { actorId: "human-a", purposes: ["approval"] },
@@ -704,13 +704,20 @@ test("privileged IPC broker binds callback capabilities, assignments, and fresh 
         worktreePath: repoRoot, branch, gitCommonDir: common,
         actors: { implementation: "runner-a", review: "reviewer-a", integration: "integrator", approval: "human-a" },
         integrationTarget: { baseBranch: "main", baseHeadSha, operation: "merge-local" },
-        approvalActionDigest: integrationApprovalDigest(approvalTuple),
       },
     },
   };
   const socketPath = join(dir, "broker.sock");
   const broker = startSprintEvidenceBroker({
-    socketPath, state: assignments, receiptPrivateKey, approvalPrivateKey, approvalPublicKey,
+    socketPath, loadState: async () => assignments,
+    consumeApprovalCapability: async (digest, version) => {
+      assert.equal(version, assignments.version);
+      assert.ok(assignments.callbackPrincipals[digest]?.oneTimeApproval);
+      assignments = structuredClone(assignments);
+      delete assignments.callbackPrincipals[digest];
+      assignments.version += 1;
+    },
+    receiptPrivateKey, approvalPrivateKey, approvalPublicKey,
   });
   await once(broker, "listening");
   const callback = (kind, file, token) => pexecFile(process.execPath, [callbackCli, kind, file], {
@@ -730,16 +737,29 @@ test("privileged IPC broker binds callback capabilities, assignments, and fresh 
       worktreePath: repoRoot,
     }));
     await assert.rejects(callback("receipt", receiptFile, runnerToken), /forbidden fields: worktreePath/);
-    await assert.rejects(callback("receipt", receiptFile, "forged-callback-token-012345"), /broker callback authentication failed/);
+    await assert.rejects(callback("receipt", receiptFile, "weak-token"), /broker callback authentication failed/);
+    await assert.rejects(callback("receipt", receiptFile, "44".repeat(32)), /broker callback authentication failed/);
 
+    assignments = structuredClone(assignments);
+    assignments.version = 2;
+    delete assignments.callbackPrincipals[createHash("sha256").update(runnerToken).digest("hex")];
+    assignments.items.a.approvalActionDigest = integrationApprovalDigest(approvalTuple);
+    assignments.callbackPrincipals[createHash("sha256").update(humanToken).digest("hex")].oneTimeApproval = {
+      runId: RUN_ID, actorId: "human-a", itemId: "a",
+      approvalActionDigest: integrationApprovalDigest(approvalTuple),
+      humanEventAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+    };
+    await assert.rejects(callback("receipt", receiptFile, runnerToken), /broker callback authentication failed/);
     const approvalFile = join(dir, "approval.json");
+    await writeFile(approvalFile, JSON.stringify({ ...approvalTuple, approvedBy: "caller-asserted-human" }));
+    await assert.rejects(callback("approval", approvalFile, humanToken), /forbidden fields: approvedBy/);
     await writeFile(approvalFile, JSON.stringify(approvalTuple));
     const issuedApproval = JSON.parse((await callback("approval", approvalFile, humanToken)).stdout);
     assert.equal(issuedApproval.approvedBy, "human-a");
     assert.match(issuedApproval.evidence, /^[A-Za-z0-9+/]{86}==$/);
 
-    await writeFile(approvalFile, JSON.stringify({ ...approvalTuple, approvedBy: "caller-asserted-human" }));
-    await assert.rejects(callback("approval", approvalFile, humanToken), /forbidden fields: approvedBy/);
+    await assert.rejects(callback("approval", approvalFile, humanToken), /broker callback authentication failed/);
 
     const expired = { ...issuedApproval, approvedAt: new Date(Date.now() - 16 * 60 * 1000).toISOString() };
     expired.digest = integrationApprovalDigest(expired);

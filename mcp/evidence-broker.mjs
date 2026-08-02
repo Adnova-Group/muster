@@ -1,4 +1,5 @@
 import { createServer } from "node:net";
+import { chmodSync } from "node:fs";
 import {
   authenticateSprintBrokerCallback,
   issueSprintApproval,
@@ -8,13 +9,18 @@ import {
 const MAX_REQUEST_BYTES = 1_048_576;
 
 export function startSprintEvidenceBroker({
-  socketPath, state, receiptPrivateKey, approvalPrivateKey, approvalPublicKey,
+  socketPath, state, loadState, consumeApprovalCapability,
+  receiptPrivateKey, approvalPrivateKey, approvalPublicKey,
 } = {}) {
   if (typeof socketPath !== "string" || !socketPath) throw new Error("evidence broker socket path is required");
-  if (!state || typeof state !== "object" || typeof state.runId !== "string") {
+  if (typeof loadState !== "function" && (!state || typeof state !== "object" || typeof state.runId !== "string")) {
     throw new Error("evidence broker trusted state is required");
   }
+  const resolveState = typeof loadState === "function" ? loadState : async () => state;
+  let authWindowStarted = Date.now();
+  let failedAuth = 0;
   const server = createServer((connection) => {
+    connection.setTimeout(5_000, () => connection.destroy());
     let buffer = "";
     connection.setEncoding("utf8");
     connection.on("data", (chunk) => {
@@ -27,24 +33,41 @@ export function startSprintEvidenceBroker({
       if (newline < 0) return;
       const line = buffer.slice(0, newline);
       buffer = "";
-      try {
+      Promise.resolve().then(async () => {
         const envelope = JSON.parse(line);
-        const principal = authenticateSprintBrokerCallback(envelope.token, state);
+        const currentState = await resolveState();
+        if (Date.now() - authWindowStarted > 60_000) { authWindowStarted = Date.now(); failedAuth = 0; }
+        if (failedAuth >= 8) throw new Error("broker callback authentication throttled");
+        let principal;
+        try { principal = authenticateSprintBrokerCallback(envelope.token, currentState); }
+        catch (error) { failedAuth += 1; throw error; }
         const result = envelope.kind === "receipt"
           ? issueSprintReceipt(envelope.request, {
-            state, principal, receiptPrivateKey, approvalPublicKey,
+            state: currentState, principal, receiptPrivateKey, approvalPublicKey,
           })
           : envelope.kind === "approval"
-            ? issueSprintApproval(envelope.request, {
-              state, principal, approvalPrivateKey,
-            })
+            ? await (async () => {
+              const issued = issueSprintApproval(envelope.request, {
+                state: currentState, principal, approvalPrivateKey,
+              });
+              if (typeof consumeApprovalCapability !== "function") throw new Error("approval capability consumer unavailable");
+              await consumeApprovalCapability(principal.tokenDigest, currentState.version);
+              return issued;
+            })()
             : (() => { throw new Error("unknown broker request kind"); })();
         connection.end(`${JSON.stringify({ ok: true, result })}\n`);
-      } catch (error) {
+      }).catch((error) => {
         connection.end(`${JSON.stringify({ ok: false, error: error.message })}\n`);
-      }
+      });
     });
   });
-  server.listen(socketPath);
+  server.maxConnections = 32;
+  server.listen(socketPath, () => {
+    if (process.platform === "win32") {
+      server.close();
+      throw new Error("evidence broker requires an explicitly ACL-hardened named-pipe adapter on Windows");
+    }
+    chmodSync(socketPath, 0o600);
+  });
   return server;
 }

@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import { CODEX_COUNTS } from "./codex.js";
 import { codexAvailable, readCodexInventory } from "./codex-inventory.js";
+import { codexVersionMatches, resolveCodexRuntimeIdentity, runCodexCommand } from "./codex-runtime-identity.js";
 import { exists } from "./fs-util.js";
 import { parseAgentProfileToml, resolveCodexPlugin } from "./codex-release.js";
 import { musterHookTrustGaps, parseHookCommand, reconcileConfigTomlHookState, reconcileScopeRegistryEntries } from "./codex-install.js";
@@ -17,6 +18,7 @@ import {
   codexThreadLimitsMeetFloor,
   readCodexThreadLimits
 } from "./codex-thread-limits.js";
+import { runCodexStrictConfigCheck } from "./codex-strict-config.js";
 
 // codex-path-shadow (backlog item run4-polish-pair; security-hardened by
 // run-5 audit High #3 `doctor-path-shadow-no-exec`): a stale globally
@@ -680,7 +682,7 @@ function isHooksSkippedManifest(owner) {
     && Object.keys(owner.hookGroups).length === 0;
 }
 
-export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, execFile, mcpRunner = runMcpHandshake, env = process.env, platform = process.platform, readConfigToml = path => readRegularFile(path, "utf8", DOCTOR_CONFIG_READ_MAX_BYTES) } = {}) {
+export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, execFile, strictConfigRunner, runtimeIdentity, mcpRunner = runMcpHandshake, env = process.env, platform = process.platform, nodeExecPath = process.execPath, readConfigToml = path => readRegularFile(path, "utf8", DOCTOR_CONFIG_READ_MAX_BYTES) } = {}) {
   const base = root instanceof URL ? fileURLToPath(root) : (root || process.cwd());
   // The npm CLI runs from the package root; the bundled runtime runs from the
   // plugin root itself. Support both layouts without requiring npm at runtime.
@@ -712,8 +714,37 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   const plugin = isPluginRoot ? base : (selected?.pluginRoot || join(base, ".agents", "plugins", "plugin"));
   const selectionSkip = subject => `Codex plugin selection failed; ${subject} not diagnosed (see codex-plugin-selection)`;
   const checks = [];
-  const available = await codexAvailable({ execFile });
-  checks.push({ name: "codex-cli", ok: available, detail: available ? "codex detected on PATH" : "codex not found — profiles can be installed, plugin registration is skipped" });
+  let identity = runtimeIdentity, identityError = null;
+  if (!identity && !execFile) {
+    try { identity = resolveCodexRuntimeIdentity({ env, nodeExecPath }); }
+    catch (error) { identityError = error; }
+  }
+  const allowInjected = Boolean(execFile) && !identity;
+  const available = identityError ? false : await codexAvailable({ execFile, runtimeIdentity: identity, env, allowInjected });
+  checks.push({ name: "codex-cli", ok: available, detail: available
+    ? identity ? `Codex detected through pinned executable ${identity.codex}` : "codex detected through injected test runner"
+    : identityError ? identityError.message : "codex not found — profiles can be installed, plugin registration is skipped" });
+  const configParser = strictConfigRunner || (!execFile ? runCodexStrictConfigCheck : null);
+  if (configParser) try {
+    const parsed = await configParser({ cwd, codexHome: codexHome || env.CODEX_HOME || join(homedir(), ".codex"), runtimeIdentity: identity, env });
+    checks.push({ name: "codex-config-strict", ok: parsed?.ok === true && parsed?.modelTurnEvents === 0,
+      detail: "Codex app-server strict parser accepted shared and project config with zero model-turn events" });
+  } catch (error) {
+    checks.push({ name: "codex-config-strict", ok: false, detail: error.message });
+  }
+  if (identity) {
+    try {
+      const { stdout } = await runCodexCommand(execFile, identity, ["--version"], { timeout: 5_000, maxBuffer: 64 * 1024 });
+      const version = codexVersionMatches(stdout, identity.version);
+      checks.push({ name: "codex-runtime-identity", ok: version.ok, detail: version.ok
+        ? `Node ${identity.node}; Codex ${identity.codex}; version ${identity.version}`
+        : `pinned Codex ${identity.codex} reported version ${version.found || "unknown"}, expected ${identity.version}` });
+    } catch (error) {
+      checks.push({ name: "codex-runtime-identity", ok: false, detail: `could not execute pinned Codex ${identity.codex} under Node ${identity.node}: ${error.message}` });
+    }
+  } else if (identityError) {
+    checks.push({ name: "codex-runtime-identity", ok: false, detail: identityError.message });
+  }
   checks.push(await checkPathShadow({ env, platform }));
   if (selectionFailed) {
     checks.push({ name: "codex-plugin-selection", ok: false, detail: `could not select which Muster plugin Codex uses from the marketplace pointer under ${join(base, ".agents", "plugins")}: ${selectionError?.message || "invalid or missing marketplace pointer"}; downstream plugin/agent/runtime/version checks are not diagnosed against any unselected fallback tree -- rerun muster install codex / build:codex to regenerate a valid pointer` });
@@ -782,8 +813,30 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
       try { if (!(await assertRegularFilePresent(join(plugin, item)))) problems.push(`${item} (missing)`); }
       catch (error) { problems.push(`${item} (${error.message})`); }
     }
-    try { if ((await readRegularJson(join(plugin, ".mcp.json"))) === null) problems.push(".mcp.json (missing)"); }
-    catch (error) { problems.push(`.mcp.json (${error.message})`); }
+    try {
+      const mcp = await readRegularJson(join(plugin, ".mcp.json"));
+      if (mcp === null) problems.push(".mcp.json (missing)");
+      else {
+        const exactDocument = mcp && typeof mcp === "object" && !Array.isArray(mcp)
+          && JSON.stringify(Object.keys(mcp).sort()) === JSON.stringify(["mcpServers"])
+          && mcp.mcpServers && typeof mcp.mcpServers === "object" && !Array.isArray(mcp.mcpServers)
+          && JSON.stringify(Object.keys(mcp.mcpServers).sort()) === JSON.stringify(["muster"]);
+        if (!exactDocument) problems.push(".mcp.json (document must contain only mcpServers.muster)");
+        const server = mcp?.mcpServers?.muster;
+        const command = server?.command;
+        const exactKeys = server && typeof server === "object" && !Array.isArray(server)
+          && JSON.stringify(Object.keys(server).sort()) === JSON.stringify(["args", "command", "cwd"]);
+        if (!exactKeys || JSON.stringify(server?.args) !== JSON.stringify(["./runtime/muster-mcp.mjs"]) || server?.cwd !== ".") {
+          problems.push(".mcp.json (MCP entry must contain exactly canonical command, args [\"./runtime/muster-mcp.mjs\"], and cwd \".\")");
+        }
+        if (typeof command !== "string" || !isAbsolute(command)) problems.push(".mcp.json (MCP Node executable is not absolute)");
+        else {
+          const [actual, expected] = await Promise.all([realpath(command), realpath(identity?.node || nodeExecPath)]);
+          if (!(await stat(actual)).isFile()) problems.push(`.mcp.json (MCP Node executable is not a regular file: ${command})`);
+          else if (actual !== expected) problems.push(`.mcp.json (MCP Node executable canonical identity ${actual} does not match current Node ${expected})`);
+        }
+      }
+    } catch (error) { problems.push(`.mcp.json (${error.message})`); }
     checks.push({ name: "codex-runtime", ok: problems.length === 0, detail: problems.length
       ? `malformed or non-regular runtime artifacts: ${problems.join(", ")}`
       : "bundled runtime and MCP entrypoint present" });
@@ -1010,12 +1063,13 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
         // NOT caught by the coherence loop (the command still matches its
         // manifest; only the file it points at is gone), so it needs its own
         // check.
-        const musterHook = Object.values(config.hooks).flat().filter(isMusterHookGroup)
-          .flatMap(group => Array.isArray(group?.hooks) ? group.hooks : [])
-          .find(hook => typeof (platform === "win32" ? hook?.commandWindows : hook?.command) === "string");
-        const rawCommand = musterHook && (platform === "win32" ? musterHook.commandWindows : musterHook.command);
-        const parsed = rawCommand ? parseHookCommand(rawCommand, { windows: platform === "win32" }) : null;
-        if (parsed?.interpreter) hookInterpreters.push({ dir, interpreter: parsed.interpreter });
+        const managedHooks = Object.values(config.hooks).flat().filter(isMusterHookGroup)
+          .flatMap(group => Array.isArray(group?.hooks) ? group.hooks : []);
+        for (const hook of managedHooks) {
+          const rawCommand = platform === "win32" ? hook?.commandWindows : hook?.command;
+          const parsed = typeof rawCommand === "string" ? parseHookCommand(rawCommand, { windows: platform === "win32" }) : null;
+          hookInterpreters.push({ dir, interpreter: parsed?.interpreter || null, script: parsed?.script || null });
+        }
         // Codex TRUSTS hooks per content hash and SKIPS new-or-changed ones
         // until a human trusts them, so a coherent, correctly-installed hook can
         // still be silently not firing. Coherence proves the bytes are right;
@@ -1078,14 +1132,20 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   // version pruned), Codex would fail every hook fire; reinstalling re-pins the
   // current node. Only coherent scopes are inspected -- a stale scope is already
   // reported by codex-hooks, and its command may not even carry a pinned node.
-  const missingInterpreters = [];
-  for (const { dir, interpreter } of hookInterpreters) {
-    let ok = false;
-    try { ok = (await stat(interpreter)).isFile(); } catch { ok = false; }
-    if (!ok) missingInterpreters.push({ dir, interpreter });
+  const badInterpreters = [];
+  let expectedInterpreter = null;
+  try { expectedInterpreter = await realpath(identity?.node || nodeExecPath); } catch { /* current Node failure is reported as a mismatch below */ }
+  for (const { dir, interpreter, script } of hookInterpreters) {
+    let actual = null, actualScript = null, regular = false, scriptRegular = false, expectedScript = null;
+    try { actual = await realpath(interpreter); regular = (await stat(actual)).isFile(); } catch { /* missing/malformed */ }
+    try { actualScript = await realpath(script); scriptRegular = (await stat(actualScript)).isFile(); } catch { /* missing/malformed */ }
+    try { expectedScript = await realpath(join(dir, "muster", "hooks", "muster-hook.mjs")); } catch { /* missing runtime is reported by codex-hooks too */ }
+    if (!regular || !expectedInterpreter || actual !== expectedInterpreter || !scriptRegular || !expectedScript || actualScript !== expectedScript) {
+      badInterpreters.push({ dir, interpreter, actual, script, actualScript, regular, scriptRegular });
+    }
   }
-  checks.push({ name: "codex-hook-interpreter", ok: missingInterpreters.length === 0, detail: missingInterpreters.length
-    ? `the pinned Node interpreter baked into managed Codex hooks is missing or not a regular file: ${missingInterpreters.map(item => `${item.interpreter} (${item.dir})`).join(", ")}; rerun muster install codex to re-pin the current Node`
+  checks.push({ name: "codex-hook-interpreter", ok: badInterpreters.length === 0, detail: badInterpreters.length
+    ? `a managed Codex hook interpreter or script is missing, malformed, outside the installed runtime, or does not match current Node ${expectedInterpreter || nodeExecPath}: ${badInterpreters.map(item => `${item.actual || item.interpreter || "<malformed>"} -> ${item.actualScript || item.script || "<malformed>"} (${item.dir})`).join(", ")}; rerun muster install codex to re-pin the current Node`
     : hookInterpreters.length
     ? `pinned Node interpreter present and a regular file for ${hookInterpreters.length} managed hook scope(s)`
     : "no managed Codex hook interpreter to verify" });
@@ -1137,7 +1197,7 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   }
   checks.push({ name: "codex-policy-limitations", ok: true, detail: "Hooks provide lifecycle context, diagnostics, and supported policy warnings; todo and spawn enforcement remain advisory, and write-capable waves require isolated worktrees" });
   if (available) {
-    const inventory = await readCodexInventory({ cwd, codexHome, execFile });
+    const inventory = await readCodexInventory({ cwd, codexHome, execFile, runtimeIdentity: identity, env, allowInjected });
     const installed = inventory.plugins.includes("muster");
     checks.push({ name: "codex-plugin-installed", ok: installed, detail: installed ? "muster plugin is enabled in live Codex state" : "muster plugin is not installed; run muster install codex" });
     checks.push({ name: "codex-inventory", ok: true, detail: `${inventory.plugins.length} plugins, ${inventory.skills.length} skills, ${inventory.mcpServers.length} MCP servers, ${inventory.agents.length} agents from live Codex state` });

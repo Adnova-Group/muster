@@ -16,19 +16,37 @@ const cli = join(repoRoot, "src", "cli.js");
 async function configureCodex(project, plugins = []) {
   const home = join(project, "home");
   const bin = join(project, "bin");
+  const packageRoot = join(project, "trusted-codex");
   await mkdir(bin, { recursive: true });
+  await mkdir(join(packageRoot, "bin"), { recursive: true });
   const executable = join(bin, "codex");
   const pluginJson = JSON.stringify({ installed: plugins });
-  await writeFile(executable, `#!${process.execPath}\nconst command = process.argv[2];\nconsole.log(command === "plugin" ? ${JSON.stringify(pluginJson)} : "[]");\n`);
+  await writeFile(executable, `#!${process.execPath}\nconsole.log("[]");\n`);
   await chmod(executable, 0o755);
-  return { home, bin };
+  await writeFile(join(packageRoot, "package.json"), JSON.stringify({ name: "@openai/codex", version: "0.0.0-test" }));
+  await writeFile(join(packageRoot, "bin", "codex.js"), `const command = process.argv[2];\nconsole.log(command === "plugin" ? ${JSON.stringify(pluginJson)} : "[]");\n`);
+  const triple = process.platform === "win32"
+    ? (process.arch === "arm64" ? "aarch64-pc-windows-msvc" : "x86_64-pc-windows-msvc")
+    : process.platform === "darwin"
+      ? (process.arch === "arm64" ? "aarch64-apple-darwin" : "x86_64-apple-darwin")
+      : (process.arch === "arm64" ? "aarch64-unknown-linux-musl" : "x86_64-unknown-linux-musl");
+  const native = join(packageRoot, "vendor", triple, "bin", process.platform === "win32" ? "codex.exe" : "codex");
+  await mkdir(join(packageRoot, "vendor", triple, "bin"), { recursive: true });
+  await writeFile(native, "native fixture\n");
+  return { home, bin, packageRoot };
 }
 
 async function runMode(project, args, codex) {
-  const { home, bin } = codex;
+  const { home, bin, packageRoot } = codex;
   const { stdout } = await execFile(process.execPath, [cli, ...args], {
     cwd: project,
-    env: { ...process.env, HOME: home, CODEX_HOME: join(home, ".codex"), PATH: `${bin}:${process.env.PATH || ""}` },
+    env: {
+      ...process.env,
+      HOME: home,
+      CODEX_HOME: join(home, ".codex"),
+      CODEX_MANAGED_PACKAGE_ROOT: packageRoot,
+      PATH: `${bin}:${process.env.PATH || ""}`
+    },
     timeout: 10_000,
     maxBuffer: 4 * 1024 * 1024
   });

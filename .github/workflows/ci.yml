@@ -63,6 +63,7 @@ jobs:
           test/fs-util.test.js
           test/install.test.js
           test/codex-hook-node-pin.test.js
+          test/codex-runtime-identity.test.js
           test/harness-cowork.test.js
       - name: Smoke npm CLI shim (detect)
         run: npx --no-install muster detect .

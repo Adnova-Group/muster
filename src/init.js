@@ -435,7 +435,13 @@ async function streamedFileDigest(root, path, rel, expectedInfo) {
   }
 }
 
-async function repositoryFingerprint(root) {
+function sameFingerprintIdentity(current, prior) {
+  return current.isFile() && prior.isFile() && current.ino === prior.ino && current.dev === prior.dev &&
+    current.mode === prior.mode && current.size === prior.size && current.nlink === prior.nlink &&
+    current.ctimeNs === prior.ctimeNs && current.mtimeNs === prior.mtimeNs;
+}
+
+async function repositoryFingerprint(root, learnedDigests = new Map()) {
   // Git deliberately omits untrackable special entries from `ls-files`.
   // Preserve the previous fail-closed repository walk before hashing only the
   // relevant paths; ignored/generated ordinary files remain unhashed.
@@ -465,7 +471,10 @@ async function repositoryFingerprint(root) {
       } catch {}
       add(Buffer.from(`V\0${rel}\0${head ?? "null"}\n`));
     } else if (info.isFile()) {
-      const opened = await streamedFileDigest(root, path, rel, info);
+      const learned = learnedDigests.get(rel);
+      const opened = learned && sameFingerprintIdentity(info, learned.identity)
+        ? learned
+        : await streamedFileDigest(root, path, rel, info);
       add(Buffer.from(`F\0${rel}\0${(opened.mode & 0o111) ? 1 : 0}\0${opened.size}\0${opened.digest}\n`));
     } else if (info.isSymbolicLink()) {
       const target = await readlink(path, { encoding: "buffer" });
@@ -574,13 +583,20 @@ async function readLearningMetadata(root, path, rel, expectedInfo, capture) {
         named.ctimeNs !== before.ctimeNs || named.mtimeNs !== before.mtimeNs) {
       throw learningFileChanged(rel);
     }
-    return { bytes: chunks ? Buffer.concat(chunks) : null, digest: digest.digest("hex"), size };
+    return {
+      bytes: chunks ? Buffer.concat(chunks) : null,
+      digest: digest.digest("hex"),
+      identity: before,
+      mode: Number(before.mode),
+      size,
+    };
   } finally {
     await handle?.close();
   }
 }
 
 async function learnFacts(root) {
+  const digests = new Map();
   const rows = [];
   const limitations = [];
   const sourceRoots = new Set();
@@ -636,6 +652,7 @@ async function learnFacts(root) {
         if (!reserveEvidence(factBytes, rel)) continue;
         const parse = name === "package.json" && info.size <= BigInt(INIT_LIMITS.learnFileBytes);
         const opened = await readLearningMetadata(root, path, rel, info, parse);
+        digests.set(rel, opened);
         if (name === "package.json" && !parse) addLimitation(rel, "parse-limit");
         rows.push({
           bytes: opened.size,
@@ -649,14 +666,14 @@ async function learnFacts(root) {
   }
   await walk(root, "", 0);
   limitations.sort((a, b) => utf8Sort(a.path, b.path) || utf8Sort(a.reason, b.reason));
-  return { extensions, limitations, rows, sourceRoots, testRoots };
+  return { digests, extensions, limitations, rows, sourceRoots, testRoots };
 }
 
 export async function learnProjectProfile(dir) {
   const root = await validateRoot(dir);
   const owned = await readOwned(root);
   const classification = owned?.receipt.classification ?? await classify(root);
-  const { extensions, limitations, rows, sourceRoots, testRoots } = await learnFacts(root);
+  const { digests, extensions, limitations, rows, sourceRoots, testRoots } = await learnFacts(root);
   const languages = new Set();
   const frameworks = new Set();
   const managers = new Set();
@@ -715,7 +732,7 @@ export async function learnProjectProfile(dir) {
       testRunners: [...runners].sort(utf8Sort),
       vcs: await rootVcs(root),
     },
-    repositoryFingerprint: await repositoryFingerprint(root),
+    repositoryFingerprint: await repositoryFingerprint(root, digests),
   };
 }
 

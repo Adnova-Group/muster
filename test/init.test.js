@@ -507,6 +507,19 @@ test("project learning records large metadata without treating storage size as a
   assert.deepEqual(await initializeProject(aggregate), aggregateInit);
 });
 
+test("project learning reuses a descriptor-pinned digest for sparse recognized metadata", async () => {
+  const dir = await tmp();
+  const lock = join(dir, "package-lock.json");
+  await writeFile(lock, "");
+  await truncate(lock, 17 * 1024 * 1024 + 1);
+  const initialized = await initializeProject(dir);
+  const profile = await readProfile(dir);
+  assert.equal(profile.facts.manifests[0].bytes, 17 * 1024 * 1024 + 1);
+  assert.deepEqual(profile.facts.learning, { limitations: [], status: "complete" });
+  assert.match(profile.repositoryFingerprint.digest, /^[0-9a-f]{64}$/);
+  assert.deepEqual(await initializeProject(dir), initialized);
+});
+
 test("project learning reports bounded parsing and depth as explicit incomplete evidence", async () => {
   const oversizedPackage = await tmp();
   await writeFile(join(oversizedPackage, "package.json"), Buffer.alloc(2 * 1024 * 1024, 0x61));

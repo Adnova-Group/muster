@@ -42,15 +42,28 @@ test("resolveCodexDispatchLane: the caller can force isolation explicitly", () =
   assert.match(r.reason, /forced/);
 });
 
+test("resolveCodexDispatchLane: semantic overlaps and malformed write fences fail closed to process isolation", () => {
+  for (const members of [
+    [{ writes: ["src/auth"] }, { writes: ["src/auth/session.js"] }],
+    [{ writes: ["src/**"] }, { writes: ["src/session.js"] }],
+    [{ writes: ["src/a/../x.js"] }, { writes: ["src/x.js"] }],
+    [{ writes: true }, { writes: ["src/x.js"] }],
+    [{ writes: [] }, { writes: ["src/x.js"] }],
+  ]) {
+    assert.equal(resolveCodexDispatchLane({ members }).mode, CODEX_EXEC_MODES.EXEC_PROCESS);
+  }
+});
+
 // --- codex exec argv --------------------------------------------------------
 
 test("codexExecCall: always emits --json, and -C is what actually isolates", () => {
   const call = codexExecCall({ prompt: "do the thing", cwd: "/w/item-1" });
   assert.equal(call.command, "codex");
   assert.deepEqual(call.argv, [
-    "--ask-for-approval", "never", "exec", "--json", "--ignore-user-config",
-    "--strict-config", "--ephemeral", "--sandbox", "workspace-write",
-    "-C", "/w/item-1", "do the thing",
+    "--ask-for-approval", "never", "exec", "--json", "--ignore-user-config", "--ignore-rules",
+    "--strict-config", "--ephemeral", "-c", 'shell_environment_policy.inherit="none"',
+    "--sandbox", "workspace-write",
+    "-C", "/w/item-1", "--", "do the thing",
   ]);
   assert.equal(call.isolation, "process-cwd");
 });
@@ -61,17 +74,20 @@ test("codexExecCall: threads policy, model, schema, last-message and git-check f
     lastMessagePath: "/out.txt", sandbox: "read-only", approvalPolicy: "untrusted", skipGitCheck: true
   });
   assert.deepEqual(call.argv, [
-    "--ask-for-approval", "untrusted", "exec", "--json", "--ignore-user-config",
-    "--strict-config", "--ephemeral", "--sandbox", "read-only", "-C", "/w",
+    "--ask-for-approval", "untrusted", "exec", "--json", "--ignore-user-config", "--ignore-rules",
+    "--strict-config", "--ephemeral", "-c", 'shell_environment_policy.inherit="none"',
+    "--sandbox", "read-only", "-C", "/w",
     "-m", "gpt-5.6-sol", "--output-schema", "/s.json", "-o", "/out.txt",
-    "--skip-git-repo-check", "p"
+    "--skip-git-repo-check", "--", "p"
   ]);
   assert.throws(() => codexExecCall({ prompt: "p", sandbox: "host" }), /unsupported sandbox/);
   assert.throws(() => codexExecCall({ prompt: "p", approvalPolicy: "always" }), /unsupported approval policy/);
 });
 
 test("codexExecCall: the prompt is always last, so it is never parsed as a flag value", () => {
-  assert.equal(codexExecCall({ prompt: "final", cwd: "/w", model: "m" }).argv.at(-1), "final");
+  for (const prompt of ["final", "--help", "review", "-danger"]) {
+    assert.deepEqual(codexExecCall({ prompt, cwd: "/w", model: "m" }).argv.slice(-2), ["--", prompt]);
+  }
   assert.throws(() => codexExecCall({ cwd: "/w" }), /prompt is required/);
   assert.throws(() => codexExecCall({ prompt: "   " }), /prompt is required/);
 });

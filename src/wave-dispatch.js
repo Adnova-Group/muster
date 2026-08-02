@@ -489,16 +489,57 @@ export const CODEX_EXEC_MODES = Object.freeze({
 
 // Choose the dispatch lane for a wave. Conflicting write sets are the deciding
 // factor because they are the one thing spawn_agent cannot make safe.
+function normalizeCodexWriteFence(value) {
+  if (typeof value !== "string" || !value.trim() || /[\0\r\n]/.test(value)) return null;
+  const raw = value.trim().replace(/\\/g, "/");
+  if (raw.startsWith("/") || /^[A-Za-z]:\//.test(raw) || /[*?[\]{}]/.test(raw)) return null;
+  const segments = [];
+  for (const segment of raw.split("/")) {
+    if (!segment || segment === ".") continue;
+    if (segment === "..") {
+      if (!segments.length) return null;
+      segments.pop();
+    } else {
+      segments.push(segment);
+    }
+  }
+  return segments.length ? segments.join("/") : null;
+}
+
+function codexWriteFencesOverlap(left, right) {
+  return left === right || left.startsWith(`${right}/`) || right.startsWith(`${left}/`);
+}
+
 export function resolveCodexDispatchLane({ members = [], forceProcess = false } = {}) {
-  const writers = members.filter(m => m?.writes);
-  const paths = writers.flatMap(m => Array.isArray(m.writes) ? m.writes : []);
-  const conflicting = paths.length !== new Set(paths).size;
-  if (forceProcess || conflicting) {
+  let unsafeFence = false;
+  const writers = [];
+  for (const [memberIndex, member] of members.entries()) {
+    if (!member || !Object.hasOwn(member, "writes")) continue;
+    if (!Array.isArray(member.writes) || member.writes.length === 0) {
+      unsafeFence = true;
+      continue;
+    }
+    const fences = member.writes.map(normalizeCodexWriteFence);
+    if (fences.some(fence => fence === null)) {
+      unsafeFence = true;
+      continue;
+    }
+    writers.push({ memberIndex, fences });
+  }
+  let conflicting = false;
+  for (let left = 0; left < writers.length && !conflicting; left += 1) {
+    for (let right = left + 1; right < writers.length && !conflicting; right += 1) {
+      conflicting = writers[left].fences.some(a => writers[right].fences.some(b => codexWriteFencesOverlap(a, b)));
+    }
+  }
+  if (forceProcess || unsafeFence || conflicting) {
     return {
       mode: CODEX_EXEC_MODES.EXEC_PROCESS,
       reason: forceProcess
         ? "caller forced process isolation"
-        : "wave members declare overlapping write sets -- spawn_agent shares one cwd across all agents, so only separate `codex exec -C <dir>` processes can isolate them",
+        : unsafeFence
+          ? "wave contains an unfenced, malformed, or glob-ambiguous writer -- fail closed to separate `codex exec -C <dir>` processes"
+          : "wave members declare overlapping write sets -- spawn_agent shares one cwd across all agents, so only separate `codex exec -C <dir>` processes can isolate them",
       isolation: "process-cwd"
     };
   }
@@ -531,7 +572,8 @@ export function codexExecCall({
   }
   const argv = [
     "--ask-for-approval", approvalPolicy,
-    "exec", "--json", "--ignore-user-config", "--strict-config", "--ephemeral",
+    "exec", "--json", "--ignore-user-config", "--ignore-rules", "--strict-config", "--ephemeral",
+    "-c", 'shell_environment_policy.inherit="none"',
     "--sandbox", sandbox,
   ];
   if (cwd) argv.push("-C", cwd);
@@ -539,7 +581,7 @@ export function codexExecCall({
   if (schemaPath) argv.push("--output-schema", schemaPath);
   if (lastMessagePath) argv.push("-o", lastMessagePath);
   if (skipGitCheck) argv.push("--skip-git-repo-check");
-  argv.push(prompt);
+  argv.push("--", prompt);
   return { command: "codex", argv, isolation: cwd ? "process-cwd" : "process" };
 }
 

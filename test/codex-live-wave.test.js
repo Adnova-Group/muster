@@ -27,6 +27,7 @@ async function waveFixture(t) {
   await writeFile(join(repo, "seed.txt"), "seed\n");
   await git(repo, "add", "seed.txt");
   await git(repo, "commit", "-m", "seed");
+  const baseSha = (await git(repo, "rev-parse", "HEAD")).stdout.trim();
   await git(repo, "worktree", "add", "-b", "member-a", worktreeA, "HEAD");
   await git(repo, "worktree", "add", "-b", "member-b", worktreeB, "HEAD");
 
@@ -38,18 +39,20 @@ fs.appendFileSync(${JSON.stringify(launches)}, process.argv.slice(2).join(" ") +
 const args = process.argv.slice(2);
 if (args[0] === "--version") return process.stdout.write("codex-cli 0.145.0\\n");
 if (args[0] === "--help") return process.stdout.write("--ask-for-approval\\n");
-if (args[0] === "exec" && args[1] === "--help") return process.stdout.write("--json --ignore-user-config --strict-config --ephemeral --sandbox\\n");
+if (args[0] === "exec" && args[1] === "--help") return process.stdout.write("--json --ignore-user-config --ignore-rules --strict-config --ephemeral --sandbox\\n");
 const cwd = args[args.indexOf("-C") + 1];
 const payload = JSON.parse(args.at(-1));
 fs.appendFileSync(${JSON.stringify(launches)}, "worker-start:" + require("node:path").basename(cwd) + "\\n");
+fs.appendFileSync(${JSON.stringify(launches)}, "env-secret:" + String(process.env.SUPER_SECRET) + "\\n");
+if (payload.outputBytes) process.stdout.write("x".repeat(payload.outputBytes));
 setTimeout(() => {
   fs.writeFileSync(cwd + "/result.txt", payload.value);
-  process.stdout.write(JSON.stringify({type:"turn.completed",usage:{input_tokens:7,output_tokens:3}}) + "\\n");
+  if (!payload.omitTurn) process.stdout.write(JSON.stringify({type:"turn.completed",usage:{input_tokens:7,output_tokens:3}}) + "\\n");
   fs.appendFileSync(${JSON.stringify(launches)}, "worker-end:" + require("node:path").basename(cwd) + "\\n");
 }, payload.delayMs);
 `);
   await chmod(codex, 0o755);
-  return { root, repo, worktreeA, worktreeB, launches, codex };
+  return { root, repo, baseSha, worktreeA, worktreeB, launches, codex };
 }
 
 function member(id, cwd) {
@@ -67,6 +70,8 @@ async function assertRejectedBeforeCodex(fixture, cwd, pattern) {
       members: [member("bad", cwd)],
       forceProcess: true,
       codexCommand: fixture.codex,
+      repositoryRoot: fixture.repo,
+      baseSha: fixture.baseSha,
     }),
     pattern,
   );
@@ -106,6 +111,8 @@ test("runCodexWave rejects symlink-equivalent duplicate worktrees before Codex e
     runCodexWave({
       members: [member("a", fixture.worktreeA), member("alias", alias)],
       codexCommand: fixture.codex,
+      repositoryRoot: fixture.repo,
+      baseSha: fixture.baseSha,
     }),
     /same canonical cwd/,
   );
@@ -117,6 +124,9 @@ test("runCodexWave keeps two concurrent conflicting writers isolated in register
   const result = await runCodexWave({
     members: [member("a", fixture.worktreeA), member("b", fixture.worktreeB)],
     codexCommand: fixture.codex,
+    repositoryRoot: fixture.repo,
+    baseSha: fixture.baseSha,
+    env: { ...process.env, SUPER_SECRET: "should-not-leak" },
   });
 
   assert.equal(result.mode, "exec-process");
@@ -132,6 +142,124 @@ test("runCodexWave keeps two concurrent conflicting writers isolated in register
   const ends = [events.indexOf("worker-end:member-a"), events.indexOf("worker-end:member-b")];
   assert.ok(starts.every(index => index >= 0) && ends.every(index => index >= 0));
   assert.ok(Math.max(...starts) < Math.min(...ends), "both writers must start before either writer completes");
+  assert.ok(events.filter(line => line === "env-secret:undefined").length === 2, "ambient secrets must not reach workers");
+});
+
+test("runCodexWave bounds process batches by desired, configured, and available thread ceilings", async t => {
+  const fixture = await waveFixture(t);
+  const result = await runCodexWave({
+    members: [member("a", fixture.worktreeA), member("b", fixture.worktreeB)],
+    codexCommand: fixture.codex,
+    repositoryRoot: fixture.repo,
+    baseSha: fixture.baseSha,
+    maxConcurrentThreadsPerSession: 8,
+    configuredThreadCeiling: 2,
+    availableThreadLimit: 1,
+  });
+
+  assert.equal(result.effectiveCeiling, 1);
+  const events = (await readFile(fixture.launches, "utf8")).trim().split("\n");
+  assert.ok(
+    events.indexOf("worker-end:member-a") < events.indexOf("worker-start:member-b"),
+    "available capacity 1 must finish the first writer before launching the second",
+  );
+});
+
+test("runCodexWave rejects worktrees from an unrelated repository before Codex execution", async t => {
+  const trusted = await waveFixture(t);
+  const unrelated = await waveFixture(t);
+  await assert.rejects(
+    runCodexWave({
+      members: [member("foreign", unrelated.worktreeA)],
+      forceProcess: true,
+      codexCommand: trusted.codex,
+      repositoryRoot: trusted.repo,
+      baseSha: trusted.baseSha,
+    }),
+    /trusted repository|common git directory/i,
+  );
+  await assert.rejects(readFile(trusted.launches, "utf8"), { code: "ENOENT" });
+});
+
+test("runCodexWave rejects unsafe policy before probes and rejects an exit-zero run without a terminal turn", async t => {
+  const fixture = await waveFixture(t);
+  await assert.rejects(
+    runCodexWave({
+      members: [member("unsafe", fixture.worktreeA)],
+      forceProcess: true,
+      codexCommand: fixture.codex,
+      repositoryRoot: fixture.repo,
+      baseSha: fixture.baseSha,
+      sandbox: "danger-full-access",
+    }),
+    /danger-full-access|sandbox/i,
+  );
+  await assert.rejects(readFile(fixture.launches, "utf8"), { code: "ENOENT" });
+
+  const noTurn = member("no-turn", fixture.worktreeA);
+  noTurn.prompt = JSON.stringify({ value: "unused", delayMs: 0, omitTurn: true });
+  await assert.rejects(
+    runCodexWave({
+      members: [noTurn],
+      forceProcess: true,
+      codexCommand: fixture.codex,
+      repositoryRoot: fixture.repo,
+      baseSha: fixture.baseSha,
+    }),
+    /turn\.completed/i,
+  );
+});
+
+test("runCodexWave rejects executable project config and bounds members, duration, and captured output", async t => {
+  const configured = await waveFixture(t);
+  await mkdir(join(configured.worktreeA, ".codex"));
+  await writeFile(join(configured.worktreeA, ".codex", "config.toml"), "[mcp_servers.evil]\ncommand = 'evil'\n");
+  await assert.rejects(
+    runCodexWave({
+      members: [member("configured", configured.worktreeA)],
+      forceProcess: true,
+      codexCommand: configured.codex,
+      repositoryRoot: configured.repo,
+      baseSha: configured.baseSha,
+    }),
+    /executable project Codex configuration/i,
+  );
+  await assert.rejects(readFile(configured.launches, "utf8"), { code: "ENOENT" });
+
+  const oversized = await waveFixture(t);
+  await assert.rejects(
+    runCodexWave({
+      members: Array.from({ length: 65 }, (_, index) => member(`member-${index}`, oversized.worktreeA)),
+      forceProcess: true,
+      codexCommand: oversized.codex,
+      repositoryRoot: oversized.repo,
+      baseSha: oversized.baseSha,
+    }),
+    /members exceeds limit/i,
+  );
+  await assert.rejects(readFile(oversized.launches, "utf8"), { code: "ENOENT" });
+
+  const timed = await waveFixture(t);
+  const slow = member("slow", timed.worktreeA);
+  slow.prompt = JSON.stringify({ value: "slow", delayMs: 200 });
+  await assert.rejects(
+    runCodexWave({
+      members: [slow], forceProcess: true, codexCommand: timed.codex,
+      repositoryRoot: timed.repo, baseSha: timed.baseSha, workerTimeoutMs: 20,
+    }),
+    /timeout/i,
+  );
+
+  const noisy = await waveFixture(t);
+  const loud = member("loud", noisy.worktreeA);
+  loud.prompt = JSON.stringify({ value: "loud", delayMs: 200, outputBytes: 5 * 1024 * 1024 });
+  await assert.rejects(
+    runCodexWave({
+      members: [loud], forceProcess: true, codexCommand: noisy.codex,
+      repositoryRoot: noisy.repo, baseSha: noisy.baseSha,
+    }),
+    /output exceeded/i,
+  );
 });
 
 test("generated Codex runtime and orchestrator expose only the hermetic process-wave production lane", async t => {
@@ -153,8 +281,31 @@ test("generated Codex runtime and orchestrator expose only the hermetic process-
   await writeFile(waveFile, JSON.stringify({
     members: [member("a", fixture.worktreeA), member("b", fixture.worktreeB)],
   }));
-  const result = await execFile(process.execPath, [runtime, "codex-wave", waveFile], {
+  const result = await execFile(process.execPath, [
+    runtime, "codex-wave", waveFile,
+    "--repository-root", fixture.repo,
+    "--base-sha", fixture.baseSha,
+  ], {
     env: { ...process.env, MUSTER_CODEX_COMMAND: fixture.codex },
   });
   assert.equal(JSON.parse(result.stdout).mode, "exec-process");
+
+  const packetFile = join(fixture.root, "packet-wave.json");
+  await writeFile(packetFile, JSON.stringify({
+    members: [
+      { id: "one", prompt: "one", model: "gpt-5.6-luna", agentType: "muster-surgeon", writes: ["a"] },
+      { id: "two", prompt: "two", model: "gpt-5.6-sol", agentType: "muster-builder", writes: ["b"] },
+    ],
+    catalogVersions: { "gpt-5.6-luna": "v1", "gpt-5.6-sol": "v2" },
+    maxConcurrentThreadsPerSession: 2,
+    availableThreadLimit: 1,
+  }));
+  const packets = await execFile(process.execPath, [runtime, "codex-wave", packetFile]);
+  const packetResult = JSON.parse(packets.stdout);
+  assert.equal(packetResult.effectiveCeiling, 1);
+  assert.deepEqual(packetResult.batches.map(batch => batch.length), [1, 1]);
+  assert.deepEqual(packetResult.results.map(row => row.packet.tool), [
+    "multi_agent_v1.spawn_agent",
+    "collaboration.spawn_agent",
+  ]);
 });

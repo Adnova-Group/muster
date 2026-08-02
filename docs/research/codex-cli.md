@@ -415,9 +415,10 @@ shared/project bytes into immutable staging while the live paths retain their or
 stages marketplace/plugin registration in a private `CODEX_HOME`, parses the registered result a
 second time, and transactionally promotes both the registered plugin cache and exact config bytes
 only after both parser passes accept them. The staged cache's non-derived source projection must
-byte-match the trusted generated plugin tree, every Codex-derived command adapter is checked against
-its deterministic trusted-source transformation, and publication exclusively reserves the live
-version directory while retaining prior generations instead of recursively deleting possibly
+byte-match the trusted generated plugin tree, the complete size-eligible Codex-derived command-adapter
+set is checked against deterministic trusted-source transformations, and publication exclusively
+reserves and reattests the live version directory. Failure restores the exact prior cache generation
+through an exclusive copy while retaining both generations instead of recursively deleting possibly
 writer-held paths. Descriptor-pinned snapshots bind
 publication to unchanged config inodes and bytes; failure restores raw snapshotted bytes without
 overwriting a concurrent writer. Published installs retain every displaced config inode under an

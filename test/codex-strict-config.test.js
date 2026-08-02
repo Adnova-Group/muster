@@ -280,6 +280,23 @@ test("strict config: concurrent config replacement blocks success without overwr
   assert.deepEqual(await readFile(projectPath), concurrent, "rollback must not overwrite a concurrent writer");
 });
 
+test("strict config: a parser failure still preserves a concurrent config writer", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-strict-parser-error-writer-"));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), projectPath = join(cwd, ".codex", "config.toml");
+  const concurrent = Buffer.from("unknown_parser_error_writer = true\n");
+  await mkdir(join(cwd, ".codex"), { recursive: true });
+  await writeFile(projectPath, "model = \"before\"\n");
+  await assert.rejects(runCodexInstall({
+    cwd, home, repoRoot,
+    execFile: async () => { throw new Error("codex absent"); },
+    strictConfigRunner: async () => {
+      await writeFile(projectPath, concurrent);
+      throw new Error("native parser rejected the candidate");
+    }
+  }), /config changed during (?:strict validation failure|failed config transaction)/);
+  assert.deepEqual(await readFile(projectPath), concurrent, "parser failure rollback must not overwrite the writer");
+});
+
 test("strict config: a delayed shared-config writer during validation is preserved", async () => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-strict-delayed-writer-"));
   const cwd = join(tmp, "project"), home = join(tmp, "home"), sharedPath = join(home, ".codex", "config.toml");

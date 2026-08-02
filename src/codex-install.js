@@ -1333,6 +1333,7 @@ async function writePrivateSibling(path, label, bytes) {
 }
 
 const MIGRATED_COMMAND_PREFIX = ".codex-plugin/migrated-command-skills";
+const MAX_MIGRATED_COMMAND_SKILL_BYTES = 4_000;
 
 async function expectedMigratedCommandSkill(sourceRoot, commandName) {
   const source = await readFile(join(sourceRoot, "commands", `${commandName}.md`));
@@ -1364,16 +1365,21 @@ async function assertTrustedPluginCacheProjection(root, tree, sourceRoot, source
   if (JSON.stringify(projected) !== JSON.stringify(sourceTree)) {
     throw new Error(`Codex staged plugin cache differs from the exact trusted plugin source: ${root}`);
   }
-  const migratedFiles = tree.files.filter(file => file.path.startsWith(`${MIGRATED_COMMAND_PREFIX}/`));
+  const expectedFiles = [];
   const expectedDirs = new Set();
-  for (const file of migratedFiles) {
-    const match = new RegExp(`^${MIGRATED_COMMAND_PREFIX}/source-command-([a-z0-9]+(?:-[a-z0-9]+)*)/SKILL\\.md$`).exec(file.path);
-    if (!match) throw new Error(`Codex staged plugin cache contains an untrusted derived entry: ${file.path}`);
+  for (const sourceFile of sourceTree.files) {
+    const match = /^commands\/([a-z0-9]+(?:-[a-z0-9]+)*)\.md$/.exec(sourceFile.path);
+    if (!match) continue;
     const expected = await expectedMigratedCommandSkill(sourceRoot, match[1]);
-    if (file.size !== expected.length || file.sha256 !== createHash("sha256").update(expected).digest("hex")) {
-      throw new Error(`Codex staged plugin cache contains a tampered migrated command skill: ${file.path}`);
-    }
-    expectedDirs.add(dirname(file.path).replaceAll("\\", "/"));
+    if (expected.length > MAX_MIGRATED_COMMAND_SKILL_BYTES) continue;
+    const path = `${MIGRATED_COMMAND_PREFIX}/source-command-${match[1]}/SKILL.md`;
+    expectedFiles.push({ path, sha256: createHash("sha256").update(expected).digest("hex"), size: expected.length });
+    expectedDirs.add(dirname(path).replaceAll("\\", "/"));
+  }
+  expectedFiles.sort((left, right) => left.path.localeCompare(right.path));
+  const migratedFiles = tree.files.filter(file => file.path.startsWith(`${MIGRATED_COMMAND_PREFIX}/`));
+  if (JSON.stringify(migratedFiles) !== JSON.stringify(expectedFiles)) {
+    throw new Error(`Codex staged plugin cache has an incomplete or tampered migrated command inventory under ${MIGRATED_COMMAND_PREFIX}`);
   }
   const migratedDirs = tree.dirs.filter(path => path === MIGRATED_COMMAND_PREFIX || path.startsWith(`${MIGRATED_COMMAND_PREFIX}/`));
   const allowedDirs = new Set(migratedFiles.length ? [MIGRATED_COMMAND_PREFIX, ...expectedDirs] : []);
@@ -1442,7 +1448,7 @@ async function publishStagedPluginCache(staged, liveCodexHome, packageVersion, t
     expected = await stablePluginCacheSnapshot(target, packageVersion);
   } catch (error) { if (error.code !== "ENOENT") throw error; }
   if (expected && JSON.stringify(expected.tree) === JSON.stringify(stagedTree)) {
-    return { target, retired: null, published: expected, reused: true, packageVersion };
+    return { target, retired: null, expected, published: expected, reused: true, packageVersion };
   }
   if (expected) {
     await rename(target, retired);
@@ -1459,18 +1465,41 @@ async function publishStagedPluginCache(staged, liveCodexHome, packageVersion, t
     if (expected) try { await copyPluginCacheExclusively(retired, target, expected.tree, packageVersion); } catch { /* preserve artifacts */ }
     throw error;
   }
-  return { target, retired: expected ? retired : null, published, reused: false, packageVersion };
+  return { target, retired: expected ? retired : null, expected, published, reused: false, packageVersion };
 }
 
 async function rollbackPublishedPluginCache(receipt) {
   if (!receipt) return;
+  if (receipt.reused) return;
   const current = await stablePluginCacheSnapshot(receipt.target, receipt.packageVersion);
   if (!samePluginCacheSnapshot(receipt.published, current)) {
     throw new Error(`Codex plugin cache changed before rollback: ${receipt.target}; concurrent state was preserved`);
   }
-  // Both the published cache and any retired predecessor are valid, retained
-  // Muster cache generations. Config rollback chooses whether they are live;
-  // no recursive delete is safe in the presence of arbitrary directory FDs.
+  const failed = join(dirname(receipt.target), `.muster-rolled-back-${receipt.packageVersion}-${process.pid}-${randomUUID()}`);
+  await rename(receipt.target, failed);
+  const moved = await stablePluginCacheSnapshot(failed, receipt.packageVersion);
+  if (!samePluginCacheSnapshot(receipt.published, moved)) {
+    try { await copyPluginCacheExclusively(failed, receipt.target, moved.tree, receipt.packageVersion); }
+    catch { /* preserve both names and surface the ownership conflict */ }
+    throw new Error(`Codex plugin cache changed during rollback: ${receipt.target}; concurrent state was preserved`);
+  }
+  if (receipt.retired) {
+    await copyPluginCacheExclusively(
+      receipt.retired, receipt.target, receipt.expected.tree, receipt.packageVersion
+    );
+  }
+  // The failed generation and retired predecessor remain path-addressable.
+  // No recursive delete is safe in the presence of arbitrary directory FDs.
+}
+
+async function verifyPublishedPluginCache(receipt) {
+  if (!receipt) return;
+  const current = await stablePluginCacheSnapshot(receipt.target, receipt.packageVersion, {
+    exactTree: receipt.published.tree
+  });
+  if (!samePluginCacheSnapshot(receipt.published, current)) {
+    throw new Error(`Codex plugin cache changed before the install commit point: ${receipt.target}; concurrent state was preserved`);
+  }
 }
 
 async function restoreRetiredName(path, retired) {
@@ -1934,6 +1963,7 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
         await snapshot(originals, changed, hooks.manifestPath);
         await atomicWriteSafe(hooks.manifestPath, JSON.stringify(hooks.manifest, null, 2) + "\n");
         const installConfig = async () => {
+          let verifyUnpublishedLive = null;
           try {
           try {
           const threadLimitOriginal = await exactFileSnapshot(threadLimitConfigPath);
@@ -2087,8 +2117,16 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
             }
             if (concurrent.length) throw concurrentConfigError(`Codex config changed during ${phase}: ${concurrent.join(", ")}; concurrent bytes were preserved`);
           };
-          await runConfigParser();
-          await verifyLive("strict validation");
+          verifyUnpublishedLive = verifyLive;
+          const runVerifiedConfigParser = async phase => {
+            try { await runConfigParser(); }
+            catch (error) {
+              await verifyLive(`${phase} failure`);
+              throw error;
+            }
+            await verifyLive(phase);
+          };
+          await runVerifiedConfigParser("strict validation");
           if (present) {
             await ordinaryDirectoryPath(dirname(codexHome(home)), { create: true });
             pluginStagingHome = await mkdtemp(join(dirname(codexHome(home)), ".muster-codex-plugin-config-"));
@@ -2117,8 +2155,7 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
               throw error;
             }
             await verifyLive("staged plugin registration");
-            await runConfigParser();
-            await verifyLive("final strict validation");
+            await runVerifiedConfigParser("final strict validation");
           }
 
           if (stagedPluginCachePath) {
@@ -2155,6 +2192,7 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
             throw concurrentConfigError(`Codex config writer changed the retired baseline before the commit point: ${path}; concurrent bytes will be restored`);
           }
         }
+        await verifyPublishedPluginCache(publishedPluginCache);
         for (const [path, receipt] of publishedConfigCandidates) {
           if (!receipt.retired) continue;
           await retainConfigArtifacts(path, [receipt.retired]);
@@ -2163,8 +2201,13 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
           await rm(pluginStagingHome, { recursive: true, force: true });
           pluginStagingHome = null;
         }
+        await verifyPublishedPluginCache(publishedPluginCache);
           } catch (error) {
             const rollbackErrors = [];
+            if (!publishedConfigCandidates.size && verifyUnpublishedLive && !error?.musterConcurrentConfig) {
+              try { await verifyUnpublishedLive("failed config transaction"); }
+              catch (concurrentError) { error = concurrentError; }
+            }
             for (const receipt of [...publishedConfigCandidates.values()].reverse()) {
               try {
                 await rollbackConfigCandidate(receipt);

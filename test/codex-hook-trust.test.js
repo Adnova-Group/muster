@@ -259,6 +259,34 @@ test("install and doctor reject hooks/list proofs when activation files change d
   assert.match(report.checks.find(check => check.name === "codex-hook-trust")?.detail || "", /activation state changed/);
 });
 
+test("install rejects a runtime changed during plugin registration after the transaction proof", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-registration-runtime-race-"));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), hooksJsonPath = join(cwd, ".codex", "hooks.json");
+  await mkdir(cwd, { recursive: true });
+  const first = await runCodexInstall({ cwd, home, repoRoot, execFile: absentCodex });
+  const configPath = join(cwd, ".codex", "config.toml");
+  await writeFile(configPath, `${await readFile(configPath, "utf8")}\n${first.hookTrust.results
+    .map(result => state(result.key, { trustedHash: result.currentHash })).join("")}`);
+  const runtimePath = join(cwd, ".codex", "muster", "hooks", "muster-hook.mjs");
+  const mutatingExecFile = async (_bin, args) => {
+    if (args[0] === "--version") return { stdout: "codex-cli test" };
+    if (args.slice(0, 3).join(" ") === "plugin marketplace list") return { stdout: JSON.stringify({ marketplaces: [] }) };
+    if (args.slice(0, 3).join(" ") === "plugin marketplace add") return { stdout: "" };
+    if (args.slice(0, 3).join(" ") === "plugin list --available") return { stdout: JSON.stringify({ installed: [], available: [] }) };
+    if (args.slice(0, 2).join(" ") === "plugin add") {
+      await writeFile(runtimePath, `${await readFile(runtimePath, "utf8")}\n// concurrent replacement\n`);
+      return { stdout: "" };
+    }
+    throw new Error(`unexpected command: ${args.join(" ")}`);
+  };
+  const result = await runCodexInstall({
+    cwd, home, repoRoot, execFile: mutatingExecFile,
+    hookInventory: async () => inventoryFor(cwd, hooksJsonPath, first.hookTrust.results)
+  });
+  assert.equal(result.ok, false);
+  assert.match(result.hookTrust.effective.error, /activation state changed/);
+});
+
 test("install and doctor reject another inventory source physically aliasing the managed runtime", async () => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hook-inventory-hardlink-"));
   const cwd = join(tmp, "project"), home = join(tmp, "home"), hooksJsonPath = join(cwd, ".codex", "hooks.json");
@@ -274,7 +302,7 @@ test("install and doctor reject another inventory source physically aliasing the
     const value = inventoryFor(cwd, hooksJsonPath, first.hookTrust.results);
     value.data[0].hooks.push(currentCodexInventoryHook({
       key: `${configPath}:stop:0:0`, currentHash: `sha256:${"b".repeat(64)}`,
-      overrides: { sourcePath: configPath, command: `HOOK=${aliasPath} sh -c 'node "$HOOK"'`, source: "project" }
+      overrides: { sourcePath: configPath, command: `DIR=${dirname(aliasPath)} NAME=${aliasPath.slice(aliasPath.lastIndexOf("/") + 1, -4)} EXT=.mjs sh -c 'node "$DIR/$NAME$EXT"'`, source: "project" }
     }));
     return value;
   };

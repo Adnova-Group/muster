@@ -93,8 +93,14 @@ async function physicalFileSnapshot(path) {
   } finally { await handle.close(); }
 }
 function samePhysicalFile(left, right) {
+  if (left.unsafe || right.unsafe) return left.unsafe === true && right.unsafe === true
+    && left.code === right.code && left.message === right.message;
   return left.exists === right.exists && left.dev === right.dev && left.ino === right.ino
     && (!left.exists || left.bytes.equals(right.bytes));
+}
+async function activationFileSnapshot(path) {
+  try { return await physicalFileSnapshot(path); }
+  catch (error) { return { unsafe: true, code: error.code || null, message: error.message }; }
 }
 async function declarationOwnershipSnapshot(manifestPath, configPath) {
   const [manifest, config] = await Promise.all([
@@ -171,13 +177,20 @@ export async function hookActivationSnapshot({ home, cwd, userCodexHome = codexH
     join(dir, "muster", "hooks", "action-guard.mjs")
   );
   const files = new Map([[registryPath, registryFile]]);
-  for (const path of [...new Set(paths)].sort()) if (path !== registryPath) files.set(path, await physicalFileSnapshot(path));
+  for (const path of [...new Set(paths)].sort()) if (path !== registryPath) files.set(path, await activationFileSnapshot(path));
   return files;
 }
 
 export function sameHookActivationSnapshot(left, right) {
   if (left.size !== right.size) return false;
   for (const [path, file] of left) if (!right.has(path) || !samePhysicalFile(file, right.get(path))) return false;
+  return true;
+}
+
+function activationSnapshotMatchesWrites(activationSnapshot, written) {
+  for (const [path, expected] of written) {
+    if (activationSnapshot.has(path) && !samePhysicalFile(expected, activationSnapshot.get(path))) return false;
+  }
   return true;
 }
 
@@ -826,7 +839,8 @@ export function effectiveHookTrust(inventory, cwd, hooksJsonPath, results, { kno
   const hooks = Array.isArray(scope.hooks) ? scope.hooks : [];
   const parsedHooks = hooks.map(hook => ({ hook, parsed: parseHookInventoryKey(hook.key) }));
   const foreignHooks = parsedHooks.filter(({ parsed }) => parsed.path !== hooksJsonPath);
-  if (foreignHooks.some(({ hook }) => typeof hook.command !== "string" || isMusterHookCommand(hook.command))) {
+  if (foreignHooks.some(({ hook }) => typeof hook.command !== "string" || isMusterHookCommand(hook.command)
+    || hasUnresolvedShellExpansion(hook.command))) {
     return { verified: true, ok: false, error: "Codex hooks/list reported another source that may invoke the managed Muster runtime", results: [] };
   }
   const managedKeys = parsedHooks.filter(({ parsed }) => parsed.path === hooksJsonPath).map(({ parsed }) => parsed.position);
@@ -1502,6 +1516,9 @@ function shellPathCandidates(command) {
   return [...candidates].filter(value => value && !value.startsWith("-"));
 }
 
+const hasUnresolvedShellExpansion = command => typeof command === "string"
+  && (/(^|[^\\])(?:\$[({A-Za-z_]|`)/.test(command) || /%[A-Za-z_][A-Za-z0-9_]*%/.test(command));
+
 async function physicalHookIdentity(path) {
   const canonical = await realpath(path);
   const metadata = await stat(canonical);
@@ -1540,6 +1557,7 @@ export async function hasManagedRuntimeInventoryAlias(inventory, { cwd, hooksJso
     return parsed && parsed.path !== hooksJsonPath && typeof hook.command === "string" ? [hook.command] : [];
   });
   if (!commands.length) return false;
+  if (commands.some(hasUnresolvedShellExpansion)) return true;
   const expectedScripts = [...activationSnapshot.keys()].filter(path => path.endsWith(join("muster", "hooks", "muster-hook.mjs")));
   const config = { hooks: { Stop: commands.map(command => ({ hooks: [{ command }] })) } };
   return hasMusterHookCommandAlias(config, expectedScripts, { cwds: [cwd], includeDirect: true });
@@ -1907,12 +1925,17 @@ async function prepareHooks({ scope, cwd, home, hookSourceRoot, packageVersion, 
     for (const [event, groups] of Object.entries(hookGroups)) config.hooks[event] = [...(config.hooks[event] || []), ...groups];
   }
   const hookFiles = skipped ? [] : HOOK_FILES;
-  const sourceFiles = skipped ? new Map() : new Map([
+  const sourcePaths = skipped ? new Map() : new Map([
     ["hooks/muster-hook.mjs", join(hookSourceRoot, "muster-hook.mjs")],
     ["hooks/action-guard.mjs", join(hookSourceRoot, "action-guard.mjs")]
   ]);
+  const sourceFiles = new Map();
   const hookHash = createHash("sha256");
-  for (const [file, sourcePath] of sourceFiles) hookHash.update(file).update("\0").update(await readSafe(sourcePath));
+  for (const [file, sourcePath] of sourcePaths) {
+    const bytes = await readSafe(sourcePath);
+    sourceFiles.set(file, bytes);
+    hookHash.update(file).update("\0").update(bytes);
+  }
   return {
     dir, runtimeDir, manifestPath, manifestExists, configPath, configExists, config, configSnapshot, originalConfig,
     staleFiles: (previous?.files || []).filter(file => !hookFiles.includes(file)),
@@ -2139,7 +2162,7 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
   if (!identity && !execFile) try { identity = resolveCodexRuntimeIdentity({ nodeExecPath }); } catch { /* Codex absent: local install still proceeds without PATH probing */ }
   const { files, profileContents, declarations, distributionRoot, dir, manifestPath, declarationConfigPath, declarationOwnership, threadLimitConfigPath, threadLimitManifestPath, packageVersion, canonicalUserExpected, hooks, staleFiles, present, planned } =
     await prepareCodexInstall({ scope, dryRun, cwd, home, repoRoot, execFile: executor, runtimeIdentity: identity, hookInventory, allowInjected: Boolean(execFile), nodeExecPath });
-  let originals, changed, written;
+  let originals, changed, written, activationProofStart;
   let actions = [];
   let canonicalUserTrust = null;
   const prunedScopes = [], prunedHookState = [], prunedProjectTrust = [];
@@ -2195,10 +2218,10 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
         const declarationConfigCreated = manifestExists && manifest.declarationConfigCreated !== undefined
           ? manifest.declarationConfigCreated
           : !declarationConfigExists;
-        for (const [file, sourcePath] of hooks.sourceFiles) {
+        for (const [file, sourceBytes] of hooks.sourceFiles) {
           const destination = join(hooks.runtimeDir, file);
           await snapshot(originals, changed, destination);
-          await transactionWrite(written, destination, await readFile(sourcePath, "utf8"));
+          await transactionWrite(written, destination, sourceBytes);
         }
         for (const file of hooks.staleFiles) {
           const destination = join(hooks.runtimeDir, file);
@@ -2324,6 +2347,10 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
             throw new Error("The canonical user hook scope changed or became inactive during install; cannot remove the project hook fallback");
           }
         }
+        activationProofStart = await hookActivationSnapshot({ home, cwd });
+        if (!activationSnapshotMatchesWrites(activationProofStart, written)) {
+          throw new Error("Codex hook activation state diverged from the transaction's exact writes before verification");
+        }
         actions = present ? await registerPlugin(executor, distributionRoot, { dryRun: false, runtimeIdentity: identity }) : [];
       } catch (error) {
         await restoreFilesystem(originals, changed, written);
@@ -2352,7 +2379,7 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
     };
     const gaps = trustTarget?.gaps ?? { results: [], untrusted: ["canonical-scope-invalid"], stale: [] };
     const inventoryReader = hookInventory || readCodexHookInventory;
-    const activationBefore = hooks.skipped ? null : await hookActivationSnapshot({ home, cwd });
+    const activationBefore = activationProofStart;
     const inventory = hooks.skipped ? null : await inventoryReader({
       runtimeIdentity: identity,
       cwds: [cwd],
@@ -2361,12 +2388,15 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
     const inventoryAlias = hooks.skipped ? false : await hasManagedRuntimeInventoryAlias(inventory, {
       cwd, hooksJsonPath: trustTarget.configPath, activationSnapshot: activationBefore
     });
-    const activationAfter = hooks.skipped ? null : await hookActivationSnapshot({ home, cwd });
+    const activationAfter = await hookActivationSnapshot({ home, cwd });
+    const activationStable = sameHookActivationSnapshot(activationBefore, activationAfter);
     const effective = hooks.skipped
-      ? canonicalUserTrust.effective
+      ? activationStable
+        ? canonicalUserTrust.effective
+        : { verified: true, ok: false, error: "Codex hook activation state changed after its transaction proof", results: [] }
       : inventoryAlias
         ? { verified: true, ok: false, error: "Codex hooks/list reported another source invoking the managed Muster runtime", results: [] }
-        : !sameHookActivationSnapshot(activationBefore, activationAfter)
+        : !activationStable
         ? { verified: true, ok: false, error: "Codex hook activation state changed during hooks/list verification", results: [] }
         : effectiveHookTrust(inventory, cwd, trustTarget.configPath, gaps.results, { knownKeys: trustTarget.knownKeys });
     const persistedOk = gaps.untrusted.length === 0 && gaps.stale.length === 0;

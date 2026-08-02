@@ -1032,6 +1032,7 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   const managedHookScripts = [...hookHomes].map(dir => join(dir, "muster", "hooks", "muster-hook.mjs"));
   const managedProjectCwds = [...hookHomes].filter(dir => dir !== userCodexHome).map(dirname);
   const currentProjectHookHome = join(cwd, ".codex");
+  const activationProofStart = await hookActivationSnapshot({ cwd, userCodexHome });
   for (const dir of hookHomes) {
     const manifestPath = join(dir, "muster", ".muster-managed.json");
     const registered = scopeHomes.get(dir);
@@ -1231,7 +1232,7 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
     }
   }
   const inventoryCwds = [...new Set(effectiveTargets.map(target => target.cwd))];
-  const activationBefore = effectiveTargets.length ? await hookActivationSnapshot({ cwd, userCodexHome }) : null;
+  const activationBefore = effectiveTargets.length ? activationProofStart : null;
   const inventory = effectiveTargets.length ? await inventoryReader({ runtimeIdentity: identity, cwds: inventoryCwds, env: { ...env, CODEX_HOME: userCodexHome } }) : null;
   const inventoryAliases = effectiveTargets.length ? await Promise.all(effectiveTargets.map(target => hasManagedRuntimeInventoryAlias(inventory, {
     cwd: target.cwd, hooksJsonPath: target.configPath, activationSnapshot: activationBefore

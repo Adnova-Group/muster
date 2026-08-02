@@ -1356,5 +1356,9 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // bootstraps and verifies its own isolated outer worktree when invoked from
   // a primary checkout, retaining fail-closed CAS publication for bookkeeping.
   // File count remains unchanged.
-  assert.equal(hash.digest("hex"), "e1f99f70792a1ff3dbdd6b0ec902fb53bcbf872dcd188d17c8a4d6136aeb3ee5");
+  // 2026-08-02 re-pin #42 (in-process pure MCP tools): the shared MCP server
+  // dispatches a closed allowlist of twelve deterministic read-only tools to
+  // bounded workers before the legacy CLI transport. Mutating tools retain the
+  // process boundary. File count remains unchanged.
+  assert.equal(hash.digest("hex"), "f8d6340fb82f6ae3cc033740f2b3a537cd9a2dbe57052fda6ba75caa61aba09f");
 });

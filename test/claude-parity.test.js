@@ -1356,5 +1356,9 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // bootstraps and verifies its own isolated outer worktree when invoked from
   // a primary checkout, retaining fail-closed CAS publication for bookkeeping.
   // File count remains unchanged.
-  assert.equal(hash.digest("hex"), "e1f99f70792a1ff3dbdd6b0ec902fb53bcbf872dcd188d17c8a4d6136aeb3ee5");
+  // 2026-08-01 re-pin #42 (backlog publication limit parity): the shared MCP
+  // server now uses the same documented 16 MiB backlog-publication envelope as
+  // the CLI and discards an actually oversized request locally so the server
+  // remains responsive. File count remains unchanged.
+  assert.equal(hash.digest("hex"), "062814f168b52bf5b34a02f1c1d2f044a2db1870fefad1afed8aaf3337223894");
 });

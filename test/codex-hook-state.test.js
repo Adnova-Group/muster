@@ -114,6 +114,43 @@ test("Codex config.toml hook-state: header-shaped multiline string content is ne
   }
 });
 
+test("Codex config.toml hook-state: quoted closing brackets in following table headers survive pruning", () => {
+  const registered = [{ scope: "project", configDir: "/repo/.codex" }];
+  for (const following of [
+    `[foo."]"]\nvalue = 1\n`,
+    `[foo.'a]b']\nvalue = 2\n`,
+    `[[foo."]"]]\nvalue = 3\n`
+  ]) {
+    const stale = hookStateBlock("/repo/.codex/hooks.json", ["pre_tool_use"]);
+    const text = `${stale}\n${following}`;
+    const result = reconcileConfigTomlHookState(text, registered, []);
+    assert.equal(result.text, following);
+    assert.equal(result.prunedHookState.length, 1);
+  }
+});
+
+test("Codex config.toml hook-state: nested arrays are not mistaken for table boundaries", () => {
+  const registered = [{ scope: "project", configDir: "/repo/.codex" }];
+  const text = `${hookStateBlock("/repo/.codex/hooks.json", ["pre_tool_use"])}matrix = [\n  [1, 2],\n  [3, 4]\n]\n[projects."/safe"]\ntrust_level = "trusted"\n`;
+  const result = reconcileConfigTomlHookState(text, registered, []);
+  assert.equal(result.parseOk, true);
+  assert.equal(result.text, `[projects."/safe"]\ntrust_level = "trusted"\n`);
+
+  const unsupported = `${hookStateBlock("/repo/.codex/hooks.json", ["pre_tool_use"])}matrix = [\n  [1, 2]\n`;
+  const refused = reconcileConfigTomlHookState(unsupported, registered, []);
+  assert.equal(refused.parseOk, false);
+  assert.equal(refused.text, unsupported);
+});
+
+test("Codex config.toml hook-state: four-quote multiline endings and mixed newlines round-trip", () => {
+  const registered = [{ scope: "project", configDir: "/repo/.codex" }];
+  const stale = `[hooks.state."/repo/.codex/hooks.json:pre_tool_use:0:0"]\r\ntrusted_hash = "sha256:old"\r\n`;
+  const following = `[projects."/safe"]\nnote = """"leading\ntrailing""""\nother = ''''literal\r\nvalue''''\r\n`;
+  const result = reconcileConfigTomlHookState(stale + following, registered, []);
+  assert.equal(result.parseOk, true);
+  assert.equal(result.text, following);
+});
+
 test("Codex config.toml [projects]: reconcile NEVER prunes a [projects] entry, even alongside its stale paired hooks.state entry (blocker 2a regression)", () => {
   // Prior to fix iteration 1 this exact fixture pruned [projects."/repo"]
   // alongside the departing scope's hooks.state entry -- PoC-proved to
@@ -466,4 +503,17 @@ test("Codex doctor reports codex-hook-state ok:true when config.toml is absent e
   const check = report.checks.find(item => item.name === "codex-hook-state");
   assert.equal(check?.ok, true);
   assert.match(check?.detail || "", /not found/);
+});
+
+test("Codex doctor fails hook-state inspection closed on unsupported TOML boundaries", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-hookstate-doctor-unsafe-toml-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), codexHomeDir = join(home, ".codex");
+  await runCodexInstall({ cwd, home, repoRoot, execFile: absentCodex });
+  const configPath = join(codexHomeDir, "config.toml");
+  await writeFile(configPath, `${await readFile(configPath, "utf8")}\nunsupported = [\n  [1, 2]\n`);
+  const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome: codexHomeDir, execFile: absentCodex });
+  const check = report.checks.find(item => item.name === "codex-hook-state");
+  assert.equal(check?.ok, false);
+  assert.match(check?.detail || "", /could not safely parse|could not inspect/i);
 });

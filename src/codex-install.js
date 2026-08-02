@@ -231,11 +231,6 @@ function decodeTomlQuotedKey(raw) {
 }
 
 const HOOK_STATE_HEADER = /^\s*\[hooks\.state\.((?:"(?:[^"\\]|\\.)*")|(?:'[^']*'))\]\s*(?:#.*)?$/;
-// Matches EITHER a `[table.header]` OR a `[[array.of.tables]]` header line --
-// both end whatever section preceded them. Checked strictly as alternatives
-// (not a lenient `\[{1,2}...\]{1,2}`) so a line can never half-match with
-// mismatched bracket counts.
-const ANY_TOML_HEADER = /^\s*(?:\[\[[^\]]*\]\]|\[[^\]]*\])\s*(?:#.*)?$/;
 const HOOK_STATE_KEY = /^(.*):([a-z][a-z0-9_]*):(\d+):(\d+)$/;
 
 function basicQuoteEscaped(line, index) {
@@ -244,22 +239,70 @@ function basicQuoteEscaped(line, index) {
   return slashes % 2 === 1;
 }
 
+function inspectTomlHeader(line) {
+  const start = line.search(/\S/);
+  if (start < 0 || line[start] !== "[") return { header: false, safe: true };
+  const array = line[start + 1] === "[";
+  let index = start + (array ? 2 : 1);
+  const whitespace = () => { while (/\s/.test(line[index] ?? "")) index++; };
+  const component = () => {
+    if (line[index] === '"' || line[index] === "'") {
+      const quote = line[index++];
+      while (index < line.length) {
+        if (line[index] === quote && (quote === "'" || !basicQuoteEscaped(line, index))) { index++; return true; }
+        index++;
+      }
+      return false;
+    }
+    const match = line.slice(index).match(/^[A-Za-z0-9_-]+/);
+    if (!match) return false;
+    index += match[0].length;
+    return true;
+  };
+  whitespace();
+  if (!component()) return { header: false, safe: false };
+  while (true) {
+    whitespace();
+    const closes = array ? line.startsWith("]]", index) : line[index] === "]";
+    if (closes) {
+      const rest = line.slice(index + (array ? 2 : 1));
+      return /^\s*(?:#.*)?$/.test(rest)
+        ? { header: true, safe: true }
+        : { header: false, safe: false };
+    }
+    if (line[index++] !== ".") return { header: false, safe: false };
+    whitespace();
+    if (!component()) return { header: false, safe: false };
+  }
+}
+
 // TOML table-shaped text is inert while it lives inside a multiline string.
 // Track only the lexical states that can cross line boundaries; ordinary
 // basic/literal strings and comments are consumed within their own line. If a
 // single-line string is unterminated, mark the document unsafe so trust fails
 // closed and reconciliation returns the original bytes unchanged.
-function scanTomlLine(line, multiline) {
+function scanTomlLine(line, multiline, arrayDepth) {
   let mode = multiline;
+  let depth = arrayDepth;
   for (let index = 0; index < line.length;) {
     if (mode === "basic") {
-      if (line.startsWith('"""', index) && !basicQuoteEscaped(line, index)) { mode = null; index += 3; }
-      else index++;
+      if (line[index] === '"' && !basicQuoteEscaped(line, index)) {
+        let run = 1;
+        while (line[index + run] === '"') run++;
+        if (run >= 3 && run <= 5) { mode = null; index += run; }
+        else if (run > 5) return { multiline: mode, arrayDepth: depth, safe: false };
+        else index += run;
+      } else index++;
       continue;
     }
     if (mode === "literal") {
-      if (line.startsWith("'''", index)) { mode = null; index += 3; }
-      else index++;
+      if (line[index] === "'") {
+        let run = 1;
+        while (line[index + run] === "'") run++;
+        if (run >= 3 && run <= 5) { mode = null; index += run; }
+        else if (run > 5) return { multiline: mode, arrayDepth: depth, safe: false };
+        else index += run;
+      } else index++;
       continue;
     }
     const char = line[index];
@@ -271,45 +314,67 @@ function scanTomlLine(line, multiline) {
       for (index++; index < line.length; index++) if (line[index] === '"' && !basicQuoteEscaped(line, index)) {
         index++; closed = true; break;
       }
-      if (!closed) return { multiline: null, safe: false };
+      if (!closed) return { multiline: null, arrayDepth: depth, safe: false };
       continue;
     }
     if (char === "'") {
       const closing = line.indexOf("'", index + 1);
-      if (closing < 0) return { multiline: null, safe: false };
+      if (closing < 0) return { multiline: null, arrayDepth: depth, safe: false };
       index = closing + 1;
       continue;
     }
+    if (char === "[") depth++;
+    else if (char === "]") {
+      if (depth === 0) return { multiline: mode, arrayDepth: depth, safe: false };
+      depth--;
+    }
     index++;
   }
-  return { multiline: mode, safe: true };
+  return { multiline: mode, arrayDepth: depth, safe: true };
+}
+
+function splitTomlLines(text) {
+  const lines = [], endings = [];
+  let offset = 0;
+  while (offset < text.length) {
+    const newline = text.indexOf("\n", offset);
+    if (newline < 0) { lines.push(text.slice(offset)); endings.push(""); break; }
+    const crlf = newline > offset && text[newline - 1] === "\r";
+    lines.push(text.slice(offset, crlf ? newline - 1 : newline));
+    endings.push(crlf ? "\r\n" : "\n");
+    offset = newline + 1;
+  }
+  return { lines, endings };
 }
 
 function parseConfigTomlTrustSections(text) {
-  const newline = text.includes("\r\n") ? "\r\n" : "\n";
-  const finalNewline = text === "" || text.endsWith("\n");
-  const lines = text ? text.split(/\r?\n/) : [];
-  if (finalNewline && lines.length) lines.pop();
+  const { lines, endings } = splitTomlLines(text);
   const sections = [];
   let current = null;
   let multiline = null;
+  let arrayDepth = 0;
   let safe = true;
   const closeCurrent = end => { if (current) { current.end = end; sections.push(current); current = null; } };
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index];
-    const syntaxActive = multiline === null;
+    const syntaxActive = multiline === null && arrayDepth === 0;
     const hookMatch = syntaxActive ? line.match(HOOK_STATE_HEADER) : null;
-    if (syntaxActive && (hookMatch || ANY_TOML_HEADER.test(line))) closeCurrent(index);
+    const header = syntaxActive ? inspectTomlHeader(line) : { header: false, safe: true };
+    safe &&= header.safe;
+    if (syntaxActive && (hookMatch || header.header)) closeCurrent(index);
     if (hookMatch) current = { table: "hooks.state", key: decodeTomlQuotedKey(hookMatch[1]), headerLine: index };
-    const scanned = scanTomlLine(line, multiline);
+    const scanned = header.header
+      ? { multiline, arrayDepth, safe: true }
+      : scanTomlLine(line, multiline, arrayDepth);
     multiline = scanned.multiline;
+    arrayDepth = scanned.arrayDepth;
     safe &&= scanned.safe;
   }
   closeCurrent(lines.length);
-  return { lines, newline, finalNewline, sections, safe, multiline };
+  return { lines, endings, sections, safe, multiline, arrayDepth };
 }
 
-const renderConfigTomlTrustSections = state => state.lines.join(state.newline) + (state.finalNewline ? state.newline : "");
+const renderConfigTomlTrustSections = state => state.lines.map((line, index) => line + state.endings[index]).join("");
 
 // Converts a hooks.json event key (PascalCase, e.g. "SessionStart") to the
 // snake_case form Codex records in a [hooks.state] key's <event> segment
@@ -391,7 +456,7 @@ function ownedHookStateKeys(config, hookGroups) {
 // instead of being skipped outright.
 export function reconcileConfigTomlHookState(text, registeredEntries, keptEntries, { onPrune = () => {} } = {}) {
   const state = parseConfigTomlTrustSections(text);
-  if (!state.safe || state.multiline) return { text, prunedHookState: [], prunedProjects: [] };
+  if (!state.safe || state.multiline || state.arrayDepth !== 0) return { text, prunedHookState: [], prunedProjects: [], parseOk: false };
   const registered = (registeredEntries || []).map(entry => ({
     scope: entry.scope,
     configDir: entry.configDir,
@@ -417,10 +482,11 @@ export function reconcileConfigTomlHookState(text, registeredEntries, keptEntrie
     prunedHookState.push(pruned);
     onPrune(pruned);
   }
+  state.endings = state.endings.filter((_, index) => !remove[index]);
   state.lines = state.lines.filter((_, index) => !remove[index]);
   // prunedProjects is always empty: [projects] is never touched (see above).
   // Kept in the return shape for API stability with existing callers.
-  return { text: renderConfigTomlTrustSections(state), prunedHookState, prunedProjects: [] };
+  return { text: renderConfigTomlTrustSections(state), prunedHookState, prunedProjects: [], parseOk: true };
 }
 
 // -- hook TRUST gaps: the inverse of the stale-entry reconciliation above -----
@@ -562,6 +628,7 @@ export async function readCodexHookInventory({ runtimeIdentity, cwds, env = proc
 
 export function effectiveHookTrust(inventory, cwd, hooksJsonPath, results) {
   if (!inventory?.ok) return { verified: false, ok: false, error: inventory?.error || "Codex hooks/list unavailable", results: [] };
+  if (!Array.isArray(results) || results.length === 0) return { verified: true, ok: false, error: "no expected Muster hooks were supplied for activation verification", results: [] };
   const scope = inventory.data.find(entry => resolve(entry?.cwd || "") === resolve(cwd));
   if (!scope || (Array.isArray(scope.errors) && scope.errors.length)) {
     return { verified: true, ok: false, error: scope?.errors?.join("; ") || "Codex hooks/list omitted the requested scope", results: [] };
@@ -604,7 +671,7 @@ export function musterHookTrustGaps({ configTomlText, hooksJsonPath, config, hoo
     const state = states.get(key);
     const enabled = state?.enabled !== false;
     const trustedHash = state?.trustedHash ?? null;
-    const status = !parsed.safe || parsed.multiline || state?.malformed ? "invalid"
+    const status = !parsed.safe || parsed.multiline || parsed.arrayDepth !== 0 || state?.malformed ? "invalid"
       : !enabled ? "disabled"
       : trustedHash === currentHash ? "trusted"
       : trustedHash === null ? "untrusted"
@@ -1339,7 +1406,34 @@ function parseWindowsShellTokens(command) {
 // if rerun). A version mismatch fails closed to "not healthy" here, exactly
 // like every other validation failure above -- the project scope then
 // installs its own (current) hooks rather than trusting a stale peer.
-async function inspectUserScopeHooks({ home, packageVersion }) {
+async function expectedUserHookInstall({ home, hookSourceRoot, nodeExecPath }) {
+  const dir = codexHome(home);
+  const runtimeDir = join(dir, "muster");
+  const template = await readJson(join(hookSourceRoot, "hooks.json"));
+  if (!template?.hooks || typeof template.hooks !== "object" || Array.isArray(template.hooks)) return null;
+  const hookGroups = clone(template.hooks);
+  const command = shellCommand(join(runtimeDir, "hooks", "muster-hook.mjs"), await validatedHookNode(nodeExecPath));
+  let hookCount = 0;
+  for (const groups of Object.values(hookGroups)) {
+    if (!Array.isArray(groups) || !groups.length) return null;
+    for (const group of groups) {
+      if (!Array.isArray(group?.hooks) || !group.hooks.length) return null;
+      for (const hook of group.hooks) {
+        if (hook?.type !== "command") return null;
+        hook.command = command.command;
+        hook.commandWindows = command.commandWindows;
+        hookCount++;
+      }
+    }
+  }
+  if (!hookCount) return null;
+  const hash = createHash("sha256");
+  for (const file of HOOK_FILES) hash.update(file).update("\0").update(await readSafe(join(hookSourceRoot, basename(file))));
+  return { dir, runtimeDir, hookGroups, hookCount, hookHash: hash.digest("hex") };
+}
+
+async function inspectUserScopeHooks({ home, packageVersion, expected }) {
+  if (!expected?.hookCount || expected.hookCount < 1) return null;
   const dir = codexHome(home);
   const runtimeDir = join(dir, "muster"), manifestPath = join(runtimeDir, MANIFEST), configPath = join(dir, "hooks.json");
   if (!(await safeExists(manifestPath))) return null;
@@ -1348,27 +1442,36 @@ async function inspectUserScopeHooks({ home, packageVersion }) {
   let manifest;
   try { manifest = validateHookManifest(manifestRaw, runtimeDir, manifestPath); }
   catch { return null; }
-  const events = Object.entries(manifest.hookGroups || {});
-  if (!manifest.files.length || !events.length) return null;
-  for (const file of manifest.files) if (!(await safeExists(join(runtimeDir, file)))) return null;
+  if (!same(manifest.files, HOOK_FILES) || !same(manifest.hookGroups, expected.hookGroups)
+    || typeof manifestRaw.hookHash !== "string" || manifestRaw.hookHash !== expected.hookHash) return null;
+  const runtimeHash = createHash("sha256");
+  try {
+    for (const file of HOOK_FILES) runtimeHash.update(file).update("\0").update(await readSafe(join(runtimeDir, file)));
+  } catch { return null; }
+  if (runtimeHash.digest("hex") !== manifestRaw.hookHash) return null;
   if (!(await safeExists(configPath))) return null;
   let config;
   try { config = await readJson(configPath); }
   catch { return null; }
   if (!config || typeof config !== "object" || Array.isArray(config) || typeof config.hooks !== "object" || !config.hooks || Array.isArray(config.hooks)) return null;
-  for (const [event, groups] of events) {
-    if (!Array.isArray(groups) || !groups.length) return null;
+  let matchedHookCount = 0;
+  for (const [event, groups] of Object.entries(expected.hookGroups)) {
     const current = Array.isArray(config.hooks[event]) ? config.hooks[event] : [];
-    for (const group of groups) if (!current.some(candidate => same(candidate, group))) return null;
+    for (const group of groups) {
+      if (current.filter(candidate => same(candidate, group)).length !== 1) return null;
+      matchedHookCount += group.hooks.length;
+    }
+    if (current.filter(group => groupCommands(group).some(isMusterHookCommand)).length !== groups.length) return null;
   }
+  if (matchedHookCount !== expected.hookCount) return null;
   const configTomlPath = join(dir, "config.toml");
   const configTomlText = await safeExists(configTomlPath) ? await readSafe(configTomlPath) : "";
   const gaps = musterHookTrustGaps({ configTomlText, hooksJsonPath: configPath, config, hookGroups: manifest.hookGroups });
   return { dir, configPath, config, hookGroups: manifest.hookGroups, gaps };
 }
 
-async function userScopeHooksHealthy({ home, packageVersion, cwd, runtimeIdentity, hookInventory }) {
-  const inspected = await inspectUserScopeHooks({ home, packageVersion });
+async function userScopeHooksHealthy({ home, packageVersion, expected, cwd, runtimeIdentity, hookInventory }) {
+  const inspected = await inspectUserScopeHooks({ home, packageVersion, expected });
   if (!inspected || inspected.gaps.untrusted.length || inspected.gaps.stale.length) return false;
   const inventoryReader = hookInventory || readCodexHookInventory;
   const inventory = await inventoryReader({
@@ -1376,7 +1479,8 @@ async function userScopeHooksHealthy({ home, packageVersion, cwd, runtimeIdentit
     cwds: [cwd],
     env: { ...process.env, CODEX_HOME: codexHome(home) }
   });
-  return effectiveHookTrust(inventory, cwd, inspected.configPath, inspected.gaps.results).ok;
+  return inspected.gaps.results.length === expected.hookCount
+    && effectiveHookTrust(inventory, cwd, inspected.configPath, inspected.gaps.results).ok;
 }
 
 async function prepareHooks({ scope, cwd, home, hookSourceRoot, packageVersion, nodeExecPath, canonicalUserHooksActive }) {
@@ -1603,8 +1707,11 @@ async function prepareCodexInstall({ scope, dryRun, cwd, home, repoRoot, execFil
   // by a pre-mutation persisted AND effective user-hook verdict. A later
   // hooks/list failure may block install success, but can never retroactively
   // justify deleting the fallback that was active when the command began.
+  const canonicalUserExpected = scope === "project"
+    ? await expectedUserHookInstall({ home, hookSourceRoot, nodeExecPath })
+    : null;
   const canonicalUserHooksActive = scope === "project" && await userScopeHooksHealthy({
-    home, packageVersion, cwd, runtimeIdentity, hookInventory
+    home, packageVersion, expected: canonicalUserExpected, cwd, runtimeIdentity, hookInventory
   });
   const hooks = await prepareHooks({ scope, cwd, home, hookSourceRoot, packageVersion, nodeExecPath, canonicalUserHooksActive });
   const managed = new Set(managedFiles.map(file => resolve(dir, file)));
@@ -1639,14 +1746,14 @@ async function prepareCodexInstall({ scope, dryRun, cwd, home, repoRoot, execFil
     { op: "merge", path: declarationConfigPath },
     { op: "merge", path: threadLimitConfigPath }
   ];
-  return { files, profileContents, declarations, distributionRoot, dir, manifestPath, declarationConfigPath, declarationOwnership, threadLimitConfigPath, threadLimitManifestPath, packageVersion, hooks, staleFiles, present, planned };
+  return { files, profileContents, declarations, distributionRoot, dir, manifestPath, declarationConfigPath, declarationOwnership, threadLimitConfigPath, threadLimitManifestPath, packageVersion, canonicalUserExpected, hooks, staleFiles, present, planned };
 }
 
 export async function runCodexInstall({ scope = "project", dryRun = false, cwd = process.cwd(), home = homedir(), repoRoot, execFile, runtimeIdentity, hookInventory, scopeLockOptions, nodeExecPath = process.execPath } = {}) {
   const executor = execFile || execFileDefault;
   let identity = runtimeIdentity;
   if (!identity && !execFile) try { identity = resolveCodexRuntimeIdentity({ nodeExecPath }); } catch { /* Codex absent: local install still proceeds without PATH probing */ }
-  const { files, profileContents, declarations, distributionRoot, dir, manifestPath, declarationConfigPath, declarationOwnership, threadLimitConfigPath, threadLimitManifestPath, packageVersion, hooks, staleFiles, present, planned } =
+  const { files, profileContents, declarations, distributionRoot, dir, manifestPath, declarationConfigPath, declarationOwnership, threadLimitConfigPath, threadLimitManifestPath, packageVersion, canonicalUserExpected, hooks, staleFiles, present, planned } =
     await prepareCodexInstall({ scope, dryRun, cwd, home, repoRoot, execFile: executor, runtimeIdentity: identity, hookInventory, allowInjected: Boolean(execFile), nodeExecPath });
   let originals, changed;
   let actions = [];
@@ -1746,6 +1853,7 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
           const hookStateReconcile = reconcileConfigTomlHookState(existingConfigText, hookStateEntries, reconciled, {
             onPrune: pruned => (pruned.type === "hooks.state" ? prunedHookState : prunedProjectTrust).push(pruned)
           });
+          if (!hookStateReconcile.parseOk) throw new Error("Codex config.toml cannot be safely reconciled because its TOML string, array, or table boundaries are malformed or unsupported");
           const previousManifest = await safeExists(threadLimitManifestPath)
             ? validateThreadLimitManifest(
               await readJson(threadLimitManifestPath),
@@ -1830,7 +1938,7 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
   if (dryRun) {
     hookTrust = { ok: false, blocking: false, verified: false, results: [], stale: [], effective: { verified: false, ok: false, results: [], error: "dry-run does not verify effective hook activation" }, remediation: null };
   } else {
-    const inspected = hooks.skipped ? await inspectUserScopeHooks({ home, packageVersion }) : null;
+    const inspected = hooks.skipped ? await inspectUserScopeHooks({ home, packageVersion, expected: canonicalUserExpected }) : null;
     const trustTarget = hooks.skipped ? inspected : {
       configPath: hooks.configPath,
       config: hooks.config,
@@ -2043,6 +2151,7 @@ export async function runCodexUninstall({ scope = "project", dryRun = false, cwd
           const hookStateReconcile = reconcileConfigTomlHookState(currentConfigText, registeredEntries, liveScopes, {
             onPrune: pruned => (pruned.type === "hooks.state" ? prunedHookState : prunedProjectTrust).push(pruned)
           });
+          if (!hookStateReconcile.parseOk) throw new Error("Codex config.toml cannot be safely reconciled because its TOML string, array, or table boundaries are malformed or unsupported");
           currentConfigText = hookStateReconcile.text;
           if (restoreThreadLimits) currentConfigText = restoreCodexThreadLimits(currentConfigText, threadLimitManifest);
           removeThreadLimitConfig = restoreThreadLimits && threadLimitManifest.configCreated && currentConfigText.trim() === "";

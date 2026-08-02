@@ -902,7 +902,8 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
       // entirely (a leftover Codex trusted-directory record is harmless;
       // muster cannot reliably attribute it as its own), so
       // reconcileConfigTomlHookState's prunedProjects is always empty.
-      const { prunedHookState } = reconcileConfigTomlHookState(text, registeredEntries, keptEntries);
+      const { prunedHookState, parseOk } = reconcileConfigTomlHookState(text, registeredEntries, keptEntries);
+      if (!parseOk) throw new Error("config.toml could not be safely parsed for hook-state boundaries");
       const overRegistered = prunedHookState.length > 0;
       const staleConfigDirs = [...new Set(prunedHookState.map(item => item.configDir))];
       checks.push({ name: "codex-hook-state", ok: !overRegistered, detail: overRegistered

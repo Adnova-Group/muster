@@ -141,6 +141,38 @@ test("Codex install: a self-consistent but version-stale user scope manifest is 
   await readFile(join(cwd, ".codex", "muster", "hooks", "muster-hook.mjs"), "utf8");
 });
 
+test("Codex install: incomplete or runtime-tampered user hooks never authorize fallback removal", async t => {
+  for (const variant of ["missing-event", "zero-hooks", "tampered-runtime"]) await t.test(variant, async () => {
+    const tmp = await mkdtemp(join(tmpdir(), `muster-codex-scope-collapse-corrupt-user-${variant}-`));
+    const cwd = join(tmp, "project"), home = join(tmp, "home"), codexHome = join(home, ".codex");
+    await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absentCodex });
+    const user = await installTrustedUser({ cwd, home });
+    if (variant === "tampered-runtime") {
+      await writeFile(join(codexHome, "muster", "hooks", "action-guard.mjs"), "// tampered no-op\n");
+    } else {
+      const manifestPath = join(codexHome, "muster", ".muster-managed.json");
+      const hooksPath = join(codexHome, "hooks.json");
+      const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+      const hooks = JSON.parse(await readFile(hooksPath, "utf8"));
+      if (variant === "missing-event") {
+        delete manifest.hookGroups.Stop;
+        delete hooks.hooks.Stop;
+      } else {
+        manifest.hookGroups.Stop[0].hooks = [];
+        hooks.hooks.Stop[0].hooks = [];
+      }
+      await writeFile(manifestPath, JSON.stringify(manifest, null, 2));
+      await writeFile(hooksPath, JSON.stringify(hooks, null, 2));
+    }
+
+    const project = await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absentCodex, hookInventory: user.hookInventory });
+    assert.equal(project.hooksSkipped, null);
+    assert.equal(project.hooks, 7);
+    const projectHooks = JSON.parse(await readFile(join(cwd, ".codex", "hooks.json"), "utf8"));
+    for (const event of HOOK_EVENTS) assert.equal(musterGroupCount(projectHooks, event), 1, `${variant}: ${event} fallback remains`);
+  });
+});
+
 test("Codex install: user-scope installs never skip, even run twice in a row", async t => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-scope-collapse-user-never-skips-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));

@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { execFile as execFileCb } from "node:child_process";
 import { promisify } from "node:util";
 import { codexAvailable } from "./codex-inventory.js";
-import { resolveCodexRuntimeIdentity, runCodexCommand } from "./codex-runtime-identity.js";
+import { codexMcpOverlay, resolveCodexRuntimeIdentity, runCodexCommand } from "./codex-runtime-identity.js";
 import { escapeRe } from "./keyword.js";
 import { generateCodexProfiles } from "./codex-release.js";
 import { processAlive, processStartIdentity } from "./codex-lock.js";
@@ -1357,7 +1357,9 @@ async function prepareCodexInstall({ scope, dryRun, cwd, home, repoRoot, execFil
   const present = await codexAvailable({ execFile, runtimeIdentity, allowInjected });
   if (present && !dryRun) {
     await existingMusterMarketplace(execFile, distributionRoot, runtimeIdentity);
-    if (!pluginRoot) {
+    if (pluginRoot) {
+      await atomicWriteSafe(join(root, ".mcp.json"), JSON.stringify(codexMcpOverlay(nodeExecPath), null, 2) + "\n");
+    } else {
       // buildCodexPlugin is itself idempotent (skips regeneration when
       // outDir already holds a current-version plugin), so this fires an
       // esbuild rebuild only when actually needed — including for the many

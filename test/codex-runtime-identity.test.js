@@ -150,3 +150,28 @@ test("Codex install invokes only the pinned runtime and emits canonical Node in 
   }
   await assert.rejects(readFile(marker), /ENOENT/);
 });
+
+test("Codex reinstall from a plugin root repairs a stale MCP Node identity", async t => {
+  const { tmp, identity } = await fixture(t, "linux");
+  const built = await buildCodexPlugin({ root: repoRoot, outDir: join(tmp, "plugins"), nodeExecPath: identity.node });
+  const mcpPath = join(built.pluginRoot, ".mcp.json");
+  const stale = JSON.parse(await readFile(mcpPath, "utf8"));
+  stale.mcpServers.muster.command = join(tmp, "stale-node");
+  await writeFile(mcpPath, JSON.stringify(stale, null, 2) + "\n");
+
+  const execFile = async (_file, args) => {
+    const command = args.slice(1);
+    if (command[0] === "--version") return { stdout: "codex-cli 9.8.7\n" };
+    if (command.slice(0, 3).join(" ") === "plugin marketplace list") return { stdout: JSON.stringify({ marketplaces: [] }) };
+    if (command.slice(0, 3).join(" ") === "plugin list --available") return { stdout: JSON.stringify({ installed: [] }) };
+    return { stdout: "{}" };
+  };
+  await runCodexInstall({
+    cwd: join(tmp, "project"), home: join(tmp, "home"), repoRoot: built.pluginRoot,
+    execFile, runtimeIdentity: identity, nodeExecPath: identity.node,
+  });
+
+  assert.deepEqual(JSON.parse(await readFile(mcpPath, "utf8")), {
+    mcpServers: { muster: { command: identity.node, args: ["./runtime/muster-mcp.mjs"], cwd: "." } }
+  });
+});

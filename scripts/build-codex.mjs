@@ -1,12 +1,13 @@
 import { build } from "esbuild";
 import { createHash } from "node:crypto";
 import {
-  cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync
+  cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertRegularTree, CODEX_BUILD_INPUT_DIRS, computeCodexBuildInputDigest, generateCodexProfiles, publishCodexPlugin, resolveCodexPlugin } from "../src/codex-release.js";
+import { codexMcpOverlay } from "../src/codex-runtime-identity.js";
 import { escapeRe } from "../src/keyword.js";
 
 // Deliberately synchronous fs throughout this script (mirrors src/codex-release.js).
@@ -707,8 +708,8 @@ async function adaptPortedSkills(internalSkillDir, names, contract) {
 // CLI entry below) all still force a fresh build unconditionally.
 export async function buildCodexPlugin(options, retries = 1) {
   const { root, outDir, nodeExecPath = process.execPath } = options;
-  const canonicalNode = realpathSync(nodeExecPath);
-  if (!statSync(canonicalNode).isFile()) throw new Error(`Codex runtime Node executable is not a regular file: ${nodeExecPath}`);
+  const expectedMcp = codexMcpOverlay(nodeExecPath);
+  const canonicalNode = expectedMcp.mcpServers.muster.command;
   if (process.env.MUSTER_BUILD_FORCE !== "1") {
     try {
       const current = await resolveCodexPlugin(root, { pluginsRoot: outDir });
@@ -722,9 +723,7 @@ export async function buildCodexPlugin(options, retries = 1) {
         && manifest.version === packageVersion
         && manifest.skills === "./skills/"
         && manifest.mcpServers === "./.mcp.json"
-        && JSON.stringify(mcp) === JSON.stringify({
-          mcpServers: { muster: { command: canonicalNode, args: ["./runtime/muster-mcp.mjs"], cwd: "." } }
-        })
+        && JSON.stringify(mcp) === JSON.stringify(expectedMcp)
         && readFileSync(join(current.pluginRoot, "runtime", "muster.mjs")).length > 0
         && readFileSync(join(current.pluginRoot, "runtime", "muster-mcp.mjs")).length > 0
         && readFileSync(join(current.pluginRoot, "skills", "muster", "SKILL.md")).length > 0
@@ -863,9 +862,7 @@ async function buildCodexPluginOnce({ root, outDir, nodeExecPath }) {
     const inputDigest = await computeCodexBuildInputDigest(root);
     write(join(plugin, "package.json"), JSON.stringify({ version: pkg.version, inputDigest }, null, 2) + "\n");
 
-    write(join(plugin, ".mcp.json"), JSON.stringify({
-      mcpServers: { muster: { command: nodeExecPath, args: ["./runtime/muster-mcp.mjs"], cwd: "." } }
-    }, null, 2) + "\n");
+    write(join(plugin, ".mcp.json"), JSON.stringify(codexMcpOverlay(nodeExecPath), null, 2) + "\n");
     const pluginManifest = {
       name: "muster", version: pkg.version,
       description: "Glass-box agentic orchestration for Codex: deterministic routing, skills, agents, pipelines, hooks, and MCP tools.",

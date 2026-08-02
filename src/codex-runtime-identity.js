@@ -51,6 +51,11 @@ export function runCodexCommand(execFile = execFileDefault, identity, args, opti
   return execFile(identity.node, [identity.codex, ...args], options);
 }
 
+export function codexMcpOverlay(nodeExecPath = process.execPath) {
+  const node = canonicalRegularFile(nodeExecPath, "Node executable");
+  return { mcpServers: { muster: { command: node, args: ["./runtime/muster-mcp.mjs"], cwd: "." } } };
+}
+
 export function codexVersionMatches(stdout, expected) {
   const found = String(stdout || "").match(/^(?:codex-cli|codex) v?([^\s\r\n]+)\r?\n?$/)?.[1] || null;
   return { found, ok: found === expected };

@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { execFile as execFileCb } from "node:child_process";
 import { promisify } from "node:util";
 import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
@@ -301,6 +302,19 @@ test("runCodexWave rejects manifest role-policy overrides and hidden tracked cha
     }), /assume-unchanged|skip-worktree|index/i);
     await assert.rejects(readFile(fixture.launches, "utf8"), { code: "ENOENT" });
   }
+});
+
+test("runCodexWave receipts a __proto__ member action fence as own data", async t => {
+  const fixture = await waveFixture(t);
+  const special = member("__proto__", fixture.worktreeA);
+  const result = await runCodexWave({
+    members: [special], codexCommand: fixture.codex,
+    repositoryRoot: fixture.repo, baseSha: fixture.baseSha,
+  });
+  const expected = createHash("sha256")
+    .update(JSON.stringify(Object.fromEntries([["__proto__", ["purchase", "send"]]])))
+    .digest("hex");
+  assert.equal(result.actionFenceSha256, expected);
 });
 
 test("runCodexWave kills a setsid descendant with the PID namespace", async t => {

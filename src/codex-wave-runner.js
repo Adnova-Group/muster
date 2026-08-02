@@ -393,7 +393,7 @@ function validateTrustedActionFences(members, trustedActionFences) {
   if (JSON.stringify(memberIds) !== JSON.stringify(fenceIds)) {
     throw new Error("runCodexWave: trusted action-fence map must contain exactly every wave member id");
   }
-  const normalized = {};
+  const normalized = Object.create(null);
   for (const id of memberIds) {
     const actions = trustedActionFences[id];
     if (!Array.isArray(actions) || actions.some(action => typeof action !== "string" || !ACTION_CLASSES.has(action))) {

@@ -504,6 +504,26 @@ test("repository fingerprint bounds one forged Git index path while streaming", 
   );
 });
 
+test("repository fingerprint rejects non-round-tripping Git index path bytes", {
+  skip: process.platform === "win32" ? "POSIX permits non-UTF-8 path bytes" : false,
+}, async () => {
+  const dir = await tmp();
+  await pexecFile("git", ["init", "--quiet"], { cwd: dir });
+  await writeFile(join(dir, "blob"), "");
+  const blob = (await pexecFile("git", ["hash-object", "-w", "blob"], { cwd: dir })).stdout.trim();
+  const row = Buffer.concat([Buffer.from(`100644 ${blob}\tbad-`), Buffer.from([0xff]), Buffer.from("\0")]);
+  await gitWithInput(dir, ["update-index", "-z", "--index-info"], row);
+  await assert.rejects(() => learnProjectProfile(dir), /invalid UTF-8 repository path: git index/);
+});
+
+test("project learning rejects non-round-tripping filesystem name bytes", {
+  skip: process.platform === "win32" ? "POSIX permits non-UTF-8 path bytes" : false,
+}, async () => {
+  const dir = await tmp();
+  await writeFile(Buffer.concat([Buffer.from(`${dir}/bad-`), Buffer.from([0xff])]), "");
+  await assert.rejects(() => learnProjectProfile(dir), /invalid UTF-8 repository path/);
+});
+
 test("repository fingerprints reject same-size in-place writes during a streamed read", async () => {
   const dir = await tmp();
   const target = join(dir, "changing.bin");
@@ -614,6 +634,23 @@ test("project learning bounds generated evidence so high-cardinality profiles re
       const parent = join(dir, `${id}-${"x".repeat(246)}`);
       await mkdir(parent);
       await Promise.all(metadata.map((name) => writeFile(join(parent, name), name === "package.json" ? "{}" : "")));
+    }));
+  }
+  const initialized = await initializeProject(dir);
+  const profile = await readProfile(dir);
+  assert.equal(profile.facts.learning.status, "incomplete");
+  assert.ok(profile.facts.learning.limitations.some(({ reason }) => reason === "profile-limit"));
+  assert.ok((await stat(join(dir, ".muster/project-profile.json"))).size <= INIT_LIMITS.learnProfileBytes);
+  assert.deepEqual(await initializeProject(dir), initialized);
+});
+
+test("project learning dynamically trims many source roots to the serialized profile ceiling", async () => {
+  const dir = await tmp();
+  const sourceNames = ["src", "lib", "app", "apps", "packages"];
+  for (let offset = 0; offset < 5_740; offset += 100) {
+    await Promise.all(Array.from({ length: Math.min(100, 5_740 - offset) }, async (_, index) => {
+      const parent = join(dir, (offset + index).toString(36).padStart(4, "0"));
+      await Promise.all(sourceNames.map((name) => mkdir(join(parent, name), { recursive: true })));
     }));
   }
   const initialized = await initializeProject(dir);

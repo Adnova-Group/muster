@@ -55,6 +55,8 @@ export const INIT_PATHS = Object.freeze({
 });
 
 export const INIT_LIMITS = Object.freeze({
+  fingerprintDirectoryBytes: 8_388_608,
+  fingerprintDirectoryEntries: 100_000,
   fingerprintPathBytes: 262_144,
   learnDepth: 4,
   learnEvidenceBytes: 350_000,
@@ -68,6 +70,12 @@ export const INIT_LIMITS = Object.freeze({
 const utf8Sort = (a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b));
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const envelope = (receipt, observedNativeEvidence = null) => ({ receipt, observedNativeEvidence });
+
+function decodePathBytes(bytes, label) {
+  const value = bytes.toString("utf8");
+  if (!Buffer.from(value, "utf8").equals(bytes)) throw new Error(`invalid UTF-8 repository path: ${label}`);
+  return value;
+}
 
 // Digest-stability serializer: plain JSON only, safe integers only, keys in
 // UTF-8 byte order. Deliberately NOT shared with codex-doctor.js's looser
@@ -307,12 +315,12 @@ async function realGitMarker(dir) {
   return info.isDirectory() || info.isFile();
 }
 
-async function* gitRelevantPaths(root) {
+async function* gitPathStream(root, suffix) {
   const sandbox = await mkdtemp(join(tmpdir(), "muster-git-"));
   const args = [
     "--no-optional-locks", "-c", `core.hooksPath=${sandbox}`, "-c", "core.fsmonitor=false",
     "-c", "core.untrackedCache=false", "-c", "core.quotepath=false", "ls-files", "-z",
-    "--cached", "--others", "--exclude-standard", "--deduplicate",
+    "--deduplicate", ...suffix,
   ];
   const child = spawn("git", args, {
     cwd: root, env: gitEnvironment(), stdio: ["ignore", "pipe", "pipe"],
@@ -327,6 +335,7 @@ async function* gitRelevantPaths(root) {
   try {
     let fragments = [];
     let pendingBytes = 0;
+    let previous = null;
     for await (const chunk of child.stdout) {
       let start = 0;
       for (let end = chunk.indexOf(0, start); end >= 0; end = chunk.indexOf(0, start)) {
@@ -336,7 +345,11 @@ async function* gitRelevantPaths(root) {
           throw new Error("repository fingerprint path limit exceeded");
         }
         const bytes = fragments.length ? Buffer.concat([...fragments, fragment], pendingBytes) : fragment;
-        const rel = bytes.toString("utf8");
+        const rel = decodePathBytes(bytes, "git index");
+        if (previous && Buffer.compare(previous, bytes) >= 0) {
+          throw new Error("git returned non-canonical repository paths");
+        }
+        previous = Buffer.from(bytes);
         fragments = [];
         pendingBytes = 0;
         start = end + 1;
@@ -362,31 +375,97 @@ async function* gitRelevantPaths(root) {
   }
 }
 
-async function directoryNames(abs) {
-  const names = [];
-  for await (const { name } of await opendir(abs)) names.push(name);
-  return names;
+async function* gitRelevantPaths(root) {
+  const cached = gitPathStream(root, ["--cached"]);
+  const other = gitPathStream(root, ["--others", "--exclude-standard"]);
+  let left;
+  let right;
+  try {
+    left = await cached.next();
+    right = await other.next();
+    while (!left.done || !right.done) {
+      if (right.done || (!left.done && utf8Sort(left.value, right.value) < 0)) {
+        yield left.value;
+        left = await cached.next();
+      } else if (left.done || utf8Sort(right.value, left.value) < 0) {
+        yield right.value;
+        right = await other.next();
+      } else {
+        yield left.value;
+        left = await cached.next();
+        right = await other.next();
+      }
+    }
+  } finally {
+    await Promise.all([cached.return(), other.return()]);
+  }
 }
 
-async function* filesystemRelevantPaths(abs, prefix = "") {
-  for (const name of await directoryNames(abs)) {
+function sameDirectoryIdentity(current, prior) {
+  return current.isDirectory() && prior.isDirectory() && current.ino === prior.ino && current.dev === prior.dev &&
+    current.mode === prior.mode && current.nlink === prior.nlink && current.ctimeNs === prior.ctimeNs &&
+    current.mtimeNs === prior.mtimeNs;
+}
+
+async function pinnedDirectoryNames(root, abs, rel) {
+  const namedBefore = await lstat(abs, { bigint: true });
+  if (namedBefore.isSymbolicLink() || !namedBefore.isDirectory() ||
+      !(await resolveContainedRealpath(root, abs))) throw new Error(`unsafe repository directory: ${rel || "."}`);
+  let handle;
+  try {
+    handle = await open(
+      abs,
+      fsConstants.O_RDONLY | (fsConstants.O_DIRECTORY || 0) | (fsConstants.O_NOFOLLOW || 0),
+    );
+    const heldBefore = await handle.stat({ bigint: true });
+    if (!sameDirectoryIdentity(heldBefore, namedBefore)) throw new Error(`repository directory changed: ${rel || "."}`);
+    const descriptorPath = process.platform === "linux" ? `/proc/self/fd/${handle.fd}` : abs;
+    const names = [];
+    let totalBytes = 0;
+    for await (const entry of await opendir(descriptorPath, { encoding: "buffer" })) {
+      const bytes = Buffer.isBuffer(entry.name) ? entry.name : Buffer.from(entry.name);
+      totalBytes += bytes.length;
+      if (totalBytes > INIT_LIMITS.fingerprintDirectoryBytes) {
+        const error = new Error(`repository directory entry limit exceeded: ${rel || "."}`);
+        error.initReason = "directory-limit";
+        throw error;
+      }
+      names.push(decodePathBytes(bytes, rel || "."));
+      if (names.length > INIT_LIMITS.fingerprintDirectoryEntries) {
+        const error = new Error(`repository directory entry limit exceeded: ${rel || "."}`);
+        error.initReason = "directory-limit";
+        throw error;
+      }
+    }
+    const heldAfter = await handle.stat({ bigint: true });
+    const namedAfter = await lstat(abs, { bigint: true });
+    if (!sameDirectoryIdentity(heldAfter, heldBefore) || !sameDirectoryIdentity(namedAfter, heldBefore) ||
+        !(await resolveContainedRealpath(root, abs))) throw new Error(`repository directory changed: ${rel || "."}`);
+    return names.sort(utf8Sort);
+  } finally {
+    await handle?.close();
+  }
+}
+
+async function* filesystemRelevantPaths(root, abs = root, prefix = "") {
+  for (const name of await pinnedDirectoryNames(root, abs, prefix)) {
     if (!prefix && (name === ".git" || name === ".muster" || name.startsWith(".muster-init-tmp-"))) continue;
     const rel = prefix ? `${prefix}/${name}` : name;
     const path = join(abs, name);
     const info = await lstat(path);
-    if (info.isDirectory() && !(await realGitMarker(path))) yield* filesystemRelevantPaths(path, rel);
+    if (info.isDirectory() && !(await realGitMarker(path))) yield* filesystemRelevantPaths(root, path, rel);
     else yield rel;
   }
 }
 
-async function rejectSpecialEntries(abs, prefix = "") {
-  for (const name of await directoryNames(abs)) {
+async function rejectSpecialEntries(root, abs = root, prefix = "") {
+  for (const name of await pinnedDirectoryNames(root, abs, prefix)) {
     if (!prefix && (name === ".git" || name === ".muster" || name.startsWith(".muster-init-tmp-"))) continue;
     const rel = prefix ? `${prefix}/${name}` : name;
     const path = join(abs, name);
     const info = await lstat(path);
     if (info.isDirectory()) {
-      if (!(await realGitMarker(path))) await rejectSpecialEntries(path, rel);
+      if (!(await realGitMarker(path))) await rejectSpecialEntries(root, path, rel);
     } else if (info.isSymbolicLink()) {
       const target = await readlink(path, { encoding: "buffer" });
       if (target.length > INIT_LIMITS.symlinkBytes) throw new Error("repository symlink target limit exceeded");
@@ -469,11 +548,12 @@ async function repositoryFingerprint(root, learnedDigests = new Map()) {
   // Preserve the previous fail-closed repository walk before hashing only the
   // relevant paths; ignored/generated ordinary files remain unhashed.
   await rejectSpecialEntries(root);
-  const aggregate = Buffer.alloc(32);
+  const hash = createHash("sha256").update(Buffer.from(`${FINGERPRINT_BASIS}\0`));
   let rowCount = 0;
   const add = (row) => {
-    const digest = createHash("sha256").update(row).digest();
-    for (let index = 0; index < aggregate.length; index++) aggregate[index] ^= digest[index];
+    const length = Buffer.allocUnsafe(8);
+    length.writeBigUInt64BE(BigInt(row.length));
+    hash.update(length).update(row);
     rowCount++;
   };
   const paths = await realGitMarker(root) ? gitRelevantPaths(root) : filesystemRelevantPaths(root);
@@ -513,7 +593,9 @@ async function repositoryFingerprint(root, learnedDigests = new Map()) {
     }
   }
   await rejectSpecialEntries(root);
-  const digest = createHash("sha256").update(`${FINGERPRINT_BASIS}\0${rowCount}\0`).update(aggregate).digest("hex");
+  const count = Buffer.allocUnsafe(8);
+  count.writeBigUInt64BE(BigInt(rowCount));
+  const digest = hash.update(count).digest("hex");
   return { algorithm: "sha256", basis: FINGERPRINT_BASIS, digest };
 }
 
@@ -536,6 +618,7 @@ const MANIFEST_NAMES = new Set([
 const INSTRUCTION_NAMES = new Set(["AGENTS.md", "CLAUDE.md", "GEMINI.md", "copilot-instructions.md"]);
 const SOURCE_NAMES = new Set(["src", "lib", "app", "apps", "packages"]);
 const TEST_NAMES = new Set(["test", "tests", "__tests__", "spec"]);
+const LANGUAGE_SUFFIXES = new Set([".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".py", ".rs", ".go", ".rb"]);
 
 function safeLearnedPath(path) {
   if (typeof path !== "string" || !path || path.includes("\0") || path.includes("\\") ||
@@ -654,7 +737,16 @@ async function learnFacts(root) {
       addLimitation(prefix, "depth-limit");
       return;
     }
-    for (const name of (await readdir(abs)).sort(utf8Sort)) {
+    let names;
+    try { names = await pinnedDirectoryNames(root, abs, prefix); }
+    catch (error) {
+      if (error.initReason === "directory-limit") {
+        addLimitation(prefix || "project-root", "directory-limit");
+        return;
+      }
+      throw error;
+    }
+    for (const name of names) {
       if (!prefix && (name === ".git" || name === ".muster")) continue;
       const rel = prefix ? `${prefix}/${name}` : name;
       const path = join(abs, name);
@@ -667,7 +759,8 @@ async function learnFacts(root) {
         await walk(path, rel, depth + 1);
       } else if (info.isFile()) {
         const dot = name.lastIndexOf(".");
-        if (dot >= 0) extensions.add(name.slice(dot).toLowerCase());
+        const suffix = dot >= 0 ? name.slice(dot).toLowerCase() : null;
+        if (LANGUAGE_SUFFIXES.has(suffix)) extensions.add(suffix);
         if (!MANIFEST_NAMES.has(name) && !INSTRUCTION_NAMES.has(name)) continue;
         const factBytes = Buffer.byteLength(JSON.stringify({
           bytes: Number.MAX_SAFE_INTEGER, path: rel, sha256: "0".repeat(64),
@@ -690,6 +783,29 @@ async function learnFacts(root) {
   await walk(root, "", 0);
   limitations.sort((a, b) => utf8Sort(a.path, b.path) || utf8Sort(a.reason, b.reason));
   return { digests, extensions, limitations, rows, sourceRoots, testRoots };
+}
+
+function boundSerializedProfile(profile) {
+  if (Buffer.byteLength(prettyInitJson(profile)) <= INIT_LIMITS.learnProfileBytes) return profile;
+  const facts = profile.facts;
+  const existing = facts.learning.limitations.find(({ reason }) => reason === "profile-limit");
+  const fallbackPath = facts.manifests.at(-1)?.path || facts.instructionFiles.at(-1)?.path ||
+    facts.sourceRoots.at(-1) || facts.learning.limitations.at(-1)?.path || "project-profile";
+  facts.learning = {
+    limitations: [existing || { path: safeLearnedPath(fallbackPath), reason: "profile-limit" }],
+    status: "incomplete",
+  };
+  const dynamic = [facts.manifests, facts.instructionFiles, facts.sourceRoots];
+  while (Buffer.byteLength(prettyInitJson(profile)) > INIT_LIMITS.learnProfileBytes) {
+    let changed = false;
+    for (const values of dynamic) {
+      if (!values.length) continue;
+      values.length = Math.floor(values.length / 2);
+      changed = true;
+    }
+    if (!changed) throw new Error("generated project profile exceeds its serialization limit");
+  }
+  return profile;
 }
 
 export async function learnProjectProfile(dir) {
@@ -757,10 +873,7 @@ export async function learnProjectProfile(dir) {
     },
     repositoryFingerprint: await repositoryFingerprint(root, digests),
   };
-  if (Buffer.byteLength(prettyInitJson(profile)) > INIT_LIMITS.learnProfileBytes) {
-    throw new Error("generated project profile exceeds its serialization limit");
-  }
-  return profile;
+  return boundSerializedProfile(profile);
 }
 
 function exactKeys(value, keys) {
@@ -829,7 +942,8 @@ function validateProfile(profile) {
     if (!exactKeys(learning, ["limitations", "status"]) || !["complete", "incomplete"].includes(learning.status) ||
         !Array.isArray(learning.limitations)) fail("facts.learning", "must carry a complete or incomplete status and limitations array");
     for (const limitation of learning.limitations) {
-      if (!exactKeys(limitation, ["path", "reason"]) || !["depth-limit", "parse-limit", "profile-limit"].includes(limitation.reason)) {
+      if (!exactKeys(limitation, ["path", "reason"]) ||
+          !["depth-limit", "directory-limit", "parse-limit", "profile-limit"].includes(limitation.reason)) {
         fail("facts.learning.limitations", "each limitation must name a path and known reason");
       }
       try { safeLearnedPath(limitation.path); } catch { fail("facts.learning.limitations", "paths must be safe learned paths"); }

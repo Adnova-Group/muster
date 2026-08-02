@@ -77,11 +77,13 @@ test("Codex inventory is driven by live JSON and project/user directories", asyn
   await mkdir(join(tmp, "project", ".codex", "skills", "project-skill"), { recursive: true });
   await mkdir(join(tmp, "home", "skills", "user-skill"), { recursive: true });
   await mkdir(join(tmp, "project", ".codex", "agents"), { recursive: true });
+  await writeFile(join(tmp, "home", "config.toml"), `[projects.${JSON.stringify(join(tmp, "project"))}]\ntrust_level = "trusted"\n`);
+  await writeFile(join(tmp, "project", ".codex", "config.toml"), "[agents.project-agent]\nconfig_file = 'agents/project-agent.toml'\n");
   await writeFile(join(plugin, "skills", "plugin-skill", "SKILL.md"), "---\nname: plugin-skill\ndescription: test\n---\n");
-  await writeFile(join(plugin, "agents", "plugin-agent.toml"), "name = 'plugin-agent'\n");
+  await writeFile(join(plugin, "agents", "plugin-agent.toml"), "name = 'plugin-agent'\nmodel = 'gpt-5.6-sol'\n");
   await writeFile(join(tmp, "project", ".codex", "skills", "project-skill", "SKILL.md"), "---\nname: project-skill\ndescription: test\n---\n");
   await writeFile(join(tmp, "home", "skills", "user-skill", "SKILL.md"), "---\nname: user-skill\ndescription: test\n---\n");
-  await writeFile(join(tmp, "project", ".codex", "agents", "project-agent.toml"), "name = 'project-agent'\n");
+  await writeFile(join(tmp, "project", ".codex", "agents", "project-agent.toml"), "name = 'project-agent'\nmodel = 'gpt-5.6-luna'\n");
   const execFile = async (_bin, args) => {
     if (args[0] === "plugin") return { stdout: JSON.stringify({ installed: [
       { name: "muster", installed: true, enabled: true, source: { path: plugin } },
@@ -94,6 +96,10 @@ test("Codex inventory is driven by live JSON and project/user directories", asyn
   assert.deepEqual(new Set(inventory.skills), new Set(["plugin-skill", "project-skill", "user-skill"]));
   assert.deepEqual(inventory.mcpServers, ["muster"]);
   assert.deepEqual(new Set(inventory.agents), new Set(["plugin-agent", "project-agent"]));
+  assert.deepEqual(inventory.agentProfiles.map(({ name, model, scope }) => ({ name, model, scope })), [
+    { name: "plugin-agent", model: "gpt-5.6-sol", scope: "plugin" },
+    { name: "project-agent", model: "gpt-5.6-luna", scope: "project" },
+  ]);
 });
 
 test("Codex inventory excludes disabled plugins and MCP servers", async () => {

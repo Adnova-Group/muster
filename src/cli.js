@@ -36,6 +36,7 @@ import { loadPipelines, pipelineForDomain, routePipeline } from "./pipeline.js";
 import { scoreArtifact } from "./score.js";
 import { classifyFailure, buildDiagnoseManifest } from "./diagnose.js";
 import { buildAuditManifest } from "./audit.js";
+import { deriveCodexAuditCandidates, selectCodexAuditProvider } from "./codex-audit-provider.js";
 import { runInstall, runUninstall } from "./install.js";
 import { runCodexInstall, runCodexUninstall } from "./codex-install.js";
 import { runChatgptWorkInstall } from "./chatgpt-work-install.js";
@@ -86,6 +87,7 @@ import {
   ensureContainedDirectory,
   inspectContainedPath,
   isUnsafePathToken,
+  readContainedFile,
   readNoFollowRegular,
   resolveContainedRealpath,
   withFileMutationLock,
@@ -122,7 +124,7 @@ const USAGE = [
   // sprint waves, review tally, tournament pick/fuse, advisor
   "sprint-waves <backlog.md> [--max-concurrent-threads-per-session N]|sprint-reconcile <progress.json>|backlog-publish <backlog.md> --expect <sha256|absent>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|",
   // harness-native dispatch packets + session receipts (kimi/codex lanes)
-  "kimi-goal-invocation <objective> [--stream-json] [--secondary <model>]|kimi-process-dispatch --brief <text> --agent-file <name|path> --cwd <dir> --lane <primary|secondary>|kimi-process-run --brief <text> --agent-file <name|path> --cwd <dir> --lane <primary|secondary>|kimi-session-usage <--session-dir <dir>|--cwd <dir> [--stdout-file <f>]>|kimi-summarize-receipts <items.json>|codex-spawn-packet --task-id <id> --agent-type <id> [--message <text>|--message-file <f>] [--version v1|v2] [--fork-turns <none|N>]|codex-wait-packet [--version v1|v2] [--targets a,b] [--timeout-ms N]|",
+  "kimi-goal-invocation <objective> [--stream-json] [--secondary <model>]|kimi-process-dispatch --brief <text> --agent-file <name|path> --cwd <dir> --lane <primary|secondary>|kimi-process-run --brief <text> --agent-file <name|path> --cwd <dir> --lane <primary|secondary>|kimi-session-usage <--session-dir <dir>|--cwd <dir> [--stdout-file <f>]>|kimi-summarize-receipts <items.json>|codex-audit-provider --role <role> --task-id <id> --callable-apis <v1,v2> [--message <text>|--message-file <f>]|codex-spawn-packet --task-id <id> --agent-type <id> [--message <text>|--message-file <f>] [--version v1|v2] [--fork-turns <none|N>]|codex-wait-packet [--version v1|v2] [--targets a,b] [--timeout-ms N]|",
   // memory + vendor + init lifecycle
   "memory read|write ...|vendor|init [dir]|init transition [dir] --to <handoff|attempted|completed>|init normalize [dir] --approve CLAUDE.md|init acknowledge [dir] --reason unavailable|init finalize [dir]|setup [dir]|design <init|status|resolve|detect|ignores|provider|gate|workflows|run> ...|",
   // planning + routing artifacts
@@ -302,6 +304,41 @@ async function handleKimiCommand(cmd, rest) {
   return false;
 }
 
+async function handleCodexAuditProvider(rest) {
+  const usage = "codex-audit-provider --role <role> --task-id <id> --callable-apis <v1,v2> [--message <text> | --message-file <file>]";
+  const role = flagValue(rest, "--role");
+  const taskId = flagValue(rest, "--task-id");
+  const callableApisArg = flagValue(rest, "--callable-apis");
+  if (!role) fail(`${usage}: missing --role`);
+  if (!taskId) fail(`${usage}: missing --task-id`);
+  if (callableApisArg === undefined) fail(`${usage}: missing --callable-apis`);
+  const message = flagValue(rest, "--message");
+  const messageFile = flagValue(rest, "--message-file");
+  if (message !== undefined && messageFile !== undefined) fail(`${usage}: --message and --message-file are mutually exclusive`);
+  let fileMessage;
+  if (messageFile !== undefined) {
+    try {
+      fileMessage = (await readContainedFile(process.cwd(), resolve(process.cwd(), messageFile),
+        { maxBytes: 1_048_576 })).toString("utf8");
+    } catch {
+      fail(`${usage}: --message-file ${messageFile} does not resolve to a file contained under the run root (missing, dangling, oversized, or a symlink escape) -- refusing to read`);
+    }
+  }
+  const catalog = await loadCatalog(CATALOG_DIR);
+  const inventory = await readCodexInventory({ cwd: process.cwd() });
+  const capabilities = resolveCapabilities(adaptCatalogForCodex(catalog, inventory), inventory, homedir(), { codex: true });
+  const roleEntry = capabilities.roles[role];
+  if (!roleEntry) fail(`${usage}: unknown role ${role}`);
+  const candidates = await deriveCodexAuditCandidates(roleEntry, inventory);
+  out(selectCodexAuditProvider({
+    role, taskId,
+    message: fileMessage !== undefined ? fileMessage : message,
+    callableApis: callableApisArg.split(",").map(api => api.trim()).filter(Boolean),
+    candidates,
+  }));
+  return true;
+}
+
 async function handleCodexPlanCommand(rest) {
   const cwd = resolve(flagValue(rest, "--cwd") || process.cwd());
   const cwdFlag = rest.indexOf("--cwd");
@@ -382,6 +419,7 @@ async function handleCodexPlanCommand(rest) {
 }
 
 async function handleCodexCommand(cmd, rest) {
+  if (cmd === "codex-audit-provider") return handleCodexAuditProvider(rest);
   if (cmd === "codex-plan") return handleCodexPlanCommand(rest);
   if (cmd === "codex-spawn-packet") {
     // The version-aware spawn_agent constructor (src/wave-dispatch.js): prints
@@ -402,11 +440,12 @@ async function handleCodexCommand(cmd, rest) {
     // the named refusal, never a read.
     let fileMessage;
     if (messageFile !== undefined) {
-      const canonical = await resolveContainedRealpath(process.cwd(), messageFile);
-      if (canonical === null) {
-        fail(`${usage}: --message-file ${messageFile} does not resolve to a file contained under the run root (missing, dangling, or a symlink escape) -- refusing to read`);
+      try {
+        fileMessage = (await readContainedFile(process.cwd(), resolve(process.cwd(), messageFile),
+          { maxBytes: 1_048_576 })).toString("utf8");
+      } catch {
+        fail(`${usage}: --message-file ${messageFile} does not resolve to a file contained under the run root (missing, dangling, oversized, or a symlink escape) -- refusing to read`);
       }
-      fileMessage = await readFile(canonical, "utf8");
     }
     const version = flagValue(rest, "--version");
     const forkTurns = flagValue(rest, "--fork-turns");

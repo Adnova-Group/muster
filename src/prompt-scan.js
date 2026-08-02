@@ -46,10 +46,15 @@ async function collectScanEvidence(root, io = {}) {
         if (shouldStop()) return;
         continue;
       }
-      if (!e.isFile()) continue;
       const isPromptName = /\.(prompt|tmpl)$/i.test(e.name);
       if (!SCAN_TEXT_EXT.has(extname(e.name).toLowerCase()) && !isPromptName) continue;
       const path = relative(root, full);
+      if (e.isSymbolicLink()) {
+        recordIncomplete(path, "symlink");
+        if (shouldStop()) return;
+        continue;
+      }
+      if (!e.isFile()) continue;
       if (files.length >= SCAN_MAX_FILES) {
         recordIncomplete(path, "file-limit");
         fileLimitWitnessFound = true;

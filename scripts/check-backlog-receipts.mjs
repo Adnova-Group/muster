@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import {
   BACKLOG_RECEIPT_MAX_BYTES,
   BACKLOG_RECEIPT_MAX_CHECKED_ITEMS,
+  BACKLOG_RECEIPT_MAX_TOTAL_BYTES,
   BACKLOG_RECEIPT_MAX_UNIQUE_RECEIPTS,
   checkBacklogReceipts,
   makeGitReachabilityVerifier,
@@ -19,8 +20,8 @@ function git(args, { input, allowNoMatch = false, maxBuffer = GIT_OUTPUT_MAX_BYT
     maxBuffer,
     stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
   });
-  if (allowNoMatch && result.status === 1 && !result.error) return result;
   if (result.error || result.status !== 0 || result.stderr.length !== 0) {
+    if (allowNoMatch && result.status === 1 && !result.error && result.stderr.length === 0) return result;
     if (result.error) throw result.error;
     throw new Error(`git ${args[0]} failed with exit ${result.status ?? "unknown"}`);
   }
@@ -90,6 +91,10 @@ if (uniqueOids.length > 0) {
     if (!match) throw new Error("git cat-file --batch-check returned an invalid blob response");
     sizes.set(match[1], Number(match[2]));
   }
+}
+const totalCandidateBytes = candidates.reduce((sum, { oid }) => sum + (sizes.get(oid) || 0), 0);
+if (!Number.isSafeInteger(totalCandidateBytes) || totalCandidateBytes > BACKLOG_RECEIPT_MAX_TOTAL_BYTES) {
+  throw new Error(`candidate checklist blobs exceed ${BACKLOG_RECEIPT_MAX_TOTAL_BYTES} total bytes`);
 }
 
 const isReachable = makeGitReachabilityVerifier({ cwd: process.cwd(), releaseCommit });

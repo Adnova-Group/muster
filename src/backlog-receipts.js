@@ -9,6 +9,7 @@ export const BACKLOG_RECEIPT_MAX_BYTES = 16 * 1024 * 1024;
 export const BACKLOG_RECEIPT_MAX_CHECKED_ITEMS = 1_000;
 export const BACKLOG_RECEIPT_MAX_UNIQUE_RECEIPTS = 1_000;
 export const BACKLOG_RECEIPT_MAX_LINE_BYTES = 64 * 1024;
+export const BACKLOG_RECEIPT_MAX_TOTAL_BYTES = 64 * 1024 * 1024;
 
 function hasStderr(result) {
   return result.stderr !== undefined && result.stderr !== null && result.stderr.length !== 0;
@@ -40,7 +41,7 @@ export function checkBacklogReceipts(content, {
   if (typeof isReachable !== "function") throw new TypeError("isReachable must be a function");
   const errors = [];
   let checked = 0, withdrawn = 0, verified = 0;
-  content.split(/\r?\n/).forEach((line, index) => {
+  content.split(/\r\n|\n|\r/).forEach((line, index) => {
     const match = CHECKED_CHECKBOX_RE.exec(line.replace(/^\s+/, ""));
     if (!match) return;
     if (Buffer.byteLength(line) > BACKLOG_RECEIPT_MAX_LINE_BYTES) {

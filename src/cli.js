@@ -18,7 +18,7 @@ import { pickWinner } from "./tournament.js";
 import { homedir } from "node:os";
 import { constants as fsConstants } from "node:fs";
 import { createHash } from "node:crypto";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { lstat, readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { runDoctor } from "./doctor.js";
@@ -675,16 +675,16 @@ async function main() {
         content = bytes.toString("utf8");
       }
       let releaseCommit;
-      try {
-        releaseCommit = execFileSync("git", ["rev-parse", "--verify", `${releaseRef}^{commit}`], {
-          cwd: process.cwd(),
-          encoding: "utf8",
-          env: { ...process.env, GIT_NO_REPLACE_OBJECTS: "1" },
-          stdio: ["ignore", "pipe", "ignore"],
-        }).trim().toLowerCase();
-      } catch {
+      const resolvedRelease = spawnSync("git", ["rev-parse", "--verify", `${releaseRef}^{commit}`], {
+        cwd: process.cwd(),
+        encoding: "utf8",
+        env: { ...process.env, GIT_NO_REPLACE_OBJECTS: "1" },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      if (resolvedRelease.error || resolvedRelease.status !== 0 || resolvedRelease.stderr.length !== 0) {
         fail(`backlog-receipts: release ref ${releaseRef} does not resolve to a commit`);
       }
+      releaseCommit = resolvedRelease.stdout.trim().toLowerCase();
       const result = checkBacklogReceipts(content, {
         releaseRef,
         isReachable: makeGitReachabilityVerifier({ cwd: process.cwd(), releaseCommit }),

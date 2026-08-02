@@ -82,9 +82,20 @@ test("a checked item without an explicit id is identified by its line", () => {
   assert.equal(result.errors[0].line, 2);
 });
 
+test("bare CR is treated as a Markdown line ending", () => {
+  const result = check("heading\r- [x] stale {id: cr-only}\r- [ ] pending");
+  assert.equal(result.summary.checked, 1);
+  assert.equal(result.summary.rejected, 1);
+  assert.equal(result.errors[0].id, "cr-only");
+});
+
 test("adversarial annotation parsing is bounded by a conservative checked-line cap", { timeout: 1_000 }, () => {
   const hostile = `- [x] hostile ${"{a:".repeat(Math.ceil((BACKLOG_RECEIPT_MAX_LINE_BYTES * 4) / 3))}}x`;
   assert.throws(() => check(hostile), /checked backlog line exceeds 65536 bytes/i);
+  const belowCap = `- [x] hostile ${"{a:".repeat(18_000)}}x`;
+  const started = Date.now();
+  assert.equal(check(belowCap).summary.rejected, 1);
+  assert.ok(Date.now() - started < 750, "sub-cap annotation parsing must remain linear-time bounded");
 });
 
 test("CLI verifies against the declared release ref and reports every stale checked item", async () => {
@@ -143,6 +154,27 @@ test("CLI release-ref and ancestry operations ignore replacement metadata end to
   });
   assert.equal(result.status, 2, result.stderr);
   assert.equal(JSON.parse(result.stdout).summary.rejected, 1);
+});
+
+test("CLI rejects an ambiguous release ref instead of consuming Git's warned resolution", async () => {
+  const cwd = await tmpProject({ "seed.txt": "release\n" });
+  await pexecFile("git", ["init", "-b", "main"], { cwd });
+  await pexecFile("git", ["add", "."], { cwd });
+  await pexecFile("git", ["-c", "user.name=Muster Test", "-c", "user.email=test@example.invalid", "commit", "-m", "release"], { cwd });
+  const releaseCommit = (await pexecFile("git", ["rev-parse", "HEAD"], { cwd })).stdout.trim();
+  await pexecFile("git", ["checkout", "--orphan", "side"], { cwd });
+  await writeFile(join(cwd, "seed.txt"), "unrelated\n");
+  await pexecFile("git", ["add", "."], { cwd });
+  await pexecFile("git", ["-c", "user.name=Muster Test", "-c", "user.email=test@example.invalid", "commit", "-m", "unrelated"], { cwd });
+  const unrelated = (await pexecFile("git", ["rev-parse", "HEAD"], { cwd })).stdout.trim();
+  await pexecFile("git", ["checkout", "main"], { cwd });
+  await pexecFile("git", ["update-ref", "refs/remotes/origin/main", releaseCommit], { cwd });
+  await pexecFile("git", ["tag", "origin/main", unrelated], { cwd });
+  const result = spawnSync(process.execPath, [CLI, "backlog-receipts", "-", "--release-ref", "origin/main"], {
+    cwd, encoding: "utf8", input: `- [x] unrelated {done: ${unrelated}}\n`,
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /does not resolve to a commit/i);
 });
 
 test("operational git failures throw instead of masquerading as ordinary unreachability", async () => {
@@ -313,6 +345,19 @@ test("CI scanner discovers checked items with any filename, parser indentation, 
     const report = JSON.parse(error.stdout);
     assert.equal(report.rejected, 1);
     assert.equal(report.results[0].path, "plans/release-checklist.txt");
+    return true;
+  });
+});
+
+test("CI scanner rejects a stale checked item in a bare-CR checklist", async () => {
+  const cwd = await tmpProject({ "seed.txt": "seed\n", "roadmap.txt": "heading\r- [x] stale {id: bare-cr}\rnext" });
+  await pexecFile("git", ["init", "-b", "main"], { cwd });
+  await pexecFile("git", ["add", "."], { cwd });
+  await pexecFile("git", ["-c", "user.name=Muster Test", "-c", "user.email=test@example.invalid", "commit", "-m", "seed"], { cwd });
+  const script = new URL("../scripts/check-backlog-receipts.mjs", import.meta.url).pathname;
+  await assert.rejects(() => pexecFile(process.execPath, [script, "--release-ref", "main"], { cwd }), (error) => {
+    assert.equal(error.code, 2);
+    assert.equal(JSON.parse(error.stdout).results[0].errors[0].id, "bare-cr");
     return true;
   });
 });

@@ -59,9 +59,10 @@ export const INIT_LIMITS = Object.freeze({
   fingerprintDirectoryBytes: 8_388_608,
   fingerprintDirectoryEntries: 100_000,
   fingerprintDeadlineMs: 3_600_000,
-  fingerprintDirectoryNameBytes: 268_435_456,
+  fingerprintDirectoryNameBytes: 33_554_432,
   fingerprintEntries: 1_000_000,
   fingerprintPathBytes: 262_144,
+  fingerprintSnapshotBytes: 33_554_432,
   fingerprintTotalBytes: 1_099_511_627_776,
   learnCaptureBytes: 8_388_608,
   learnDepth: 4,
@@ -286,8 +287,14 @@ async function safeGit(cwd, suffix) {
     ...suffix,
   ];
   try {
-    const { stdout } = await pexecFile("git", args, { cwd, env: gitEnvironment(), encoding: "utf8" });
-    return stdout.trim();
+    const { stdout } = await pexecFile("git", args, { cwd, env: gitEnvironment(), encoding: "buffer" });
+    let end = stdout.length;
+    while (end && (stdout[end - 1] === 0x0a || stdout[end - 1] === 0x0d)) end--;
+    try { return decodePathBytes(stdout.subarray(0, end), "git command output"); }
+    catch (error) {
+      error.invalidGitOutput = true;
+      throw error;
+    }
   } finally {
     await rm(sandbox, { recursive: true, force: true });
   }
@@ -303,8 +310,9 @@ async function rootVcs(root) {
   try {
     const value = await safeGit(root, ["rev-parse", "--verify", "HEAD^{commit}"]);
     if (GIT_HEAD.test(value)) head = value;
-  } catch {}
-  try { branch = await safeGit(root, ["symbolic-ref", "--quiet", "--short", "HEAD"]) || null; } catch {}
+  } catch (error) { if (error.invalidGitOutput) throw error; }
+  try { branch = await safeGit(root, ["symbolic-ref", "--quiet", "--short", "HEAD"]) || null; }
+  catch (error) { if (error.invalidGitOutput) throw error; }
   return { branch, head, kind: "git", layout: info.isDirectory() ? "directory" : "worktree-file" };
 }
 
@@ -505,8 +513,11 @@ function checkFingerprintDeadline(deadline) {
   if (Date.now() > deadline) throw new Error("repository fingerprint deadline exceeded");
 }
 
-async function rejectSpecialEntries(root, abs = root, prefix = "", identities = new Map(), work = null) {
+async function rejectSpecialEntries(root, abs = root, prefix = "", snapshot = null, work = null) {
+  const top = snapshot === null;
+  snapshot ||= { count: 0, hash: createHash("sha256").update("muster.directory-snapshot.v1\0") };
   work ||= { deadline: Date.now() + INIT_LIMITS.fingerprintDeadlineMs, entries: 0 };
+  work.snapshotBytes ??= 0;
   const directories = [];
   const identity = await pinnedDirectoryVisit(root, abs, prefix, async (name) => {
     checkFingerprintDeadline(work.deadline);
@@ -519,7 +530,13 @@ async function rejectSpecialEntries(root, abs = root, prefix = "", identities = 
     const path = join(abs, name);
     const info = await lstat(path);
     if (info.isDirectory()) {
-      if (!(await realGitMarker(path))) directories.push({ path, rel });
+      if (!(await realGitMarker(path))) {
+        work.snapshotBytes += Buffer.byteLength(rel) + 128;
+        if (work.snapshotBytes > INIT_LIMITS.fingerprintSnapshotBytes) {
+          throw new Error("repository directory snapshot limit exceeded");
+        }
+        directories.push({ path, rel });
+      }
     } else if (info.isSymbolicLink()) {
       const target = await readlink(path, { encoding: "buffer" });
       if (target.length > INIT_LIMITS.symlinkBytes) throw new Error("repository symlink target limit exceeded");
@@ -527,19 +544,24 @@ async function rejectSpecialEntries(root, abs = root, prefix = "", identities = 
       throw new Error(`unsupported repository entry type: ${rel}`);
     }
   });
-  identities.set(prefix, identity);
+  const row = Buffer.from([
+    prefix, identity.dev, identity.ino, identity.mode, identity.nlink,
+    identity.ctimeNs, identity.mtimeNs,
+  ].join("\0"));
+  const length = Buffer.allocUnsafe(8);
+  length.writeBigUInt64BE(BigInt(row.length));
+  snapshot.hash.update(length).update(row);
+  snapshot.count++;
+  directories.sort((a, b) => utf8Sort(a.rel, b.rel));
   for (const { path, rel } of directories) {
-    await rejectSpecialEntries(root, path, rel, identities, work);
+    await rejectSpecialEntries(root, path, rel, snapshot, work);
   }
-  return identities;
+  if (!top) return snapshot;
+  return { count: snapshot.count, digest: snapshot.hash.digest("hex") };
 }
 
 function sameDirectorySnapshot(current, prior) {
-  if (current.size !== prior.size) return false;
-  for (const [path, identity] of prior) {
-    if (!current.has(path) || !sameDirectoryIdentity(current.get(path), identity)) return false;
-  }
-  return true;
+  return current.count === prior.count && current.digest === prior.digest;
 }
 
 async function ensureFingerprintAncestors(root, path, rel) {
@@ -616,7 +638,7 @@ async function repositoryFingerprintPass(root, learnedDigests = new Map(), deadl
   // Git deliberately omits untrackable special entries from `ls-files`.
   // Preserve the previous fail-closed repository walk before hashing only the
   // relevant paths; ignored/generated ordinary files remain unhashed.
-  const directorySnapshot = await rejectSpecialEntries(root, root, "", new Map(), { deadline, entries: 0 });
+  const directorySnapshot = await rejectSpecialEntries(root, root, "", null, { deadline, entries: 0 });
   if (expectedSnapshot && !sameDirectorySnapshot(directorySnapshot, expectedSnapshot)) {
     throw new Error("repository changed while learning");
   }
@@ -648,7 +670,7 @@ async function repositoryFingerprintPass(root, learnedDigests = new Map(), deadl
       try {
         const value = await safeGit(path, ["rev-parse", "--verify", "HEAD^{commit}"]);
         if (GIT_HEAD.test(value)) head = value;
-      } catch {}
+      } catch (error) { if (error.invalidGitOutput) throw error; }
       add(Buffer.from(`V\0${rel}\0${head ?? "null"}\n`));
     } else if (info.isFile()) {
       const learned = learnedDigests.get(rel);
@@ -685,7 +707,7 @@ async function repositoryFingerprintPass(root, learnedDigests = new Map(), deadl
     });
     if (!sameFingerprintIdentity(current, learned.identity)) throw learningFileChanged(rel);
   }
-  const finalDirectorySnapshot = await rejectSpecialEntries(root, root, "", new Map(), { deadline, entries: 0 });
+  const finalDirectorySnapshot = await rejectSpecialEntries(root, root, "", null, { deadline, entries: 0 });
   if (!sameDirectorySnapshot(finalDirectorySnapshot, directorySnapshot)) {
     throw new Error("repository changed while fingerprinting");
   }
@@ -937,7 +959,7 @@ function boundSerializedProfile(profile) {
 export async function learnProjectProfile(dir) {
   const root = await validateRoot(dir);
   const deadline = Date.now() + INIT_LIMITS.fingerprintDeadlineMs;
-  const learningSnapshot = await rejectSpecialEntries(root, root, "", new Map(), { deadline, entries: 0 });
+  const learningSnapshot = await rejectSpecialEntries(root, root, "", null, { deadline, entries: 0 });
   const vcs = await rootVcs(root);
   const owned = await readOwned(root);
   const classification = owned?.receipt.classification ?? await classify(root);

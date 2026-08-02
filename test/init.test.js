@@ -582,6 +582,17 @@ test("repository fingerprint rejects non-round-tripping Git index path bytes", {
   await assert.rejects(() => learnProjectProfile(dir), /invalid UTF-8 repository path: git index/);
 });
 
+test("project learning rejects non-round-tripping Git ref output", {
+  skip: process.platform === "win32" ? "POSIX permits non-UTF-8 ref bytes" : false,
+}, async () => {
+  const dir = await tmp();
+  await pexecFile("git", ["init", "--quiet"], { cwd: dir });
+  await writeFile(join(dir, ".git", "HEAD"), Buffer.concat([
+    Buffer.from("ref: refs/heads/bad-"), Buffer.from([0xff]), Buffer.from("\n"),
+  ]));
+  await assert.rejects(() => learnProjectProfile(dir), /invalid UTF-8 repository path: git command output/);
+});
+
 test("project learning rejects non-round-tripping filesystem name bytes", {
   skip: process.platform === "win32" ? "POSIX permits non-UTF-8 path bytes" : false,
 }, async () => {

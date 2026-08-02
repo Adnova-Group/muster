@@ -393,12 +393,12 @@ test("Codex install and doctor reject a symlink alias to the Muster runtime comm
   const userResult = await installTrustedUser({ cwd, home });
   const hooksPath = join(codexHome, "hooks.json");
   const runtimePath = join(codexHome, "muster", "hooks", "muster-hook.mjs");
-  const aliasPath = join(tmp, "foreign-looking-hook.mjs");
+  const aliasPath = join(tmp, "foreign looking-hook.mjs");
   await symlink(runtimePath, aliasPath);
   const config = JSON.parse(await readFile(hooksPath, "utf8"));
   const alias = structuredClone(config.hooks.Stop[0]);
   for (const hook of alias.hooks) {
-    hook.command = `'/usr/bin/node' '${aliasPath}'`;
+    hook.command = `'/usr/bin/node' ${aliasPath.replaceAll(" ", "\\ ")}`;
     delete hook.commandWindows;
   }
   config.hooks.Stop.push(alias);
@@ -406,9 +406,10 @@ test("Codex install and doctor reject a symlink alias to the Muster runtime comm
 
   const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absentCodex });
   assert.equal(report.checks.find(check => check.name === "codex-hooks")?.ok, false);
-  const installed = await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absentCodex, hookInventory: userResult.hookInventory });
-  assert.equal(installed.hooksSkipped, null);
-  assert.equal(installed.ok, false);
+  await assert.rejects(
+    () => runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absentCodex, hookInventory: userResult.hookInventory }),
+    /aliased Muster hook|live managed Muster runtime/
+  );
 });
 
 test("a skipped project cannot hide a symlink command to the canonical user runtime", async t => {
@@ -419,11 +420,11 @@ test("a skipped project cannot hide a symlink command to the canonical user runt
   const skipped = await runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absentCodex, hookInventory: userResult.hookInventory });
   assert.equal(skipped.hooksSkipped, "user-scope-canonical");
 
-  const aliasPath = join(tmp, "cross-scope-hook.mjs");
+  const aliasPath = join(cwd, "cross-scope-hook.mjs");
   await symlink(join(codexHome, "muster", "hooks", "muster-hook.mjs"), aliasPath);
   const projectHooksPath = join(cwd, ".codex", "hooks.json");
   await writeFile(projectHooksPath, JSON.stringify({ hooks: { Stop: [{ hooks: [{
-    type: "command", command: `'/usr/bin/node' '${aliasPath}' --duplicate`
+    type: "command", command: "'/usr/bin/node' ./cross-scope-hook.mjs --duplicate"
   }] }] } }, null, 2));
 
   const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absentCodex });
@@ -432,6 +433,40 @@ test("a skipped project cannot hide a symlink command to the canonical user runt
     () => runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absentCodex, hookInventory: userResult.hookInventory }),
     /aliased Muster hook|live managed Muster runtime/
   );
+});
+
+test("canonical user validation closes aliases to every registered project runtime", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-scope-collapse-registered-alias-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const remoteCwd = join(tmp, "remote"), cwd = join(tmp, "current"), home = join(tmp, "home"), codexHome = join(home, ".codex");
+  await mkdir(remoteCwd, { recursive: true });
+  await mkdir(cwd, { recursive: true });
+  await runCodexInstall({ scope: "project", cwd: remoteCwd, home, repoRoot, execFile: absentCodex });
+  const userResult = await installTrustedUser({ cwd, home });
+  const userHooksPath = join(codexHome, "hooks.json");
+  const aliasPath = join(tmp, "registered-project-alias.mjs");
+  await symlink(join(remoteCwd, ".codex", "muster", "hooks", "muster-hook.mjs"), aliasPath);
+  const config = JSON.parse(await readFile(userHooksPath, "utf8"));
+  config.hooks.Stop.push({ hooks: [{ type: "command", command: `'/usr/bin/node' '${aliasPath}' --duplicate` }] });
+  await writeFile(userHooksPath, JSON.stringify(config, null, 2));
+  const activeInventory = async () => {
+    const inventory = await userResult.hookInventory();
+    inventory.data[0].hooks.push({
+      key: `${userHooksPath}:stop:1:0`, enabled: true, trustStatus: "trusted", currentHash: `sha256:${"e".repeat(64)}`
+    });
+    return inventory;
+  };
+
+  await assert.rejects(
+    () => runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absentCodex, hookInventory: activeInventory }),
+    /aliased Muster hook|live managed Muster runtime/
+  );
+  await assert.rejects(
+    () => runCodexInstall({ scope: "user", cwd, home, repoRoot, execFile: absentCodex, hookInventory: activeInventory }),
+    /aliased Muster hook|live managed Muster runtime/
+  );
+  const report = await runCodexDoctor({ root: repoRoot, cwd, codexHome, execFile: absentCodex, hookInventory: activeInventory });
+  assert.equal(report.checks.find(check => check.name === "codex-hooks")?.ok, false);
 });
 
 test("Codex install adversarial: a failed transaction mid-migration restores the pre-migration dual-scope state byte-identically", async t => {

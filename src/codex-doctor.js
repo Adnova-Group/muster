@@ -1030,6 +1030,7 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   const mismatchHookScopes = [];
   const hookCauseFailures = [];
   const managedHookScripts = [...hookHomes].map(dir => join(dir, "muster", "hooks", "muster-hook.mjs"));
+  const managedProjectCwds = [...hookHomes].filter(dir => dir !== userCodexHome).map(dirname);
   for (const dir of hookHomes) {
     const manifestPath = join(dir, "muster", ".muster-managed.json");
     const registered = scopeHomes.get(dir);
@@ -1050,7 +1051,8 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
       readingPath = configPath;
       const config = await readRegularJson(configPath);
       if (!config) throw missingScopeFile("managed hook configuration", configPath);
-      const aliasedMusterCommand = await hasMusterHookCommandAlias(config, managedHookScripts);
+      const aliasCwds = dir === userCodexHome ? [...new Set([cwd, ...managedProjectCwds])] : [dirname(dir)];
+      const aliasedMusterCommand = await hasMusterHookCommandAlias(config, managedHookScripts, { cwds: aliasCwds });
       if (dir !== userCodexHome && isHooksSkippedManifest(owner)) {
         // Coherent-and-non-firing: no runtime dir is expected, so it is
         // never pushed to hookStatuses (would count toward the overlap

@@ -99,6 +99,10 @@ test("Muster hook ownership recognizes normalized runtimes and fails closed on a
   assert.equal(isMusterHookCommand("node /scope/other.mjs /scope/muster/hooks/muster-hook.mjs"), true);
   assert.equal(parseHookCommand("true; node '/scope/muster/hooks/muster-hook.mjs'"), null);
   assert.equal(parseHookCommand("node; '/scope/muster/hooks/muster-hook.mjs'"), null);
+  assert.equal(parseHookCommand("'/usr/bin/node'\n'/scope/muster/hooks/muster-hook.mjs'"), null);
+  assert.deepEqual(parseHookCommand('"/usr/bin/no\\de" "/scope/muster/hooks/muster-hook.mjs"'), {
+    interpreter: "/usr/bin/no\\de", script: "/scope/muster/hooks/muster-hook.mjs"
+  });
   assert.equal(parseHookCommand('"C:\\Node.exe""C:\\Scope\\muster\\hooks\\muster-hook.mjs"', { windows: true }), null);
 });
 

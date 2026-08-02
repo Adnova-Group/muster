@@ -1,6 +1,6 @@
 {
   "schema": "muster-codex-code-mode-inner-loop-benchmark/v1",
-  "generatedAt": "2026-08-02T00:37:43.896Z",
+  "generatedAt": "2026-08-02T00:49:24.712Z",
   "environment": {
     "codexVersion": "codex-cli 0.146.0",
     "configuration": "default active Codex configuration; no benchmark feature override",
@@ -33,7 +33,8 @@
       }
     ],
     "switchableModels": [],
-    "stableCodeModeAvailable": false
+    "stableCodeModeAvailable": false,
+    "comparisonAvailable": false
   },
   "protocol": {
     "comparison": "Code Mode mechanical inner loop versus the current crew-member tool-call path",
@@ -47,8 +48,13 @@
     "status": "UNSUPPORTED_HOST",
     "modeIdentity": {
       "status": "UNAVAILABLE",
-      "reason": "stable enabled Code Mode feature unavailable; effective modes cannot be compared"
+      "reason": "Codex JSONL command_execution events do not attest whether the outer call used Code Mode or direct tools"
     },
+    "unsupportedReasons": [
+      "stable enabled Code Mode feature unavailable",
+      "no same-model switchable code_mode candidate; code_mode_only cannot provide a direct-tool control",
+      "Codex JSONL command_execution events do not attest whether the outer call used Code Mode or direct tools"
+    ],
     "unsupportedHostFallback": "retain the current crew-member tool-call path"
   },
   "pairs": [],
@@ -118,7 +124,7 @@
       }
     ],
     "failed": [
-      "effective standard versus Code Mode identity: stable enabled Code Mode feature unavailable; effective modes cannot be compared",
+      "effective standard versus Code Mode identity: stable enabled Code Mode feature unavailable; no same-model switchable code_mode candidate; code_mode_only cannot provide a direct-tool control; Codex JSONL command_execution events do not attest whether the outer call used Code Mode or direct tools",
       "10 completed pairs: 0",
       "median latency or input-token reduction: {\"medianLatencyReductionPct\":\"UNKNOWN\",\"medianInputTokenReductionPct\":\"UNKNOWN\"}",
       "correctness regressions: UNKNOWN (threshold cannot pass)",

@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import {
   UNKNOWN,
-  effectiveToolModeFromEvents,
   evaluateAdoption,
   parseFeatureList,
   runBenchmark,
@@ -33,24 +32,6 @@ test("feature parser distinguishes stable Code Mode from its stable host", () =>
   ].join("\n"));
   assert.deepEqual(features.code_mode, { stage: "under development", enabled: false });
   assert.deepEqual(features.code_mode_host, { stage: "stable", enabled: true });
-});
-
-test("JSONL tool evidence classifies only unambiguous effective modes", () => {
-  assert.deepEqual(
-    effectiveToolModeFromEvents([{ item: { tool_name: "functions.exec" } }]),
-    { mode: "code_mode", toolNames: ["functions.exec"] }
-  );
-  assert.deepEqual(
-    effectiveToolModeFromEvents([{ item: { function: { name: "exec_command" } } }]),
-    { mode: "direct_tools", toolNames: ["exec_command"] }
-  );
-  assert.equal(
-    effectiveToolModeFromEvents([
-      { item: { tool: "functions.exec" } },
-      { item: { tool: "exec_command" } }
-    ]).mode,
-    UNKNOWN
-  );
 });
 
 test("unavailable stable Code Mode records no fabricated paired measurements", () => {
@@ -107,7 +88,6 @@ test("adoption rejects fast measurements when neither lane matches the pinned go
 });
 
 test("unsupported host ignores the execution path and records UNKNOWN metrics", async () => {
-  let executions = 0;
   const result = await runBenchmark({
     outPath: null,
     probe: async () => ({
@@ -117,13 +97,8 @@ test("unsupported host ignores the execution path and records UNKNOWN metrics", 
         code_mode_host: { stage: "stable", enabled: true }
       },
       models: [{ slug: "test-model", toolMode: "code_mode_only" }]
-    }),
-    executeCase: async () => {
-      executions++;
-      return { latencyMs: 1, inputTokens: 1, correct: true };
-    }
+    })
   });
-  assert.equal(executions, 0);
   assert.equal(result.protocol.pairedCasesExecuted, 0);
   assert.deepEqual(result.pairs, []);
   assert.equal(result.summary.codeMode.latencyMs.p50, UNKNOWN);
@@ -151,12 +126,12 @@ test("code_mode_only model fails closed because it cannot provide a direct-tool 
   assert.equal(executions, 0);
   assert.equal(result.environment.stableCodeModeAvailable, false);
   assert.equal(result.protocol.status, "UNSUPPORTED_HOST");
-  assert.match(result.protocol.modeIdentity.reason, /code_mode_only/);
+  assert.match(result.protocol.unsupportedReasons.join("\n"), /code_mode_only/);
   assert.equal(result.summary.completedPairs, 0);
   assert.equal(result.adoption.decision, "REJECT");
 });
 
-test("equivalent observed tool modes discard measurements and fail closed", async () => {
+test("externally claimed mode measurements are not accepted without host attestation", async () => {
   let executions = 0;
   const result = await runBenchmark({
     outPath: null,
@@ -178,16 +153,16 @@ test("equivalent observed tool modes discard measurements and fail closed", asyn
       };
     }
   });
-  assert.equal(executions, 2);
-  assert.equal(result.protocol.status, "MODE_IDENTITY_UNVERIFIED");
+  assert.equal(executions, 0);
+  assert.equal(result.protocol.status, "UNSUPPORTED_HOST");
   assert.equal(result.protocol.pairedCasesExecuted, 0);
   assert.deepEqual(result.pairs, []);
   assert.equal(result.summary.completedPairs, 0);
   assert.equal(result.adoption.decision, "REJECT");
-  assert.match(result.protocol.modeIdentity.reason, /distinct effective tool modes/);
+  assert.match(result.protocol.modeIdentity.reason, /do not attest/);
 });
 
-test("stable switchable host derives all 10 verified pairs and counterbalances order", async () => {
+test("stable switchable metadata still fails closed without effective-mode attestation", async () => {
   const calls = [];
   const result = await runBenchmark({
     outPath: null,
@@ -213,13 +188,14 @@ test("stable switchable host derives all 10 verified pairs and counterbalances o
       };
     }
   });
-  assert.equal(calls.length, 20);
-  assert.equal(result.pairs.length, 10);
-  assert.deepEqual(result.pairs[0].executionOrder, ["codeMode", "currentPath"]);
-  assert.deepEqual(result.pairs[1].executionOrder, ["currentPath", "codeMode"]);
-  assert.equal(result.summary.completedPairs, 10);
-  assert.equal(result.adoption.decision, "ADOPT");
-  assert.equal(result.protocol.modeIdentity.status, "VERIFIED_DISTINCT");
+  assert.equal(calls.length, 0);
+  assert.equal(result.environment.stableCodeModeAvailable, true);
+  assert.equal(result.environment.comparisonAvailable, false);
+  assert.equal(result.protocol.status, "UNSUPPORTED_HOST");
+  assert.equal(result.pairs.length, 0);
+  assert.equal(result.summary.completedPairs, 0);
+  assert.equal(result.adoption.decision, "REJECT");
+  assert.equal(result.protocol.modeIdentity.status, "UNAVAILABLE");
 });
 
 test("decision record retains fallback and excludes Code Mode from orchestration", () => {

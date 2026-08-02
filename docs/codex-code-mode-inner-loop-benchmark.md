@@ -20,19 +20,19 @@ commit-pinned gold cases are in `eval/fixtures/codex-code-mode-inner-loop-cases.
 
 - Five investigator cases cover mechanical locate/map work.
 - Five evidence cases cover deterministic collection and aggregation work.
-- On a stable host, the harness itself runs both paths on every pinned case. It measures wall time,
-  derives input usage from Codex JSONL events, scores the schema-constrained answer against the gold
-  result, and records the event-stream digest, model, commit, feature override, and answer. Pair
-  execution order alternates to counterbalance warm-cache bias; each turn has a three-minute cap.
-- The report computes p50 and p95 for latency and input tokens. Adoption requires at least ten
+- The report schema computes p50 and p95 for latency and input tokens. Adoption requires at least ten
   completed pairs, zero correctness regressions, and at least 20% lower median latency **or** input
   tokens.
 - The capability probe must see `code_mode` itself as both `stable` and enabled, plus an eligible
   same-model candidate whose catalog `tool_mode` is switchable `code_mode`, not `code_mode_only`.
-  Every measured execution must then expose the expected effective tool identity in its JSONL events:
-  `code_mode` for the candidate and `direct_tools` for the control. A missing, equivalent, or reversed
-  identity discards the measurements, rejects adoption, and records `MODE_IDENTITY_UNVERIFIED`.
-  Unsupported hosts execute zero pairs and retain the current path.
+- Codex 0.146's `exec --json` stream is not effective-mode evidence. Both a direct
+  `function_call/exec_command` and a Code Mode `custom_tool_call/exec` are flattened to the same
+  `item.type: "command_execution"` event. The distinguishing response item exists only in persisted
+  rollout data, while `--ephemeral` intentionally suppresses that data. Feature flags and model
+  metadata therefore cannot establish the effective path on their own.
+- Until Codex exposes an authenticated per-turn effective-mode attestation, the harness executes no
+  child model turns, accepts no supplied measurements, records `UNSUPPORTED_HOST`, and retains the
+  current path. This also keeps fixture text away from configured MCP servers, plugins, and hooks.
 - The benchmark excludes collaboration and wave dispatch. It evaluates only inner-loop mechanics.
 
 Reproduce the unsupported-host evidence:
@@ -43,10 +43,10 @@ node eval/codex-code-mode-inner-loop-benchmark.mjs \
   --out eval/results/codex-code-mode-inner-loop-benchmark.json
 ```
 
-On a future stable host, the same command executes all twenty bounded turns (ten Code Mode and ten
-current-path controls) only when a switchable same-model candidate exists. The gate deliberately
-does not force-enable an under-development feature, treat `code_mode_only` as a direct-tool control,
-accept externally supplied metrics, or manufacture model-turn measurements.
+The gate deliberately does not force-enable an under-development feature, treat `code_mode_only` as
+a direct-tool control, spawn turns without effective-mode attestation, accept externally supplied
+metrics, or manufacture model-turn measurements. A future implementation must first consume an
+auditable host signal such as isolated rollout `response_item` records before it may execute pairs.
 
 ## Results
 
@@ -55,12 +55,12 @@ The checked-in result is `eval/results/codex-code-mode-inner-loop-benchmark.json
 | Measure | Code Mode | Current path | Result |
 |---|---:|---:|---|
 | Defined paired cases | 10 | 10 | Five investigator + five evidence |
-| Executed paired cases | 0 | 0 | Stable Code Mode unavailable |
+| Executed paired cases | 0 | 0 | Stable Code Mode and effective-mode attestation unavailable |
 | Latency p50 / p95 | `UNKNOWN` | `UNKNOWN` | Not measured |
 | Input tokens p50 / p95 | `UNKNOWN` | `UNKNOWN` | Not measured |
 | Correctness regressions | `UNKNOWN` | — | Not measured |
 | Production adoption | rejected | retained | Fail-closed fallback |
 
-No paired case was run because the brief permits bounded pairs only when stable Code Mode is
-available. Consequently the 20% improvement and zero-regression gates are not satisfied; an
-`UNKNOWN` never passes a numeric threshold.
+No paired case was run because stable Code Mode is unavailable and the current JSONL surface cannot
+prove distinct effective paths. Consequently the 20% improvement and zero-regression gates are not
+satisfied; an `UNKNOWN` never passes a numeric threshold.

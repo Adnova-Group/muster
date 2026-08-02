@@ -1,12 +1,8 @@
 #!/usr/bin/env node
-import { execFileSync, spawn } from "node:child_process";
-import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { performance } from "node:perf_hooks";
 
 export const UNKNOWN = "UNKNOWN";
 
@@ -173,121 +169,6 @@ function eligibleCodeModeModels(catalog) {
     .sort((left, right) => left.slug.localeCompare(right.slug));
 }
 
-function collectToolNames(value, found = new Set()) {
-  if (!value || typeof value !== "object") return found;
-  for (const [key, child] of Object.entries(value)) {
-    if (["name", "tool", "tool_name", "toolName"].includes(key) && typeof child === "string") {
-      found.add(child);
-    }
-    collectToolNames(child, found);
-  }
-  return found;
-}
-
-export function effectiveToolModeFromEvents(events) {
-  const toolNames = [...collectToolNames(events)];
-  const codeMode = toolNames.some(name => ["exec", "functions.exec"].includes(name));
-  const directTools = toolNames.some(name => [
-    "apply_patch", "exec_command", "read_file", "view_image", "write_stdin"
-  ].includes(name));
-  if (codeMode === directTools) return { mode: UNKNOWN, toolNames };
-  return { mode: codeMode ? "code_mode" : "direct_tools", toolNames };
-}
-
-function deepEqualJson(left, right) {
-  return JSON.stringify(left) === JSON.stringify(right);
-}
-
-function findInputTokens(value, found = []) {
-  if (!value || typeof value !== "object") return found;
-  for (const [key, child] of Object.entries(value)) {
-    if (["input_tokens", "inputTokens"].includes(key) && Number.isFinite(child)) found.push(child);
-    else findInputTokens(child, found);
-  }
-  return found;
-}
-
-function runCodex(args, { cwd }) {
-  return new Promise((resolve, reject) => {
-    const started = performance.now();
-    const child = spawn("codex", args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", chunk => { stdout += chunk; });
-    child.stderr.on("data", chunk => { stderr += chunk; });
-    const timer = setTimeout(() => child.kill("SIGTERM"), 180_000);
-    child.on("error", reject);
-    child.on("close", exitCode => {
-      clearTimeout(timer);
-      resolve({
-        exitCode,
-        stdout,
-        stderr,
-        latencyMs: Number((performance.now() - started).toFixed(3))
-      });
-    });
-  });
-}
-
-export async function executeCodexCase({ benchmarkCase, mode, cwd, model }) {
-  const scratch = mkdtempSync(join(tmpdir(), "muster-code-mode-benchmark-"));
-  const schemaPath = join(scratch, "answer.schema.json");
-  const answerPath = join(scratch, "answer.json");
-  try {
-    await writeFile(schemaPath, JSON.stringify({
-      type: "object",
-      additionalProperties: false,
-      required: ["value"],
-      properties: { value: { type: "string" } }
-    }));
-    const prompt = [
-      "Mechanical benchmark case. Do not spawn agents or orchestrate work.",
-      mode === "codeMode"
-        ? "Use the Code Mode JavaScript exec tool for repository inspection; do not use direct shell/file tools."
-        : "Use direct shell/file tools for repository inspection; do not use the Code Mode functions.exec tool.",
-      `Inspect repository commit ${benchmarkCase.sourceCommit} using read-only tools.`,
-      benchmarkCase.task,
-      "Return only the schema-conforming JSON answer."
-    ].join("\n");
-    const args = [
-      "exec", "--ephemeral", "--json", "--sandbox", "read-only", "--cd", cwd,
-      "--model", model, "--output-schema", schemaPath, "--output-last-message", answerPath,
-      "--config", "model_reasoning_effort=\"low\"", "--disable", "multi_agent",
-      mode === "codeMode" ? "--enable" : "--disable", "code_mode", prompt
-    ];
-    const execution = await runCodex(args, { cwd });
-    if (execution.exitCode !== 0) {
-      throw new Error(`${mode} execution failed for ${benchmarkCase.id}: ${execution.stderr.trim()}`);
-    }
-    const events = execution.stdout.split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line));
-    const effectiveToolMode = effectiveToolModeFromEvents(events);
-    const tokenCandidates = events.flatMap(event => findInputTokens(event));
-    if (!tokenCandidates.length) throw new Error(`${mode} execution reported no input-token usage`);
-    const answerText = await readFile(answerPath, "utf8");
-    const answer = JSON.parse(answerText);
-    return {
-      latencyMs: execution.latencyMs,
-      inputTokens: Math.max(...tokenCandidates),
-      correct: deepEqualJson(answer, benchmarkCase.expected),
-      provenance: {
-        sourceCommit: benchmarkCase.sourceCommit,
-        model,
-        featureOverride: mode === "codeMode" ? "code_mode=true" : "code_mode=false",
-        exitCode: execution.exitCode,
-        eventCount: events.length,
-        eventStreamSha256: createHash("sha256").update(execution.stdout).digest("hex"),
-        effectiveToolMode: effectiveToolMode.mode,
-        observedToolNames: effectiveToolMode.toolNames,
-        answer
-      }
-    };
-  } finally {
-    rmSync(scratch, { recursive: true, force: true });
-  }
-}
-
 async function defaultProbe() {
   const version = execFileSync("codex", ["--version"], { encoding: "utf8" }).trim();
   const features = parseFeatureList(execFileSync("codex", ["features", "list"], { encoding: "utf8" }));
@@ -304,9 +185,7 @@ async function defaultProbe() {
 export async function runBenchmark({
   fixturePath = DEFAULT_FIXTURE,
   outPath = DEFAULT_OUT,
-  cwd = join(HERE, ".."),
-  probe = defaultProbe,
-  executeCase = executeCodexCase
+  probe = defaultProbe
 } = {}) {
   const cases = JSON.parse(await readFile(fixturePath, "utf8"));
   validateCases(cases);
@@ -315,57 +194,28 @@ export async function runBenchmark({
     features.code_mode.enabled === true;
   const switchableModels = models.filter(model => model.toolMode === "code_mode");
   const stableAvailable = stableFeatureAvailable && switchableModels.length > 0;
-  let modeIdentity = stableAvailable
-    ? { status: "PENDING", reason: "effective tool modes must be observed in both executions" }
-    : {
-        status: "UNAVAILABLE",
-        reason: stableFeatureAvailable
-          ? "no same-model switchable code_mode candidate; code_mode_only cannot provide a direct-tool control"
-          : "stable enabled Code Mode feature unavailable; effective modes cannot be compared"
-      };
-  const pairs = [];
-  if (stableAvailable) {
-    for (const [index, benchmarkCase] of cases.entries()) {
-      execFileSync("git", ["cat-file", "-e", `${benchmarkCase.sourceCommit}^{commit}`], { cwd });
-      const modes = index % 2 === 0 ? ["codeMode", "currentPath"] : ["currentPath", "codeMode"];
-      const measurements = {};
-      for (const mode of modes) {
-        measurements[mode] = await executeCase({ benchmarkCase, mode, cwd, model: switchableModels[0].slug });
-      }
-      const observed = {
-        codeMode: measurements.codeMode?.provenance?.effectiveToolMode ?? UNKNOWN,
-        currentPath: measurements.currentPath?.provenance?.effectiveToolMode ?? UNKNOWN
-      };
-      if (observed.codeMode !== "code_mode" || observed.currentPath !== "direct_tools") {
-        pairs.length = 0;
-        modeIdentity = {
-          status: "UNVERIFIED",
-          reason: `distinct effective tool modes not observed: ${JSON.stringify(observed)}`,
-          observed
-        };
-        break;
-      }
-      pairs.push({
-        id: benchmarkCase.id,
-        executionOrder: modes,
-        codeMode: measurements.codeMode,
-        currentPath: measurements.currentPath
-      });
-    }
-    if (pairs.length === cases.length) {
-      modeIdentity = {
-        status: "VERIFIED_DISTINCT",
-        reason: "every pair observed code_mode for the candidate and direct_tools for the control"
-      };
-    }
+  const unsupportedReasons = [];
+  if (!stableFeatureAvailable) unsupportedReasons.push("stable enabled Code Mode feature unavailable");
+  if (!switchableModels.length) {
+    unsupportedReasons.push("no same-model switchable code_mode candidate; code_mode_only cannot provide a direct-tool control");
   }
+  unsupportedReasons.push(
+    "Codex JSONL command_execution events do not attest whether the outer call used Code Mode or direct tools"
+  );
+  const modeIdentity = {
+    status: "UNAVAILABLE",
+    reason: unsupportedReasons.at(-1)
+  };
+  const pairs = [];
   const summary = summarizePairs(cases, pairs);
   const evaluated = evaluateAdoption(summary);
-  const modesVerified = modeIdentity.status === "VERIFIED_DISTINCT";
-  const adoption = modesVerified ? evaluated : {
+  const adoption = {
     ...evaluated,
     decision: "REJECT",
-    failed: [`effective standard versus Code Mode identity: ${modeIdentity.reason}`, ...evaluated.failed]
+    failed: [
+      `effective standard versus Code Mode identity: ${unsupportedReasons.join("; ")}`,
+      ...evaluated.failed
+    ]
   };
   const result = {
     schema: "muster-codex-code-mode-inner-loop-benchmark/v1",
@@ -379,7 +229,8 @@ export async function runBenchmark({
       },
       eligibleModels: models,
       switchableModels,
-      stableCodeModeAvailable: stableAvailable
+      stableCodeModeAvailable: stableAvailable,
+      comparisonAvailable: false
     },
     protocol: {
       comparison: "Code Mode mechanical inner loop versus the current crew-member tool-call path",
@@ -387,8 +238,9 @@ export async function runBenchmark({
       orchestrationExcluded: true,
       fixtureCases: cases.length,
       pairedCasesExecuted: pairs.length,
-      status: modesVerified ? "MEASURED" : stableAvailable ? "MODE_IDENTITY_UNVERIFIED" : "UNSUPPORTED_HOST",
+      status: "UNSUPPORTED_HOST",
       modeIdentity,
+      unsupportedReasons,
       unsupportedHostFallback: "retain the current crew-member tool-call path"
     },
     pairs,

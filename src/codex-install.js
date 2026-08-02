@@ -2202,6 +2202,9 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
           pluginStagingHome = null;
         }
         await verifyPublishedPluginCache(publishedPluginCache);
+        for (const configPath of new Set([threadLimitConfigPath, declarationConfigPath])) {
+          await verifyCodexConfigRetirementReceipt(configPath);
+        }
           } catch (error) {
             const rollbackErrors = [];
             if (!publishedConfigCandidates.size && verifyUnpublishedLive && !error?.musterConcurrentConfig) {

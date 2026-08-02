@@ -2677,7 +2677,7 @@ async function prepareCodexUninstall({ scope, cwd, home, execFile, runtimeIdenti
         + (Array.isArray(group?.hooks) ? group.hooks.length : 0), 0) : 0), 0);
     const liveHookCount = hookConfigExists ? codexHookStateKeys(rawHookConfig).length : 0;
     if (hookConfigExists && liveHookCount > 0 && derivedOwnedKeys.length !== expectedOwnedCount) {
-      throw new Error(`Codex hook conflict: not every Muster-owned hook position can be identified in ${hookConfigPath}. Restore the managed hooks or remove unrelated hooks before retrying.`);
+      throw new Error(`Codex hook conflict: a Muster-owned hook was modified or removed in ${hookConfigPath}; not every Muster-owned hook position can be identified. Restore the managed hooks or remove unrelated hooks before retrying.`);
     }
     departingScopeOwnedHookStateKeys = hookConfigExists && liveHookCount > 0 ? derivedOwnedKeys : null;
     hookConfig = removeOwnedHookGroups(rawHookConfig, hookManifest.hookGroups, hookConfigPath);

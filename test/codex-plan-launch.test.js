@@ -158,6 +158,16 @@ test("secret App Server input is not echoed and honors terminal cleanup", async 
   assert.equal(input.isRaw, false);
   assert.equal(writes.join(""), "> \n");
   assert.doesNotMatch(writes.join(""), /s3cet/);
+
+  const endedInput = new EventEmitter();
+  endedInput.isTTY = true;
+  endedInput.isRaw = false;
+  endedInput.setRawMode = value => { endedInput.isRaw = value; };
+  endedInput.resume = () => {};
+  const ended = readSecretTerminalInput({ input: endedInput, output: { write() {} }, timeoutMs: 100 });
+  endedInput.emit("end");
+  await assert.rejects(ended, /ended before an answer/i);
+  assert.equal(endedInput.isRaw, false);
 });
 
 test("turn completion preserves failed and interrupted status", () => {

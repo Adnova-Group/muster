@@ -27,6 +27,9 @@ export function readSecretTerminalInput({ input, output, timeoutMs } = {}) {
       settled = true;
       if (timer) clearTimeout(timer);
       input.off("data", onData);
+      input.off("end", onEnd);
+      input.off("close", onEnd);
+      input.off("error", onError);
       try { input.setRawMode(wasRaw); } catch {}
       output.write("\n");
       if (error) rejectInput(error);
@@ -36,15 +39,21 @@ export function readSecretTerminalInput({ input, output, timeoutMs } = {}) {
       for (const character of String(chunk)) {
         if (character === "\r" || character === "\n") return finish(null, answer);
         if (character === "\u0003") return finish(new Error("secret input cancelled"));
+        if (character === "\u0004") return finish(new Error("secret input ended before an answer was submitted"));
         if (character === "\u007f" || character === "\b") answer = answer.slice(0, -1);
         else if (character >= " ") answer += character;
       }
     };
+    const onEnd = () => finish(new Error("secret input ended before an answer was submitted"));
+    const onError = error => finish(error instanceof Error ? error : new Error(String(error)));
     const timeout = Number.isInteger(timeoutMs) && timeoutMs > 0 ? timeoutMs : null;
     const timer = timeout === null ? null : setTimeout(() => finish(new Error("App Server input auto-resolved before an answer was submitted")), timeout);
     try {
       input.setRawMode(true);
       input.on("data", onData);
+      input.once("end", onEnd);
+      input.once("close", onEnd);
+      input.once("error", onError);
       input.resume?.();
       output.write("> ");
     } catch (error) {

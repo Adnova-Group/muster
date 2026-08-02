@@ -27,7 +27,7 @@ For an empty greenfield directory, preparation may safely initialize `.git` befo
 @AGENTS.md
 ```
 
-If Codex native `/init` is a no-op because `AGENTS.md` existed at the preparation baseline while `CLAUDE.md` was absent, Init offers one attended recovery: it shows the exact canonical pointer and asks for explicit approval to create only the still-missing `CLAUDE.md`. After rechecking that `AGENTS.md` is unchanged, non-empty, and does not import `CLAUDE.md`, the approved pointer creation supplies artifact-delta evidence and Init can finalize. When both canonical files predate the baseline, the user can explicitly confirm both through the receipted pre-existing-confirmation path.
+If Codex native `/init` is a no-op because `AGENTS.md` existed at the preparation baseline while `CLAUDE.md` was absent, Init offers one attended recovery: it shows the exact canonical pointer and asks for explicit approval to create only the still-missing `CLAUDE.md`. The bounded `init normalize [dir] --approve CLAUDE.md` operation rechecks the baseline authority, exclusively creates the pointer without following links or replacing a raced file, and binds the completed receipt to both artifact hashes before Init can finalize. When both canonical files predate the baseline, the user can explicitly confirm both through the receipted pre-existing-confirmation path.
 
 If either file existed at the preparation baseline and prevents that exact authority pattern, Init does not overwrite or merge it. It leaves a HUMAN-HOLD for the user to reconcile. Independent policy in `CLAUDE.md`, a reverse `AGENTS.md` reference to `CLAUDE.md`, or any race detected before the approved pointer write cannot satisfy artifact-delta, pre-existing-confirmation, or call-result evidence.
 

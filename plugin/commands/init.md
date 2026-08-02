@@ -97,13 +97,13 @@ instruction seeds.
    `AGENTS.md` existed at the baseline, `CLAUDE.md` was absent, and native
    `/init` produces no artifact delta, show the exact pointer above and request
    explicit user approval to create only the missing `CLAUDE.md`. On approval,
-   first recheck that `AGENTS.md` is still a non-empty regular file, contains no
-   import of `CLAUDE.md`, and is unchanged from the stored baseline; also recheck
-   that `CLAUDE.md` is still absent. If every check passes, create `CLAUDE.md`
-   with the exact pointer bytes. The approved pointer is positive artifact-delta
-   evidence: run
-   `$MUSTER_CLI init transition "$TARGET" --to completed --evidence artifact-delta`
-   and, only when that receipt reports `nativeInit.state: "completed"`, run
+   run `$MUSTER_CLI init normalize "$TARGET" --approve CLAUDE.md`. This bounded
+   operation rechecks that `AGENTS.md` is an unchanged, non-empty, single-link
+   regular file with no `CLAUDE.md` import, exclusively creates the still-absent
+   pointer without following links or replacing a raced file, and binds the
+   completed receipt to both exact artifact hashes. Do not synthesize the write
+   with shell redirection, `writeFile`, or a generic edit tool. Only when the
+   normalization receipt reports `nativeInit.state: "completed"`, run
    `$MUSTER_CLI init finalize "$TARGET"`. Never create or replace either file
    without that approval.
 

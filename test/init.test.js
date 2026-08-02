@@ -14,6 +14,7 @@ import {
   INIT_LIMITS,
   initializeProject,
   learnProjectProfile,
+  normalizeCodexInstructionPair,
   observeNativeInit,
   readInitReceipt,
   transitionNativeInit,
@@ -156,14 +157,77 @@ test("an approved missing Claude pointer completes an AGENTS-only Codex no-op ha
   });
 
   assert.equal((await observeNativeInit(dir)).observedNativeEvidence, null, "native /init no-op");
-  await writeFile(join(dir, "CLAUDE.md"), CLAUDE_POINTER); // attended workflow approval
-
-  const completed = await transitionNativeInit(dir, {
-    to: "completed", evidenceKind: "artifact-delta",
-  });
+  const cli = new URL("../src/cli.js", import.meta.url).pathname;
+  const completed = JSON.parse((await pexecFile(
+    process.execPath,
+    [cli, "init", "normalize", dir, "--approve", "CLAUDE.md"],
+  )).stdout);
   assert.equal(completed.receipt.nativeInit.state, "completed");
-  assert.deepEqual(completed.receipt.nativeInit.evidence.artifacts.map(({ path }) => path), ["CLAUDE.md"]);
+  assert.equal(completed.receipt.nativeInit.evidence.kind, "approved-pointer-normalization");
+  assert.deepEqual(completed.receipt.nativeInit.evidence.artifacts.map(({ path }) => path), ["AGENTS.md", "CLAUDE.md"]);
+  assert.equal(await readFile(join(dir, "CLAUDE.md"), "utf8"), CLAUDE_POINTER);
   assert.equal((await finalizeInitialization(dir)).receipt.phase, "finalized");
+});
+
+test("approved pointer normalization fails closed on changed authority and raced targets", async () => {
+  const prepare = async () => {
+    const dir = await tmp();
+    await writeFile(join(dir, "AGENTS.md"), "# Existing policy\n");
+    await initializeProject(dir);
+    await transitionNativeInit(dir, {
+      to: "handoff", reason: "not-callable", expectedArtifacts: ["AGENTS.md", "CLAUDE.md"],
+    });
+    return dir;
+  };
+
+  const changed = await prepare();
+  await writeFile(join(changed, "AGENTS.md"), "# Injected policy\n");
+  await assert.rejects(
+    () => normalizeCodexInstructionPair(changed, { approved: true }),
+    /AGENTS\.md.*baseline/,
+  );
+  await assert.rejects(() => stat(join(changed, "CLAUDE.md")), { code: "ENOENT" });
+  await writeFile(join(changed, "CLAUDE.md"), CLAUDE_POINTER);
+  await assert.rejects(
+    () => transitionNativeInit(changed, { to: "completed", evidenceKind: "artifact-delta" }),
+    /approved pointer normalization/,
+  );
+
+  const raced = await prepare();
+  await writeFile(join(raced, "CLAUDE.md"), "USER CONTENT\n");
+  await assert.rejects(
+    () => normalizeCodexInstructionPair(raced, { approved: true }),
+    /CLAUDE\.md.*absent/,
+  );
+  assert.equal(await readFile(join(raced, "CLAUDE.md"), "utf8"), "USER CONTENT\n");
+
+  const linked = await prepare();
+  const outside = join(await tmp(), "outside.md");
+  await writeFile(outside, "OUTSIDE\n");
+  await symlink(outside, join(linked, "CLAUDE.md"));
+  await assert.rejects(
+    () => normalizeCodexInstructionPair(linked, { approved: true }),
+    /symlink|reparse|absent/,
+  );
+  assert.equal(await readFile(outside, "utf8"), "OUTSIDE\n");
+});
+
+test("persisted approved pointer evidence remains bound to the AGENTS baseline", async () => {
+  const dir = await tmp();
+  await writeFile(join(dir, "AGENTS.md"), "# Existing policy\n");
+  await initializeProject(dir);
+  await transitionNativeInit(dir, {
+    to: "handoff", reason: "not-callable", expectedArtifacts: ["AGENTS.md", "CLAUDE.md"],
+  });
+  await normalizeCodexInstructionPair(dir, { approved: true });
+
+  const injected = "# Injected policy\n";
+  await writeFile(join(dir, "AGENTS.md"), injected);
+  const receiptPath = join(dir, ".muster/init-receipt.json");
+  const receipt = JSON.parse(await readFile(receiptPath, "utf8"));
+  receipt.nativeInit.evidence.artifacts[0].sha256 = sha(injected);
+  await writeFile(receiptPath, JSON.stringify(receipt));
+  await assert.rejects(() => readInitReceipt(dir), /approved pointer.*AGENTS.*baseline/i);
 });
 
 test("paired pre-existing confirmation requires both canonical instruction artifacts", async () => {

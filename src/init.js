@@ -32,6 +32,7 @@ import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import {
   atomicWrite as atomicWriteSafe,
+  createContainedFile,
   readNoFollowRegular,
   resolveContainedRealpath,
   safeRelativePath,
@@ -1227,8 +1228,8 @@ function validateReceipt(receipt) {
   }
   const evidence = receipt.nativeInit.evidence;
   if (evidence !== null) {
-    if (!["artifact-delta", "preexisting-artifact-confirmed", "call-result"].includes(evidence.kind)) {
-      fail("nativeInit.evidence.kind", "must be artifact-delta, preexisting-artifact-confirmed, or call-result");
+    if (!["approved-pointer-normalization", "artifact-delta", "preexisting-artifact-confirmed", "call-result"].includes(evidence.kind)) {
+      fail("nativeInit.evidence.kind", "must be approved-pointer-normalization, artifact-delta, preexisting-artifact-confirmed, or call-result");
     }
     if (!Array.isArray(evidence.artifacts) || evidence.artifacts.length === 0) {
       fail("nativeInit.evidence.artifacts", "must be a non-empty array");
@@ -1271,6 +1272,18 @@ function validateReceipt(receipt) {
     profileDigest: receipt.profileDigest,
   }));
   const baselineByPath = new Map(native.baseline.map((row) => [row.path, row]));
+  if (evidence?.kind === "approved-pointer-normalization") {
+    const artifactsByPath = new Map(evidence.artifacts.map((row) => [row.path, row]));
+    const agentsBaseline = baselineByPath.get("AGENTS.md");
+    const claudeBaseline = baselineByPath.get("CLAUDE.md");
+    if (evidence.artifacts.length !== 2 || !coversInstructionPair([...artifactsByPath.keys()]) ||
+        !agentsBaseline || agentsBaseline.sha256 === null || agentsBaseline.bytes === 0 ||
+        !claudeBaseline || claudeBaseline.sha256 !== null || native.reason !== "not-callable" ||
+        artifactsByPath.get("AGENTS.md")?.sha256 !== agentsBaseline.sha256 ||
+        artifactsByPath.get("CLAUDE.md")?.sha256 !== sha256(CLAUDE_AUTHORITY_POINTER)) {
+      fail("nativeInit.evidence", "approved pointer must bind AGENTS.md to its non-empty baseline and CLAUDE.md to the canonical pointer");
+    }
+  }
   const evidenceMatchesBaseline = evidence === null || evidence.artifacts.every((row) => {
     const baseline = baselineByPath.get(row.path);
     if (!baseline) return false;
@@ -1499,6 +1512,11 @@ async function completionEvidence(root, receipt, kind, evidenceFile) {
   }
   await validateCanonicalInstructionPair(root, expected);
   if (kind === "artifact-delta") {
+    const baseline = new Map(receipt.nativeInit.baseline.map((row) => [row.path, row]));
+    if (coversInstructionPair(expected) && baseline.get("AGENTS.md")?.sha256 !== null &&
+        baseline.get("CLAUDE.md")?.sha256 === null) {
+      throw new Error("AGENTS-only baseline requires approved pointer normalization");
+    }
     const observed = await observeNativeInit(root);
     if (!observed.observedNativeEvidence) throw new Error("artifact delta evidence is not present");
     return observed.observedNativeEvidence;
@@ -1584,6 +1602,61 @@ export async function transitionNativeInit(dir, {
   }
   await writeReceipt(root, receipt);
   return envelope(receipt);
+}
+
+export async function normalizeCodexInstructionPair(dir, { approved = false } = {}) {
+  if (approved !== true) throw new Error("Codex pointer normalization requires explicit approval");
+  const root = await validateRoot(dir);
+  const owned = await readOwned(root);
+  if (!owned) throw new Error("project is not initialized");
+  const { receipt } = owned;
+  const native = receipt.nativeInit;
+  if (native.state !== "handoff" || native.reason !== "not-callable" ||
+      JSON.stringify(native.expectedArtifacts) !== JSON.stringify(["AGENTS.md", "CLAUDE.md"])) {
+    throw new Error("Codex pointer normalization requires a pending canonical-pair handoff");
+  }
+  const baseline = new Map(native.baseline.map((row) => [row.path, row]));
+  const agentsBaseline = baseline.get("AGENTS.md");
+  const claudeBaseline = baseline.get("CLAUDE.md");
+  if (!agentsBaseline || agentsBaseline.sha256 === null || agentsBaseline.bytes === 0 ||
+      !claudeBaseline || claudeBaseline.sha256 !== null) {
+    throw new Error("Codex pointer normalization requires an AGENTS-only baseline");
+  }
+  const assertUnchangedAuthority = async () => {
+    const agents = await readRegular(root, "AGENTS.md", INIT_LIMITS.learnFileBytes);
+    if (!agents || agents.bytes.length === 0 || sha256(agents.bytes) !== agentsBaseline.sha256 ||
+        agents.info.size !== agentsBaseline.bytes) {
+      throw new Error("AGENTS.md no longer matches the approved baseline");
+    }
+    if (importsClaudeInstruction(agents.bytes.toString("utf8"), join(root, "AGENTS.md"), join(root, "CLAUDE.md"))) {
+      throw new Error("AGENTS.md baseline must not import CLAUDE.md");
+    }
+    return agents;
+  };
+  await assertUnchangedAuthority();
+  let created;
+  try {
+    created = await createContainedFile(root, join(root, "CLAUDE.md"), CLAUDE_AUTHORITY_POINTER);
+  } catch (error) {
+    throw new Error(`CLAUDE.md must remain absent for approved normalization: ${error.message}`);
+  }
+  if (!created) throw new Error("CLAUDE.md must remain absent for approved normalization");
+  const agents = await assertUnchangedAuthority();
+  const claude = await readRegular(root, "CLAUDE.md", INIT_LIMITS.learnFileBytes);
+  if (!claude || !claude.bytes.equals(CLAUDE_AUTHORITY_POINTER)) {
+    throw new Error("CLAUDE.md changed during approved normalization");
+  }
+  native.evidence = {
+    kind: "approved-pointer-normalization",
+    artifacts: [
+      { path: "AGENTS.md", sha256: sha256(agents.bytes) },
+      { path: "CLAUDE.md", sha256: sha256(claude.bytes) },
+    ],
+  };
+  native.state = "completed";
+  native.handoffAcknowledged = false;
+  await writeReceipt(root, receipt);
+  return envelope((await readOwned(root)).receipt);
 }
 
 export async function acknowledgeNativeInitHandoff(dir, { reason }) {

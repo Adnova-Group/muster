@@ -76,6 +76,7 @@ if (profile === "full" || activationReceiptPath || installedRuntime) {
     const artifactPaths = [
       ".app.json", ".codex-plugin/plugin.json", ".mcp.json",
       "runtime/chatgpt-work-server.mjs", "runtime/in-process-worker.mjs", "runtime/muster.mjs", "runtime/sprint-protocol.md",
+      "runtime/verdict.schema.json",
       "package.json",
       ...[
         "agents.generated.yaml", "agents.manifest.json", "agents.muster.yaml",

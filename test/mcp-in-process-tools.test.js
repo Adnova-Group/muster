@@ -242,3 +242,53 @@ test("in-process workers ignore hostile inherited execArgv", async () => {
     process.execArgv.splice(0, process.execArgv.length, ...prior);
   }
 });
+
+test("locale-sensitive score ties retain child-process CLI ordering", async (t) => {
+  const fixture = await mkdtemp(join(tmpdir(), "muster-mcp-locale-"));
+  t.after(() => rm(fixture, { recursive: true, force: true }));
+  const candidates = [
+    { id: "ä", total: 10, passing: true },
+    { id: "z", total: 10, passing: true },
+  ];
+  const file = join(fixture, "candidates.json");
+  await writeFile(file, JSON.stringify(candidates));
+  const environment = { LANG: "de_DE.UTF-8" };
+  const legacy = await execFileP(process.execPath, [cliPath, "pick", file], { cwd: rootDir, env: environment });
+  const response = await invokeInProcessTool("muster_pick", { candidates }, { environment });
+  assert.equal(response.result.ok, true, response.result.text);
+  assert.equal(response.result.text, legacy.stdout.trim());
+  assert.deepEqual(JSON.parse(response.result.text).ranking.map(({ id }) => id), ["ä", "z"]);
+});
+
+test("cancelled worker termination completes before the invocation slot resolves", async () => {
+  const source = await readFile(new URL("../mcp/in-process-tools.mjs", import.meta.url), "utf8");
+  assert.match(source, /await worker\.terminate\(\)/);
+  assert.match(source, /resourceLimits:/);
+  const plan = Array.from({ length: 12_000 }, (_, index) => ({
+    id: `task-${index}`,
+    task: "Work",
+    mode: "single",
+    deps: index === 0 ? [] : [`task-${index - 1}`],
+  }));
+  for (let index = 0; index < 8; index += 1) {
+    const controller = new AbortController();
+    const pending = invokeInProcessTool("muster_wave", { manifest: { plan } }, { signal: controller.signal });
+    setTimeout(() => controller.abort(), 10);
+    const response = await pending;
+    assert.equal(response.result.text, "muster MCP request cancelled");
+  }
+  const final = await invokeInProcessTool("muster_wave", { manifest: { plan: [] } });
+  assert.equal(final.result.ok, true, final.result.text);
+});
+
+test("worker output retains the legacy 16 MiB ceiling", async () => {
+  const oversizedTask = "x".repeat(16 * 1024 * 1024);
+  const response = await invokeInProcessTool("muster_plan_checklist", {
+    manifest: { plan: [{ id: "a", task: oversizedTask }] },
+    done: [],
+  });
+  assert.deepEqual(response.result, {
+    ok: false,
+    text: "muster MCP worker output exceeded 16777216 byte limit",
+  });
+});

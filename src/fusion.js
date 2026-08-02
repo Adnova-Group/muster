@@ -16,6 +16,7 @@
 
 import { pickWinner } from "./tournament.js";
 import { envInt, isPlainObject } from "./env-util.js";
+import { compareStringsForEnvironment } from "./locale-order.js";
 
 // ---------------------------------------------------------------------------
 // validateFusionMap
@@ -114,13 +115,13 @@ export function fuse(candidates, map, opts = {}) {
   const environment = opts.environment || process.env;
   // Guard: candidates must be an array — malformed input returns a clean fallback.
   if (!Array.isArray(candidates)) {
-    return { mode: "fallback", reason: "invalid-candidates", winner: pickWinner([]) };
+    return { mode: "fallback", reason: "invalid-candidates", winner: pickWinner([], { environment }) };
   }
 
   // 1. Validate fusion map — fail safe: never throw the tournament.
   const validation = validateFusionMap(map);
   if (!validation.ok) {
-    return { mode: "fallback", reason: "invalid-map", winner: pickWinner(candidates) };
+    return { mode: "fallback", reason: "invalid-map", winner: pickWinner(candidates, { environment }) };
   }
 
   // 2. Require at least 2 passing candidates for meaningful fusion.
@@ -129,7 +130,7 @@ export function fuse(candidates, map, opts = {}) {
     return {
       mode: "fallback",
       reason: "single-or-none-passing",
-      winner: pickWinner(candidates),
+      winner: pickWinner(candidates, { environment }),
     };
   }
 
@@ -146,7 +147,7 @@ export function fuse(candidates, map, opts = {}) {
     return {
       mode: "fallback",
       reason: "candidates-agree",
-      winner: pickWinner(candidates),
+      winner: pickWinner(candidates, { environment }),
     };
   }
 
@@ -156,7 +157,7 @@ export function fuse(candidates, map, opts = {}) {
   const K = Math.min(topKLimit(environment), passing.length);
 
   const ranked = [...passing].sort(
-    (a, b) => b.total - a.total || String(a.id).localeCompare(String(b.id))
+    (a, b) => b.total - a.total || compareStringsForEnvironment(a.id, b.id, environment)
   );
   const topKRows = ranked.slice(0, K);
 

@@ -32,6 +32,7 @@ const PURE_TOOLS = new Set([
 
 const json = (value) => JSON.stringify(value, null, 2);
 const workerUrl = new URL("./in-process-worker.mjs", import.meta.url);
+const MAX_WORKER_OUTPUT_BYTES = 16 * 1024 * 1024;
 
 function fail(message) {
   throw new Error(message);
@@ -39,7 +40,7 @@ function fail(message) {
 
 const legacyCommaList = (values) => values?.length ? values.join(",").split(",") : [];
 
-async function evaluate(name, args, environment) {
+async function evaluate(name, args, environment, runtime = {}) {
   switch (name) {
     case "muster_wave": {
       if (!Array.isArray(args.manifest?.plan)) fail("wave: manifest has no 'plan' array");
@@ -67,7 +68,11 @@ async function evaluate(name, args, environment) {
       };
     }
     case "muster_sprint_reconcile": {
-      const result = reconcileSprintProgress(args.plan, { receipts: args.receipts, inFlight: args.inFlight });
+      const result = reconcileSprintProgress(
+        args.plan,
+        { receipts: args.receipts, inFlight: args.inFlight },
+        { environment },
+      );
       return { ok: result.ok !== false, text: json(result) };
     }
     case "muster_score":
@@ -75,9 +80,9 @@ async function evaluate(name, args, environment) {
     case "muster_prioritize":
       return { ok: true, text: json(prioritize(args.items, args.model || "rice")) };
     case "muster_pick":
-      return { ok: true, text: json(pickWinner(args.candidates)) };
+      return { ok: true, text: json(pickWinner(args.candidates, { environment })) };
     case "muster_tally": {
-      const validation = await validateVerdicts(args.verdicts);
+      const validation = await validateVerdicts(args.verdicts, runtime.verdictSchemaPath);
       if (!validation.ok) {
         const corrupt = verdictsTallyCorruptionErrors(args.verdicts);
         if (corrupt.length > 0) {
@@ -112,9 +117,9 @@ async function evaluate(name, args, environment) {
   }
 }
 
-export async function evaluateInProcessTool(name, args, environment = process.env) {
+export async function evaluateInProcessTool(name, args, environment = process.env, runtime = {}) {
   try {
-    const result = await evaluate(name, args, environment);
+    const result = await evaluate(name, args, environment, runtime);
     return result;
   } catch (error) {
     const detail = environment.DEBUG ? (error.stack || error.message) : error.message;
@@ -131,26 +136,40 @@ export async function invokeInProcessTool(name, args, { signal, environment = pr
       workerData: { name, args, environment },
       env: environment,
       execArgv: [],
+      resourceLimits: {
+        maxOldGenerationSizeMb: 64,
+        maxYoungGenerationSizeMb: 16,
+        stackSizeMb: 4,
+      },
     });
     let settled = false;
-    const finish = (result) => {
+    const finish = async (result) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       signal?.removeEventListener("abort", abort);
-      void worker.terminate();
+      await worker.terminate().catch(() => {});
       resolve({ handled: true, result });
     };
-    const abort = () => finish({ ok: false, text: "muster MCP request cancelled" });
+    const abort = () => void finish({ ok: false, text: "muster MCP request cancelled" });
     const timer = setTimeout(
-      () => finish({ ok: false, text: "muster MCP request timed out after 60000ms" }),
+      () => void finish({ ok: false, text: "muster MCP request timed out after 60000ms" }),
       60_000,
     );
     signal?.addEventListener("abort", abort, { once: true });
-    worker.once("message", finish);
-    worker.once("error", (error) => finish({ ok: false, text: `internal error: ${error.message}` }));
-    worker.once("exit", (code) => {
-      if (!settled && code !== 0) finish({ ok: false, text: `internal error: in-process MCP worker exited ${code}` });
+    worker.once("message", (result) => {
+      const valid = result && typeof result === "object" && typeof result.ok === "boolean" && typeof result.text === "string";
+      if (!valid) {
+        void finish({ ok: false, text: "internal error: in-process MCP worker returned an invalid result" });
+      } else if (Buffer.byteLength(result.text) > MAX_WORKER_OUTPUT_BYTES) {
+        void finish({ ok: false, text: `muster MCP worker output exceeded ${MAX_WORKER_OUTPUT_BYTES} byte limit` });
+      } else {
+        void finish(result);
+      }
+    });
+    worker.once("error", () => void finish({ ok: false, text: "internal error: in-process MCP worker failed" }));
+    worker.once("exit", () => {
+      if (!settled) void finish({ ok: false, text: "internal error: in-process MCP worker failed" });
     });
   });
 }

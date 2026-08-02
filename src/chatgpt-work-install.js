@@ -83,6 +83,7 @@ const ARTIFACT_PATHS = [
   "runtime/in-process-worker.mjs",
   "runtime/muster.mjs",
   "runtime/sprint-protocol.md",
+  "runtime/verdict.schema.json",
   "package.json",
   ...CATALOG_ARTIFACTS,
   ...PIPELINE_ARTIFACTS,
@@ -406,12 +407,13 @@ async function prepareRuntimeAssets() {
     cli: join(moduleDir, "muster.mjs"),
     server: join(moduleDir, "chatgpt-work-server.mjs"),
     worker: join(moduleDir, "in-process-worker.mjs"),
+    verdictSchema: join(moduleDir, "verdict.schema.json"),
     sprintProtocol: join(moduleDir, "sprint-protocol.md"),
     catalog: join(moduleDir, "..", "catalog"),
     pipelines: join(moduleDir, "..", "pipelines"),
   };
   try {
-    for (const path of [bundled.cli, bundled.server, bundled.worker, bundled.sprintProtocol]) {
+    for (const path of [bundled.cli, bundled.server, bundled.worker, bundled.sprintProtocol, bundled.verdictSchema]) {
       const info = await lstat(path);
       if (info.isSymbolicLink() || !info.isFile()) throw new Error(`runtime asset is not an ordinary file: ${path}`);
     }
@@ -451,6 +453,7 @@ async function prepareRuntimeAssets() {
     cli: join(dir, "muster.mjs"),
     server: join(dir, "chatgpt-work-server.mjs"),
     worker: join(dir, "in-process-worker.mjs"),
+    verdictSchema: join(root, "plugin", "skills", "review-gate", "verdict.schema.json"),
     sprintProtocol: join(root, "cowork", "sprint-protocol.md"),
     catalog: join(root, "catalog"),
     pipelines: join(root, "pipelines"),
@@ -467,6 +470,7 @@ async function stageWorkPlugin(config, assets, { configPath, pluginPath }) {
   await cp(assets.cli, join(runtime, "muster.mjs"));
   await cp(assets.server, join(runtime, "chatgpt-work-server.mjs"));
   await cp(assets.worker, join(runtime, "in-process-worker.mjs"));
+  await cp(assets.verdictSchema, join(runtime, "verdict.schema.json"));
   await cp(assets.sprintProtocol, join(runtime, "sprint-protocol.md"));
   await cp(assets.catalog, join(plugin, "catalog"), { recursive: true });
   await cp(assets.pipelines, join(plugin, "pipelines"), { recursive: true });

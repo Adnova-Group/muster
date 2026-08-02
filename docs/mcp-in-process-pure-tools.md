@@ -14,8 +14,10 @@ terminability without its process or temporary-file transport. Tools outside
 this explicit allowlist keep the CLI boundary; in particular,
 `muster_backlog_publish` remains a child-process call with stdin handoff.
 Codex and ChatGPT Work builds emit the worker as an integrity-tracked runtime
-sidecar, and worker startup drops inherited Node flags while receiving only the
-server's filtered environment.
+sidecar together with tally's verdict schema. Worker startup drops inherited
+Node flags while receiving only the server's filtered environment; each worker
+also has explicit heap/stack limits, a 16 MiB output ceiling, and is fully
+terminated before its MCP concurrency slot is released.
 
 ## Reproducible 12-call latency replay
 

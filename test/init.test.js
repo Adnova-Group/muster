@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { link, mkdir, open, readFile, stat, symlink, truncate, unlink, writeFile } from "node:fs/promises";
+import { link, mkdir, open, readFile, rm, stat, symlink, truncate, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -425,6 +425,23 @@ test("repository fingerprints still reject relevant special files", async () => 
   await assert.rejects(
     () => learnProjectProfile(dir),
     /unsupported repository entry type: unsafe\.pipe/,
+  );
+});
+
+test("repository fingerprints reject tracked files reached through a symlinked ancestor", async () => {
+  const dir = await tmp();
+  const outside = await tmp();
+  await pexecFile("git", ["init", "--quiet"], { cwd: dir });
+  await mkdir(join(dir, "tracked"));
+  await writeFile(join(dir, "tracked", "file.txt"), "inside\n");
+  await pexecFile("git", ["add", "tracked/file.txt"], { cwd: dir });
+  await rm(join(dir, "tracked"), { recursive: true });
+  await writeFile(join(outside, "file.txt"), "outside\n");
+  await symlink(outside, join(dir, "tracked"));
+
+  await assert.rejects(
+    () => learnProjectProfile(dir),
+    /unsafe ancestor for tracked\/file\.txt/,
   );
 });
 

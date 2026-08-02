@@ -373,9 +373,17 @@ async function rejectSpecialEntries(abs, prefix = "") {
   }
 }
 
-async function streamedFileDigest(path, rel, expectedInfo) {
+async function ensureFingerprintAncestors(root, path, rel) {
+  await ensureSafeAncestors(root, rel);
+  if (!(await resolveContainedRealpath(root, dirname(path)))) {
+    throw new Error(`unsafe ancestor for ${rel}`);
+  }
+}
+
+async function streamedFileDigest(root, path, rel, expectedInfo) {
   let handle;
   try {
+    await ensureFingerprintAncestors(root, path, rel);
     handle = await open(
       path,
       fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0) | (fsConstants.O_NONBLOCK || 0),
@@ -401,6 +409,13 @@ async function streamedFileDigest(path, rel, expectedInfo) {
         after.ctimeNs !== before.ctimeNs || after.mtimeNs !== before.mtimeNs || !after.isFile()) {
       throw new Error(`file changed while reading: ${rel}`);
     }
+    await ensureFingerprintAncestors(root, path, rel);
+    const named = await lstat(path, { bigint: true });
+    if (!named.isFile() || named.ino !== before.ino || named.dev !== before.dev ||
+        named.mode !== before.mode || named.size !== before.size || named.nlink !== before.nlink ||
+        named.ctimeNs !== before.ctimeNs || named.mtimeNs !== before.mtimeNs) {
+      throw new Error(`file changed while reading: ${rel}`);
+    }
     return { digest: digest.digest("hex"), mode: Number(before.mode), size };
   } finally {
     await handle?.close();
@@ -422,6 +437,7 @@ async function repositoryFingerprint(root) {
   const paths = await realGitMarker(root) ? gitRelevantPaths(root) : filesystemRelevantPaths(root);
   for await (const rel of paths) {
     const path = join(root, rel);
+    await ensureFingerprintAncestors(root, path, rel);
     let info;
     try { info = await lstat(path, { bigint: true }); }
     catch (error) {
@@ -436,16 +452,22 @@ async function repositoryFingerprint(root) {
       } catch {}
       add(Buffer.from(`V\0${rel}\0${head ?? "null"}\n`));
     } else if (info.isFile()) {
-      const opened = await streamedFileDigest(path, rel, info);
+      const opened = await streamedFileDigest(root, path, rel, info);
       add(Buffer.from(`F\0${rel}\0${(opened.mode & 0o111) ? 1 : 0}\0${opened.size}\0${opened.digest}\n`));
     } else if (info.isSymbolicLink()) {
       const target = await readlink(path, { encoding: "buffer" });
       if (target.length > INIT_LIMITS.symlinkBytes) throw new Error("repository symlink target limit exceeded");
+      const named = await lstat(path, { bigint: true });
+      if (!named.isSymbolicLink() || named.ino !== info.ino || named.dev !== info.dev ||
+          named.ctimeNs !== info.ctimeNs || named.mtimeNs !== info.mtimeNs) {
+        throw new Error(`file changed while reading: ${rel}`);
+      }
       add(Buffer.from(`L\0${rel}\0${sha256(target)}\n`));
     } else {
       throw new Error(`unsupported repository entry type: ${rel}`);
     }
   }
+  await rejectSpecialEntries(root);
   const digest = createHash("sha256").update(`${FINGERPRINT_BASIS}\0${rowCount}\0`).update(aggregate).digest("hex");
   return { algorithm: "sha256", basis: FINGERPRINT_BASIS, digest };
 }

@@ -382,19 +382,19 @@ export function scanContamination(stdout, { quarantineDir, repoRoot = REPO_ROOT 
 // One spawn attempt: the descriptor's argv with the env merge rule, stdout
 // captured to the results dir. Never throws on a nonzero exit -- the exit code
 // is data (the retry policy and the results file both need it).
-async function spawnAttempt(cell, { resultsDir, attempt }) {
+export async function spawnAttempt(cell, { resultsDir, attempt, execute = pexecFile }) {
   const { descriptor } = cell;
   const effortTag = cell.effort ? `.${cell.effort}` : "";
   const stdoutFile = join(resultsDir, `${cell.probe}.${cell.lane}${effortTag}.attempt-${attempt}.stdout.jsonl`);
   let exitCode = 0;
   let stdout = "";
   try {
-    ({ stdout } = await withKimiProcessBriefFile(descriptor, prepared => pexecFile("kimi", prepared.argv, {
+    ({ stdout } = await withKimiProcessBriefFile(descriptor, prepared => execute("kimi", prepared.argv, {
       cwd: prepared.cwd,
       env: spawnEnv(prepared.env),
       timeout: 600_000,
       maxBuffer: 64 * 1024 * 1024
-    })));
+    }), { temporaryRoot: descriptor.cwd }));
   } catch (err) {
     exitCode = typeof err.code === "number" ? err.code : 1;
     stdout = err.stdout ?? "";

@@ -19,7 +19,7 @@ import {
   PROBES, LANES, AGENT_FILE, CAVEAT, PROTOCOL_VERSION, PROBE_MATERIAL_FILES,
   EFFORTS, EFFORT_ENV_VAR, PROBE_MODES,
   buildCells, buildBriefs, buildQuarantineDir, probeMaterial, fitBrief,
-  spawnEnv, cellNeedsRetry, extractVerdictText, scanContamination,
+  spawnEnv, spawnAttempt, cellNeedsRetry, extractVerdictText, scanContamination,
   effortCellVerdict, buildCostComparison, buildQualityComparison,
   buildEffortComparison, assembleResults
 } from "../eval/kimi-reviewer-tier-probe.mjs";
@@ -178,6 +178,27 @@ test("spawnEnv merges the descriptor env OVER the ambient env -- never wholesale
   assert.equal(merged.PATH, "/usr/bin", "wholesale replacement loses PATH");
   assert.equal(merged.KIMI_CODE_EXPERIMENTAL_FLAG, "1");
   assert.equal(merged.KIMI_SECONDARY_MODEL, "kimi-code/kimi-for-coding", "descriptor keys override ambient ones");
+});
+
+test("spawnAttempt keeps the transported brief inside the cell quarantine", async () => {
+  const home = fakeKimiHome();
+  const resultsDir = mkdtempSync(join(tmpdir(), "kimi-probe-results-"));
+  const previous = process.env.KIMI_CODE_HOME;
+  process.env.KIMI_CODE_HOME = home;
+  try {
+    const [cell] = buildCells({ baseDir: mkdtempSync(join(tmpdir(), "kimi-probe-cells-")) });
+    const execute = async (_command, argv) => {
+      const prompt = argv[argv.indexOf("-p") + 1];
+      const briefPath = JSON.parse(prompt.slice(prompt.indexOf(":") + 1));
+      assert.ok(briefPath.startsWith(cell.quarantineDir + "/"), "brief file must remain inside quarantine");
+      return { stdout: JSON.stringify({ role: "tool", name: "Read", arguments: { file_path: briefPath } }) + "\n" };
+    };
+    const attempt = await spawnAttempt(cell, { resultsDir, attempt: 1, execute });
+    assert.equal(scanContamination(attempt.stdout, { quarantineDir: cell.quarantineDir }).contaminated, false);
+  } finally {
+    if (previous === undefined) delete process.env.KIMI_CODE_HOME;
+    else process.env.KIMI_CODE_HOME = previous;
+  }
 });
 
 test("fitBrief truncates over-budget artifacts at a newline with a disclosed note", () => {

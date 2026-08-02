@@ -1,6 +1,6 @@
-import { modelForRole, normalizeTier } from "./model.js";
+import { emissionTier, modelForRole, normalizeTier } from "./model.js";
 import { agentProfiles } from "./agent-manifest.js";
-import { resolveNeutralProfile } from "./model-policy.js";
+import { assertNeutralProfile, resolveNeutralProfile } from "./model-policy.js";
 
 // Codex is an adapter target, not a second tier resolver. Keep the conceptual
 // Claude-like tiers in model.js and translate only when emitting Codex config.
@@ -38,7 +38,8 @@ export const CODEX_MODEL_POLICY = Object.freeze({
     core: Object.freeze({ model: "gpt-5.6-luna", effort: "xhigh" }),
     prime: Object.freeze({ model: "gpt-5.6-sol", effort: "high" }),
     // apex stays a conceptual peak tier; on Codex it adapts to Sol/high, never
-    // routine max (model.js still degrades apex -> prime when apex is disabled).
+    // routine max. The shared emission layer still governs whether a manifest
+    // profile may reach this entry.
     apex: Object.freeze({ model: "gpt-5.6-sol", effort: "high" })
   }),
   // A semantic effort override dials the reasoning effort on the tier's model;
@@ -72,9 +73,12 @@ export function codexModelForRole(role) {
 // applies applyEffort). codex-release.js's profileToml emits the committed TOML
 // pins through this exact resolution, and the `capabilities --codex` lane reads
 // it, so a driver sees the precise pre-dispatch profile without the post-run
-// codex-conformance audit.
+// codex-conformance audit. Validate the caller's declaration first, then govern
+// its normalized tier through the same apex opt-in + MUSTER_MAX_TIER emission
+// layer used by role resolution. Semantic effort remains a separate axis.
 export function codexProfileForConfig(config) {
-  return resolveNeutralProfile(config, CODEX_MODEL_POLICY);
+  assertNeutralProfile(config);
+  return resolveNeutralProfile({ ...config, tier: emissionTier(config.tier) }, CODEX_MODEL_POLICY);
 }
 
 // Resolve an agent id (a `capabilities --codex` chosen.id) to its Codex

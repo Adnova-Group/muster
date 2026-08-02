@@ -29,7 +29,7 @@
 // pre-Workflow Claude Code builds) -- prose is the default whenever nothing is declared.
 
 import { execFileSync } from "node:child_process";
-import { realpathSync, statSync } from "node:fs";
+import { closeSync, constants as fsConstants, fstatSync, openSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
 
 export const AGENT_TEAMS_ENV = "MUSTER_AGENT_TEAMS";
@@ -522,10 +522,21 @@ function physicalCodexWriteFence(root, fence) {
     const physical = realpathSync(lexical);
     const physicalRel = relative(canonicalRoot, physical);
     if (physicalRel.startsWith("..") || isAbsolute(physicalRel) || physical !== lexical) return null;
-    const info = statSync(physical);
+    let descriptor;
+    let info;
+    try {
+      descriptor = openSync(lexical, fsConstants.O_RDONLY
+        | (fsConstants.O_NOFOLLOW || 0)
+        | (fsConstants.O_NONBLOCK || 0));
+      info = fstatSync(descriptor);
+      const pathInfo = statSync(physical);
+      if (pathInfo.dev !== info.dev || pathInfo.ino !== info.ino) return null;
+    } finally {
+      if (descriptor !== undefined) closeSync(descriptor);
+    }
     // Directory fences cannot authenticate every descendant without an
     // unbounded recursive walk; aliases below them therefore force isolation.
-    if (info.isDirectory()) return null;
+    if (!info.isFile() || info.nlink !== 1) return null;
     return { physical, folded: physical.toLocaleLowerCase("en-US"), dev: info.dev, ino: info.ino };
   } catch {
     // Missing targets/ancestors and filesystem aliases are ambiguous. A cold

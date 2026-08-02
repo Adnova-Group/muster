@@ -2,6 +2,7 @@
 // diff-review gate. Evidence: docs/research/codex-cli.md sec 10.4.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { linkSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -55,6 +56,7 @@ test("resolveCodexDispatchLane: physical, hard-link, symlink, case, and missing 
   writeFileSync(join(root, "target"), "x");
   linkSync(join(root, "target"), join(root, "hard"));
   symlinkSync(join(root, "target"), join(root, "sym"));
+  execFileSync("mkfifo", [join(root, "pipe")]);
   writeFileSync(join(root, "Case"), "upper");
   writeFileSync(join(root, "case"), "lower");
   mkdirSync(join(root, "a"));
@@ -62,7 +64,7 @@ test("resolveCodexDispatchLane: physical, hard-link, symlink, case, and missing 
   linkSync(join(root, "target"), join(root, "a/shared"));
   linkSync(join(root, "target"), join(root, "b/shared"));
   for (const writes of [
-    ["target", "hard"], ["target", "sym"], ["Case", "case"], ["target", "missing"], ["a", "b"],
+    ["target"], ["pipe"], ["target", "hard"], ["target", "sym"], ["Case", "case"], ["target", "missing"], ["a", "b"],
   ]) {
     assert.equal(resolveCodexDispatchLane({
       members: writes.map((write, index) => ({ id: String(index), writes: [write] })),

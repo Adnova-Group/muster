@@ -349,6 +349,10 @@ test("generated Codex runtime and orchestrator expose only the hermetic process-
     "utf8",
   );
   assert.match(orchestrator, /runtime\/muster\.mjs codex-wave/);
+  assert.match(orchestrator, /Every production wave MUST first run through/);
+  assert.match(orchestrator, /never choose or invoke `spawn_agent` directly from a manifest/);
+  assert.match(orchestrator, /dispatch only the non-process packets returned by `codex-wave`/);
+  assert.doesNotMatch(orchestrator, /disjoint or read-only members use Codex's subagent collaboration protocol/);
   assert.match(orchestrator, /registered linked worktree/);
   assert.match(orchestrator, /native-review shadow benchmark rejected adoption/);
 

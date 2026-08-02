@@ -1369,5 +1369,8 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // withdrawn reason before the driver may report them cleared.
   // Correction-loop re-pin: staged bytes, not the old on-disk backlog, are
   // now the input to the same release-reachability contract.
-  assert.equal(hash.digest("hex"), "3cac8bebccf3969cd2e3b7e3f987e3cce006c7a3da4374bca0f00890652cb6a0");
+  // 2026-08-02 re-pin #46 (progress-aware execution budgets): configurable budgets
+  // now reject invalid values, preserve trusted-dispatch authority, and retain
+  // non-bypassable absolute ceilings around monotonic progress. Count unchanged.
+  assert.equal(hash.digest("hex"), "a24d744fd2bdd08a08fc5d41b2505d62d6d535a825ec1e403bd977a3a2401cb9");
 });

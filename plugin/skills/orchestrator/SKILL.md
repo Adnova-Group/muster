@@ -77,14 +77,20 @@ doing the work.
         (`claudeProfile`, `codexModel`, or `kimiModel`) exactly as emitted by its adapter, and never
         pass the neutral profile raw. The harness-specific dispatch reference below owns call shape
         and fallback behavior; record any adapter-reported degradation in STATE.
-      - **Subagent failure:** never a silent stop -- re-dispatch ONCE with the error appended as
-        context (`dispatchRetryState`, `src/loop.js`, max 2 attempts). **On Kimi the re-dispatch is
+      - **Subagent failure:** never a silent stop -- re-dispatch with the error appended as
+        context (`dispatchRetryState`, `src/loop.js`; configurable default no-progress budget:
+        max 2 attempts, absolute maximum 5). The trusted manifest/dispatcher fixes this positive
+        integer budget before attaching untrusted task text or failure output; those inputs cannot
+        raise it. Normalize the structured failure and record a finite evidence score:
+        only a strictly increasing score earns another attempt beyond the configured budget, while
+        identical/regressing/absent/non-finite scores exhaust it deterministically, and progress
+        never bypasses the absolute ceiling. **On Kimi the re-dispatch is
         a native RESUME, never a fresh spawn** -- the Agent tool's `resume` for a per-agent
         dispatch, AgentSwarm's `resume_agent_ids` for a swarm dispatch (both modeled by
         `kimiAgentCall`/`kimiSwarmCall` in `src/kimi-dispatch.js`): the failed subagent keeps its
         prior context and only the error is appended, so the retry never pays the full
         prompt/context cost a fresh agent would. Non-Kimi harnesses keep the fresh re-dispatch.
-        A second failure records to
+        An exhausted no-progress budget records to
         STATE and escalates like a review-gate escalation (step 4e); the wave's other tasks still
         complete. A reviewer dispatched inside the review gate (step 4c) that is killed, exhausted, or
         never starts before returning a verdict is not retried under this generic path -- see
@@ -96,8 +102,10 @@ doing the work.
       after the last wave (one pass over the full cumulative diff); still commit this wave's work
       per step d. Either way, the review->fix cycle re-dispatches fixes until a recorded `VERDICT: PASS`
       or the cap
-      (**3 fix iterations**, `REVIEW_GATE_MAX_ITERATIONS` in `src/loop.js`) hits, then escalates
-      (step 4e) -- unchanged by batching, a batched pass gets the same cap over the larger diff.
+      (default **3 fix iterations**, `REVIEW_GATE_MAX_ITERATIONS` in `src/loop.js`) hits, then escalates
+      (step 4e). The budget is configurable per task but bounded by 12 total iterations; only a strictly increasing finite evidence
+      score earns another pass, while identical/regressing findings exhaust it deterministically.
+      Batching does not change this policy.
       **Advisor escalation:** a worker returning a structured advice-request instead of a final
       result is serviced via the **advisor** skill (`$MUSTER_CLI advise .muster/advice-request.json`,
       consult budget from `src/advisor.js`, default cap 3) -- see `plugin/skills/advisor/SKILL.md`.

@@ -65,7 +65,7 @@ import { runHygiene, renderHygieneReport, DEFAULT_WORKTREE_THRESHOLD } from "./h
 import { resolveMusterCli } from "./cli-resolve.js";
 import { planGateCadence, DEFAULT_REVIEW_DIFF_THRESHOLD } from "./gate-cadence.js";
 import { resolveWaveDispatch, resolveWorktreeIsolation, makeGitShaVerifier, codexSpawnAgentCall, codexWaitAgentCall } from "./wave-dispatch.js";
-import { runCodexWave } from "./codex-wave-runner.js";
+import { runCodexWave, runCodexWaveContinuation } from "./codex-wave-runner.js";
 import { kimiGoalInvocation, kimiProcessDispatch } from "./kimi-dispatch.js";
 import { captureSessionId, resolveSessionForCwd, readSessionUsage, summarizeItemReceipts, DEFAULT_SESSION_INDEX } from "./kimi-receipts.js";
 import { resolvePlanSurface } from "./plan-surface.js";
@@ -79,7 +79,6 @@ import {
 import {
   assertContainedNoSymlinkPath,
   atomicWrite,
-  createContainedFile,
   ensureContainedDirectory,
   inspectContainedPath,
   isUnsafePathToken,
@@ -104,13 +103,11 @@ import {
   runDesignWorkflow,
   scanDesign,
 } from "./design.js";
-import { createCodexFixLoopBinding, planCodexFixContinuation, resolveCodexRoleProfile } from "./codex-fix-loop.js";
 
 const CODEX_WAVE_FILE_MAX_BYTES = 1024 * 1024;
 const CODEX_THREAD_CONFIG_MAX_BYTES = 128 * 1024;
 const CODEX_ACTION_FENCE_MAX_BYTES = 64 * 1024;
-const CODEX_FIX_LOOP_JSON_MAX_BYTES = 1024 * 1024;
-const CODEX_ROLE_PROFILE_MAX_BYTES = 128 * 1024;
+const CODEX_FIX_LOOP_JSON_MAX_BYTES = 64 * 1024;
 
 async function readBoundedCliText(path, maxBytes, label) {
   return (await readNoFollowRegular(resolve(path), {
@@ -125,10 +122,6 @@ async function readFixLoopJson(path, label) {
   return JSON.parse(text);
 }
 
-async function readFixLoopRoleProfile(path) {
-  return resolveCodexRoleProfile(await readBoundedCliText(path, CODEX_ROLE_PROFILE_MAX_BYTES, "Codex fix-loop role profile"));
-}
-
 const CATALOG_DIR = new URL("../catalog/", import.meta.url);
 // One array element per command group, each carrying its own "|" separators and
 // joined with "" so the rendered single-line usage stays byte-identical to the
@@ -139,7 +132,7 @@ const USAGE = [
   // manifest + waves: validate, order, and drive a plan
   "manifest validate <file> [--work]|wave <file>|next <manifest.json> [--done a,b]|",
   // performance pass + gate helpers
-  "resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|codex-wave <wave.json> --fence-file <action-fence.json> --repository-root <repo> --base-sha <sha>|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex|kimi>|plan-surface <runtime>|receipt-verify <sha> --cwd <repo>|fix-loop-bind <dispatch.json> <receipt.json>|fix-loop-continue <receipt.json> <current.json> <review-state.json>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|",
+  "resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|codex-wave <wave.json> --fence-file <action-fence.json> --repository-root <repo> --base-sha <sha>|codex-wave-resume <receipt-id> --review-state <file>|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex|kimi>|plan-surface <runtime>|receipt-verify <sha> --cwd <repo>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|",
   // sprint waves, review tally, tournament pick/fuse, advisor
   "sprint-waves <backlog.md> [--max-concurrent-threads-per-session N]|sprint-reconcile <progress.json>|backlog-publish <backlog.md> --expect <sha256|absent>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|",
   // harness-native dispatch packets + session receipts (kimi/codex lanes)
@@ -465,31 +458,16 @@ async function main() {
       const verified = verify(sha);
       out({ sha, cwd, verified, mechanism: verify.mechanism });
       if (!verified) process.exit(2);
-    } else if (cmd === "fix-loop-bind") {
-      const dispatchFile = requireArg(rest, 0, "fix-loop-bind <dispatch.json> <receipt.json>: missing dispatch file", fail);
-      const receiptFile = requireArg(rest, 1, "fix-loop-bind <dispatch.json> <receipt.json>: missing receipt file", fail);
-      const dispatch = await readFixLoopJson(dispatchFile, "Codex fix-loop dispatch");
-      const roleProfilePath = requireArg([dispatch.roleProfilePath], 0, "fix-loop-bind: dispatch roleProfilePath is required", fail);
-      const roleProfile = await readFixLoopRoleProfile(roleProfilePath);
-      const binding = createCodexFixLoopBinding({ ...dispatch, roleProfilePath, roleProfile });
-      const receiptPath = resolve(receiptFile);
-      const created = await createContainedFile(binding.cwd, receiptPath, JSON.stringify(binding, null, 2) + "\n");
-      if (!created) fail(`fix-loop-bind: receipt already exists: ${receiptPath}`);
-      out({ ok: true, receiptFile: receiptPath, binding });
-    } else if (cmd === "fix-loop-continue") {
-      const receiptFile = requireArg(rest, 0, "fix-loop-continue <receipt.json> <current.json> <review-state.json>: missing receipt file", fail);
-      const currentFile = requireArg(rest, 1, "fix-loop-continue <receipt.json> <current.json> <review-state.json>: missing current context file", fail);
-      const reviewFile = requireArg(rest, 2, "fix-loop-continue <receipt.json> <current.json> <review-state.json>: missing review state file", fail);
-      const binding = await readFixLoopJson(receiptFile, "Codex fix-loop receipt");
-      const current = await readFixLoopJson(currentFile, "Codex fix-loop current context");
-      const roleProfilePath = requireArg([current.roleProfilePath], 0, "fix-loop-continue: current roleProfilePath is required", fail);
-      if (roleProfilePath !== binding.roleProfilePath) fail("fix-loop-continue: roleProfilePath mismatch; refuse cross-context continuation");
-      const roleProfile = await readFixLoopRoleProfile(roleProfilePath);
-      out(planCodexFixContinuation({
-        binding,
-        current: { ...current, roleProfilePath, roleProfile },
-        reviewState: await readFixLoopJson(reviewFile, "Codex fix-loop review state")
-      }));
+    } else if (cmd === "codex-wave-resume") {
+      const receiptId = requireArg(rest, 0, "codex-wave-resume <receipt-id> --review-state <file>: missing receipt id", fail);
+      const reviewFile = flagValue(rest, "--review-state");
+      if (!reviewFile) fail("codex-wave-resume <receipt-id> --review-state <file>: missing --review-state");
+      const reviewState = await readFixLoopJson(reviewFile, "Codex fix-loop review state");
+      const sent = new Set(Array.isArray(reviewState.sentBlockers) ? reviewState.sentBlockers : []);
+      const blockers = Array.isArray(reviewState.currentBlockers)
+        ? reviewState.currentBlockers.filter(blocker => !sent.has(blocker))
+        : null;
+      out(await runCodexWaveContinuation({ receiptId, blockers }));
     } else if (cmd === "fast-path") {
       // weight-reduction item, criterion 1 (flagship): pre-router single-agent fast path.
       // Score-only when --capabilities is absent (the caller hasn't resolved capabilities

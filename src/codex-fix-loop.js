@@ -173,12 +173,10 @@ export function planCodexFixContinuation({ binding, current, reviewState } = {})
     };
   }
   return {
-    mechanism: "exec-resume",
+    mechanism: "protected-wave-resume",
     target: binding.threadId,
     ...delta,
-    command: "codex",
-    argv: ["exec", "resume", "--json", "--", binding.threadId, delta.message],
-    cwd: binding.cwd
+    receiptRequired: true
   };
 }
 

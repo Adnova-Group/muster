@@ -457,6 +457,7 @@ export function codexExecCall({
   approvalPolicy = "never",
   skipGitCheck = false,
   lastMessagePath,
+  ephemeral = true,
 } = {}) {
   if (typeof prompt !== "string" || !prompt.trim()) throw new Error("codexExecCall: prompt is required");
   if (!["read-only", "workspace-write", "danger-full-access"].includes(sandbox)) {
@@ -467,10 +468,13 @@ export function codexExecCall({
   }
   const argv = [
     "--ask-for-approval", approvalPolicy,
-    "exec", "--json", "--ignore-user-config", "--ignore-rules", "--strict-config", "--ephemeral",
+    "exec", "--json", "--ignore-user-config", "--ignore-rules", "--strict-config",
+  ];
+  if (ephemeral) argv.push("--ephemeral");
+  argv.push(
     "-c", 'shell_environment_policy.inherit="none"',
     "--sandbox", sandbox,
-  ];
+  );
   if (cwd) argv.push("-C", cwd);
   if (model) argv.push("-m", model);
   if (reasoningEffort) argv.push("-c", `model_reasoning_effort=${JSON.stringify(reasoningEffort)}`);
@@ -480,6 +484,34 @@ export function codexExecCall({
   if (skipGitCheck) argv.push("--skip-git-repo-check");
   argv.push("--", "-");
   return { command: "codex", argv, stdin: prompt, isolation: cwd ? "process-cwd" : "process" };
+}
+
+export function codexExecResumeCall({
+  threadId,
+  prompt,
+  model,
+  reasoningEffort,
+  developerInstructions,
+  sandbox = "workspace-write",
+  approvalPolicy = "never",
+} = {}) {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(threadId || "")) {
+    throw new Error("codexExecResumeCall: an exact thread UUID is required");
+  }
+  if (typeof prompt !== "string" || !prompt.trim()) throw new Error("codexExecResumeCall: prompt is required");
+  if (!['read-only', 'workspace-write', 'danger-full-access'].includes(sandbox)) throw new Error("codexExecResumeCall: unsupported sandbox");
+  if (!['untrusted', 'on-request', 'never'].includes(approvalPolicy)) throw new Error("codexExecResumeCall: unsupported approval policy");
+  const argv = [
+    "--ask-for-approval", approvalPolicy,
+    "exec", "resume", "--json", "--ignore-user-config", "--ignore-rules", "--strict-config",
+    "-c", 'shell_environment_policy.inherit="none"',
+    "--sandbox", sandbox,
+  ];
+  if (model) argv.push("-m", model);
+  if (reasoningEffort) argv.push("-c", `model_reasoning_effort=${JSON.stringify(reasoningEffort)}`);
+  if (developerInstructions) argv.push("-c", `developer_instructions=${JSON.stringify(developerInstructions)}`);
+  argv.push("--", threadId, "-");
+  return { command: "codex", argv, stdin: prompt, isolation: "process-cwd" };
 }
 
 // `codex exec` exits 1 when a fatal error was reported, 0 otherwise. There are

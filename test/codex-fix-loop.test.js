@@ -1,6 +1,4 @@
-import { mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
-import { execFileSync } from "node:child_process";
-import { tmpdir } from "node:os";
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
@@ -12,7 +10,6 @@ import {
   planCodexFixContinuation,
   resolveCodexRoleProfile
 } from "../src/codex-fix-loop.js";
-import { repoRoot, selectedPluginRoot } from "../test-support/codex-helpers.js";
 
 const fixtureDir = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "codex-fix-loop");
 const fixture = name => JSON.parse(readFileSync(join(fixtureDir, name), "utf8"));
@@ -27,9 +24,7 @@ for (const name of ["spawn-agent.json", "exec-process.json"]) {
     assert.deepEqual(plan.blockers, input.reviewState.currentBlockers);
     assert.doesNotMatch(JSON.stringify(plan), /resume --last|--last/);
     assert.doesNotMatch(plan.message, /Crew Manifest|prior transcript|success criteria/i);
-    if (plan.mechanism === "exec-resume") {
-      assert.deepEqual(plan.argv.slice(0, 5), ["exec", "resume", "--json", "--", input.binding.threadId]);
-    }
+    if (plan.mechanism === "protected-wave-resume") assert.equal(plan.receiptRequired, true);
   });
 }
 
@@ -103,61 +98,20 @@ test("authoritative role profile requires every execution-affecting field", () =
   );
 });
 
-test("CLI persists a binding receipt and plans continuation from retained review state", () => {
-  const input = fixture("spawn-agent.json");
-  const temp = mkdtempSync(join(tmpdir(), "muster-fix-loop-"));
-  const dispatch = join(temp, "dispatch.json");
-  const receipt = join(temp, "receipt.json");
-  const current = join(temp, "current.json");
-  const review = join(temp, "review.json");
-  const profile = join(temp, "muster-runner.toml");
-  writeFileSync(profile, [
-    'name = "muster-runner"',
-    'model = "gpt-5.6-sol"',
-    'model_reasoning_effort = "medium"',
-    'sandbox_mode = "workspace-write"',
-    'developer_instructions = "Implement the assigned slice and verify it."',
-    ""
-  ].join("\n"));
-  const { roleProfile: _dispatchProfile, ...dispatchContext } = input.binding;
-  const { roleProfile: _currentProfile, ...currentContext } = input.current;
-  writeFileSync(dispatch, JSON.stringify({ ...dispatchContext, cwd: temp, roleProfilePath: profile }));
-  writeFileSync(current, JSON.stringify({ ...currentContext, cwd: temp, roleProfilePath: profile }));
-  writeFileSync(review, JSON.stringify(input.reviewState));
-  const bundledCli = join(selectedPluginRoot, "runtime", "muster.mjs");
-  execFileSync(process.execPath, [bundledCli, "fix-loop-bind", dispatch, receipt], { cwd: repoRoot });
-  const result = JSON.parse(execFileSync(
-    process.execPath,
-    [bundledCli, "fix-loop-continue", receipt, current, review],
-    { cwd: repoRoot, encoding: "utf8" }
-  ));
-  assert.equal(result.mechanism, "followup_task");
-  assert.equal(result.target, input.expectedTarget);
-
-  const outsideReceipt = join(dirname(temp), `outside-${Date.now()}.json`);
-  assert.throws(
-    () => execFileSync(process.execPath, [bundledCli, "fix-loop-bind", dispatch, outsideReceipt], { cwd: repoRoot, encoding: "utf8" }),
-    /mutation path must be contained under the run root/
-  );
-
-  const linkedProfile = join(temp, "linked-runner.toml");
-  const linkedDispatch = join(temp, "linked-dispatch.json");
-  symlinkSync(profile, linkedProfile);
-  writeFileSync(linkedDispatch, JSON.stringify({ ...dispatchContext, cwd: temp, roleProfilePath: linkedProfile }));
-  assert.throws(
-    () => execFileSync(process.execPath, [bundledCli, "fix-loop-bind", linkedDispatch, join(temp, "linked-receipt.json")], { cwd: repoRoot, encoding: "utf8" }),
-    /unsafe regular file|ELOOP/
-  );
-});
-
-test("10-case benchmark clears the median uncached input-token and time-to-fix bars", () => {
+test("10-case production benchmark clears the median raw input-token and time-to-fix bars", () => {
   const evidence = fixture("benchmark-evidence.json");
-  assert.match(evidence.harness, /real Codex fresh-dispatch vs exact-thread-id resume/);
+  assert.match(evidence.harness, /real Codex.*production runCodexWave.*runCodexWaveContinuation/);
   assert.match(evidence.command, /benchmark-codex-fix-loop\.mjs/);
   assert.match(evidence.codexVersion, /^codex-cli /);
+  assert.match(evidence.productionPath.initial, /runCodexWave/);
+  assert.match(evidence.productionPath.continued, /runCodexWaveContinuation/);
   assert.ok(evidence.cases.every(entry =>
     entry.fixtureSha256 &&
-    entry.seed.threadId &&
+    entry.seed.receiptId &&
+    entry.seed.threadIdSha256 === entry.continued.threadIdSha256 &&
+    entry.seed.stdoutSha256 &&
+    entry.fresh.stdoutSha256 &&
+    entry.continued.stdoutSha256 &&
     entry.fresh.type === "turn.completed" &&
     entry.continued.type === "turn.completed" &&
     entry.fresh.verification.passed &&
@@ -165,7 +119,7 @@ test("10-case benchmark clears the median uncached input-token and time-to-fix b
   ));
   const result = benchmarkCodexFixLoops(evidence.cases);
   assert.equal(result.caseCount, 10);
-  assert.ok(result.medianUncachedInputTokenReductionPct >= 25, JSON.stringify(result));
+  assert.ok(result.medianTotalInputTokenReductionPct >= 25, JSON.stringify(result));
   assert.ok(result.medianTimeToFixReductionPct >= 20, JSON.stringify(result));
   assert.deepEqual(evidence.summary, result);
 });

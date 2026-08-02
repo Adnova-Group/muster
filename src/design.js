@@ -399,17 +399,19 @@ export async function scanDesign(cwd = process.cwd(), options = {}) {
 export async function detectAuditDesignEvidence(cwd = process.cwd(), paths = []) {
   const root = resolve(cwd);
   const scopes = Array.isArray(paths) && paths.length > 0 ? paths : ["."];
+  let incomplete = false;
   for (const scope of scopes) {
     const candidate = resolve(root, scope);
     if (!inside(candidate, root)) continue;
     try {
       const result = await detectDesignEvidence(candidate);
       if (result.hasEvidence) return true;
+      if (result.truncated) incomplete = true;
     } catch (error) {
       if (error?.code !== "ENOENT") throw error;
     }
   }
-  return false;
+  return incomplete ? "unknown" : false;
 }
 
 function nodeSupportsOptionalDetector(version) {

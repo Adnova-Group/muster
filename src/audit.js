@@ -38,6 +38,7 @@ export function buildAuditManifest(caps = {}, opts = {}) {
   const backlog = !!opts.backlog;
   const paths = normalizePaths(opts.paths);
   const scoped = paths.length > 0;
+  const designEvidenceIncomplete = opts.designEvidence === "unknown";
   const scopeSuffix = scoped ? ` (scope: ${paths.join(", ")})` : "";
   const stage = makeStage(caps, scoped ? `scoped review: ${paths.join(", ")}` : "whole-codebase review");
   const dimensions = [
@@ -106,7 +107,9 @@ export function buildAuditManifest(caps = {}, opts = {}) {
         ],
     crew,
     recommendations: recs,
-    degradations: [],
+    degradations: designEvidenceIncomplete
+      ? ["Design-evidence discovery was incomplete; audit-design-ux is included because truncation cannot establish absence."]
+      : [],
     plan
   };
 }

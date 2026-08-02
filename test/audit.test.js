@@ -60,6 +60,13 @@ test("design evidence adds audit-design-ux only for the actual audited scope", (
   assert.ok(validateManifest(design).ok);
 });
 
+test("incomplete design evidence cannot become definitive absence", () => {
+  const unknown = buildAuditManifest({}, { designEvidence: "unknown" });
+  assert.ok(unknown.plan.some((task) => task.id === "audit-design-ux"));
+  assert.ok(unknown.degradations.some((note) => /incomplete/i.test(note)));
+  assert.ok(validateManifest(unknown).ok);
+});
+
 test("consolidate/fix/verify dependency chain", () => {
   const m = buildAuditManifest({});
   const auditIds = m.plan.filter(p => p.id.startsWith("audit-")).map(p => p.id);

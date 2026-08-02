@@ -396,8 +396,30 @@ test("Codex project installs use the primary checkout config root from a linked 
   assert.equal(await codexProjectRoot(linked), main);
   const installed = await runCodexInstall({ cwd: linked, home, repoRoot, execFile: absentCodex });
   assert.equal(installed.files.some(operation => operation.path.startsWith(join(main, ".codex"))), true);
-  assert.equal(JSON.parse(await readFile(join(main, ".codex", "hooks.json"), "utf8")).hooks.Stop.length > 0, true);
+  const mainHooksPath = join(main, ".codex", "hooks.json");
+  const mainHooks = JSON.parse(await readFile(mainHooksPath, "utf8"));
+  assert.equal(mainHooks.hooks.Stop.length > 0, true);
   await assert.rejects(readFile(join(linked, ".codex", "hooks.json")), error => error.code === "ENOENT");
+
+  let markerCreated = false;
+  const markerInventory = async () => {
+    if (!markerCreated) {
+      markerCreated = true;
+      await mkdir(join(linked, ".codex"));
+    }
+    return inventoryFor(linked, mainHooksPath, installed.hookTrust.results);
+  };
+  const markerRace = await runCodexInstall({ cwd: linked, home, repoRoot, execFile: absentCodex, hookInventory: markerInventory });
+  assert.equal(markerRace.ok, false);
+  assert.match(markerRace.hookTrust.effective.error, /activation state changed/);
+
+  await symlink(join(main, ".codex", "muster", "hooks", "muster-hook.mjs"), join(linked, "relative-alias.mjs"));
+  mainHooks.hooks.Notification = [{ hooks: [{ type: "command", command: "node ./relative-alias.mjs" }] }];
+  await writeFile(mainHooksPath, `${JSON.stringify(mainHooks, null, 2)}\n`);
+  await assert.rejects(
+    () => runCodexInstall({ cwd: linked, home, repoRoot, execFile: absentCodex }),
+    /aliased Muster hook|aliased to a live managed Muster runtime/
+  );
 });
 
 test("effectiveHookTrust rejects duplicate scope and managed hook inventory records", () => {

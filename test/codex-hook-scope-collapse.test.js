@@ -191,7 +191,7 @@ test("Codex install: canonical user drift during collapse rolls the project fall
   let inventoryCalls = 0;
   const racingInventory = async args => {
     inventoryCalls++;
-    if (inventoryCalls === 2) {
+    if (inventoryCalls === 3) {
       const userHooksPath = join(codexHome, "hooks.json");
       const config = JSON.parse(await readFile(userHooksPath, "utf8"));
       delete config.hooks.Stop;
@@ -204,7 +204,7 @@ test("Codex install: canonical user drift during collapse rolls the project fall
     () => runCodexInstall({ scope: "project", cwd, home, repoRoot, execFile: absentCodex, hookInventory: racingInventory }),
     /canonical user hook scope changed|cannot remove the project hook fallback/i
   );
-  assert.equal(inventoryCalls, 2, "canonical activation is checked before mutation and again inside the transaction");
+  assert.equal(inventoryCalls, 4, "each canonical activation proof uses two stable inventory reads before mutation and again inside the transaction");
   assert.equal(await readFile(projectHooksPath, "utf8"), beforeHooks);
   assert.equal(await readFile(projectManifestPath, "utf8"), beforeManifest);
   assert.equal(await readFile(projectRuntimePath, "utf8"), beforeRuntime);

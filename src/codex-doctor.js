@@ -866,7 +866,7 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
       : "bundled runtime and MCP entrypoint present" });
   }
   const userCodexHome = codexHome || process.env.CODEX_HOME || join(homedir(), ".codex");
-  const activationProofStart = await hookActivationSnapshot({ cwd, userCodexHome });
+  const activationProofStart = await hookActivationSnapshot({ cwd, inventoryCwd, userCodexHome });
   const registeredScopes = await registeredManagedScopes(userCodexHome);
   checks.push({ name: "codex-managed-scopes", ok: registeredScopes.issues.length === 0, detail: registeredScopes.issues.length
     ? `${registeredScopes.issues.join("; ")}; rerun muster install codex for the affected scope`
@@ -1082,7 +1082,8 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
       readingPath = configPath;
       const config = await readRegularJson(configPath);
       if (!config) throw missingScopeFile("managed hook configuration", configPath);
-      const aliasCwds = dir === userCodexHome ? [...new Set([cwd, ...managedProjectCwds])] : [dirname(dir)];
+      const aliasCwds = dir === userCodexHome ? [...new Set([cwd, inventoryCwd, ...managedProjectCwds])]
+        : resolve(dirname(dir)) === cwd ? [...new Set([cwd, inventoryCwd])] : [dirname(dir)];
       const aliasedMusterCommand = await hasMusterHookCommandAlias(config, managedHookScripts, { cwds: aliasCwds });
       if (dir !== userCodexHome && isHooksSkippedManifest(owner, selected?.packageVersion)) {
         // Coherent-and-non-firing: no runtime dir is expected, so it is
@@ -1253,12 +1254,16 @@ export async function runCodexDoctor({ root, cwd = process.cwd(), codexHome, exe
   const aliasCandidatesAfter = effectiveTargets.length ? await Promise.all(effectiveTargets.map(target => inventoryAliasCandidateSnapshot(confirmedInventory, {
     cwd: target.cwd, hooksJsonPath: target.configPath
   }))) : [];
-  const inventoryStable = !effectiveTargets.length || (same(inventory, confirmedInventory)
-    && aliasCandidatesBefore.every((snapshot, index) => sameAliasCandidateSnapshot(snapshot, aliasCandidatesAfter[index])));
   const inventoryAliases = effectiveTargets.length ? await Promise.all(effectiveTargets.map(target => hasManagedRuntimeInventoryAlias(confirmedInventory, {
     cwd: target.cwd, hooksJsonPath: target.configPath, activationSnapshot: activationBefore
   }))) : [];
-  const activationAfter = effectiveTargets.length ? await hookActivationSnapshot({ cwd, userCodexHome }) : null;
+  const aliasCandidatesClosing = effectiveTargets.length ? await Promise.all(effectiveTargets.map(target => inventoryAliasCandidateSnapshot(confirmedInventory, {
+    cwd: target.cwd, hooksJsonPath: target.configPath
+  }))) : [];
+  const inventoryStable = !effectiveTargets.length || (same(inventory, confirmedInventory)
+    && aliasCandidatesBefore.every((snapshot, index) => sameAliasCandidateSnapshot(snapshot, aliasCandidatesAfter[index]))
+    && aliasCandidatesAfter.every((snapshot, index) => sameAliasCandidateSnapshot(snapshot, aliasCandidatesClosing[index])));
+  const activationAfter = effectiveTargets.length ? await hookActivationSnapshot({ cwd, inventoryCwd, userCodexHome }) : null;
   const activationStable = !effectiveTargets.length || sameHookActivationSnapshot(activationBefore, activationAfter);
   const effectiveFailures = effectiveTargets.map((target, index) => ({
     dir: target.dir,

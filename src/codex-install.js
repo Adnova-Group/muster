@@ -115,6 +115,16 @@ async function activationFileSnapshot(path) {
   try { return await physicalFileSnapshot(path); }
   catch (error) { return { unsafe: true, code: error.code || null, message: error.message }; }
 }
+async function activationDirectorySnapshot(path) {
+  try {
+    const metadata = await lstat(path);
+    if (!metadata.isDirectory() || metadata.isSymbolicLink()) throw new Error(`Codex activation directory must be an ordinary directory: ${path}`);
+    return { exists: true, dev: String(metadata.dev), ino: String(metadata.ino), bytes: Buffer.alloc(0) };
+  } catch (error) {
+    if (error.code === "ENOENT") return { exists: false, dev: null, ino: null, bytes: null };
+    return { unsafe: true, code: error.code || null, message: error.message };
+  }
+}
 async function declarationOwnershipSnapshot(manifestPath, configPath) {
   const [manifest, config] = await Promise.all([
     ownershipFileSnapshot(manifestPath),
@@ -170,7 +180,7 @@ async function readScopeRegistry(home) {
   return { path, present: true, entries: validateScopeRegistry(path, registry) };
 }
 
-export async function hookActivationSnapshot({ home, cwd, userCodexHome = codexHome(home) }) {
+export async function hookActivationSnapshot({ home, cwd, inventoryCwd = cwd, userCodexHome = codexHome(home) }) {
   const registryPath = join(userCodexHome, "muster", "install-scopes.json");
   let registryFile = await activationFileSnapshot(registryPath);
   let entries = [];
@@ -194,6 +204,10 @@ export async function hookActivationSnapshot({ home, cwd, userCodexHome = codexH
   );
   const files = new Map([[registryPath, registryFile]]);
   for (const path of [...new Set(paths)].sort()) if (path !== registryPath) files.set(path, await activationFileSnapshot(path));
+  if (resolve(inventoryCwd) !== resolve(cwd)) {
+    const invocationConfigDir = join(inventoryCwd, ".codex");
+    files.set(invocationConfigDir, await activationDirectorySnapshot(invocationConfigDir));
+  }
   return files;
 }
 
@@ -216,7 +230,7 @@ async function liveManagedHookScripts(home, extraConfigDirs = []) {
   return [...dirs].map(dir => join(dir, "muster", "hooks", "muster-hook.mjs"));
 }
 
-async function validateManagedHookAliasGraph({ home, cwd, entries, currentDir, currentConfig }) {
+async function validateManagedHookAliasGraph({ home, cwd, inventoryCwd = cwd, entries, currentDir, currentConfig }) {
   const currentProjectDir = join(cwd, ".codex");
   const registeredDirs = new Set(entries.map(entry => resolve(entry.configDir)));
   const scopes = [
@@ -238,7 +252,8 @@ async function validateManagedHookAliasGraph({ home, cwd, entries, currentDir, c
         throw new Error(`Codex hook configuration conflict: ${configPath} is malformed while validating managed runtime aliases.`);
       }
     }
-    const cwds = entry.scope === "user" ? [...new Set([cwd, ...projectCwds])] : [dirname(entry.configDir)];
+    const cwds = entry.scope === "user" ? [...new Set([cwd, inventoryCwd, ...projectCwds])]
+      : entry.configDir === resolve(currentProjectDir) ? [...new Set([cwd, inventoryCwd])] : [dirname(entry.configDir)];
     const unownedCurrentProject = entry.configDir === resolve(currentProjectDir)
       && entry.configDir !== resolve(currentDir || "") && !registeredDirs.has(entry.configDir);
     if (unownedCurrentProject && Object.values(config.hooks || {}).some(groups => Array.isArray(groups)
@@ -1627,6 +1642,22 @@ export async function inventoryAliasCandidateSnapshot(inventory, { cwd, hooksJso
 
 export const sameAliasCandidateSnapshot = (left, right) => same([...left], [...right]);
 
+async function verifiedHookInventory({ inventoryReader, inventoryArgs, cwd, hooksJsonPath, activationSnapshot }) {
+  const first = await inventoryReader(inventoryArgs);
+  const candidatesFirst = await inventoryAliasCandidateSnapshot(first, { cwd, hooksJsonPath });
+  const inventory = await inventoryReader(inventoryArgs);
+  const candidatesBeforeAlias = await inventoryAliasCandidateSnapshot(inventory, { cwd, hooksJsonPath });
+  const alias = await hasManagedRuntimeInventoryAlias(inventory, { cwd, hooksJsonPath, activationSnapshot });
+  const candidatesAfterAlias = await inventoryAliasCandidateSnapshot(inventory, { cwd, hooksJsonPath });
+  return {
+    inventory,
+    alias,
+    stable: same(first, inventory)
+      && sameAliasCandidateSnapshot(candidatesFirst, candidatesBeforeAlias)
+      && sameAliasCandidateSnapshot(candidatesBeforeAlias, candidatesAfterAlias)
+  };
+}
+
 function exactMusterHookGroups(config, expectedHookGroups) {
   if (!config?.hooks || typeof config.hooks !== "object" || Array.isArray(config.hooks)) return false;
   const expected = [];
@@ -1903,25 +1934,22 @@ async function inspectUserScopeHooks({ home, packageVersion, expected, cwd }) {
   return { dir, configPath, config, hookGroups: manifest.hookGroups, gaps, knownKeys: codexHookStateKeys(config), snapshot: snapshotHash.digest("hex") };
 }
 
-async function inspectEffectiveUserScopeHooks({ home, packageVersion, expected, cwd, runtimeIdentity, hookInventory }) {
+async function inspectEffectiveUserScopeHooks({ home, packageVersion, expected, cwd, activationCwd = cwd, runtimeIdentity, hookInventory }) {
   const before = await inspectUserScopeHooks({ home, packageVersion, expected, cwd });
   if (!before || before.gaps.untrusted.length || before.gaps.stale.length) return null;
-  const activationBefore = await hookActivationSnapshot({ home, cwd });
+  const activationBefore = await hookActivationSnapshot({ home, cwd: activationCwd, inventoryCwd: cwd });
   const inventoryReader = hookInventory || readCodexHookInventory;
-  const inventory = await inventoryReader({
+  const proof = await verifiedHookInventory({ inventoryReader, inventoryArgs: {
     runtimeIdentity,
     cwds: [cwd],
     env: { ...process.env, CODEX_HOME: codexHome(home) }
-  });
-  const inventoryAlias = await hasManagedRuntimeInventoryAlias(inventory, {
-    cwd, hooksJsonPath: before.configPath, activationSnapshot: activationBefore
-  });
+  }, cwd, hooksJsonPath: before.configPath, activationSnapshot: activationBefore });
   const inspected = await inspectUserScopeHooks({ home, packageVersion, expected, cwd });
-  const activationAfter = await hookActivationSnapshot({ home, cwd });
+  const activationAfter = await hookActivationSnapshot({ home, cwd: activationCwd, inventoryCwd: cwd });
   if (!inspected || inspected.snapshot !== before.snapshot || inspected.gaps.untrusted.length || inspected.gaps.stale.length
     || inspected.gaps.results.length !== expected.hookCount
-    || inventoryAlias || !sameHookActivationSnapshot(activationBefore, activationAfter)) return null;
-  const effective = effectiveHookTrust(inventory, cwd, inspected.configPath, inspected.gaps.results, { knownKeys: inspected.knownKeys });
+    || proof.alias || !proof.stable || !sameHookActivationSnapshot(activationBefore, activationAfter)) return null;
+  const effective = effectiveHookTrust(proof.inventory, cwd, inspected.configPath, inspected.gaps.results, { knownKeys: inspected.knownKeys });
   return effective.ok ? { ...inspected, effective, activationSnapshot: activationAfter } : null;
 }
 
@@ -1929,7 +1957,7 @@ async function userScopeHooksHealthy(options) {
   return Boolean(await inspectEffectiveUserScopeHooks(options));
 }
 
-async function prepareHooks({ scope, cwd, home, hookSourceRoot, packageVersion, nodeExecPath, canonicalUserHooksActive }) {
+async function prepareHooks({ scope, cwd, inventoryCwd = cwd, home, hookSourceRoot, packageVersion, nodeExecPath, canonicalUserHooksActive }) {
   const dir = configDir(scope, cwd, home);
   const runtimeDir = join(dir, "muster"), manifestPath = join(runtimeDir, MANIFEST), configPath = join(dir, "hooks.json");
   const runtimeScript = join(runtimeDir, "hooks", "muster-hook.mjs");
@@ -1954,7 +1982,7 @@ async function prepareHooks({ scope, cwd, home, hookSourceRoot, packageVersion, 
   if (!previous && Object.values(config.hooks).flat().some(group => groupCommands(group).some(isMusterHookCommand))) {
     throw new Error(`Codex hook conflict: ${configPath} contains an unmanaged Muster hook. Remove it or restore its Muster manifest, then rerun the command.`);
   }
-  if (await hasMusterHookCommandAlias(config, await liveManagedHookScripts(home, [dir]), { cwds: [cwd] })) {
+  if (await hasMusterHookCommandAlias(config, await liveManagedHookScripts(home, [dir]), { cwds: [...new Set([cwd, inventoryCwd])] })) {
     throw new Error(`Codex hook conflict: ${configPath} contains an aliased Muster hook command. Remove the alias or restore the exact Muster hook manifest, then rerun the command.`);
   }
   const originalConfig = clone(config);
@@ -2182,9 +2210,9 @@ async function prepareCodexInstall({ scope, dryRun, cwd, inventoryCwd, home, rep
     ? await expectedCodexHookInstall({ dir: codexHome(home), hookSourceRoot, nodeExecPath })
     : null;
   const canonicalUserHooksActive = scope === "project" && await userScopeHooksHealthy({
-    home, packageVersion, expected: canonicalUserExpected, cwd: inventoryCwd, runtimeIdentity, hookInventory
+    home, packageVersion, expected: canonicalUserExpected, cwd: inventoryCwd, activationCwd: cwd, runtimeIdentity, hookInventory
   });
-  const hooks = await prepareHooks({ scope, cwd, home, hookSourceRoot, packageVersion, nodeExecPath, canonicalUserHooksActive });
+  const hooks = await prepareHooks({ scope, cwd, inventoryCwd, home, hookSourceRoot, packageVersion, nodeExecPath, canonicalUserHooksActive });
   const managed = new Set(managedFiles.map(file => resolve(dir, file)));
   const staleFiles = managedFiles.filter(file => !files.includes(file));
   for (const file of files) {
@@ -2246,7 +2274,7 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
       if (currentHookConfigSnapshot !== hooks.configSnapshot) {
         throw new Error(`Codex hook configuration concurrent state change detected at ${hooks.configPath}; no installation state was modified.`);
       }
-      await validateManagedHookAliasGraph({ home, cwd, entries: registry.entries, currentDir: dir, currentConfig: hooks.originalConfig });
+      await validateManagedHookAliasGraph({ home, cwd, inventoryCwd, entries: registry.entries, currentDir: dir, currentConfig: hooks.originalConfig });
       await ordinaryDirectoryPath(dir, { create: true });
       try {
         const currentScope = await scopeEntry(scope, cwd, home);
@@ -2403,10 +2431,10 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
           declarationSeparatorAdded: declarationReconcile.separatorAdded,
           declarationRegion: declarationReconcile.receipt
         }, null, 2) + "\n");
-        await validateManagedHookAliasGraph({ home, cwd, entries: reconciled, currentDir: dir, currentConfig: hooks.config });
+        await validateManagedHookAliasGraph({ home, cwd, inventoryCwd, entries: reconciled, currentDir: dir, currentConfig: hooks.config });
         if (hooks.skipped) {
           canonicalUserTrust = await inspectEffectiveUserScopeHooks({
-            home, packageVersion, expected: canonicalUserExpected, cwd: inventoryCwd,
+            home, packageVersion, expected: canonicalUserExpected, cwd: inventoryCwd, activationCwd: cwd,
             runtimeIdentity: identity, hookInventory
           });
           if (!canonicalUserTrust) {
@@ -2414,7 +2442,7 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
           }
           await scopeLockOptions?.afterCanonicalVerification?.();
         }
-        activationProofStart = await hookActivationSnapshot({ home, cwd });
+        activationProofStart = await hookActivationSnapshot({ home, cwd, inventoryCwd });
         if (hooks.skipped && !sameHookActivationSnapshot(canonicalUserTrust.activationSnapshot, activationProofStart)) {
           throw new Error("The canonical user hook scope changed after effective verification; cannot remove the project hook fallback");
         }
@@ -2435,6 +2463,10 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
   if (dryRun) {
     hookTrust = { ok: false, blocking: false, verified: false, results: [], stale: [], effective: { verified: false, ok: false, results: [], error: "dry-run does not verify effective hook activation" }, remediation: null };
   } else {
+    if (hooks.skipped) canonicalUserTrust = await inspectEffectiveUserScopeHooks({
+      home, packageVersion, expected: canonicalUserExpected, cwd: inventoryCwd, activationCwd: cwd,
+      runtimeIdentity: identity, hookInventory
+    });
     const trustTarget = hooks.skipped ? canonicalUserTrust : {
       configPath: hooks.configPath,
       config: hooks.config,
@@ -2455,25 +2487,21 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
       cwds: [inventoryCwd],
       env: { ...process.env, CODEX_HOME: codexHome(home) }
     };
-    const inventory = hooks.skipped ? null : await inventoryReader(inventoryArgs);
-    const aliasCandidatesBefore = hooks.skipped ? null : await inventoryAliasCandidateSnapshot(inventory, { cwd: inventoryCwd, hooksJsonPath: trustTarget.configPath });
-    const confirmedInventory = hooks.skipped ? null : await inventoryReader(inventoryArgs);
-    const aliasCandidatesAfter = hooks.skipped ? null : await inventoryAliasCandidateSnapshot(confirmedInventory, { cwd: inventoryCwd, hooksJsonPath: trustTarget.configPath });
-    const inventoryStable = hooks.skipped || (same(inventory, confirmedInventory) && sameAliasCandidateSnapshot(aliasCandidatesBefore, aliasCandidatesAfter));
-    const inventoryAlias = hooks.skipped ? false : await hasManagedRuntimeInventoryAlias(confirmedInventory, {
-      cwd: inventoryCwd, hooksJsonPath: trustTarget.configPath, activationSnapshot: activationBefore
+    const proof = hooks.skipped ? null : await verifiedHookInventory({
+      inventoryReader, inventoryArgs, cwd: inventoryCwd,
+      hooksJsonPath: trustTarget.configPath, activationSnapshot: activationBefore
     });
-    const activationAfter = await hookActivationSnapshot({ home, cwd });
+    const activationAfter = await hookActivationSnapshot({ home, cwd, inventoryCwd });
     const activationStable = sameHookActivationSnapshot(activationBefore, activationAfter);
     const effective = hooks.skipped
-      ? activationStable
+      ? trustTarget && activationStable
         ? canonicalUserTrust.effective
-        : { verified: true, ok: false, error: "Codex hook activation state changed after its transaction proof", results: [] }
-      : inventoryAlias
+        : { verified: true, ok: false, error: "Codex canonical user hooks changed or became inactive after project fallback removal", results: [] }
+      : proof.alias
         ? { verified: true, ok: false, error: "Codex hooks/list reported another source invoking the managed Muster runtime", results: [] }
-        : !activationStable || !inventoryStable
+        : !activationStable || !proof.stable
         ? { verified: true, ok: false, error: "Codex hook activation state changed during hooks/list verification", results: [] }
-        : effectiveHookTrust(confirmedInventory, inventoryCwd, trustTarget.configPath, gaps.results, { knownKeys: trustTarget.knownKeys });
+        : effectiveHookTrust(proof.inventory, inventoryCwd, trustTarget.configPath, gaps.results, { knownKeys: trustTarget.knownKeys });
     const persistedOk = gaps.untrusted.length === 0 && gaps.stale.length === 0;
     hookTrust = {
       ok: persistedOk && effective.ok,

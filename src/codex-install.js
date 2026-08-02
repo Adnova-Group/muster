@@ -2242,11 +2242,15 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
         await installConfig();
       } catch (error) {
         const rollbackErrors = [];
-        const skip = new Set(authoritativeRollbackPaths);
-        if (error?.musterConcurrentConfig) {
-          skip.add(threadLimitConfigPath);
-          skip.add(declarationConfigPath);
-        }
+        // Config candidates are never written by the generic transaction:
+        // before publication these live paths remain untouched, and after
+        // publication the identity-aware candidate rollback above owns them.
+        // Always excluding them also closes the post-verification window in
+        // which a concurrent writer could otherwise be overwritten while
+        // unrelated managed files are being restored.
+        const skip = new Set([
+          threadLimitConfigPath, declarationConfigPath, ...authoritativeRollbackPaths
+        ]);
         try { await restoreFilesystem(originals, changed, { skip }); }
         catch (rollbackError) { rollbackErrors.push(rollbackError); }
         if (rollbackErrors.length) {

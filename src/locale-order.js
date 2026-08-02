@@ -1,7 +1,10 @@
 const collators = new Map();
 
 function localeFromEnvironment(environment = process.env) {
-  const raw = environment.LC_ALL || environment.LC_COLLATE || environment.LANG || "en-US";
+  // Match Node/ICU's startup locale precedence so worker-thread ordering stays
+  // byte-equivalent to the legacy child process even when category-specific
+  // locale variables conflict.
+  const raw = environment.LC_ALL || environment.LC_MESSAGES || environment.LANG || "en-US";
   const base = String(raw).split(".", 1)[0].split("@", 1)[0];
   if (!base || base === "C" || base === "POSIX") return "en-US";
   const candidate = base.replaceAll("_", "-");

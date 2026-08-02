@@ -252,7 +252,7 @@ test("locale-sensitive score ties retain child-process CLI ordering", async (t) 
   ];
   const file = join(fixture, "candidates.json");
   await writeFile(file, JSON.stringify(candidates));
-  const environment = { LANG: "de_DE.UTF-8" };
+  const environment = { LANG: "de_DE.UTF-8", LC_COLLATE: "sv_SE.UTF-8" };
   const legacy = await execFileP(process.execPath, [cliPath, "pick", file], { cwd: rootDir, env: environment });
   const response = await invokeInProcessTool("muster_pick", { candidates }, { environment });
   assert.equal(response.result.ok, true, response.result.text);

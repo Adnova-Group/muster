@@ -7,7 +7,11 @@ import { validateManifest, manifestWarnings } from "./manifest.js";
 import { writeMemory, readMemory } from "./memory.js";
 import { computeWaves, nextTasks } from "./wave.js";
 import { computeSprintWaves, reconcileSprintProgress } from "./sprint-waves.js";
-import { checkBacklogReceipts, makeGitReachabilityVerifier } from "./backlog-receipts.js";
+import {
+  BACKLOG_RECEIPT_MAX_BYTES,
+  checkBacklogReceipts,
+  makeGitReachabilityVerifier,
+} from "./backlog-receipts.js";
 import { tallyReview, verdictsTallyCorruptionErrors } from "./review.js";
 import { validateVerdicts } from "./verdict-schema.js";
 import { pickWinner } from "./tournament.js";
@@ -660,9 +664,15 @@ async function main() {
       let content;
       if (file === "-") content = await readStdin(MAX_HYGIENE_BACKLOG_BYTES);
       else {
-        const canonical = await resolveContainedRealpath(process.cwd(), file);
+        const lexical = resolve(process.cwd(), file);
+        const canonical = await resolveContainedRealpath(process.cwd(), lexical);
         if (canonical === null) fail(`backlog-receipts: ${file} is not a regular file contained under the run root`);
-        content = await readFile(canonical, "utf8");
+        if (canonical !== lexical) fail(`backlog-receipts: ${file} must not contain a symlink`);
+        const { bytes } = await readNoFollowRegular(canonical, {
+          maxBytes: BACKLOG_RECEIPT_MAX_BYTES,
+          label: file,
+        });
+        content = bytes.toString("utf8");
       }
       let releaseCommit;
       try {

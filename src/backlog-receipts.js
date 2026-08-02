@@ -3,6 +3,12 @@ import { stripAnnotations } from "./sprint-waves.js";
 
 const CHECKED_CHECKBOX_RE = /^- \[[xX]\] (.*)$/;
 const SHA_RE = /^[0-9a-f]{40}$/;
+export const BACKLOG_RECEIPT_MAX_BYTES = 16 * 1024 * 1024;
+
+function gitFailure(operation, result) {
+  if (result.error) throw result.error;
+  throw new Error(`${operation} failed with exit ${result.status ?? "unknown"}`);
+}
 
 export function checkBacklogReceipts(content, { releaseRef, isReachable } = {}) {
   if (typeof content !== "string") throw new TypeError("backlog content must be a string");
@@ -51,19 +57,35 @@ export function checkBacklogReceipts(content, { releaseRef, isReachable } = {}) 
   return { ok: errors.length === 0, releaseRef, summary: { checked, withdrawn, verified, rejected: errors.length }, errors };
 }
 
-export function makeGitReachabilityVerifier({ cwd, releaseCommit }) {
+export function makeGitReachabilityVerifier({ cwd, releaseCommit, spawnSyncImpl = spawnSync }) {
   if (!SHA_RE.test(releaseCommit || "")) throw new TypeError("releaseCommit must be a lowercase 40-character Git SHA");
-  const repository = spawnSync("git", ["rev-parse", "--git-dir"], { cwd, stdio: "ignore" });
+  const repository = spawnSyncImpl("git", ["rev-parse", "--git-dir"], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   if (repository.error) throw repository.error;
   if (repository.status !== 0) throw new Error("git reachability verification requires a repository");
   return (receipt) => {
-    const object = spawnSync("git", ["cat-file", "-e", `${receipt}^{commit}`], { cwd, stdio: "ignore" });
-    if (object.error) throw object.error;
-    if (object.status !== 0) return false;
-    const result = spawnSync("git", ["merge-base", "--is-ancestor", receipt, releaseCommit], { cwd, stdio: "ignore" });
+    // Batch-check reports an unknown object as structured `missing` output while
+    // reserving a nonzero process status for an operational Git failure. `cat-file
+    // -e` collapses both cases to a nonzero exit (commonly 128), which would let a
+    // broken object database masquerade as an ordinary stale receipt.
+    const object = spawnSyncImpl("git", ["cat-file", "--batch-check=%(objectname) %(objecttype)"], {
+      cwd,
+      encoding: "utf8",
+      input: `${receipt}\n`,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    if (object.status !== 0 || object.error) gitFailure("git cat-file --batch-check", object);
+    const objectLine = object.stdout.trim();
+    if (objectLine === `${receipt} missing`) return false;
+    if (objectLine !== `${receipt} commit`) {
+      if (/^[0-9a-f]{40} \S+$/.test(objectLine)) return false;
+      throw new Error("git cat-file --batch-check returned an invalid response");
+    }
+    const result = spawnSyncImpl("git", ["merge-base", "--is-ancestor", receipt, releaseCommit], {
+      cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
+    });
     if (result.error) throw result.error;
     if (result.status === 0) return true;
     if (result.status === 1) return false;
-    throw new Error(`git merge-base --is-ancestor failed with exit ${result.status ?? "unknown"}`);
+    gitFailure("git merge-base --is-ancestor", result);
   };
 }

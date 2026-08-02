@@ -4,12 +4,14 @@ import { execFile, spawn } from "node:child_process";
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { chmod, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { connect, createServer as createTcpServer } from "node:net";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { setTimeout as delay } from "node:timers/promises";
 
 const exec = promisify(execFile);
+const require = createRequire(import.meta.url);
 const server = new URL("../codex/skill-assets/sp-brainstorm/scripts/server.cjs", import.meta.url).pathname;
 const sourceServer = new URL("../plugin/builtins/sp-brainstorm/scripts/server.cjs", import.meta.url).pathname;
 const helper = new URL("../codex/skill-assets/sp-brainstorm/scripts/helper.js", import.meta.url).pathname;
@@ -205,6 +207,47 @@ async function exerciseAuthenticatedWebSocketTunnel(t) {
     receiverCapture: Buffer.concat(tunnel.receiverObserved),
     authenticatedRecords: tunnel.authenticatedRecords,
     tunnelKey: tunnel.key,
+  };
+}
+
+async function exerciseRealBrowserTunnel(t) {
+  const session = await mkdtemp(join(tmpdir(), "muster-brainstorm-browser-e2e-"));
+  await chmod(session, 0o700);
+  const { child, info } = await launchServer(session);
+  await writeFile(join(session, "content", "remote-choice.html"), `
+    <main class="options">
+      <button id="remote-choice" data-choice="remote-private-choice">remote-private-event</button>
+    </main>
+  `, { mode: 0o600 });
+  const tunnel = await createAuthenticatedTunnel(info.port);
+  const { chromium } = require(process.env.MUSTER_PLAYWRIGHT_CORE);
+  const browser = await chromium.launch({
+    executablePath: process.env.MUSTER_PLAYWRIGHT_BROWSER,
+    headless: true,
+    args: ["--no-sandbox"],
+  });
+  t.after(async () => {
+    await browser.close();
+    child.kill();
+    await tunnel.close();
+    await rm(session, { recursive: true, force: true });
+  });
+
+  const launchUrl = new URL(info.url);
+  launchUrl.hostname = "127.0.0.1";
+  launchUrl.port = String(tunnel.port);
+  const page = await browser.newPage();
+  await page.goto(launchUrl.href);
+  await page.locator("#status").filter({ hasText: "Connected" }).waitFor();
+  await page.frameLocator("#screen").locator('[data-choice="remote-private-choice"]').click();
+  const received = await waitForEvent(join(session, "state", "events"));
+  await page.close();
+
+  return {
+    received,
+    bootstrapCapability: new URL(info.url).searchParams.get("key"),
+    receiverCapture: Buffer.concat(tunnel.receiverObserved),
+    authenticatedRecords: tunnel.authenticatedRecords,
   };
 }
 
@@ -514,4 +557,20 @@ test("documented authenticated tunnel carries a WebSocket click while receiver-o
   const authenticated = encodeTunnelRecord(receipt.tunnelKey, Buffer.from("authenticated"));
   authenticated[authenticated.length - 1] ^= 1;
   assert.throws(() => openTunnelRecord(receipt.tunnelKey, authenticated.subarray(4)));
+});
+
+test("real browser controller sends a DOM click through the authenticated tunnel", {
+  skip: !(process.env.MUSTER_PLAYWRIGHT_CORE && process.env.MUSTER_PLAYWRIGHT_BROWSER),
+}, async (t) => {
+  const receipt = await exerciseRealBrowserTunnel(t);
+  assert.deepEqual(receipt.received, {
+    type: "click",
+    text: "remote-private-event",
+    choice: "remote-private-choice",
+    id: "remote-choice",
+  });
+  assert.ok(receipt.authenticatedRecords > 0);
+  assert.ok(receipt.receiverCapture.length > 0);
+  assert.equal(receipt.receiverCapture.includes(Buffer.from(receipt.bootstrapCapability)), false);
+  assert.equal(receipt.receiverCapture.includes(Buffer.from("remote-private-event")), false);
 });

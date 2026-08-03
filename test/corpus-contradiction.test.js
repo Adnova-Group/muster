@@ -310,6 +310,16 @@ test("review recovery contract stays progress-aware across orchestrator and runn
   }
 });
 
+test("Cowork sprint recovery uses the canonical progress-aware terminal contract", async () => {
+  const text = await read("cowork/sprint-protocol.md");
+  assert.match(text, /material(?:ly)? changed|candidate bytes|progress fingerprint/i);
+  assert.match(text, /repeated identical|repeated-identical|no-progress/i);
+  assert.match(text, /correction\/replan|correction-replan/i);
+  assert.doesNotMatch(text, /repeated\/unresolved round-1 finding recurring in round 2/i);
+  assert.doesNotMatch(text, /any round-3 FAIL/i);
+  assert.doesNotMatch(text, /dispatch that still fails after its retry/i);
+});
+
 // ── residue scan: verb-rename leftovers outside the plugin/ prose scan ─────
 // Every test above is a "shared term, quoted in N known places" pattern (TERM_REGISTRY).
 // The tests below are a DIFFERENT shape — not quote-site matching but residue scanning:

@@ -144,12 +144,16 @@ In either path, use the item text as the outcome and its parsed disposition as `
 - **No mid-sprint interviews.** A per-item `muster_assess` returning `clear:false` resolves with
   best-effort defaults instead of an attended interview, even in an attended session — record the gap
   `signals` in STATE and the batch report, and let the item's PR be where the human closes the gap.
-- **On escalation** (a spec-gate hard abort — a repeated/unresolved round-1 finding recurring in round 2,
-  or any round-3 FAIL regardless of disjointness — fix-loop cap, a dispatch that still fails after its
-  retry) — record it in STATE, leave that item's branch intact, mark it `escalated` in STATE and
-  backlog.md, and continue to the next item. The sprint always continues through an escalated item. A
-  dependent of an escalated or failed predecessor escalates immediately and never builds; apply that
-  check transitively before any worktree creation or dispatch.
+- **Self-healing recovery and terminal escalation.** A failed spec, implementation, dispatch, or review
+  leg enters correction/replan and then re-review. Continue while there is material progress: candidate
+  bytes, test evidence, the findings/progress fingerprint, or dependency state has changed. Do not turn a
+  numbered round or one failed retry into a terminal condition. Escalate only after repeated-identical
+  no-progress at the configured threshold, an explicit cancellation or approval/HUMAN-HOLD, an
+  inaccessible external dependency, or a configured non-waivable runaway backstop. Record the exact
+  terminal condition in STATE, leave that item's branch intact, mark it `escalated` in STATE and
+  backlog.md, and continue independent items. A failed predecessor likewise enters correction/replan;
+  dependents remain waiting and become terminally blocked only if that predecessor reaches a truthful
+  terminal state. Apply that dependency check transitively before worktree creation or dispatch.
 - **Step 8's override, here too** — inside this sprint no AskUserQuestion merge prompt fires per item;
   the declared disposition executes directly, `ask`/absent coerces to `pr`, noted in the batch report.
   In annotated mode, this never overrides the schedule barrier: merge dispositions execute only during

@@ -111,6 +111,21 @@ test("the full-gate wrapper retains its baseline in memory against recapture att
   );
 });
 
+test("skip-worktree cannot hide a deleted tracked file from the full-gate wrapper", async () => {
+  const { cwd } = await fixture();
+  await assert.rejects(
+    () => runWithWorktreeIntegrity({
+      cwd,
+      runGate: async () => {
+        await git(cwd, "update-index", "--skip-worktree", "tracked.txt");
+        await unlink(join(cwd, "tracked.txt"));
+        return { status: 0, signal: null };
+      },
+    }),
+    /tracked index contains skip-worktree/i,
+  );
+});
+
 test("CI runs the complete npm test gate inside one in-memory integrity wrapper", async () => {
   const workflow = await readFile(ci, "utf8");
   assert.match(workflow, /node scripts\/run-tests-with-worktree-integrity\.mjs/);

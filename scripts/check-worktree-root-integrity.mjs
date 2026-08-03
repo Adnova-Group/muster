@@ -77,6 +77,11 @@ export async function inspectRepository(invocationCwd) {
   const commonConfigPath = git(cwd, ["rev-parse", "--path-format=absolute", "--git-path", "config"]).toString("utf8").trim();
   const worktreeConfigPath = git(cwd, ["rev-parse", "--path-format=absolute", "--git-path", "config.worktree"]).toString("utf8").trim();
   const trackedBytes = git(cwd, ["ls-files", "-z"]);
+  const trackedIndexBytes = git(cwd, ["ls-files", "-v", "-z"]);
+  const flagged = nulPathBytes(trackedIndexBytes).filter((entry) => entry[0] !== 0x48 || entry[1] !== 0x20);
+  if (flagged.length) {
+    throw new Error(`tracked index contains skip-worktree, assume-unchanged, or non-default flags (base64 records): ${JSON.stringify(flagged.map((entry) => entry.toString("base64")))}`);
+  }
   const worktreeBytes = git(cwd, ["worktree", "list", "--porcelain", "-z"]);
   return {
     schemaVersion: SNAPSHOT_VERSION,
@@ -84,6 +89,7 @@ export async function inspectRepository(invocationCwd) {
     commonConfig: await configFileState(commonConfigPath),
     worktreeConfig: await configFileState(worktreeConfigPath),
     trackedSet: trackedBytes.toString("base64"),
+    trackedIndexState: trackedIndexBytes.toString("base64"),
     trackedFiles: nulPathBytes(trackedBytes).map((path) => path.toString("base64")),
     linkedWorktreeInventory: worktreeBytes.toString("base64"),
   };
@@ -95,11 +101,12 @@ async function readSnapshot(path) {
   if (stat.size > MAX_SNAPSHOT_BYTES) throw new Error(`integrity snapshot exceeds ${MAX_SNAPSHOT_BYTES} bytes`);
   const snapshot = JSON.parse(await readFile(path, "utf8"));
   const keys = Object.keys(snapshot).sort();
-  const expected = ["commonConfig", "linkedWorktreeInventory", "schemaVersion", "topLevel", "trackedFiles", "trackedSet", "worktreeConfig"];
+  const expected = ["commonConfig", "linkedWorktreeInventory", "schemaVersion", "topLevel", "trackedFiles", "trackedIndexState", "trackedSet", "worktreeConfig"];
   if (JSON.stringify(keys) !== JSON.stringify(expected) || snapshot.schemaVersion !== SNAPSHOT_VERSION
     || typeof snapshot.topLevel !== "string" || typeof snapshot.commonConfig !== "object"
     || typeof snapshot.worktreeConfig !== "object"
-    || typeof snapshot.trackedSet !== "string" || !Array.isArray(snapshot.trackedFiles)
+    || typeof snapshot.trackedSet !== "string" || typeof snapshot.trackedIndexState !== "string"
+    || !Array.isArray(snapshot.trackedFiles)
     || typeof snapshot.linkedWorktreeInventory !== "string") {
     throw new Error("integrity snapshot has an invalid schema");
   }
@@ -115,6 +122,7 @@ export function verifyRepositoryState(current, expected) {
     throw new Error("worktree Git config bytes or identity changed after the full gate");
   }
   if (current.trackedSet !== expected.trackedSet) throw new Error("tracked-file set changed after the full gate");
+  if (current.trackedIndexState !== expected.trackedIndexState) throw new Error("tracked index flags changed after the full gate");
   if (current.linkedWorktreeInventory !== expected.linkedWorktreeInventory) {
     throw new Error("linked-worktree inventory changed after the full gate");
   }

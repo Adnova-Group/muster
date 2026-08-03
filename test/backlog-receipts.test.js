@@ -157,6 +157,34 @@ test("CLI release-ref and ancestry operations ignore replacement metadata end to
   assert.equal(JSON.parse(result.stdout).summary.rejected, 1);
 });
 
+test("CLI release-ref resolution cannot be redirected through a PATH Git shadow", async () => {
+  const cwd = await tmpProject({ "seed.txt": "release\n" });
+  await pexecFile("git", ["init", "-b", "main"], { cwd });
+  await pexecFile("git", ["add", "."], { cwd });
+  await pexecFile("git", ["-c", "user.name=Muster Test", "-c", "user.email=test@example.invalid", "commit", "-m", "release"], { cwd });
+  await pexecFile("git", ["checkout", "--orphan", "side"], { cwd });
+  await writeFile(join(cwd, "seed.txt"), "unrelated receipt\n");
+  await pexecFile("git", ["add", "."], { cwd });
+  await pexecFile("git", ["-c", "user.name=Muster Test", "-c", "user.email=test@example.invalid", "commit", "-m", "receipt"], { cwd });
+  const receipt = (await pexecFile("git", ["rev-parse", "HEAD"], { cwd })).stdout.trim();
+  await pexecFile("git", ["checkout", "main"], { cwd });
+  const fakeBin = join(cwd, "fake-cli-bin");
+  const marker = join(cwd, "cli-shadow-git-ran");
+  await mkdir(fakeBin);
+  await writeFile(join(fakeBin, "git"), `#!/bin/sh\nprintf shadowed > ${JSON.stringify(marker)}\nprintf '%s\\n' ${JSON.stringify(receipt)}\n`);
+  await chmod(join(fakeBin, "git"), 0o755);
+
+  const result = spawnSync(process.execPath, [CLI, "backlog-receipts", "-", "--release-ref", "main"], {
+    cwd,
+    encoding: "utf8",
+    env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH}` },
+    input: `- [x] unrelated {done: ${receipt}}\n`,
+  });
+  assert.equal(result.status, 2, result.stderr);
+  assert.equal(JSON.parse(result.stdout).summary.rejected, 1);
+  await assert.rejects(readFile(marker, "utf8"), { code: "ENOENT" });
+});
+
 test("CLI rejects an ambiguous release ref instead of consuming Git's warned resolution", async () => {
   const cwd = await tmpProject({ "seed.txt": "release\n" });
   await pexecFile("git", ["init", "-b", "main"], { cwd });

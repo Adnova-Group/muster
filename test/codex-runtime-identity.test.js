@@ -49,6 +49,16 @@ async function fixture(t, platform) {
 }
 
 for (const platform of ["linux", "win32"]) {
+  // `execFile` below is a fully injected fake (it never shells out), so this
+  // is unit-level proof that resolveCodexRuntimeIdentity/runCodexCommand
+  // CONSTRUCT a canonical, non-PATH-relative invocation -- the primary
+  // evidence is calls[0].file/calls[0].args resolving to the realpath'd Node
+  // and the pinned identity.codex, not the marker/PATH assertions below. The
+  // marker-file and `env.PATH` checks are a secondary tripwire (they would
+  // also trivially pass if the injected execFile were removed entirely), not
+  // proof of an end-to-end "never spawns a real process" guarantee; a live
+  // spawn-level proof would need a real child_process, which this fixture
+  // deliberately avoids to stay hermetic and fast.
   test(`${platform}: fake PATH-precedence Codex is never executed and the trusted package entrypoint runs under canonical Node`, {
     skip: process.platform === platform ? false : `native ${platform} fixture runs in its matching CI job`,
   }, async t => {

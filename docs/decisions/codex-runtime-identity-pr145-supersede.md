@@ -39,7 +39,7 @@ are true and both are irrelevant — the actual implementation uses different na
 | Pinned-identity command execution | `runCodexCommand(execFile, identity, args, options)` | `src/codex-runtime-identity.js:93-96` |
 | Doctor verifies MCP Node pin | `codex-runtime` check | `src/codex-doctor.js:887-926` |
 | Doctor verifies Codex identity + version | `codex-runtime-identity` check | `src/codex-doctor.js:818-830` |
-| Its own fixture test file | `test/codex-runtime-identity.test.js` (not `test/codex-mcp-node-pin.test.js`) | 13 tests |
+| Its own fixture test file | `test/codex-runtime-identity.test.js` (not `test/codex-mcp-node-pin.test.js`) | 11 tests |
 
 A literal filename/export-name grep (what the reconciliation run appears to have done) returns
 nothing; reading the actual `.mcp.json`-writing and doctor-checking code returns full coverage.
@@ -71,20 +71,30 @@ placeholders (`INJECTED_CODEX_RUNNER`, `"muster:injected-codex-runner"`).
 **2. "Linux and Windows fixtures with fake PATH-precedence binaries must execute no shadow
 binaries."**
 
-`test/codex-runtime-identity.test.js:43-61` runs a parameterized
-`${platform}: fake PATH-precedence Codex is never executed and the trusted package entrypoint
-runs under canonical Node` test for both `linux` and `win32`. The fixture (`fixture()`,
-lines 20-41) plants a PATH-precedent shadow `codex`/`codex.cmd` that writes a marker file if
-executed, then asserts `resolveCodexRuntimeIdentity` and `runCodexCommand` never touch it
-(`assert.rejects(readFile(marker), /ENOENT/)`). The Linux leg runs live on this host. **The
-Windows leg is fixture-level, not live** — it is skipped when `process.platform !== "win32"`
-(`skip: process.platform === platform ? false : ...`) and exercises the same in-process
-resolution logic (`resolveCodexRuntimeIdentity`, path-shape only: `codex.exe`,
-`x86_64-pc-windows-msvc`/`aarch64-pc-windows-msvc` triples) rather than a live Windows binary —
-stated here honestly per this item's own instruction, not claimed as a live Windows run. This is
-also the exact same pattern `test/codex-path-shadow.test.js` uses independently for the `muster`
-binary itself, including a real win32 `PATH`/`PATHEXT` resolution test
-(`win32-shaped PATH/PATHEXT resolution finds muster.CMD without executing it`).
+`test/codex-runtime-identity.test.js:52-77` (after this item's fix-loop comment addition; originally
+43-61) runs a parameterized `${platform}: fake PATH-precedence Codex is never executed and the
+trusted package entrypoint runs under canonical Node` test for both `linux` and `win32`. The
+fixture (`fixture()`, lines ~20-48) plants a PATH-precedent shadow `codex`/`codex.cmd` that would
+write a marker file if actually spawned. **The primary proof is unit-level, not end-to-end**: the
+test injects a fully fake `execFile` (it never shells out at all), then asserts the *constructed*
+invocation — `calls[0].file === realpath(process.execPath)` and `calls[0].args[0] ===
+identity.codex` — is the canonical, realpath'd Node/Codex pair, never a PATH-relative `node`/`codex`
+name that could resolve to the shadow. The marker-file (`assert.rejects(readFile(marker),
+/ENOENT/)`) and `env.PATH` assertions are a secondary tripwire, not the load-bearing evidence —
+with `execFile` fully injected, the marker could never be written regardless of whether the
+resolution logic were correct, since nothing in this test path actually spawns a process. A true
+end-to-end "the real shadow binary was never spawned" proof would require a live `child_process`
+call, which this fixture deliberately avoids to stay hermetic and fast; the call-construction proof
+above is what actually establishes canonical-vs-PATH-relative correctness. The Linux leg runs this
+unit-level proof live on this host. **The Windows leg is fixture-level, not live** — it is skipped
+when `process.platform !== "win32"` (`skip: process.platform === platform ? false : ...`) and
+exercises the same in-process resolution logic (`resolveCodexRuntimeIdentity`, path-shape only:
+`codex.exe`, `x86_64-pc-windows-msvc`/`aarch64-pc-windows-msvc` triples) rather than a live Windows
+binary — stated here honestly per this item's own instruction, not claimed as a live Windows run.
+This is also the exact same pattern `test/codex-path-shadow.test.js` uses independently for the
+`muster` binary itself, including a real win32 `PATH`/`PATHEXT` resolution test
+(`win32-shaped PATH/PATHEXT resolution finds muster.CMD without executing it`) — that file's checks
+are likewise identity/realpath comparisons rather than live spawns, by the same deliberate design.
 
 **3. "Doctor must verify the same identities and Codex version."**
 
@@ -131,7 +141,7 @@ Run individually (see note on concurrency below):
 
 ```
 node --test test/codex-runtime-identity.test.js
-ℹ tests 13 / pass 12 / fail 0 / skipped 1 (win32 fixture, this host is linux)
+ℹ tests 11 / pass 10 / fail 0 / skipped 1 (win32 fixture, this host is linux)
 
 node --test test/codex-hook-node-pin.test.js
 ℹ tests 9 / pass 9 / fail 0

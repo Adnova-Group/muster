@@ -20,12 +20,13 @@
 **PR 147 is explicitly superseded, not landed.** Its branch is terminal on GitHub (closed
 2026-08-03T01:32:16Z, `merged_at: null`, never reopened or merged by this or any run). Every
 guarantee PR 147's title promised ("verify exact hook trust state") is implemented on `main` today
-— more thoroughly than a from-scratch fixture check, having been built and hardened across 20
-commits from `5ef7a1e` (2026-07-25, "doctor fails on untrusted Muster hooks (the silent-disable
+— more thoroughly than a from-scratch fixture check, having been built and hardened across a series
+of commits from `5ef7a1e` (2026-07-25, "doctor fails on untrusted Muster hooks (the silent-disable
 hazard)") through `3d06d1f` ("merge final Codex hook-trust reconciliation"), all verified ancestors
-of this worktree's `HEAD` (`c4cb439`). **No code changes are required or made by this item** — the
-work is producing and recording the fixture/install-refusal proof this item's dispatch demanded,
-which did not previously exist as a single consolidated record.
+of this worktree's `HEAD` (`c4cb439`) via `git merge-base --is-ancestor 5ef7a1e HEAD` and `git
+merge-base --is-ancestor 3d06d1f HEAD` (both exit 0). **No code changes are required or made by this
+item** — the work is producing and recording the fixture/install-refusal proof this item's dispatch
+demanded, which did not previously exist as a single consolidated record.
 
 ## Where the check lives
 
@@ -89,8 +90,8 @@ not" surface, `hookTrust.ok` folded into the top-level `ok` at `src/codex-instal
 | changed-hash (modified) | `test/codex-hook-trust.test.js:669-690`, subtest `"modified"` | `run.status === 2` (CLI exit code), `output.ok === false`, a result with `status === "modified"`. |
 | disabled | `test/codex-hook-trust.test.js:669-690`, subtest `"disabled"` | `run.status === 2`, `output.ok === false`, a result with `status === "disabled"`. |
 | stale | `test/codex-hook-trust.test.js:658-661` | After a stale `pre_tool_use:9:0` trust entry is planted, `stale.ok === false` and `stale.hookTrust.stale` deep-equals `["pre_tool_use:9:0"]` — install refuses success even though every *other* position is exactly trusted and active. |
-| persisted-trust-only, not yet confirmed active (the effective/`hooks/list` half of the guarantee) | `test/codex-hook-trust.test.js:628-643` | `trusted.ok === false` even with every `trusted_hash` exactly correct in `config.toml`, because `trusted.hookTrust.effective.verified === false` (no `hooks/list` proof yet — `"persisted trust alone cannot prove effective activation"`); a `hookInventory` that reports zero active hooks (`suppressedInventory`) also keeps `suppressed.ok === false` even though the persisted trust cache is exactly correct, proving a Codex policy-suppressed hook cannot be reported active by persisted state alone. |
-| genuinely trusted AND confirmed active (positive control — install *does* succeed) | `test/codex-hook-trust.test.js:644-656` | Only once a `hookInventory` reports every hook exactly active does `active.ok === true`, `active.hookTrust.ok === true`, `active.hookTrust.blocking === false`, `active.hookTrust.effective.ok === true`, and every result's `status === "trusted"`; the paired `codex-hook-trust` doctor check is `ok: true` with detail matching `/exact current hash and enabled state/i`. |
+| persisted-trust-only, not yet confirmed active (the effective/`hooks/list` half of the guarantee) | `test/codex-hook-trust.test.js:635-643` (setup for the `trusted_hash` write: `:628-633`) | `trusted.ok === false` even with every `trusted_hash` exactly correct in `config.toml`, because `trusted.hookTrust.effective.verified === false` (no `hooks/list` proof yet — `"persisted trust alone cannot prove effective activation"`); a `hookInventory` that reports zero active hooks (`suppressedInventory`) also keeps `suppressed.ok === false` even though the persisted trust cache is exactly correct, proving a Codex policy-suppressed hook cannot be reported active by persisted state alone. |
+| genuinely trusted AND confirmed active (positive control — install *does* succeed) | `test/codex-hook-trust.test.js:645-656` (the active `hookInventory` fixture is defined at `:644`) | Only once a `hookInventory` reports every hook exactly active does `active.ok === true`, `active.hookTrust.ok === true`, `active.hookTrust.blocking === false`, `active.hookTrust.effective.ok === true`, and every result's `status === "trusted"`; the paired `codex-hook-trust` doctor check is `ok: true` with detail matching `/exact current hash and enabled state/i`. |
 
 Every one of the five states named in this item's brief (trusted, changed-hash, disabled, absent,
 stale) has its own dedicated install-refusal assertion above except the positive "trusted" control,

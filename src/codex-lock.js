@@ -328,7 +328,8 @@ export async function withCodexFileLock(path, callback, {
   __afterReclaimValidationHook,
   __afterReleaseValidationHook,
   __beforeRestoreHook,
-  __afterAcquireWriteHook
+  __afterAcquireWriteHook,
+  __beforeAcquirePublishHook
 } = {}) {
   const token = randomUUID();
   const processIdentity = await processStartIdentity();
@@ -347,12 +348,18 @@ export async function withCodexFileLock(path, callback, {
     // residual (i)). O_CREAT|O_EXCL ("wx") itself does not guard ancestors.
     if (beforeOpen) await beforeOpen();
     let handle;
+    let acquisitionPath;
     try {
-      handle = await open(path, "wx", 0o600);
+      acquisitionPath = join(dirname(path), `.muster-lock-acquire-${process.pid}-${token}`);
+      handle = await open(acquisitionPath, "wx", 0o600);
       await handle.writeFile(JSON.stringify({ format: 1, pid: process.pid, processIdentity, createdAt: Date.now(), token }) + "\n", "utf8");
       await handle.sync();
       await handle.close();
       handle = null;
+      if (__beforeAcquirePublishHook) await __beforeAcquirePublishHook({ path, acquisitionPath });
+      await link(acquisitionPath, path);
+      await unlink(acquisitionPath);
+      acquisitionPath = null;
       if (__afterAcquireWriteHook) await __afterAcquireWriteHook();
       if (await transitionIsActive(path)) {
         // The transition marker appeared after our pre-open check. Withdraw
@@ -368,6 +375,9 @@ export async function withCodexFileLock(path, callback, {
       break;
     } catch (error) {
       if (handle) await handle.close().catch(() => {});
+      if (acquisitionPath) await unlink(acquisitionPath).catch(cleanupError => {
+        if (cleanupError.code !== "ENOENT") throw cleanupError;
+      });
       if (error.code !== "EEXIST") throw error;
       if (await reclaimIfStale(path, { staleMs, maxStaleMs }, __reclaimRaceHook, __afterReclaimValidationHook, __beforeRestoreHook)) continue;
       if (Date.now() - started >= timeoutMs) throw new Error(`timed out waiting for Codex transaction lock: ${path}`);

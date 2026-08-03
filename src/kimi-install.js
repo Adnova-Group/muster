@@ -619,6 +619,7 @@ async function publishConfigBytes(dest, configPath, bytes, expected, beforeManag
   const manifestDirectoryHandles = [];
   let manifestSourcePath, manifestDirectoryHandle;
   let stagedPath, quarantinePath, receiptPath, originalPath, failedPath;
+  let namedQuarantinePath, transactionHandle, transactionInfo;
   let manifestOriginalPath, manifestFailedPath, manifestPublishedInfo, manifestPublishedBytes;
   let retired = false, published = false, publishedInfo = null;
   let handedOff = false;
@@ -629,6 +630,13 @@ async function publishConfigBytes(dest, configPath, bytes, expected, beforeManag
   );
 
   const changed = () => new Error(`Kimi config.toml changed during safe publication: ${configPath}`);
+  const removeTransactionDirectory = async () => {
+    const named = await lstat(namedQuarantinePath);
+    if (!sameFileIdentity(named, transactionInfo)) throw changed();
+    await transactionHandle.close();
+    transactionHandle = null;
+    await rmdir(namedQuarantinePath);
+  };
   const restoreManifest = async () => {
     if (!manifestPublishedInfo) return;
     const manifestPath = commitReceipt.path;
@@ -662,17 +670,25 @@ async function publishConfigBytes(dest, configPath, bytes, expected, beforeManag
     if (!current || !sameFileIdentity(current, manifestPublishedInfo)) {
       throw new Error(`Kimi manifest changed during config rollback: ${manifestPath}`);
     }
+    await beforeManagedMutation?.({ operation: "manifest-rollback-retire-ready", path: manifestPath });
     await rename(manifestTarget, manifestFailedPath);
     await beforeManagedMutation?.({ operation: "manifest-rollback-retired", path: manifestPath });
-    const moved = await readNoFollowRegular(manifestFailedPath, {
-      maxBytes: 1024 * 1024,
-      label: `failed Kimi manifest publication at ${manifestFailedPath}`,
-      expectedInfo: manifestPublishedInfo
-    });
+    try {
+      await readNoFollowRegular(manifestFailedPath, {
+        maxBytes: 1024 * 1024,
+        label: `failed Kimi manifest publication at ${manifestFailedPath}`,
+        expectedInfo: manifestPublishedInfo
+      });
+    } catch {
+      await link(manifestFailedPath, manifestTarget);
+      await manifestDirectoryHandle.sync();
+      await unlink(manifestFailedPath);
+      throw new Error(`Kimi manifest changed during config rollback: ${manifestPath}`);
+    }
     if (commitReceipt.info) await link(manifestOriginalPath, manifestTarget);
     await unlink(manifestFailedPath);
     await (manifestDirectoryHandle?.sync() ?? syncDirectory(dirname(manifestPath)));
-    await syncDirectory(quarantinePath);
+    await transactionHandle.sync();
     manifestPublishedInfo = null;
   };
   const restore = async () => {
@@ -694,10 +710,10 @@ async function publishConfigBytes(dest, configPath, bytes, expected, beforeManag
     }
     if (published) await unlink(failedPath);
     if (manifestOriginalPath) await unlink(manifestOriginalPath).catch(error => { if (error.code !== "ENOENT") throw error; });
-    await syncDirectory(quarantinePath);
+    await transactionHandle.sync();
     if (receiptPath) await unlink(receiptPath);
-    await syncDirectory(quarantinePath);
-    await rmdir(quarantinePath);
+    await transactionHandle.sync();
+    await removeTransactionDirectory();
     await directoryHandles.at(-1).sync();
   };
   const validateRetired = async () => {
@@ -731,6 +747,8 @@ async function publishConfigBytes(dest, configPath, bytes, expected, beforeManag
     }
   };
   const closeDirectories = async () => {
+    await transactionHandle?.close().catch(() => {});
+    transactionHandle = null;
     for (const handle of manifestDirectoryHandles.reverse()) await handle.close();
     for (const handle of directoryHandles.reverse()) await handle.close();
   };
@@ -775,8 +793,16 @@ async function publishConfigBytes(dest, configPath, bytes, expected, beforeManag
     });
     if (!staged.bytes.equals(bytes)) throw new Error(`Staged Kimi config.toml failed byte validation: ${temporary}`);
 
-    quarantinePath = join(parentFdPath, `.muster-config-txn-${randomBytes(12).toString("hex")}`);
-    await mkdir(quarantinePath, { mode: 0o700 });
+    namedQuarantinePath = join(parentFdPath, `.muster-config-txn-${randomBytes(12).toString("hex")}`);
+    await mkdir(namedQuarantinePath, { mode: 0o700 });
+    transactionHandle = await open(
+      namedQuarantinePath,
+      fsConstants.O_RDONLY | fsConstants.O_DIRECTORY | fsConstants.O_NOFOLLOW
+    );
+    transactionInfo = await transactionHandle.stat();
+    const namedTransactionInfo = await lstat(namedQuarantinePath);
+    if (!sameFileIdentity(transactionInfo, namedTransactionInfo) || !transactionInfo.isDirectory()) throw changed();
+    quarantinePath = join("/proc/self/fd", String(transactionHandle.fd));
     receiptPath = join(quarantinePath, "receipt.json");
     originalPath = join(quarantinePath, "original");
     failedPath = join(quarantinePath, "failed-publication");
@@ -819,7 +845,7 @@ async function publishConfigBytes(dest, configPath, bytes, expected, beforeManag
       catch (error) { if (error.code !== "ENOENT") throw error; }
     }
     await directory.sync();
-    await syncDirectory(quarantinePath);
+    await transactionHandle.sync();
     await beforeManagedMutation?.({ operation: "config-retired", path: configPath });
     await validateRetired();
 
@@ -878,7 +904,7 @@ async function publishConfigBytes(dest, configPath, bytes, expected, beforeManag
       if (!commitReceipt) {
         receiptData.configOnlyCommitted = true;
         await persistReceipt();
-        await syncDirectory(quarantinePath);
+    await transactionHandle.sync();
         await beforeManagedMutation?.({ operation: "config-only-committed", path: configPath });
       }
       // Past this point the config and durable manifest agree. Cleanup is
@@ -888,11 +914,11 @@ async function publishConfigBytes(dest, configPath, bytes, expected, beforeManag
       try {
         if (retired) await unlink(originalPath);
         if (manifestOriginalPath) await unlink(manifestOriginalPath).catch(error => { if (error.code !== "ENOENT") throw error; });
-        await syncDirectory(quarantinePath);
+    await transactionHandle.sync();
         await unlink(receiptPath);
         await beforeManagedMutation?.({ operation: "config-cleanup-receipt-cleared", path: configPath });
-        await syncDirectory(quarantinePath);
-        await rmdir(quarantinePath);
+    await transactionHandle.sync();
+        await removeTransactionDirectory();
         await directoryHandles.at(-1).sync();
       } finally { await closeDirectories(); }
     },
@@ -954,7 +980,7 @@ async function publishConfigBytes(dest, configPath, bytes, expected, beforeManag
         await manifestDirectoryHandle.sync();
         throw new Error(`Kimi manifest changed during safe publication: ${commitReceipt.path}`);
       }
-      await syncDirectory(quarantinePath);
+    await transactionHandle.sync();
       await manifestDirectoryHandle.sync();
     },
     rollback: async () => {
@@ -1246,15 +1272,22 @@ async function reconcileConfigTransactions(dest, configPath, manifestPath, befor
         await syncManifestRecovery();
       }
       const manifestCommitted = receipt.manifestPublished && matches(manifest, receipt.manifestPublished);
+      const manifestAlreadyRestored = receipt.manifestBefore && matches(manifest, receipt.manifestBefore);
       let committed = receipt.configOnlyCommitted === true || manifestCommitted;
       let manifestBytesValid = false;
+      let manifestObservedSha = null;
       if (manifestCommitted) {
         const currentManifest = await readNoFollowRegular(manifestRecoveryPath, {
           maxBytes: 1024 * 1024,
           label: `published Kimi manifest at ${manifestPath}`,
           expectedInfo: manifest
         });
-        manifestBytesValid = sha256(currentManifest.bytes) === receipt.manifestPublished.sha256;
+        manifestObservedSha = sha256(currentManifest.bytes);
+        manifestBytesValid = manifestObservedSha === receipt.manifestPublished.sha256;
+      }
+      if (manifestAlreadyRestored) {
+        await syncManifestRecovery();
+        await beforeManagedMutation?.({ operation: "config-recovery-manifest-already-durable", path: manifestPath });
       }
 
       let configBytesValid = false;
@@ -1268,12 +1301,21 @@ async function reconcileConfigTransactions(dest, configPath, manifestPath, befor
       }
 
       if (manifestCommitted && (!configBytesValid || !manifestBytesValid)) {
+        await beforeManagedMutation?.({ operation: "manifest-recovery-retire-ready", path: manifestPath });
         await rename(manifestRecoveryPath, manifestFailedPath);
-        await readNoFollowRegular(manifestFailedPath, {
-          maxBytes: 1024 * 1024,
-          label: `failed Kimi manifest publication at ${manifestFailedPath}`,
-          expectedInfo: manifest
-        });
+        try {
+          const movedManifest = await readNoFollowRegular(manifestFailedPath, {
+            maxBytes: 1024 * 1024,
+            label: `failed Kimi manifest publication at ${manifestFailedPath}`,
+            expectedInfo: manifest
+          });
+          if (sha256(movedManifest.bytes) !== manifestObservedSha) throw new Error("digest mismatch");
+        } catch {
+          await link(manifestFailedPath, manifestRecoveryPath);
+          await syncManifestRecovery();
+          await unlink(manifestFailedPath);
+          throw new Error(`Kimi manifest changed during config recovery: ${manifestPath}`);
+        }
         if (receipt.manifestBefore) {
           const manifestOriginal = await statOrNull(manifestOriginalPath);
           if (!matches(manifestOriginal, receipt.manifestBefore)) {
@@ -1301,6 +1343,10 @@ async function reconcileConfigTransactions(dest, configPath, manifestPath, befor
         if (!configBytesValid) throw new Error(`Kimi config.toml committed transaction conflicts with ${configPath}`);
       } else {
         const alreadyRestored = receipt.expected && matches(source, receipt.expected);
+        if (alreadyRestored) {
+          await directory.sync();
+          await beforeManagedMutation?.({ operation: "config-recovery-config-already-durable", path: configPath });
+        }
         if (matches(source, receipt.staged)) {
           await beforeManagedMutation?.({ operation: "config-recovery-retire-ready", path: configPath });
           await rename(sourcePath, failedPath);

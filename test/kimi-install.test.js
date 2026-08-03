@@ -1641,6 +1641,56 @@ test("runKimiInstall: restart restores a manifest retired before CAS publication
   } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
 });
 
+test("runKimiInstall: restart rejects an in-place edit of a published manifest", async () => {
+  const repo = fixtureRepo(), home = tmp();
+  try {
+    const root = join(home, ".kimi-code"), configPath = join(root, "config.toml");
+    const manifestPath = join(root, "muster", KIMI_MANIFEST);
+    const original = Buffer.from("# survives corrupt committed recovery\n");
+    mkdirSync(root, { recursive: true });
+    writeFileSync(configPath, original);
+    await runKimiInstall({ home, repoRoot: repo });
+    const moduleUrl = new URL("../src/kimi-install.js", import.meta.url).href;
+    const script = `import { runKimiInstall } from ${JSON.stringify(moduleUrl)}; await runKimiInstall({ home: ${JSON.stringify(home)}, repoRoot: ${JSON.stringify(repo)}, _beforeManagedMutation: ({ operation }) => { if (operation === "manifest-published") process.exit(78); } });`;
+    assert.throws(
+      () => execFileSync(process.execPath, ["--input-type=module", "-e", script], { stdio: "ignore" }),
+      error => error.status === 78
+    );
+    writeFileSync(manifestPath, "{}\n");
+
+    await runKimiInstall({ home, repoRoot: repo });
+    await runKimiUninstall({ home });
+    assert.deepEqual(readFileSync(configPath), original);
+    assert.ok(!readdirSync(root).some(name => name.startsWith(".muster-config-txn-")));
+  } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
+});
+
+test("runKimiInstall: recovery survives a second crash after manifest directory fsync", async () => {
+  const repo = fixtureRepo(), home = tmp();
+  try {
+    const root = join(home, ".kimi-code"), configPath = join(root, "config.toml");
+    const original = Buffer.from("# survives recovery durability crash\n");
+    mkdirSync(root, { recursive: true });
+    writeFileSync(configPath, original);
+    await runKimiInstall({ home, repoRoot: repo });
+    const moduleUrl = new URL("../src/kimi-install.js", import.meta.url).href;
+    const crash = seam => `import { runKimiInstall } from ${JSON.stringify(moduleUrl)}; await runKimiInstall({ home: ${JSON.stringify(home)}, repoRoot: ${JSON.stringify(repo)}, _beforeManagedMutation: ({ operation }) => { if (operation === ${JSON.stringify(seam)}) process.exit(79); } });`;
+    assert.throws(
+      () => execFileSync(process.execPath, ["--input-type=module", "-e", crash("manifest-retired")], { stdio: "ignore" }),
+      error => error.status === 79
+    );
+    assert.throws(
+      () => execFileSync(process.execPath, ["--input-type=module", "-e", crash("config-recovery-manifest-durable")], { stdio: "ignore" }),
+      error => error.status === 79
+    );
+
+    await runKimiInstall({ home, repoRoot: repo });
+    await runKimiUninstall({ home });
+    assert.deepEqual(readFileSync(configPath), original);
+    assert.ok(!readdirSync(root).some(name => name.startsWith(".muster-config-txn-")));
+  } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
+});
+
 test("runKimiInstall: a writer winning the final publication window is never overwritten", async () => {
   const repo = fixtureRepo(), home = tmp();
   try {

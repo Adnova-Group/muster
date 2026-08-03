@@ -999,6 +999,7 @@ async function reconcileConfigTransactions(dest, configPath, manifestPath, befor
         }
         await link(manifestOriginalPath, manifestPath);
         await syncDirectory(dirname(manifestPath));
+        await beforeManagedMutation?.({ operation: "config-recovery-manifest-durable", path: manifestPath });
         manifest = await statOrNull(manifestPath);
       }
       if (!manifest && receipt.manifestPublished && matches(failedManifest, receipt.manifestPublished)) {
@@ -1021,6 +1022,15 @@ async function reconcileConfigTransactions(dest, configPath, manifestPath, befor
         await syncDirectory(dirname(manifestPath));
       }
       let committed = receipt.manifestPublished && matches(manifest, receipt.manifestPublished);
+      let manifestBytesValid = false;
+      if (committed) {
+        const currentManifest = await readNoFollowRegular(manifestPath, {
+          maxBytes: 1024 * 1024,
+          label: `published Kimi manifest at ${manifestPath}`,
+          expectedInfo: manifest
+        });
+        manifestBytesValid = sha256(currentManifest.bytes) === receipt.manifestPublished.sha256;
+      }
 
       let configBytesValid = false;
       if (matches(source, receipt.staged)) {
@@ -1032,18 +1042,13 @@ async function reconcileConfigTransactions(dest, configPath, manifestPath, befor
         configBytesValid = sha256(current.bytes) === receipt.stagedSha256;
       }
 
-      if (committed && !configBytesValid) {
+      if (committed && (!configBytesValid || !manifestBytesValid)) {
         await rename(manifestPath, manifestFailedPath);
-        const failedManifest = await readNoFollowRegular(manifestFailedPath, {
+        await readNoFollowRegular(manifestFailedPath, {
           maxBytes: 1024 * 1024,
           label: `failed Kimi manifest publication at ${manifestFailedPath}`,
           expectedInfo: manifest
         });
-        if (sha256(failedManifest.bytes) !== receipt.manifestPublished.sha256) {
-          await link(manifestFailedPath, manifestPath);
-          await unlink(manifestFailedPath);
-          throw new Error(`Kimi manifest changed during config recovery: ${manifestPath}`);
-        }
         if (receipt.manifestBefore) {
           const manifestOriginal = await statOrNull(manifestOriginalPath);
           if (!matches(manifestOriginal, receipt.manifestBefore)) {
@@ -1052,6 +1057,7 @@ async function reconcileConfigTransactions(dest, configPath, manifestPath, befor
           await link(manifestOriginalPath, manifestPath);
         }
         await syncDirectory(dirname(manifestPath));
+        await beforeManagedMutation?.({ operation: "config-recovery-manifest-durable", path: manifestPath });
         await syncDirectory(quarantinePath);
         manifest = await statOrNull(manifestPath);
         committed = false;
@@ -1059,6 +1065,11 @@ async function reconcileConfigTransactions(dest, configPath, manifestPath, befor
           && !matches(manifest, receipt.manifestPublished)
           && !(receipt.manifestBefore && matches(manifest, receipt.manifestBefore))) {
         throw new Error(`Kimi manifest transaction conflicts with ${manifestPath}`);
+      }
+
+      if (committed) {
+        await syncDirectory(dirname(manifestPath));
+        await beforeManagedMutation?.({ operation: "config-recovery-manifest-durable", path: manifestPath });
       }
 
       if (committed) {
@@ -1291,6 +1302,7 @@ async function runKimiInstallUnlocked({
 
   // Prune stale files a prior install owned but this one no longer ships.
   const manifestPath = join(dest, "muster", KIMI_MANIFEST);
+  await reconcileConfigTransactions(dest, configPath, manifestPath, _beforeManagedMutation);
   await reconcileOrphanedManifestQuarantine(dest, manifestPath);
   const previous = await readManifest(manifestPath, dest);
   const reconciliation = previous
@@ -1392,7 +1404,6 @@ async function runKimiInstallUnlocked({
   await configGuard();
   await _beforeManagedMutation?.({ operation: "config-lock-ready", path: configPath });
   await configGuard();
-  await reconcileConfigTransactions(dest, configPath, manifestPath, _beforeManagedMutation);
   const original = await configSnapshot(dest, configPath);
     const mergedConfig = mergePermissionRules(original ? original.bytes.toString("utf8") : null);
     // `created` is sticky across reinstalls: once muster made the file, a later

@@ -626,6 +626,20 @@ async function publishConfigBytes(dest, configPath, bytes, expected, beforeManag
     if (!manifestPublishedInfo) return;
     const manifestPath = commitReceipt.path;
     await assertSafeManagedFiles(dest, [manifestPath]);
+    let current;
+    try { current = await lstat(manifestPath); }
+    catch (error) { if (error.code !== "ENOENT") throw error; }
+    if (!current && !commitReceipt.info) {
+      manifestPublishedInfo = null;
+      return;
+    }
+    if (current && commitReceipt.info && sameFileIdentity(current, commitReceipt.info)) {
+      manifestPublishedInfo = null;
+      return;
+    }
+    if (!current || !sameFileIdentity(current, manifestPublishedInfo)) {
+      throw new Error(`Kimi manifest changed during config rollback: ${manifestPath}`);
+    }
     await rename(manifestPath, manifestFailedPath);
     await beforeManagedMutation?.({ operation: "manifest-rollback-retired", path: manifestPath });
     const moved = await readNoFollowRegular(manifestFailedPath, {
@@ -633,11 +647,6 @@ async function publishConfigBytes(dest, configPath, bytes, expected, beforeManag
       label: `failed Kimi manifest publication at ${manifestFailedPath}`,
       expectedInfo: manifestPublishedInfo
     });
-    if (!moved.bytes.equals(manifestPublishedBytes)) {
-      await link(manifestFailedPath, manifestPath);
-      await unlink(manifestFailedPath);
-      throw new Error(`Kimi manifest changed during config rollback: ${manifestPath}`);
-    }
     if (commitReceipt.info) await link(manifestOriginalPath, manifestPath);
     await unlink(manifestFailedPath);
     await syncDirectory(dirname(manifestPath));
@@ -658,10 +667,12 @@ async function publishConfigBytes(dest, configPath, bytes, expected, beforeManag
     }
     if (retired) {
       await link(originalPath, sourcePath);
+      await directoryHandles.at(-1).sync();
       await unlink(originalPath);
     }
     if (published) await unlink(failedPath);
     if (manifestOriginalPath) await unlink(manifestOriginalPath).catch(error => { if (error.code !== "ENOENT") throw error; });
+    await syncDirectory(quarantinePath);
     if (receiptPath) await unlink(receiptPath);
     await syncDirectory(quarantinePath);
     await rmdir(quarantinePath);
@@ -684,6 +695,18 @@ async function publishConfigBytes(dest, configPath, bytes, expected, beforeManag
       expectedInfo: publishedInfo
     });
     if (!snapshot.bytes.equals(bytes)) throw changed();
+  };
+  const validateManifestPublished = async () => {
+    if (!commitReceipt) return;
+    if (!manifestPublishedInfo) throw new Error(`Kimi manifest publication state is missing: ${commitReceipt.path}`);
+    const snapshot = await readNoFollowRegular(commitReceipt.path, {
+      maxBytes: 1024 * 1024,
+      label: `published Kimi manifest at ${commitReceipt.path}`,
+      expectedInfo: manifestPublishedInfo
+    });
+    if (!snapshot.bytes.equals(manifestPublishedBytes)) {
+      throw new Error(`Kimi manifest changed during safe publication: ${commitReceipt.path}`);
+    }
   };
   const closeDirectories = async () => {
     for (const handle of directoryHandles.reverse()) await handle.close();
@@ -827,6 +850,7 @@ async function publishConfigBytes(dest, configPath, bytes, expected, beforeManag
     commit: async () => {
       if (settled) return;
       await validatePublished();
+      await validateManifestPublished();
       await validateRetired();
       // Past this point the config and durable manifest agree. Cleanup is
       // replayable by reconciliation, but rollback state must remain open for
@@ -835,6 +859,7 @@ async function publishConfigBytes(dest, configPath, bytes, expected, beforeManag
       try {
         if (retired) await unlink(originalPath);
         if (manifestOriginalPath) await unlink(manifestOriginalPath).catch(error => { if (error.code !== "ENOENT") throw error; });
+        await syncDirectory(quarantinePath);
         await unlink(receiptPath);
         await beforeManagedMutation?.({ operation: "config-cleanup-receipt-cleared", path: configPath });
         await syncDirectory(quarantinePath);
@@ -847,6 +872,8 @@ async function publishConfigBytes(dest, configPath, bytes, expected, beforeManag
       manifestPublishedBytes = publishedBytes;
     },
     recordManifestIntent: async (info, publishedBytes) => {
+      manifestPublishedInfo = info;
+      manifestPublishedBytes = publishedBytes;
       receiptData.manifestPublished = {
         dev: String(info.dev), ino: String(info.ino), sha256: sha256(publishedBytes)
       };
@@ -854,6 +881,32 @@ async function publishConfigBytes(dest, configPath, bytes, expected, beforeManag
         fsync: true, fsyncDir: true, mode: 0o600
       });
       await directoryHandles.at(-1).sync();
+    },
+    prepareManifestCommit: async () => {
+      const current = await managedFileSnapshot(
+        dest,
+        commitReceipt.path,
+        1024 * 1024,
+        `Kimi installation manifest at ${commitReceipt.path}`
+      );
+      if (Boolean(current.info) !== Boolean(commitReceipt.info)
+          || (current.info && (!sameFileIdentity(current.info, commitReceipt.info)
+            || !current.bytes.equals(commitReceipt.bytes)))) {
+        throw new Error(`Kimi manifest changed during safe publication: ${commitReceipt.path}`);
+      }
+      if (!commitReceipt.info) return;
+      await unlink(commitReceipt.path);
+      await beforeManagedMutation?.({ operation: "manifest-retired", path: commitReceipt.path });
+      const retiredManifest = await readNoFollowRegular(manifestOriginalPath, {
+        maxBytes: 1024 * 1024,
+        label: `retired Kimi manifest at ${manifestOriginalPath}`,
+        expectedInfo: commitReceipt.info
+      });
+      if (!retiredManifest.bytes.equals(commitReceipt.bytes)) {
+        await link(manifestOriginalPath, commitReceipt.path);
+        throw new Error(`Kimi manifest changed during safe publication: ${commitReceipt.path}`);
+      }
+      await syncDirectory(dirname(commitReceipt.path));
     },
     rollback: async () => {
       if (settled) return;
@@ -939,6 +992,15 @@ async function reconcileConfigTransactions(dest, configPath, manifestPath, befor
       const original = await statOrNull(originalPath);
       let manifest = await statOrNull(manifestPath);
       let failedManifest = await statOrNull(manifestFailedPath);
+      if (!manifest && !failedManifest && receipt.manifestPublished && receipt.manifestBefore) {
+        const manifestOriginal = await statOrNull(manifestOriginalPath);
+        if (!matches(manifestOriginal, receipt.manifestBefore)) {
+          throw new Error(`Kimi config.toml recovery lost its original manifest: ${manifestPath}`);
+        }
+        await link(manifestOriginalPath, manifestPath);
+        await syncDirectory(dirname(manifestPath));
+        manifest = await statOrNull(manifestPath);
+      }
       if (!manifest && receipt.manifestPublished && matches(failedManifest, receipt.manifestPublished)) {
         const failedBytes = await readNoFollowRegular(manifestFailedPath, {
           maxBytes: 1024 * 1024,
@@ -1013,6 +1075,7 @@ async function reconcileConfigTransactions(dest, configPath, manifestPath, befor
           if (!matches(original, receipt.expected)) throw new Error(`Kimi config.toml recovery lost its original: ${configPath}`);
           if (!source) {
             await link(originalPath, sourcePath);
+            await directory.sync();
             await beforeManagedMutation?.({ operation: "config-recovery-restored", path: configPath });
           }
         }
@@ -1029,6 +1092,7 @@ async function reconcileConfigTransactions(dest, configPath, manifestPath, befor
       if (manifestOriginal) await unlink(manifestOriginalPath);
       failedManifest = await statOrNull(manifestFailedPath);
       if (failedManifest) await unlink(manifestFailedPath);
+      await syncDirectory(quarantinePath);
       await unlink(receiptPath);
       await syncDirectory(quarantinePath);
       await rmdir(quarantinePath);
@@ -1189,7 +1253,7 @@ async function collectSource(pluginRoot) {
 // install no longer ships, and replaces the marker-delimited permission-rules
 // block in place. Returns a glass-box summary (agent/skill counts, the dest,
 // the fence rules, and the probe verdict when --probe is set).
-export async function runKimiInstall({
+async function runKimiInstallUnlocked({
   home = homedir(), repoRoot, dryRun = false, probe = false, fetchImpl,
   _beforeManagedMutation = null
 } = {}) {
@@ -1327,10 +1391,9 @@ export async function runKimiInstall({
   const configGuard = () => assertSafeManagedFiles(dest, [configPath]);
   await configGuard();
   await _beforeManagedMutation?.({ operation: "config-lock-ready", path: configPath });
-  await withFileMutationLock(configPath, async () => {
-    await configGuard();
-    await reconcileConfigTransactions(dest, configPath, manifestPath, _beforeManagedMutation);
-    const original = await configSnapshot(dest, configPath);
+  await configGuard();
+  await reconcileConfigTransactions(dest, configPath, manifestPath, _beforeManagedMutation);
+  const original = await configSnapshot(dest, configPath);
     const mergedConfig = mergePermissionRules(original ? original.bytes.toString("utf8") : null);
     // `created` is sticky across reinstalls: once muster made the file, a later
     // merge (file now present) must not flip the receipt, or uninstall would
@@ -1359,19 +1422,12 @@ export async function runKimiInstall({
     };
     const manifestBytes = Buffer.from(JSON.stringify(manifestValue, null, 2) + "\n");
     try {
-      const manifestInfo = await atomicWriteJson(
+      const manifestInfo = await publishConfigManifest(
         manifestPath,
-        manifestValue,
+        manifestBytes,
         dest,
         _beforeManagedMutation,
-        {
-          fsync: true,
-          fsyncDir: true,
-          beforeCommit: async info => {
-            await published.validate();
-            await published.recordManifestIntent(info, manifestBytes);
-          }
-        }
+        published
       );
       published.recordManifest(manifestInfo, manifestBytes);
       await _beforeManagedMutation?.({ operation: "manifest-published", path: manifestPath });
@@ -1387,7 +1443,6 @@ export async function runKimiInstall({
       }
       throw publicationError;
     }
-  }, { beforeOpen: configGuard, staleMs: 0 });
 
   return {
     dest, packageVersion, agents: agents.map(a => basename(a.rel)), skills: skillNames,
@@ -1403,12 +1458,63 @@ export async function runKimiInstall({
   };
 }
 
+export async function runKimiInstall(options = {}) {
+  if (options.dryRun) return runKimiInstallUnlocked(options);
+  const dest = kimiHome(options.home ?? homedir());
+  const configPath = join(dest, "config.toml");
+  await assertWritableDir(dest);
+  await mkdir(dest, { recursive: true });
+  await assertWritableDir(dest);
+  const lifecycleGuard = () => assertSafeManagedFiles(dest, [configPath]);
+  await lifecycleGuard();
+  await options._beforeManagedMutation?.({ operation: "lifecycle-lock-ready", path: configPath });
+  return withFileMutationLock(
+    configPath,
+    () => runKimiInstallUnlocked(options),
+    { beforeOpen: lifecycleGuard, staleMs: 0 }
+  );
+}
+
 function quarantineIdentityMatches(info, record) {
   return info.isFile() && String(info.dev) === record.dev && String(info.ino) === record.ino;
 }
 
 async function persistUninstallManifest(manifestPath, manifest, dest) {
   return atomicWriteJson(manifestPath, manifest, dest, null, { fsync: true, fsyncDir: true });
+}
+
+async function publishConfigManifest(path, bytes, dest, beforeManagedMutation, published) {
+  const temporary = join(dirname(path), `.muster-manifest-tmp-${process.pid}-${randomBytes(8).toString("hex")}`);
+  let handle;
+  let linked = false;
+  try {
+    handle = await open(
+      temporary,
+      fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_NOFOLLOW,
+      0o600
+    );
+    await handle.writeFile(bytes);
+    await handle.sync();
+    const info = await handle.stat();
+    await handle.close();
+    handle = null;
+    await beforeManagedMutation?.({ operation: "publish", path, temporary });
+    await assertSafeManagedFiles(dest, [path]);
+    await published.validate();
+    await published.recordManifestIntent(info, bytes);
+    await published.prepareManifestCommit();
+    // Exclusive link is the manifest CAS: after retiring the exact prior
+    // inode, a concurrent writer wins with EEXIST and is never overwritten.
+    await link(temporary, path);
+    linked = true;
+    await unlink(temporary);
+    await beforeManagedMutation?.({ operation: "manifest-durability", path });
+    await syncDirectory(dirname(path));
+    return info;
+  } finally {
+    await handle?.close();
+    if (!linked) await unlink(temporary).catch(error => { if (error.code !== "ENOENT") throw error; });
+  }
 }
 
 async function reconcileQuarantine(dest, record, platform = process.platform) {
@@ -1556,7 +1662,7 @@ async function reconcileOrphanedManifestQuarantine(dest, manifestPath, platform 
 // are untouched), strip muster's marker-delimited permission-rules block from
 // config.toml (deleting the file only when muster created it), prune the
 // now-empty muster-created dirs, and drop the manifest.
-export async function runKimiUninstall({
+async function runKimiUninstallUnlocked({
   home = homedir(),
   dryRun = false,
   _beforeManagedMutation = null,
@@ -1643,10 +1749,9 @@ export async function runKimiUninstall({
   if (manifest.permissionRules) {
     const configGuard = () => assertSafeManagedFiles(dest, [configPath]);
     await configGuard();
-    await withFileMutationLock(configPath, async () => {
-      await configGuard();
-      const original = await configSnapshot(dest, configPath);
-      if (!original) return;
+    await configGuard();
+    const original = await configSnapshot(dest, configPath);
+    if (original) {
       const stripped = stripPermissionRules(original.bytes.toString("utf8"), manifest.permissionRules);
       if (stripped === null) {
         await removePublishedConfig(dest, configPath, original, _beforeManagedMutation);
@@ -1661,7 +1766,7 @@ export async function runKimiUninstall({
         );
         await published.commit();
       }
-    }, { beforeOpen: configGuard, staleMs: 0 });
+    }
   }
 
   // Prune empty skill dirs (deepest first), then the agents/skills roots.
@@ -1691,6 +1796,25 @@ export async function runKimiUninstall({
   return { dest, removed, fileCount: removed.length, ...(manifest.permissionRules ? { permissionRules: { stripped: true, configRemoved } } : {}) };
 }
 
+export async function runKimiUninstall(options = {}) {
+  const dest = kimiHome(options.home ?? homedir());
+  const configPath = join(dest, "config.toml");
+  let info;
+  try { info = await lstat(dest); }
+  catch (error) { if (error.code === "ENOENT") return runKimiUninstallUnlocked(options); throw error; }
+  if (!info.isDirectory() || info.isSymbolicLink()) {
+    throw new Error(`Refusing Kimi uninstall through a non-ordinary directory: ${dest}`);
+  }
+  const lifecycleGuard = () => assertSafeManagedFiles(dest, [configPath]);
+  await lifecycleGuard();
+  await options._beforeManagedMutation?.({ operation: "lifecycle-lock-ready", path: configPath });
+  return withFileMutationLock(
+    configPath,
+    () => runKimiUninstallUnlocked(options),
+    { beforeOpen: lifecycleGuard, staleMs: 0 }
+  );
+}
+
 // Manifest publish: temp-write-then-rename via fs-safe.js's shared atomicWrite
 // (audit S4) with its DEFAULT temp name -- the pid+RANDOM suffix is the
 // collision handling: this site's historical pid-only temp name
@@ -1704,7 +1828,7 @@ async function atomicWriteJson(
   value,
   dest,
   beforeManagedMutation,
-  { fsync = false, fsyncDir = false, beforeCommit = null } = {}
+  { fsync = false, fsyncDir = false, beforeCommit = null, afterCommit = null } = {}
 ) {
   let publishedIdentity = null;
   await atomicWrite(path, JSON.stringify(value, null, 2) + "\n", {
@@ -1720,5 +1844,6 @@ async function atomicWriteJson(
       await beforeCommit?.(publishedIdentity);
     }
   });
+  await afterCommit?.();
   return publishedIdentity;
 }

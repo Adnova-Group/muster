@@ -1388,6 +1388,72 @@ test("runKimiInstall: a post-manifest config edit rolls both files back byte-for
   } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
 });
 
+test("runKimiInstall: a post-publication manifest edit rolls both files back byte-for-byte", async () => {
+  const repo = fixtureRepo(), home = tmp();
+  try {
+    await runKimiInstall({ home, repoRoot: repo });
+    const root = join(home, ".kimi-code");
+    const configPath = join(root, "config.toml");
+    const manifestPath = join(root, "muster", KIMI_MANIFEST);
+    const configBefore = readFileSync(configPath);
+    const manifestBefore = readFileSync(manifestPath);
+
+    await assert.rejects(runKimiInstall({
+      home,
+      repoRoot: repo,
+      _beforeManagedMutation: ({ operation }) => {
+        if (operation === "manifest-published") writeFileSync(manifestPath, "{}\n");
+      }
+    }), /manifest changed during safe publication/);
+    assert.deepEqual(readFileSync(configPath), configBefore);
+    assert.deepEqual(readFileSync(manifestPath), manifestBefore);
+  } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
+});
+
+test("runKimiInstall: a pre-publication manifest edit wins the CAS and is preserved", async () => {
+  const repo = fixtureRepo(), home = tmp();
+  try {
+    await runKimiInstall({ home, repoRoot: repo });
+    const root = join(home, ".kimi-code");
+    const configPath = join(root, "config.toml");
+    const manifestPath = join(root, "muster", KIMI_MANIFEST);
+    const configBefore = readFileSync(configPath);
+    const concurrentManifest = Buffer.from("{\"concurrent\":true}\n");
+
+    await assert.rejects(runKimiInstall({
+      home,
+      repoRoot: repo,
+      _beforeManagedMutation: ({ operation, path }) => {
+        if (operation === "publish" && path === manifestPath) writeFileSync(manifestPath, concurrentManifest);
+      }
+    }), /manifest changed during safe publication/);
+    assert.deepEqual(readFileSync(configPath), configBefore);
+    assert.deepEqual(readFileSync(manifestPath), concurrentManifest);
+  } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
+});
+
+test("runKimiInstall: an ambiguous post-rename manifest error rolls both files back", async () => {
+  const repo = fixtureRepo(), home = tmp();
+  try {
+    await runKimiInstall({ home, repoRoot: repo });
+    const root = join(home, ".kimi-code");
+    const configPath = join(root, "config.toml");
+    const manifestPath = join(root, "muster", KIMI_MANIFEST);
+    const configBefore = readFileSync(configPath);
+    const manifestBefore = readFileSync(manifestPath);
+
+    await assert.rejects(runKimiInstall({
+      home,
+      repoRoot: repo,
+      _beforeManagedMutation: ({ operation }) => {
+        if (operation === "manifest-durability") throw new Error("injected post-rename durability error");
+      }
+    }), /injected post-rename durability error/);
+    assert.deepEqual(readFileSync(configPath), configBefore);
+    assert.deepEqual(readFileSync(manifestPath), manifestBefore);
+  } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
+});
+
 test("runKimiInstall: concurrent first installs preserve the created receipt", async () => {
   const repo = fixtureRepo(), home = tmp();
   let releaseFirst;
@@ -1409,7 +1475,7 @@ test("runKimiInstall: concurrent first installs preserve the created receipt", a
       home,
       repoRoot: repo,
       _beforeManagedMutation: ({ operation }) => {
-        if (operation === "config-lock-ready") secondReady();
+        if (operation === "lifecycle-lock-ready") secondReady();
       }
     });
     await secondAtLock;
@@ -1420,6 +1486,41 @@ test("runKimiInstall: concurrent first installs preserve the created receipt", a
     assert.equal(manifest.permissionRules.created, true);
     await runKimiUninstall({ home });
     assert.ok(!existsSync(join(root, "config.toml")));
+  } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
+});
+
+test("runKimiInstall/runKimiUninstall: concurrent lifecycles serialize without orphaning files", async () => {
+  const repo = fixtureRepo(), home = tmp();
+  let releaseInstall;
+  let installRetired;
+  const installPaused = new Promise(resolve => { installRetired = resolve; });
+  const release = new Promise(resolve => { releaseInstall = resolve; });
+  let uninstallReady;
+  const uninstallAtLock = new Promise(resolve => { uninstallReady = resolve; });
+  try {
+    const install = runKimiInstall({
+      home,
+      repoRoot: repo,
+      _beforeManagedMutation: async ({ operation }) => {
+        if (operation === "config-retired") { installRetired(); await release; }
+      }
+    });
+    await installPaused;
+    const uninstall = runKimiUninstall({
+      home,
+      _beforeManagedMutation: ({ operation }) => {
+        if (operation === "lifecycle-lock-ready") uninstallReady();
+      }
+    });
+    await uninstallAtLock;
+    releaseInstall();
+    await Promise.all([install, uninstall]);
+    const root = join(home, ".kimi-code");
+    assert.ok(!existsSync(join(root, "config.toml")));
+    assert.ok(!existsSync(join(root, "muster", KIMI_MANIFEST)));
+    assert.ok(!existsSync(join(root, "agents", "muster-builder.md")));
+    assert.ok(!existsSync(join(root, "skills", "review-gate", "SKILL.md")));
+    assert.ok(!readdirSync(root).some(name => name.startsWith(".muster-config-txn-")));
   } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
 });
 
@@ -1507,6 +1608,29 @@ test("runKimiInstall: restart completes an interrupted manifest rollback", async
     assert.throws(
       () => execFileSync(process.execPath, ["--input-type=module", "-e", script], { stdio: "ignore" }),
       error => error.status === 76
+    );
+    assert.ok(!existsSync(join(root, "muster", KIMI_MANIFEST)));
+
+    await runKimiInstall({ home, repoRoot: repo });
+    await runKimiUninstall({ home });
+    assert.deepEqual(readFileSync(configPath), original);
+    assert.ok(!readdirSync(root).some(name => name.startsWith(".muster-config-txn-")));
+  } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
+});
+
+test("runKimiInstall: restart restores a manifest retired before CAS publication", async () => {
+  const repo = fixtureRepo(), home = tmp();
+  try {
+    const root = join(home, ".kimi-code"), configPath = join(root, "config.toml");
+    const original = Buffer.from("# survives manifest retirement crash\n");
+    mkdirSync(root, { recursive: true });
+    writeFileSync(configPath, original);
+    await runKimiInstall({ home, repoRoot: repo });
+    const moduleUrl = new URL("../src/kimi-install.js", import.meta.url).href;
+    const script = `import { runKimiInstall } from ${JSON.stringify(moduleUrl)}; await runKimiInstall({ home: ${JSON.stringify(home)}, repoRoot: ${JSON.stringify(repo)}, _beforeManagedMutation: ({ operation }) => { if (operation === "manifest-retired") process.exit(77); } });`;
+    assert.throws(
+      () => execFileSync(process.execPath, ["--input-type=module", "-e", script], { stdio: "ignore" }),
+      error => error.status === 77
     );
     assert.ok(!existsSync(join(root, "muster", KIMI_MANIFEST)));
 

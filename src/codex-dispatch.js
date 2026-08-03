@@ -322,11 +322,14 @@ export function interpretCodexExecExit(code) {
 // ───────────────────────────────────────────────────────────────────────────
 // codex review: the native diff-review gate
 //
-// A first-class non-interactive reviewer with its OWN `review_model` (config
-// `review_model`), so the review leg neither pollutes the run's session nor
-// spends the orchestrator's model. Replaces muster's hand-dispatched reviewer
-// for the diff leg specifically -- the judgment legs (architecture, spec) still
-// route through muster's own reviewers.
+// Codex ships a first-class non-interactive reviewer with its own
+// `review_model` (config `review_model`), but PR #151's paid shadow replay
+// found: native review shadow benchmark rejected adoption (0/10 schema-valid
+// outputs). Production routing must continue through muster's independently
+// dispatched review gate -- see wave-dispatch.js's resolveCodexReviewRouting
+// for the structural nativeReviewEnabled:false decision. This builder is a
+// pure packet constructor kept for the benchmark harness only; it is never
+// imported by cli.js or any production dispatch path.
 // ───────────────────────────────────────────────────────────────────────────
 
 export function codexReviewCall({ base, uncommitted = false, commit, title, prompt } = {}) {

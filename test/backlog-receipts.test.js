@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile, spawnSync } from "node:child_process";
 import { promisify } from "node:util";
-import { chmod, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { deflateSync } from "node:zlib";
 import {
@@ -185,6 +185,37 @@ test("operational git failures throw instead of masquerading as ordinary unreach
     () => makeGitReachabilityVerifier({ cwd, releaseCommit: "1111111111111111111111111111111111111111" }),
     /git rev-parse|requires a repository/i,
   );
+});
+
+test("receipt provenance ignores PATH Git shadows and hostile Git environment overrides", async () => {
+  const cwd = await tmpProject({ "roadmap.md": "- [x] retired {withdrawn: test fixture}\n" });
+  await pexecFile("git", ["init", "-b", "main"], { cwd });
+  await pexecFile("git", ["add", "."], { cwd });
+  await pexecFile("git", ["-c", "user.name=Muster Test", "-c", "user.email=test@example.invalid", "commit", "-m", "seed"], { cwd });
+  const fakeBin = join(cwd, "fake-bin");
+  const marker = join(cwd, "shadow-git-ran");
+  await mkdir(fakeBin);
+  await writeFile(join(fakeBin, "git"), `#!/bin/sh\nprintf shadowed > ${JSON.stringify(marker)}\nexit 99\n`);
+  await chmod(join(fakeBin, "git"), 0o755);
+  const script = new URL("../scripts/check-backlog-receipts.mjs", import.meta.url).pathname;
+
+  const { stdout } = await pexecFile(process.execPath, [script, "--release-ref", "main"], {
+    cwd,
+    env: {
+      ...process.env,
+      PATH: `${fakeBin}:${process.env.PATH}`,
+      GIT_DIR: join(cwd, "attacker-git-dir"),
+      GIT_OBJECT_DIRECTORY: join(cwd, "attacker-objects"),
+      GIT_ALTERNATE_OBJECT_DIRECTORIES: join(cwd, "attacker-alternates"),
+      GIT_REPLACE_REF_BASE: "refs/evil/replace/",
+      GIT_CONFIG_COUNT: "1",
+      GIT_CONFIG_KEY_0: "core.repositoryFormatVersion",
+      GIT_CONFIG_VALUE_0: "99",
+    },
+  });
+
+  assert.equal(JSON.parse(stdout).ok, true);
+  await assert.rejects(readFile(marker, "utf8"), { code: "ENOENT" });
 });
 
 test("a missing receipt object is ordinary unreachability, while cat-file faults throw", () => {

@@ -5,18 +5,22 @@ import {
   BACKLOG_RECEIPT_MAX_CHECKED_ITEMS,
   BACKLOG_RECEIPT_MAX_TOTAL_BYTES,
   BACKLOG_RECEIPT_MAX_UNIQUE_RECEIPTS,
+  TRUSTED_GIT_COMMAND,
+  assertTrustedGitCommand,
   checkBacklogReceipts,
   makeGitReachabilityVerifier,
+  trustedGitEnvironment,
 } from "../src/backlog-receipts.js";
 
 const GIT_TIMEOUT_MS = 30_000;
 const GIT_OUTPUT_MAX_BYTES = BACKLOG_RECEIPT_MAX_TOTAL_BYTES + 4 * 1024 * 1024;
 const utf8 = new TextDecoder("utf-8", { fatal: true });
+assertTrustedGitCommand();
 
 function git(args, { input, maxBuffer = GIT_OUTPUT_MAX_BYTES } = {}) {
-  const result = spawnSync("git", args, {
+  const result = spawnSync(TRUSTED_GIT_COMMAND, args, {
     cwd: process.cwd(),
-    env: { ...process.env, GIT_NO_REPLACE_OBJECTS: "1" },
+    env: trustedGitEnvironment(),
     input,
     maxBuffer,
     timeout: GIT_TIMEOUT_MS,

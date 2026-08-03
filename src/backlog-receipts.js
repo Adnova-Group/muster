@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { lstatSync } from "node:fs";
+import { lstatSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { stripAnnotations } from "./sprint-waves.js";
 
@@ -12,6 +12,32 @@ export const BACKLOG_RECEIPT_MAX_LINE_BYTES = 64 * 1024;
 export const BACKLOG_RECEIPT_MAX_TOTAL_BYTES = 64 * 1024 * 1024;
 const GIT_REACHABILITY_TIMEOUT_MS = 30_000;
 const GIT_REACHABILITY_MAX_BUFFER = 1024 * 1024;
+export const TRUSTED_GIT_COMMAND = process.platform === "win32"
+  ? String.raw`C:\Program Files\Git\cmd\git.exe`
+  : "/usr/bin/git";
+
+export function assertTrustedGitCommand() {
+  const info = lstatSync(TRUSTED_GIT_COMMAND);
+  if (!info.isFile() || info.isSymbolicLink() || realpathSync(TRUSTED_GIT_COMMAND) !== TRUSTED_GIT_COMMAND
+    || (info.mode & 0o022) !== 0
+    || (typeof process.getuid === "function" && info.uid !== 0)) {
+    throw new Error(`trusted Git executable is unavailable at ${TRUSTED_GIT_COMMAND}`);
+  }
+  return TRUSTED_GIT_COMMAND;
+}
+
+export function trustedGitEnvironment(environment = process.env) {
+  const clean = Object.fromEntries(Object.entries(environment).filter(([key]) => !/^GIT_/i.test(key)));
+  return {
+    ...clean,
+    GIT_ATTR_NOSYSTEM: "1",
+    GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : "/dev/null",
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_NO_REPLACE_OBJECTS: "1",
+    GIT_OPTIONAL_LOCKS: "0",
+    GIT_TERMINAL_PROMPT: "0",
+  };
+}
 
 function hasStderr(result) {
   return result.stderr !== undefined && result.stderr !== null && result.stderr.length !== 0;
@@ -21,7 +47,7 @@ function gitOptions(cwd, extra = {}) {
   return {
     cwd,
     encoding: "utf8",
-    env: { ...process.env, GIT_NO_REPLACE_OBJECTS: "1" },
+    env: trustedGitEnvironment(),
     timeout: GIT_REACHABILITY_TIMEOUT_MS,
     maxBuffer: GIT_REACHABILITY_MAX_BUFFER,
     ...extra,
@@ -100,7 +126,8 @@ export function checkBacklogReceipts(content, {
 
 export function makeGitReachabilityVerifier({ cwd, releaseCommit, spawnSyncImpl = spawnSync }) {
   if (!SHA_RE.test(releaseCommit || "")) throw new TypeError("releaseCommit must be a lowercase 40-character Git SHA");
-  const graftLocation = spawnSyncImpl("git", ["rev-parse", "--git-path", "info/grafts"], gitOptions(cwd, { stdio: ["ignore", "pipe", "pipe"] }));
+  const gitCommand = assertTrustedGitCommand();
+  const graftLocation = spawnSyncImpl(gitCommand, ["rev-parse", "--git-path", "info/grafts"], gitOptions(cwd, { stdio: ["ignore", "pipe", "pipe"] }));
   if (graftLocation.error || graftLocation.status !== 0 || hasStderr(graftLocation)) gitFailure("git rev-parse --git-path info/grafts", graftLocation);
   const graftPath = graftLocation.stdout.trim();
   if (graftPath) {
@@ -111,7 +138,7 @@ export function makeGitReachabilityVerifier({ cwd, releaseCommit, spawnSyncImpl 
       if (error.code !== "ENOENT") throw error;
     }
   }
-  const repository = spawnSyncImpl("git", ["rev-parse", "--git-dir"], gitOptions(cwd, { stdio: ["ignore", "pipe", "pipe"] }));
+  const repository = spawnSyncImpl(gitCommand, ["rev-parse", "--git-dir"], gitOptions(cwd, { stdio: ["ignore", "pipe", "pipe"] }));
   if (repository.error) throw repository.error;
   if (repository.status !== 0 || hasStderr(repository)) throw new Error("git reachability verification requires a repository");
   return (receipt) => {
@@ -119,7 +146,7 @@ export function makeGitReachabilityVerifier({ cwd, releaseCommit, spawnSyncImpl 
     // reserving a nonzero process status for an operational Git failure. `cat-file
     // -e` collapses both cases to a nonzero exit (commonly 128), which would let a
     // broken object database masquerade as an ordinary stale receipt.
-    const object = spawnSyncImpl("git", ["cat-file", "--batch-check=%(objectname) %(objecttype)"], {
+    const object = spawnSyncImpl(gitCommand, ["cat-file", "--batch-check=%(objectname) %(objecttype)"], {
       ...gitOptions(cwd),
       input: `${receipt}\n`,
       stdio: ["pipe", "pipe", "pipe"],
@@ -131,7 +158,7 @@ export function makeGitReachabilityVerifier({ cwd, releaseCommit, spawnSyncImpl 
       if (/^[0-9a-f]{40} \S+$/.test(objectLine)) return false;
       throw new Error("git cat-file --batch-check returned an invalid response");
     }
-    const result = spawnSyncImpl("git", ["merge-base", "--is-ancestor", receipt, releaseCommit], gitOptions(cwd, {
+    const result = spawnSyncImpl(gitCommand, ["merge-base", "--is-ancestor", receipt, releaseCommit], gitOptions(cwd, {
       stdio: ["ignore", "pipe", "pipe"],
     }));
     if (result.error) throw result.error;

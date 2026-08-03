@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { constants as fsConstants } from "node:fs";
-import { link, lstat, mkdir, open, readFile, rename, rmdir, unlink, utimes } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { link, lstat, mkdir, open, readFile, readdir, rename, rmdir, unlink, utimes } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
 
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -215,6 +215,22 @@ async function ownerInstanceIsGone(current) {
   return Boolean(actualIdentity && current.record.processIdentity !== actualIdentity);
 }
 
+async function reconcileAcquisitionTemps(path) {
+  const parent = dirname(path);
+  const prefix = `${basename(path)}.acquire-`;
+  let names;
+  try { names = await readdir(parent); }
+  catch (error) { if (error.code === "ENOENT") return; throw error; }
+  for (const name of names.filter(candidate => candidate.startsWith(prefix)).sort()) {
+    const temporary = join(parent, name);
+    let current;
+    try { current = await readLock(temporary); }
+    catch (error) { if (error.code === "ENOENT") continue; throw error; }
+    if (!await ownerInstanceIsGone(current)) continue;
+    await retireLock(temporary, current, { stale: ownerInstanceIsGone });
+  }
+}
+
 async function transitionGateIsRecoverable(current) {
   // publishTransition exposes only a fully written staging inode. Invalid JSON
   // therefore cannot be an in-progress gate from this implementation. Still
@@ -316,7 +332,41 @@ async function reclaimIfStale(path, options, onReclaimRaceWindow, afterValidatio
   return result.removed || result.missing;
 }
 
-export async function withCodexFileLock(path, callback, {
+export async function withCodexFileLock(path, callback, options = {}) {
+  if (!fsConstants.O_NOFOLLOW) throw new Error("Codex transaction lock requires O_NOFOLLOW");
+  const parentPath = dirname(path);
+  const parent = await open(parentPath, fsConstants.O_RDONLY | fsConstants.O_DIRECTORY | fsConstants.O_NOFOLLOW);
+  try {
+    const parentInfo = await parent.stat();
+    const namedParentInfo = await lstat(parentPath);
+    if (!sameInode(parentInfo, namedParentInfo) || !parentInfo.isDirectory()) {
+      throw new Error(`Codex transaction lock parent changed: ${parentPath}`);
+    }
+    const assertPinnedParent = async () => {
+      const current = await lstat(parentPath);
+      if (!sameInode(parentInfo, current) || !current.isDirectory()) {
+        throw new Error(`Codex transaction lock parent changed: ${parentPath}`);
+      }
+    };
+    const releaseGuard = async () => {
+      await assertPinnedParent();
+      if (options.releaseGuard) await options.releaseGuard();
+    };
+    const acquireGuard = async () => {
+      if (options.beforeOpen) await options.beforeOpen();
+      await assertPinnedParent();
+    };
+    return await withPinnedCodexFileLock(
+      join("/proc/self/fd", String(parent.fd), basename(path)),
+      callback,
+      { ...options, beforeOpen: acquireGuard, releaseGuard, __parentIdentityGuard: assertPinnedParent }
+    );
+  } finally {
+    await parent.close();
+  }
+}
+
+async function withPinnedCodexFileLock(path, callback, {
   staleMs = 60_000,
   maxStaleMs = 15 * 60_000,
   timeoutMs = 30_000,
@@ -329,11 +379,14 @@ export async function withCodexFileLock(path, callback, {
   __afterReleaseValidationHook,
   __beforeRestoreHook,
   __afterAcquireWriteHook,
-  __beforeAcquirePublishHook
+  __beforeAcquirePublishHook,
+  __beforeAcquireCleanupHook,
+  __parentIdentityGuard
 } = {}) {
   const token = randomUUID();
   const processIdentity = await processStartIdentity();
   const started = Date.now();
+  await reconcileAcquisitionTemps(path);
   for (;;) {
     if (await transitionIsActive(path)) {
       if (Date.now() - started >= timeoutMs) throw new Error(`timed out waiting for Codex transaction lock: ${path}`);
@@ -349,8 +402,9 @@ export async function withCodexFileLock(path, callback, {
     if (beforeOpen) await beforeOpen();
     let handle;
     let acquisitionPath;
+    let published = false;
     try {
-      acquisitionPath = join(dirname(path), `.muster-lock-acquire-${process.pid}-${token}`);
+      acquisitionPath = join(dirname(path), `${basename(path)}.acquire-${process.pid}-${token}`);
       handle = await open(acquisitionPath, "wx", 0o600);
       await handle.writeFile(JSON.stringify({ format: 1, pid: process.pid, processIdentity, createdAt: Date.now(), token }) + "\n", "utf8");
       await handle.sync();
@@ -358,9 +412,12 @@ export async function withCodexFileLock(path, callback, {
       handle = null;
       if (__beforeAcquirePublishHook) await __beforeAcquirePublishHook({ path, acquisitionPath });
       await link(acquisitionPath, path);
+      published = true;
+      if (__beforeAcquireCleanupHook) await __beforeAcquireCleanupHook({ path, acquisitionPath });
       await unlink(acquisitionPath);
       acquisitionPath = null;
       if (__afterAcquireWriteHook) await __afterAcquireWriteHook();
+      if (__parentIdentityGuard) await __parentIdentityGuard();
       if (await transitionIsActive(path)) {
         // The transition marker appeared after our pre-open check. Withdraw
         // this not-yet-published owner through the same quarantine + identity
@@ -370,14 +427,28 @@ export async function withCodexFileLock(path, callback, {
         if (current.record?.token !== token) throw new Error(`Codex transaction lock ownership changed: ${path}`);
         const result = await retireLockUnderTransition(path, current, { waitForRestoreVacancy: true });
         if (!result.removed && !result.missing) throw new Error(`Codex transaction lock ownership changed: ${path}`);
+        published = false;
         continue;
       }
       break;
     } catch (error) {
       if (handle) await handle.close().catch(() => {});
+      const cleanupErrors = [];
+      if (published) {
+        try {
+          const current = await readLock(path);
+          if (current.record?.token === token) {
+            const result = await retireLock(path, current);
+            if (!result.removed && !result.missing) cleanupErrors.push(new Error(`Codex transaction lock ownership changed: ${path}`));
+          }
+        } catch (cleanupError) {
+          if (cleanupError.code !== "ENOENT") cleanupErrors.push(cleanupError);
+        }
+      }
       if (acquisitionPath) await unlink(acquisitionPath).catch(cleanupError => {
-        if (cleanupError.code !== "ENOENT") throw cleanupError;
+        if (cleanupError.code !== "ENOENT") cleanupErrors.push(cleanupError);
       });
+      if (cleanupErrors.length) throw new AggregateError([error, ...cleanupErrors], `Codex transaction lock acquisition cleanup failed: ${path}`);
       if (error.code !== "EEXIST") throw error;
       if (await reclaimIfStale(path, { staleMs, maxStaleMs }, __reclaimRaceHook, __afterReclaimValidationHook, __beforeRestoreHook)) continue;
       if (Date.now() - started >= timeoutMs) throw new Error(`timed out waiting for Codex transaction lock: ${path}`);

@@ -674,15 +674,18 @@ async function publishConfigBytes(dest, configPath, bytes, expected, beforeManag
     await rename(manifestTarget, manifestFailedPath);
     await beforeManagedMutation?.({ operation: "manifest-rollback-retired", path: manifestPath });
     try {
-      await readNoFollowRegular(manifestFailedPath, {
+      const movedManifest = await readNoFollowRegular(manifestFailedPath, {
         maxBytes: 1024 * 1024,
         label: `failed Kimi manifest publication at ${manifestFailedPath}`,
         expectedInfo: manifestPublishedInfo
       });
+      if (!movedManifest.bytes.equals(manifestPublishedBytes)) throw new Error("manifest digest mismatch");
     } catch {
       await link(manifestFailedPath, manifestTarget);
       await manifestDirectoryHandle.sync();
+      await beforeManagedMutation?.({ operation: "manifest-rollback-replacement-durable", path: manifestPath });
       await unlink(manifestFailedPath);
+      await transactionHandle.sync();
       throw new Error(`Kimi manifest changed during config rollback: ${manifestPath}`);
     }
     if (commitReceipt.info) await link(manifestOriginalPath, manifestTarget);
@@ -695,11 +698,24 @@ async function publishConfigBytes(dest, configPath, bytes, expected, beforeManag
     await restoreManifest();
     const sourcePath = join("/proc/self/fd", String(directoryHandles.at(-1).fd), basename(configPath));
     if (published) {
+      await beforeManagedMutation?.({ operation: "config-rollback-retire-ready", path: configPath });
       await rename(sourcePath, failedPath);
       const moved = await lstat(failedPath);
-      if (!sameFileIdentity(moved, publishedInfo)) {
+      let movedBytesValid = false;
+      if (sameFileIdentity(moved, publishedInfo)) {
+        const movedSnapshot = await readNoFollowRegular(failedPath, {
+          maxBytes: KIMI_CONFIG_MAX_BYTES,
+          label: `failed Kimi config.toml publication at ${failedPath}`,
+          expectedInfo: moved
+        });
+        movedBytesValid = movedSnapshot.bytes.equals(bytes);
+      }
+      if (!sameFileIdentity(moved, publishedInfo) || !movedBytesValid) {
         await link(failedPath, sourcePath);
+        await directoryHandles.at(-1).sync();
+        await beforeManagedMutation?.({ operation: "config-rollback-replacement-durable", path: configPath });
         await unlink(failedPath);
+        await transactionHandle.sync();
         throw changed();
       }
     }
@@ -836,7 +852,10 @@ async function publishConfigBytes(dest, configPath, bytes, expected, beforeManag
       const moved = await lstat(originalPath);
       if (!sameFileIdentity(moved, expected.info) || !moved.isFile()) {
         await link(originalPath, sourcePath);
+        await directory.sync();
+        await beforeManagedMutation?.({ operation: "config-retire-replacement-durable", path: configPath });
         await unlink(originalPath);
+        await transactionHandle.sync();
         retired = false;
         throw changed();
       }
@@ -970,14 +989,18 @@ async function publishConfigBytes(dest, configPath, bytes, expected, beforeManag
         });
       } catch {
         await link(manifestOriginalPath, manifestSourcePath);
-        await unlink(manifestOriginalPath);
         await manifestDirectoryHandle.sync();
+        await beforeManagedMutation?.({ operation: "manifest-retire-replacement-durable", path: commitReceipt.path });
+        await unlink(manifestOriginalPath);
+        await transactionHandle.sync();
         throw new Error(`Kimi manifest changed during safe publication: ${commitReceipt.path}`);
       }
       if (!retiredManifest.bytes.equals(commitReceipt.bytes)) {
         await link(manifestOriginalPath, manifestSourcePath);
-        await unlink(manifestOriginalPath);
         await manifestDirectoryHandle.sync();
+        await beforeManagedMutation?.({ operation: "manifest-retire-replacement-durable", path: commitReceipt.path });
+        await unlink(manifestOriginalPath);
+        await transactionHandle.sync();
         throw new Error(`Kimi manifest changed during safe publication: ${commitReceipt.path}`);
       }
     await transactionHandle.sync();
@@ -1252,6 +1275,10 @@ async function reconcileConfigTransactions(dest, configPath, manifestPath, befor
         await beforeManagedMutation?.({ operation: "config-recovery-manifest-durable", path: manifestPath });
         manifest = await statOrNull(manifestRecoveryPath);
       }
+      if (!manifest && !failedManifest && receipt.manifestPublished && !receipt.manifestBefore) {
+        await syncManifestRecovery();
+        await beforeManagedMutation?.({ operation: "config-recovery-manifest-absence-durable", path: manifestPath });
+      }
       if (!manifest && receipt.manifestPublished && matches(failedManifest, receipt.manifestPublished)) {
         const failedBytes = await readNoFollowRegular(manifestFailedPath, {
           maxBytes: 1024 * 1024,
@@ -1405,6 +1432,10 @@ async function reconcileConfigTransactions(dest, configPath, manifestPath, befor
       if (manifestOriginal) await unlink(manifestOriginalPath);
       failedManifest = await statOrNull(manifestFailedPath);
       if (failedManifest) await unlink(manifestFailedPath);
+      if (receipt.manifestPublished && !receipt.manifestBefore) {
+        await syncManifestRecovery();
+        await beforeManagedMutation?.({ operation: "config-recovery-manifest-absence-durable", path: manifestPath });
+      }
       await transaction.sync();
       await unlink(receiptPath);
       await transaction.sync();

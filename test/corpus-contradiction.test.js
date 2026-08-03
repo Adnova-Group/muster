@@ -321,6 +321,8 @@ test("Cowork sprint recovery uses the canonical progress-aware terminal contract
   assert.doesNotMatch(text, /predecessor was escalated or its build\/review failed[\s\S]{0,80}escalate the dependent immediately/i);
   assert.doesNotMatch(text, /omitting every escalated item or failed build\/review leg/i);
   assert.match(text, /dependents? (?:remain|stays?) waiting[\s\S]{0,120}truthful terminal state/i);
+  assert.match(text, /failed[^\n]{0,80}findings[\s\S]{0,160}(?:broker|callback)/i);
+  assert.match(text, /persist[^\n]{0,120}(?:returned|signed)[^\n]{0,80}`?progressFingerprint`?/i);
 });
 
 // ── residue scan: verb-rename leftovers outside the plugin/ prose scan ─────

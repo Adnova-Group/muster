@@ -46,8 +46,9 @@ const CONTAINED_CWD = "/tmp/muster-worktree";
 // own workspace sandbox here nests another Bubblewrap PID/network namespace;
 // on WSL that inner helper can remain alive after trivial commands and hold the
 // resumed turn open until timeout. The Codex flag disables only that redundant
-// inner layer; the outer container exposes the host read-only and binds exactly
-// the assigned worktree read-write.
+// inner layer; the outer container exposes the host read-only, gives each
+// worker a private /tmp, and binds only its assigned worktree plus the shared
+// Git metadata required to create the worker's commits.
 const CONTAINED_CODEX_SANDBOX = "danger-full-access";
 const TRUSTED_GIT_COMMAND = "/usr/bin/git";
 const ACTION_CLASSES = new Set(["send", "sign", "submit", "publish", "purchase", "delete-remote"]);
@@ -81,7 +82,7 @@ export function posixContainmentCall({
     command: bwrapCommand,
     argv: [
       "--die-with-parent", "--unshare-pid", "--new-session", "--proc", "/proc",
-      "--ro-bind", "/", "/", "--dev-bind", "/dev", "/dev", "--bind", "/tmp", "/tmp",
+      "--ro-bind", "/", "/", "--dev-bind", "/dev", "/dev", "--tmpfs", "/tmp",
       ...privateMounts,
       "--dir", CONTAINED_CWD,
       "--bind", `/proc/self/fd/${descriptorFd}`, CONTAINED_CWD,
@@ -1139,7 +1140,10 @@ async function runProcessWave({
             signal: controller.signal,
             stdinText: call.stdin,
             maskedPaths: fixLoopStore.maskedRoots,
-            bindPaths: isolatedCodexHomeBinds(isolatedHome),
+            bindPaths: [
+              { source: authority.commonDir, destination: authority.commonDir },
+              ...isolatedCodexHomeBinds(isolatedHome),
+            ],
           });
         } finally {
           await revalidated.directoryHandle.close();
@@ -1327,7 +1331,10 @@ export async function runCodexWaveContinuation({
       maxOutputBytes: CODEX_WAVE_LIMITS.outputBytes,
       stdinText: call.stdin,
       maskedPaths: store.maskedRoots,
-      bindPaths: isolatedCodexHomeBinds(isolatedHome),
+      bindPaths: [
+        { source: authority.commonDir, destination: authority.commonDir },
+        ...isolatedCodexHomeBinds(isolatedHome),
+      ],
   });
   const verdict = interpretCodexExecExit(result.code);
   if (!verdict.ok) {

@@ -27,7 +27,12 @@ jobs:
       - name: Verify backlog completion receipts
         run: node scripts/check-backlog-receipts.mjs --release-ref "origin/${GITHUB_BASE_REF:-main}"
       - run: npm ci
+      - name: Capture repository root integrity
+        run: node scripts/check-worktree-root-integrity.mjs capture "${{ runner.temp }}/muster-worktree-root-integrity.json"
       - run: npm test
+      - name: Verify repository root integrity after full test gate
+        if: always()
+        run: node scripts/check-worktree-root-integrity.mjs verify "${{ runner.temp }}/muster-worktree-root-integrity.json"
       - name: Router eval (deterministic grade on goldens)
         # The full model-driven router eval runs separately (it needs a model); this prints
         # the deterministic grade of the committed golden run for CI-log visibility. The

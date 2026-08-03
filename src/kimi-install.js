@@ -629,6 +629,15 @@ async function publishConfigBytes(dest, configPath, bytes, expected, beforeManag
     });
     if (!snapshot.bytes.equals(expected.bytes)) throw changed();
   };
+  const validatePublished = async () => {
+    const sourcePath = join("/proc/self/fd", String(directoryHandles.at(-1).fd), basename(configPath));
+    const snapshot = await readNoFollowRegular(sourcePath, {
+      maxBytes: KIMI_CONFIG_MAX_BYTES,
+      label: `published Kimi config.toml at ${configPath}`,
+      expectedInfo: publishedInfo
+    });
+    if (!snapshot.bytes.equals(bytes)) throw changed();
+  };
   const closeDirectories = async () => {
     for (const handle of directoryHandles.reverse()) await handle.close();
   };
@@ -718,6 +727,7 @@ async function publishConfigBytes(dest, configPath, bytes, expected, beforeManag
     stagedPath = null;
     await beforeManagedMutation?.({ operation: "config-fsync", path: configPath });
     await directory.sync();
+    await validatePublished();
     await validateRetired();
     handedOff = true;
   } catch (publicationError) {
@@ -748,6 +758,7 @@ async function publishConfigBytes(dest, configPath, bytes, expected, beforeManag
     bytes,
     info: publishedInfo,
     parent: parentIdentity,
+    validate: validatePublished,
     commit: async () => {
       if (settled) return;
       try {
@@ -783,7 +794,7 @@ async function rollbackConfig(dest, configPath, original, published, beforeManag
   await published.rollback();
 }
 
-async function reconcileConfigTransactions(dest, configPath, manifestPath) {
+async function reconcileConfigTransactions(dest, configPath, manifestPath, beforeManagedMutation = null) {
   let destInfo;
   try { destInfo = await lstat(dest); }
   catch (error) { if (error.code === "ENOENT") return; throw error; }
@@ -833,15 +844,19 @@ async function reconcileConfigTransactions(dest, configPath, manifestPath) {
       if (committed) {
         if (!matches(source, receipt.staged)) throw new Error(`Kimi config.toml committed transaction conflicts with ${configPath}`);
       } else {
+        const alreadyRestored = receipt.expected && matches(source, receipt.expected);
         if (matches(source, receipt.staged)) {
           await rename(sourcePath, failedPath);
           source = null;
-        } else if (source && receipt.expected) {
+        } else if (source && receipt.expected && !alreadyRestored) {
           throw new Error(`Kimi config.toml recovery found a concurrent replacement: ${configPath}`);
         }
-        if (receipt.expected) {
+        if (receipt.expected && !alreadyRestored) {
           if (!matches(original, receipt.expected)) throw new Error(`Kimi config.toml recovery lost its original: ${configPath}`);
-          if (!source) await link(originalPath, sourcePath);
+          if (!source) {
+            await link(originalPath, sourcePath);
+            await beforeManagedMutation?.({ operation: "config-recovery-restored", path: configPath });
+          }
         }
       }
 
@@ -1049,7 +1064,7 @@ export async function runKimiInstall({
 
   // Prune stale files a prior install owned but this one no longer ships.
   const manifestPath = join(dest, "muster", KIMI_MANIFEST);
-  await reconcileConfigTransactions(dest, configPath, manifestPath);
+  await reconcileConfigTransactions(dest, configPath, manifestPath, _beforeManagedMutation);
   await reconcileOrphanedManifestQuarantine(dest, manifestPath);
   const previous = await readManifest(manifestPath, dest);
   const reconciliation = previous
@@ -1171,6 +1186,7 @@ export async function runKimiInstall({
     );
     let manifestPublished = false;
     try {
+      await published.validate();
       await atomicWriteJson(manifestPath, {
         format: 1, owner: "muster", packageVersion,
         agents: agents.map(a => a.rel), skills: skills.map(s => s.rel), verbs: verbs.map(v => v.rel),
@@ -1368,7 +1384,7 @@ export async function runKimiUninstall({
   const dest = kimiHome(home);
   const manifestPath = join(dest, "muster", KIMI_MANIFEST);
   const configPath = join(dest, "config.toml");
-  await reconcileConfigTransactions(dest, configPath, manifestPath);
+  await reconcileConfigTransactions(dest, configPath, manifestPath, _beforeManagedMutation);
   const recoveredManifestDeletion = await reconcileOrphanedManifestQuarantine(dest, manifestPath, _platform);
   const manifest = await readManifest(manifestPath, dest);
   if (!manifest) {

@@ -1345,6 +1345,27 @@ test("runKimiInstall: an in-place edit of the linked config aborts before manife
   } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
 });
 
+test("runKimiInstall: an in-place edit during manifest publication aborts before commit", async () => {
+  const repo = fixtureRepo(), home = tmp();
+  try {
+    const root = join(home, ".kimi-code"), configPath = join(root, "config.toml");
+    const original = Buffer.from("# original manifest window target\n");
+    mkdirSync(root, { recursive: true });
+    writeFileSync(configPath, original);
+    await assert.rejects(runKimiInstall({
+      home,
+      repoRoot: repo,
+      _beforeManagedMutation: ({ operation, path }) => {
+        if (operation === "publish" && path.endsWith(KIMI_MANIFEST)) {
+          writeFileSync(configPath, "# concurrent manifest-window edit\n");
+        }
+      }
+    }), /changed during safe publication/);
+    assert.deepEqual(readFileSync(configPath), original);
+    assert.ok(!existsSync(join(root, "muster", KIMI_MANIFEST)));
+  } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
+});
+
 test("runKimiInstall: restart recovers a process killed between retire and link", async () => {
   const repo = fixtureRepo(), home = tmp();
   try {

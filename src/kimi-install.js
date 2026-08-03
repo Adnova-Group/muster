@@ -1186,12 +1186,11 @@ export async function runKimiInstall({
     );
     let manifestPublished = false;
     try {
-      await published.validate();
       await atomicWriteJson(manifestPath, {
         format: 1, owner: "muster", packageVersion,
         agents: agents.map(a => a.rel), skills: skills.map(s => s.rel), verbs: verbs.map(v => v.rel),
         permissionRules: { created: configCreated }
-      }, dest, _beforeManagedMutation);
+      }, dest, _beforeManagedMutation, { beforeCommit: published.validate });
       manifestPublished = true;
       await published.commit();
     } catch (publicationError) {
@@ -1523,7 +1522,7 @@ async function atomicWriteJson(
   value,
   dest,
   beforeManagedMutation,
-  { fsync = false, fsyncDir = false } = {}
+  { fsync = false, fsyncDir = false, beforeCommit = null } = {}
 ) {
   let publishedIdentity = null;
   await atomicWrite(path, JSON.stringify(value, null, 2) + "\n", {
@@ -1536,6 +1535,7 @@ async function atomicWriteJson(
       if (!publishedIdentity.isFile() || publishedIdentity.isSymbolicLink()) {
         throw new Error(`Refusing to publish a non-ordinary Kimi file: ${temporary}`);
       }
+      await beforeCommit?.();
     }
   });
   return publishedIdentity;

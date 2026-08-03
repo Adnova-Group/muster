@@ -1,3 +1,11 @@
+// This file is the live implementation and coverage of PR 145's promise ("Pin
+// Codex MCP Node runtime"), landed under a different name/shape than that PR
+// proposed (commit 375c186, "integrate Codex runtime identity and strict
+// config work") and independently re-verified against `main` by backlog item
+// `codex-runtime-identity-reconcile` -- see
+// docs/decisions/codex-runtime-identity-pr145-supersede.md for the full
+// evidence trail and why the earlier PR-branch reconciliation run's search
+// missed this file.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { chmod, mkdir, mkdtemp, readFile, realpath, rm, symlink, unlink, writeFile } from "node:fs/promises";

@@ -162,13 +162,14 @@ test("withCodexFileLock runs the ancestry guard before stale-transition reconcil
   await symlink(outside, join(trusted, "redirect"));
   const lock = join(trusted, "redirect", "nested", "guarded.lock");
   const transition = `${join(outside, "nested", "guarded.lock")}.muster-transition`;
-  await writeFile(transition, "{\"format\":1");
+  const plantedTransition = deadOwner("planted-transition");
+  await writeFile(transition, JSON.stringify(plantedTransition) + "\n");
   let guardCalled = false;
   await assert.rejects(withCodexFileLock(lock, () => assert.fail("guarded callback must not run"), {
     beforeOpen: () => { guardCalled = true; throw new Error("rejected untrusted transition ancestry"); }
   }), /rejected untrusted transition ancestry/);
   assert.equal(guardCalled, true);
-  assert.equal(await readFile(transition, "utf8"), "{\"format\":1");
+  assert.deepEqual(JSON.parse(await readFile(transition, "utf8")), plantedTransition);
 });
 
 // The identity gap in stale reclamation: reclaimer A decides a lock is stale and

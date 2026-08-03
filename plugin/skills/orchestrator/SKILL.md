@@ -33,8 +33,9 @@ doing the work.
    specGateRounds, reviewGateBatches, fastPath, reason}` -- captured once by the invoking verb at
    spec-gate time. Do **not** re-invoke `gate-cadence` here (the manifest's waves are already fixed).
    Note the result in STATE. `fastPath: true` (small plans): step 4c batches the review gate into one
-   pass over the cumulative diff instead of per-wave -- same reviewer tier, pass bar, and 3-iteration
-   fix cap; only the CADENCE collapses. `fastPath: false`: today's per-wave cadence, unchanged.
+   pass over the cumulative diff instead of per-wave -- same reviewer tier, pass bar, and configurable
+   progress-aware recovery budget; only the CADENCE collapses. `fastPath: false`: today's per-wave
+   cadence, unchanged.
 3. **Pre-flight plan review (once, before wave 1).** Scan the whole plan for conflicts (tasks that
    contradict each other or `successCriteria`, or anything a task mandates the review gate would
    later flag as a defect) before dispatching anything. Present findings as **one batched

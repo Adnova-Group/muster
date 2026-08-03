@@ -65,6 +65,27 @@ function madeProgress({ progress, previousProgress }) {
     progress > previousProgress;
 }
 
+function boundedProgressAwareState(options, {
+  budgetKey, hardLimit, invalidReason, budgetReason, totalReason,
+}) {
+  const done = options.done === true;
+  if (done) return { continue: false, reason: "done", noProgressCount: 0 };
+  const configuredBudget = options[budgetKey];
+  const configuredContinuations = options.maxContinuations;
+  if (configuredBudget !== undefined && configuredContinuations !== undefined
+    && configuredBudget !== configuredContinuations) {
+    return { continue: false, reason: invalidReason };
+  }
+  const budget = configuredBudget ?? configuredContinuations ?? hardLimit;
+  if (!Number.isSafeInteger(budget) || budget < 1 || budget > hardLimit) {
+    return { continue: false, reason: invalidReason };
+  }
+  const { [budgetKey]: _budget, maxContinuations: _continuations, ...recovery } = options;
+  const state = progressAwareState({ ...recovery, maxContinuations: budget });
+  if (state.reason !== "max-continuations") return state;
+  return { ...state, reason: budget === hardLimit ? totalReason : budgetReason };
+}
+
 // The review-gate's default no-progress budget is 3 iterations. Callers may set an explicit
 // budget for a task; a strictly improving progress score can exceed it because the score proves the
 // fix loop is converging rather than alternating or repeating failures.
@@ -73,7 +94,13 @@ export const REVIEW_GATE_MAX_TOTAL_ITERATIONS = 12;
 export function reviewGateState(options = {}) {
   if (Object.hasOwn(options, "outcomes") || Object.hasOwn(options, "terminalReason")
     || Object.hasOwn(options, "noProgressLimit") || Object.hasOwn(options, "maxContinuations")) {
-    return progressAwareState(options);
+    return boundedProgressAwareState(options, {
+      budgetKey: "maxIterations",
+      hardLimit: REVIEW_GATE_MAX_TOTAL_ITERATIONS,
+      invalidReason: "invalid-max-iterations",
+      budgetReason: "max-iterations",
+      totalReason: "max-total-iterations",
+    });
   }
   const {
   iteration,
@@ -133,9 +160,15 @@ export function dispatchRetryState(options = {}) {
   if (Object.hasOwn(options, "outcomes") || Object.hasOwn(options, "terminalReason")
     || Object.hasOwn(options, "noProgressLimit") || Object.hasOwn(options, "maxContinuations")) {
     const { succeeded = false, ...recovery } = options;
-    const state = progressAwareState({ ...recovery, done: succeeded });
+    const state = boundedProgressAwareState({ ...recovery, done: succeeded }, {
+      budgetKey: "maxAttempts",
+      hardLimit: DISPATCH_MAX_TOTAL_ATTEMPTS,
+      invalidReason: "invalid-max-attempts",
+      budgetReason: "attempts-exhausted",
+      totalReason: "max-total-attempts",
+    });
     return { retry: state.continue, reason: succeeded ? "succeeded" : state.reason,
-      noProgressCount: state.noProgressCount };
+      ...(state.noProgressCount === undefined ? {} : { noProgressCount: state.noProgressCount }) };
   }
   const {
   attempt,

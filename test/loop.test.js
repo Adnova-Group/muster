@@ -313,3 +313,33 @@ test("progress cannot bypass the absolute review and dispatch ceilings", () => {
     previousProgress: 1,
   }), { retry: false, reason: "max-total-attempts" });
 });
+
+test("fingerprint-based review recovery honors configured and absolute budgets", () => {
+  assert.deepEqual(reviewGateState({
+    outcomes: ["a", "b", "c", "d"],
+    maxIterations: 4,
+  }), { continue: false, reason: "max-iterations", noProgressCount: 1 });
+  assert.deepEqual(reviewGateState({
+    outcomes: Array.from({ length: REVIEW_GATE_MAX_TOTAL_ITERATIONS }, (_, index) => `review-${index}`),
+    maxContinuations: REVIEW_GATE_MAX_TOTAL_ITERATIONS,
+  }), { continue: false, reason: "max-total-iterations", noProgressCount: 1 });
+  assert.deepEqual(reviewGateState({
+    outcomes: ["a"],
+    maxContinuations: REVIEW_GATE_MAX_TOTAL_ITERATIONS + 1,
+  }), { continue: false, reason: "invalid-max-iterations" });
+});
+
+test("fingerprint-based dispatch recovery honors configured and absolute budgets", () => {
+  assert.deepEqual(dispatchRetryState({
+    outcomes: ["a", "b", "c"],
+    maxAttempts: 3,
+  }), { retry: false, reason: "attempts-exhausted", noProgressCount: 1 });
+  assert.deepEqual(dispatchRetryState({
+    outcomes: Array.from({ length: DISPATCH_MAX_TOTAL_ATTEMPTS }, (_, index) => `dispatch-${index}`),
+    maxContinuations: DISPATCH_MAX_TOTAL_ATTEMPTS,
+  }), { retry: false, reason: "max-total-attempts", noProgressCount: 1 });
+  assert.deepEqual(dispatchRetryState({
+    outcomes: ["a"],
+    maxContinuations: DISPATCH_MAX_TOTAL_ATTEMPTS + 1,
+  }), { retry: false, reason: "invalid-max-attempts" });
+});

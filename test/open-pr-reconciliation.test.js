@@ -7,71 +7,53 @@ const EXPECTED_PRS = [
   166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 185,
 ];
 
-const ALLOWED_DISPOSITIONS = new Set([
-  "merge",
-  "close-with-rationale",
-  "active-backlog-owner",
-]);
+const EXPECTED_COUNTS = { total: 20, merged: 10, closed: 10, current: 0, awaitingDisposition: 0 };
 
-test("open PR reconciliation owns every named PR and leaves none falsely completed", async () => {
+test("final PR reconciliation records one current disposition per PR and leaves none awaiting", async () => {
   const ledger = JSON.parse(await readFile(
     new URL("../docs/decisions/open-pr-branch-reconciliation.json", import.meta.url),
     "utf8",
   ));
+  const narrative = await readFile(
+    new URL("../docs/decisions/open-pr-branch-reconciliation.md", import.meta.url),
+    "utf8",
+  );
 
-  assert.equal(ledger.itemId, "open-pr-branch-reconciliation");
-  assert.equal(ledger.schemaVersion, 2);
+  assert.equal(ledger.itemId, "finalize-pr-reconciliation-truth");
+  assert.equal(ledger.schemaVersion, 3);
   assert.equal(ledger.repository, "Adnova-Group/muster");
-  assert.equal(ledger.baseCommit, "248f556c790ff1b9765c053c89a7d7e1669a4419");
+  assert.equal(ledger.baseCommit, "95b3bf9c2d6c8ffc75469b01b4b0c1ee94679be1");
   assert.match(ledger.observedAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
   assert.equal(new Date(ledger.observedAt).toISOString(), ledger.observedAt);
   assert.equal(ledger.externalMutationPerformed, false);
-  assert.equal(ledger.externalActionCoordinator, "dispatcher");
-  assert.equal(ledger.externalMutationActor, "human");
-  assert.deepEqual(ledger.executionPreconditions, {
-    liveHeadShaMustMatchObservedHeadSha: true,
-    mergeChecksMustBeGreen: true,
-    mergeReviewMustPassAtObservedHeadSha: true,
-  });
+  assert.deepEqual(ledger.summary, EXPECTED_COUNTS);
   assert.deepEqual(ledger.prs.map(({ number }) => number), EXPECTED_PRS);
   assert.equal(new Set(ledger.prs.map(({ number }) => number)).size, EXPECTED_PRS.length);
 
+  const computed = { total: ledger.prs.length, merged: 0, closed: 0, current: 0, awaitingDisposition: 0 };
   for (const pr of ledger.prs) {
-    assert.equal(pr.observedState, "OPEN", `PR #${pr.number} observation drifted`);
-    assert.equal(pr.backlogState, "awaiting-disposition", `PR #${pr.number} is falsely completed`);
-    assert.ok(ALLOWED_DISPOSITIONS.has(pr.proposedDisposition), `PR #${pr.number} has no disposition`);
-    assert.match(pr.rationale, /\S/, `PR #${pr.number} has no rationale`);
+    assert.ok(["merged", "closed", "current"].includes(pr.disposition), `PR #${pr.number} has no final disposition`);
+    computed[pr.disposition] += 1;
+    assert.equal(pr.backlogState, "complete", `PR #${pr.number} is still awaiting disposition`);
     assert.match(pr.evidence, /\S/, `PR #${pr.number} has no evidence`);
     assert.match(pr.observedHeadSha, /^[0-9a-f]{40}$/, `PR #${pr.number} head is not pinned`);
     assert.equal(pr.url, `https://github.com/${ledger.repository}/pull/${pr.number}`);
-    assert.ok(Array.isArray(pr.checksObserved), `PR #${pr.number} checks were not observed`);
-    assert.ok(Array.isArray(pr.reviewsObserved), `PR #${pr.number} reviews were not observed`);
-    for (const check of pr.checksObserved) {
-      assert.match(check.name, /\S/, `PR #${pr.number} has an unnamed check`);
-      assert.ok(["SUCCESS", "FAILURE", "CANCELLED", "PENDING", "SKIPPED"].includes(check.state));
-    }
-    for (const review of pr.reviewsObserved) {
-      assert.ok(["APPROVED", "CHANGES_REQUESTED", "COMMENTED", "DISMISSED"].includes(review.state));
-      assert.ok(review.commit === null || /^[0-9a-f]{40}$/.test(review.commit));
-    }
-    assert.equal(pr.externalActionCoordinator, "dispatcher", `PR #${pr.number} coordination is unowned`);
-    assert.equal(pr.externalMutationActor, "human", `PR #${pr.number} mutation actor is unsafe`);
+    assert.match(pr.closedAt, /^2026-08-03T/);
 
-    if (pr.proposedDisposition === "merge") {
-      assert.ok(pr.checksObserved.length > 0, `PR #${pr.number} has no observed checks`);
-      assert.ok(pr.checksObserved.every(({ state }) => state === "SUCCESS"), `PR #${pr.number} checks are not green`);
-      assert.ok(
-        pr.reviewsObserved.some(({ state, commit }) => state === "APPROVED" && commit === pr.observedHeadSha),
-        `PR #${pr.number} has no exact-head approval`,
-      );
-    }
-
-    if (pr.proposedDisposition === "active-backlog-owner") {
-      assert.match(pr.backlogOwner, /^@[a-z0-9-]+$/i, `PR #${pr.number} has no active owner`);
-      assert.match(pr.nextAction, /\S/, `PR #${pr.number} has no owned next action`);
-    } else {
-      assert.equal(pr.backlogOwner, null, `PR #${pr.number} must have exactly one disposition`);
-      assert.equal(pr.nextAction, null, `PR #${pr.number} must have exactly one disposition`);
+    if (pr.disposition === "merged") {
+      assert.equal(pr.observedState, "MERGED");
+      assert.match(pr.mergedAt, /^2026-08-03T/);
+      assert.match(pr.mergeCommitSha, /^[0-9a-f]{40}$/);
+    } else if (pr.disposition === "closed") {
+      assert.equal(pr.observedState, "CLOSED");
+      assert.equal(pr.mergedAt, null);
+      assert.equal(pr.mergeCommitSha, null);
     }
   }
+
+  assert.deepEqual(computed, EXPECTED_COUNTS);
+  assert.doesNotMatch(JSON.stringify(ledger), /awaiting-disposition/i);
+  assert.match(narrative, /10 merged, 10 closed, 0 current, and 0 awaiting disposition/i);
+  assert.doesNotMatch(narrative, /awaiting-disposition/i);
+  for (const number of EXPECTED_PRS) assert.match(narrative, new RegExp(`\\| ${number} \\|`));
 });

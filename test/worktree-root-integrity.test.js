@@ -54,6 +54,19 @@ test("capture fails closed on core.worktree redirection and missing tracked file
   await assert.rejects(() => capture(deleted.cwd, deleted.snapshot), /tracked files.*missing/i);
 });
 
+test("Git config environment overrides cannot hide core.worktree", async () => {
+  const redirected = await fixture();
+  await git(redirected.cwd, "config", "--local", "core.worktree", "..");
+  const prior = process.env.GIT_CONFIG;
+  process.env.GIT_CONFIG = "/dev/null";
+  try {
+    await assert.rejects(() => capture(redirected.cwd, redirected.snapshot), /core\.worktree/i);
+  } finally {
+    if (prior === undefined) delete process.env.GIT_CONFIG;
+    else process.env.GIT_CONFIG = prior;
+  }
+});
+
 test("verify rejects top-level, config-byte, tracked-set, and linked-worktree drift", async () => {
   const top = await fixture();
   await capture(top.cwd, top.snapshot);

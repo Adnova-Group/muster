@@ -13,7 +13,7 @@ function cleanGitEnvironment() {
   const env = { ...process.env, GIT_NO_REPLACE_OBJECTS: "1" };
   for (const key of Object.keys(env)) {
     if (["GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE"].includes(key)
-      || /^GIT_CONFIG_(?:COUNT|KEY_|VALUE_)/.test(key)) delete env[key];
+      || /^GIT_CONFIG/.test(key)) delete env[key];
   }
   return env;
 }

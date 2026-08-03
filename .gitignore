@@ -1,5 +1,6 @@
 node_modules/
-.muster/
+.muster/*
+!.muster/backlog.md
 # The Codex plugin (skills/MCP/commands + generated agent profiles) is
 # generated at build/install time (scripts/build-codex.mjs, src/codex-install.js)
 # into this staging directory. Nothing here is ever committed.

@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile, spawnSync } from "node:child_process";
 import { promisify } from "node:util";
-import { chmod, symlink, writeFile } from "node:fs/promises";
+import { chmod, readFile, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { deflateSync } from "node:zlib";
 import {
@@ -42,6 +42,23 @@ test("every non-withdrawn checked item needs a reachable merge or done receipt",
   assert.match(result.errors[0].reason, /missing.*merge.*done/i);
   assert.match(result.errors[1].reason, /40-character/i);
   assert.match(result.errors[2].reason, /not reachable.*refs\/heads\/main/i);
+});
+
+test("the tracked canonical backlog projects every completed item into the CI receipt gate", async () => {
+  const root = new URL("../", import.meta.url).pathname;
+  const tracked = await pexecFile("git", ["ls-files", "--error-unmatch", ".muster/backlog.md"], { cwd: root });
+  assert.equal(tracked.stdout.trim(), ".muster/backlog.md");
+
+  const backlog = await readFile(new URL("../.muster/backlog.md", import.meta.url), "utf8");
+  const baseline = checkBacklogReceipts(backlog, { releaseRef: "main", isReachable: () => true });
+  assert.equal(baseline.ok, true);
+  assert.ok(baseline.summary.checked > 0);
+
+  const mutated = backlog.replace(/\s+\{(?:merge|done): [0-9a-f]{40}\}/, "");
+  assert.notEqual(mutated, backlog, "fixture must remove one canonical completion receipt");
+  const result = checkBacklogReceipts(mutated, { releaseRef: "main", isReachable: () => true });
+  assert.equal(result.ok, false);
+  assert.match(result.errors[0].reason, /missing.*merge.*done/i);
 });
 
 test("withdrawn is the only explicit exemption and requires a reason", () => {

@@ -29,24 +29,25 @@ test("packaged Codex workflows use the bundled CLI and Codex-native mode names",
   assert.match(coordination, /plugin cache is not a Git checkout/);
   assert.doesNotMatch(coordination, /git log -1 --format/);
   const orchestrator = await readFile(join(selectedPluginRoot, "internal-skills", "orchestrator", "SKILL.md"), "utf8");
-  assert.match(orchestrator, /call `collaboration\.spawn_agent`/);
-  assert.match(orchestrator, /agent_type: "<exact chosen\.id>"/);
+  assert.match(orchestrator, /codex-wave <wave\.json> --fence-file <trusted no-follow action-fence\.json> --repository-root <trusted repo root> --base-sha <exact full base SHA>/);
+  assert.match(orchestrator, /one process-wave member/);
+  assert.match(orchestrator, /pristine registered linked worktree/);
+  assert.match(orchestrator, /hermetic `codex exec -C`/);
   assert.match(orchestrator, /fork_turns: "none"/);
   assert.match(orchestrator, /never use `"all"`/);
   assert.match(orchestrator, /explicit cohesive-task budget/);
   assert.match(orchestrator, /deterministic progress evidence/);
   assert.match(orchestrator, /repeated-identical\/no-progress threshold/);
-  assert.match(orchestrator, /Respect the configured Codex thread concurrency/);
-  assert.match(orchestrator, /capabilities --codex --role <role>/);
-  assert.match(orchestrator, /do not reprint the full skills inventory/);
-  assert.match(orchestrator, /implementer leaf agent/);
-  assert.match(orchestrator, /minimal dispatch packet/);
+  assert.match(orchestrator, /trusted thread ceiling/);
+  assert.match(orchestrator, /agentType: "muster-runner"/);
+  assert.match(orchestrator, /loads and digests its installed `muster-runner` instructions/);
+  assert.doesNotMatch(orchestrator, /optional `model`|optional `codexModel`/);
+  assert.match(orchestrator, /minimal prompt/);
   assert.match(orchestrator, /Never attach unrelated plan items/);
-  assert.match(orchestrator, /Workers are leaves and must not spawn descendants/);
-  assert.match(orchestrator, /absolute `WORKTREE CWD`/);
-  assert.match(orchestrator, /never read the parent checkout's `.muster` artifacts/);
-  assert.match(orchestrator, /If the named type is rejected, stop with a registration diagnostic/);
-  assert.match(orchestrator, /do not silently inherit the parent model/);
+  assert.match(orchestrator, /Never call a subagent API from this production-wave step/);
+  assert.match(orchestrator, /sealed process lane rejects ignored artifacts/);
+  assert.match(orchestrator, /no-follow fence document is the runtime-authenticated action-policy source/);
+  assert.doesNotMatch(orchestrator, /propagate the active action fence|receives this same action-fence propagation/i);
   assert.doesNotMatch(orchestrator, /generic-subagent fallback|isolation: "worktree"|hook-enforced -- these BLOCK/);
 
   for (const command of ["plan", "go", "plan-backlog", "go-backlog", "diagnose", "audit", "runner", "capture"]) {
@@ -107,25 +108,18 @@ test("generated Codex package exposes the native-dispatch resolvers the orchestr
 
   // Doc reachability: the ported orchestrator/SKILL.md's wave-dispatch section is wholesale-replaced
   // for Codex (scripts/build-codex.mjs's adaptOrchestratorForCodex) -- that replacement must still
-  // carry the Codex-specific resolvers (resolveCodexWaveDispatch's sequential-inline fallback,
-  // resolveWorktreeIsolation's receipts-only mechanism) it stands in for, not silently drop them
-  // along with the Claude-only prose it exists to replace.
+  // carry the Codex-specific process-only production boundary and the explicit
+  // non-wave receipts-only diagnostic it stands in for.
   const orchestrator = await readFile(join(selectedPluginRoot, "internal-skills", "orchestrator", "SKILL.md"), "utf8");
-  assert.match(orchestrator, /sequential-inline/);
-  assert.match(orchestrator, /multiAgent: false|MUSTER_CODEX_MULTI_AGENT/);
+  assert.match(orchestrator, /Production waves are process-only/);
+  assert.match(orchestrator, /trusted repository and exact base SHA before lane resolution/);
   assert.match(orchestrator, /receipts-only/);
   assert.match(orchestrator, /worktree-isolation --harness codex/);
 
-  // codex-receipt-verify-parity item: PR #78 wired the orchestrator's Claude-side prose to run
-  // `receipt-verify` right after appending each dispatch receipt, but this same wave-dispatch
-  // span is wholesale-replaced for Codex (adaptOrchestratorForCodex's waveDispatchHeading
-  // replacement, above) and that replacement text never carried the instruction forward -- so
-  // Codex-generated prose silently omitted verification on exactly the harness whose isolation
-  // floor is receipts-only. Assert the replacement text now runs receipt-verify against the
-  // bundled CLI and treats a nonzero exit as an escalation, never a silent continue.
-  assert.match(orchestrator, /runtime\/muster\.mjs receipt-verify <baseSha> --cwd <absolute worktree path>/);
-  assert.match(orchestrator, /nonzero exit as a receipt failure/);
-  assert.match(orchestrator, /escalat(?:e|ion)/i);
+  // Production waves no longer rely on the weaker receipts-only floor: the
+  // runtime authenticates repository/base/worktree identity before execution.
+  assert.match(orchestrator, /Production waves do not use that weaker floor/);
+  assert.match(orchestrator, /binds each member's absolute pristine worktree to the trusted common Git directory and exact base SHA/);
 
   // The bundled runtime IS `src/cli.js` (esbuild-bundled, scripts/build-codex.mjs), so the
   // `receipt-verify` command ships automatically once PR #78 lands -- prove the actual generated
@@ -144,6 +138,43 @@ const watchInvariantSurfaces = new Map([
   ...["muster", "muster-init", "muster-design", "muster-plan", "muster-go", "muster-plan-backlog", "muster-go-backlog", "muster-diagnose", "muster-audit", "muster-runner", "muster-capture", "run", "autopilot", "sprint"]
     .map(name => [name, join(selectedPluginRoot, "skills", name, "SKILL.md")])
 ]);
+
+async function generatedSpawnSurfaces(root) {
+  const found = [];
+  for (const entry of await readdir(root, { withFileTypes: true })) {
+    const path = join(root, entry.name);
+    if (entry.isDirectory()) found.push(...await generatedSpawnSurfaces(path));
+    else if (/\.(?:md|toml)$/.test(entry.name) && (await readFile(path, "utf8")).includes("spawn_agent")) found.push(path);
+  }
+  return found;
+}
+
+test("every generated spawn-bearing production surface mandates codex-wave admission", async () => {
+  const surfaces = await generatedSpawnSurfaces(selectedPluginRoot);
+  assert.ok(surfaces.length >= 17, "the global guard must cover every current explicit non-wave spawn surface");
+  for (const path of surfaces) {
+    const text = await readFile(path, "utf8");
+    assert.match(
+      text,
+      /Every production wave MUST first run through[\s\S]{0,180}codex-wave|construct the complete wave and run it through[\s\S]{0,180}codex-wave/,
+      `${path} must forbid direct manifest/backlog spawn and require the fail-closed selector`,
+    );
+    assert.match(text, /Production waves are process-only/i, `${path} must prohibit shared-cwd spawn for production waves`);
+    assert.doesNotMatch(text, /non-process packets returned by `codex-wave`/i, `${path} must not authorize deferred shared-cwd packets`);
+  }
+});
+
+test("generated production-wave steps contain process manifests, never direct subagent dispatch", async () => {
+  const orchestrator = await readFile(join(selectedPluginRoot, "internal-skills", "orchestrator", "SKILL.md"), "utf8");
+  const production = orchestrator.slice(orchestrator.indexOf("## Iron rule"), orchestrator.indexOf("## Wave dispatch"));
+  assert.match(production, /codex-wave <wave\.json>/);
+  assert.doesNotMatch(production, /call `(?:collaboration|multi_agent_v1)\.spawn_agent`|Agent tool|Codex subagent dispatcher|spawns? a fresh agent|dispatched Codex subagent/i);
+
+  const goBacklog = await readFile(join(selectedPluginRoot, "commands", "go-backlog.md"), "utf8");
+  const waveMode = goBacklog.slice(goBacklog.indexOf("**Wave mode**"), goBacklog.indexOf("**Unattended", goBacklog.indexOf("**Wave mode**")));
+  assert.match(waveMode, /codex-wave <wave\.json>/);
+  assert.doesNotMatch(waveMode, /Agent tool|spawn_agent|actual Agent\/Workflow\/spawn/i);
+});
 
 test("generated Codex orchestration surfaces enforce the state-based agent watch invariant", async () => {
   const surfaces = watchInvariantSurfaces;
@@ -256,6 +287,18 @@ test("generated Codex review gates use compact, risk-based review dispatch", asy
   assert.match(text, /fresh independent\s+review/);
   assert.match(text, /configured repeated-identical\/no-progress threshold/);
   assert.doesNotMatch(text, /one fix-and-re-review iteration|3 fix iterations/);
+  assert.match(text, /exact original opaque `receiptId`/);
+  assert.match(text, /codex-wave-resume/);
+  assert.match(text, /same bubblewrap/);
+  assert.match(text, /canonical worktree\/base\/HEAD, full `muster-runner` policy and forbidden-action fence/);
+  assert.match(text, /private persistent Codex home/);
+  assert.match(text, /computes only new blocker deltas/);
+  assert.match(text, /opaque `receiptId`/);
+  assert.match(text, /<remote-text>/);
+  assert.match(text, /Never invoke `codex exec resume` directly/);
+  assert.match(text, /muster-runner|runner profile/);
+  assert.doesNotMatch(text, /resume --last/);
+  assert.doesNotMatch(text, /\$\{PLUGIN_ROOT\}\/\$\{PLUGIN_ROOT\}/);
 });
 
 test("generated Codex audits cover six dimensions with three nonredundant scans", async () => {

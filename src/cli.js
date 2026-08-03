@@ -71,6 +71,7 @@ import { resolveMusterCli } from "./cli-resolve.js";
 import { planGateCadence, DEFAULT_REVIEW_DIFF_THRESHOLD } from "./gate-cadence.js";
 import { resolveWaveDispatch, resolveWorktreeIsolation, makeGitShaVerifier } from "./wave-dispatch.js";
 import { codexSpawnAgentCall, codexWaitAgentCall } from "./codex-dispatch.js";
+import { runCodexWave, runCodexWaveContinuation } from "./codex-wave-runner.js";
 import { kimiGoalInvocation, kimiProcessDispatch } from "./kimi-dispatch.js";
 import { captureSessionId, resolveSessionForCwd, readSessionUsage, summarizeItemReceipts, DEFAULT_SESSION_INDEX } from "./kimi-receipts.js";
 import { resolvePlanSurface } from "./plan-surface.js";
@@ -114,6 +115,22 @@ import {
 } from "./design.js";
 
 const CATALOG_DIR = new URL("../catalog/", import.meta.url);
+const CODEX_WAVE_FILE_MAX_BYTES = 1024 * 1024;
+const CODEX_THREAD_CONFIG_MAX_BYTES = 128 * 1024;
+const CODEX_ACTION_FENCE_MAX_BYTES = 64 * 1024;
+const CODEX_FIX_LOOP_JSON_MAX_BYTES = 64 * 1024;
+
+async function readBoundedCliText(path, maxBytes, label) {
+  return (await readNoFollowRegular(resolve(path), {
+    maxBytes,
+    label,
+    requireSingleLink: true,
+  })).bytes.toString("utf8");
+}
+
+async function readFixLoopJson(path, label) {
+  return JSON.parse(await readBoundedCliText(path, CODEX_FIX_LOOP_JSON_MAX_BYTES, label));
+}
 // One array element per command group, each carrying its own "|" separators and
 // joined with "" so the rendered single-line usage stays byte-identical to the
 // pre-split string (website-docs.test.js reassembles this array from source).
@@ -123,7 +140,7 @@ const USAGE = [
   // manifest + waves: validate, order, and drive a plan
   "manifest validate <file> [--work]|wave <file>|next <manifest.json> [--done a,b]|",
   // performance pass + gate helpers
-  "resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex|kimi>|plan-surface <runtime>|codex-plan <outcome> [--cwd <dir>]|desktop-harness <chatgpt-desktop|codex-desktop|gpt-work>|receipt-verify <sha> --cwd <repo>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|",
+  "resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|codex-wave <wave.json> --fence-file <action-fence.json> --repository-root <repo> --base-sha <sha>|codex-wave-resume <receipt-id> --review-state <file>|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex|kimi>|plan-surface <runtime>|codex-plan <outcome> [--cwd <dir>]|desktop-harness <chatgpt-desktop|codex-desktop|gpt-work>|receipt-verify <sha> --cwd <repo>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|",
   // sprint waves, review tally, tournament pick/fuse, advisor
   "sprint-waves <backlog.md> [--max-concurrent-threads-per-session N]|sprint-reconcile <progress.json>|backlog-receipts <backlog.md> --release-ref <ref>|backlog-publish <backlog.md> --expect <sha256|absent>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|",
   // harness-native dispatch packets + session receipts (kimi/codex lanes)
@@ -474,6 +491,51 @@ async function handleCodexCommand(cmd, rest) {
       ...(targetsArg !== undefined ? { targets: targetsArg.split(",").map(t => t.trim()).filter(Boolean) } : {}),
       ...(timeoutMs !== undefined ? { timeoutMs } : {})
     }));
+    return true;
+  } else if (cmd === "codex-wave") {
+    const file = requireArg(rest, 0, "codex-wave <wave.json>: missing file path", fail);
+    const wave = JSON.parse(await readBoundedCliText(file, CODEX_WAVE_FILE_MAX_BYTES, "Codex wave manifest"));
+    if (!wave || typeof wave !== "object" || Array.isArray(wave)) fail("codex-wave <wave.json>: expected an object");
+    if (Object.hasOwn(wave, "codexHome")) fail("codex-wave <wave.json>: codexHome is trusted out-of-band configuration and cannot be set by the manifest");
+    if (Object.hasOwn(wave, "catalogVersions")) fail("codex-wave <wave.json>: catalogVersions is trusted out-of-band configuration and cannot be set by the manifest");
+    const fenceFile = flagValue(rest, "--fence-file");
+    if (!fenceFile) fail("codex-wave <wave.json>: --fence-file is required for trusted action policy");
+    const fenceDocument = JSON.parse(await readBoundedCliText(fenceFile, CODEX_ACTION_FENCE_MAX_BYTES, "Codex action fence"));
+    if (!fenceDocument || typeof fenceDocument !== "object" || Array.isArray(fenceDocument) || !fenceDocument.members) {
+      fail("codex-wave --fence-file: expected an object with a members map");
+    }
+    const waveCodexHome = process.env.CODEX_HOME || join(homedir(), ".codex");
+    let threadConfigText = "";
+    try {
+      threadConfigText = await readBoundedCliText(
+        codexThreadLimitConfigPath(waveCodexHome), CODEX_THREAD_CONFIG_MAX_BYTES,
+        "Codex thread configuration",
+      );
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+    out(await runCodexWave({
+      members: wave.members,
+      sandbox: wave.sandbox,
+      approvalPolicy: wave.approvalPolicy,
+      maxConcurrentThreadsPerSession: wave.maxConcurrentThreadsPerSession,
+      configuredThreadCeiling: resolveCodexThreadCeiling(threadConfigText),
+      availableThreadLimit: wave.availableThreadLimit,
+      trustedActionFences: fenceDocument.members,
+      repositoryRoot: flagValue(rest, "--repository-root"),
+      baseSha: flagValue(rest, "--base-sha"),
+    }));
+    return true;
+  } else if (cmd === "codex-wave-resume") {
+    const receiptId = requireArg(rest, 0, "codex-wave-resume <receipt-id> --review-state <file>: missing receipt id", fail);
+    const reviewFile = flagValue(rest, "--review-state");
+    if (!reviewFile) fail("codex-wave-resume <receipt-id> --review-state <file>: missing --review-state");
+    const reviewState = await readFixLoopJson(reviewFile, "Codex fix-loop review state");
+    const sent = new Set(Array.isArray(reviewState.sentBlockers) ? reviewState.sentBlockers : []);
+    const blockers = Array.isArray(reviewState.currentBlockers)
+      ? reviewState.currentBlockers.filter(blocker => !sent.has(blocker))
+      : null;
+    out(await runCodexWaveContinuation({ receiptId, blockers }));
     return true;
   } else if (cmd === "codex-conformance") {
     // Post-run forensics, not a health check (that's doctor): audits Codex

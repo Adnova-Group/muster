@@ -1,0 +1,754 @@
+{
+  "harness": "real Codex paired benchmark through production runCodexWave and authenticated runCodexWaveContinuation",
+  "command": "node scripts/benchmark-codex-fix-loop.mjs --cases 10 --output test/fixtures/codex-fix-loop/benchmark-evidence.json",
+  "codexVersion": "codex-cli 0.146.0",
+  "model": "gpt-5.6-sol",
+  "reasoningEffort": "medium",
+  "generatedAt": "2026-08-03T00:01:34.297Z",
+  "metric": "primary context-input metric = per-fix uncached input tokens (input_tokens - cached_input_tokens, with seed counters subtracted from cumulative resume counters); raw total input tokens are retained as a secondary reported metric; time-to-fix includes the production invocation and post-fix focused verification",
+  "productionPath": {
+    "initial": "runCodexWave (persistent exec, trusted muster-runner policy, bubblewrap, hermetic env, stdin prompt)",
+    "continued": "runCodexWaveContinuation (authenticated opaque receipt, exact thread hash, same trusted policy and containment, blocker DATA over stdin)"
+  },
+  "cases": [
+    {
+      "case": "add_offset",
+      "fixtureSha256": "2d812ed7d0f395a5017e8597d5ac9f97964124a149e03a641de8562b6fc92e00",
+      "baseline": {
+        "resumed": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "outputSha256": "5b656cd6ddbd3f2f77e8136ff226e3f51353a8a8971e6f9ceaf7bf2da19a643a"
+        },
+        "fresh": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "outputSha256": "6917afbfb958ab64ebf7731098e68a93423bd1b4556ad2a4a670bf73e677f6f2"
+        }
+      },
+      "seedNormalization": null,
+      "seed": {
+        "type": "turn.completed",
+        "receiptId": "4de1923ff8abb0323210b82326fe7a76",
+        "threadIdSha256": "bd4b4902461edbdd1ca17bf81716d25aed352e4c4e2e719318b3f34377aa8de3",
+        "usage": {
+          "input_tokens": 224495,
+          "cached_input_tokens": 185600,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 4245,
+          "reasoning_output_tokens": 1326
+        },
+        "stdoutSha256": "e6bfc196230fd96495f7085c597291f360daf1936c6ecbb262bee616257b1bdc",
+        "stderrSha256": "716304b75034288a00547c568d7fae04f7d1de4f199dab86ba4bba6f25eb2304"
+      },
+      "fresh": {
+        "type": "turn.completed",
+        "receiptId": "19ffa3a36871c4dcb8f9a26bef99983a",
+        "threadIdSha256": "e2ed0119c6a85e034e84777eb233ca7a3409c3ead5ce9343dc85cbcde1cfc23c",
+        "usage": {
+          "input_tokens": 121964,
+          "cached_input_tokens": 91648,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 2343,
+          "reasoning_output_tokens": 749
+        },
+        "stdoutSha256": "ca2f1748e21e4964948e30389d470f0cca99088f5ee02ca2337e6d8c23b77c0a",
+        "stderrSha256": "e85b4ead7b381a3fca1e0a7c57e041a961895f06b26d3a69a9c7e151fc4c1612",
+        "verification": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "outputSha256": "604d806d0de33c2d3741cfdef4325adf536bbdcd0ffc1a00ea4a7229909f73fc"
+        },
+        "wallTimeMs": 76437.70605099999
+      },
+      "continued": {
+        "type": "turn.completed",
+        "receiptId": "37bf31f44081cffae27acd6dd7160654",
+        "threadIdSha256": "bd4b4902461edbdd1ca17bf81716d25aed352e4c4e2e719318b3f34377aa8de3",
+        "usage": {
+          "input_tokens": 460616,
+          "cached_input_tokens": 403456,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 7090,
+          "reasoning_output_tokens": 2231
+        },
+        "stdoutSha256": "9ef56c006958f2d1cc1b7949eff50213c6763d7a6d975a7c0bac5cf30ea648cc",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "verification": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "outputSha256": "5ecf96d8c42f3642d704808cd15b15736948f4722cf2ffce28ad827835cd7bf9"
+        },
+        "wallTimeMs": 111371.64565000002
+      }
+    },
+    {
+      "case": "subtract_offset",
+      "fixtureSha256": "872e36524301326f4939e7415100679e21dfc171f525c65727044c4094ee4924",
+      "baseline": {
+        "resumed": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "outputSha256": "42b7a18c0bb8048ba3af1f2cc29cda755b248f76af059a0ad67969aa58861242"
+        },
+        "fresh": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "outputSha256": "aeee8351dcc90ebe59bf7d4f00e79ad296e3ba5b74dd9931576588c45f4fdf08"
+        }
+      },
+      "seedNormalization": null,
+      "seed": {
+        "type": "turn.completed",
+        "receiptId": "9dba137dcd6e12f48a6e8bae99bb6768",
+        "threadIdSha256": "c645d0dcfbbb8b0b9726aa4a827ef3309129fe046d9a42c0a4ae0424317ed775",
+        "usage": {
+          "input_tokens": 117661,
+          "cached_input_tokens": 106752,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 2634,
+          "reasoning_output_tokens": 955
+        },
+        "stdoutSha256": "03c6f88d0e408b18e421227ab90ce66ebdabf08257ccbec44345d9c57eb7d204",
+        "stderrSha256": "f2b78e04f728abcae9e5e9c6c2aa5b004545f5de9dbe435b965e9c61b95c490b"
+      },
+      "fresh": {
+        "type": "turn.completed",
+        "receiptId": "2ad39c370b79dd7219011dfdd15f4a7e",
+        "threadIdSha256": "845b8771a6630fe7a6a7739f58282d7ff70c358a62106f525e1b16b07d127c67",
+        "usage": {
+          "input_tokens": 119983,
+          "cached_input_tokens": 91648,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 2366,
+          "reasoning_output_tokens": 829
+        },
+        "stdoutSha256": "bf9aa1e1bca8401a7dd2650c135a5b490f92d91e34ab543bf1e644b021efd503",
+        "stderrSha256": "b04a479bab1c4344f650900bbe44b19c10c78ed20db92d2e55b6a464ca85344a",
+        "verification": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "outputSha256": "2863144dd29d60bb73e761590f6ec1956b611644195b938537dec99c15335e9a"
+        },
+        "wallTimeMs": 85453.23038599995
+      },
+      "continued": {
+        "type": "turn.completed",
+        "receiptId": "26a60f528e0b185794b098b3d5da33da",
+        "threadIdSha256": "c645d0dcfbbb8b0b9726aa4a827ef3309129fe046d9a42c0a4ae0424317ed775",
+        "usage": {
+          "input_tokens": 195807,
+          "cached_input_tokens": 181504,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 3866,
+          "reasoning_output_tokens": 1271
+        },
+        "stdoutSha256": "95a3d251967aa35a211d22239c83849a0f4769a2bbe6eb906ff441cbec2e93a9",
+        "stderrSha256": "6bde4fefa55f38e8f5d3d6f6a7eb2a3f96f69953dc8bd2cb0f433c7885af067d",
+        "verification": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "outputSha256": "45b38fd334c33796d7582b93288d8d012930ea6d4109aff693343c287f22bb0a"
+        },
+        "wallTimeMs": 45077.87965900003
+      }
+    },
+    {
+      "case": "double_value",
+      "fixtureSha256": "7beabb557dafec49b204aa541750d54abcf224edd90fe030e1e8f68f7ba9ab41",
+      "baseline": {
+        "resumed": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "outputSha256": "7f89054dbbac6e35f21c8004cc2be3274926bc9d14074362c02ef4bb8ab532cb"
+        },
+        "fresh": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "outputSha256": "4126c313b7638cc548ed72b9b282f98b84330b120f3345f7c2e31296df57fa5d"
+        }
+      },
+      "seedNormalization": {
+        "removedUntrackedAwaitingReviewState": true
+      },
+      "seed": {
+        "type": "turn.completed",
+        "receiptId": "2e7e8ea962b7024575adb1b886bc4042",
+        "threadIdSha256": "9c8b733ca3eab257a7daa8b5627195e9f91e27e1dec3ecf07d7c4d8790c13ccd",
+        "usage": {
+          "input_tokens": 286595,
+          "cached_input_tokens": 243200,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 5322,
+          "reasoning_output_tokens": 1911
+        },
+        "stdoutSha256": "184d3f19195a422ecb8af171f4750d55317bdb59a95f46edb58da3812bd33634",
+        "stderrSha256": "230dee99b3902cad8996b72238afa71be8d611bb8a3fb2be2448d9d3ec0d18fc"
+      },
+      "fresh": {
+        "type": "turn.completed",
+        "receiptId": "7a09b4a66bc0591ce97dbc9141aedb12",
+        "threadIdSha256": "3a5a66a958e8dff36fe9ebd9f297d3101c4b8a12edb5ed75ce4df73975773b13",
+        "usage": {
+          "input_tokens": 215583,
+          "cached_input_tokens": 201728,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 3316,
+          "reasoning_output_tokens": 1417
+        },
+        "stdoutSha256": "9739e9b1c01c7e60b75204e9fc9fd5e1e7ae544495e9e49df68999f86abb9ffb",
+        "stderrSha256": "4a8272fe74aaaa30f458417be64a395284ec970baca6d1aa1cc85df6a33a8959",
+        "verification": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "outputSha256": "94e1ea7b45958fd41c525418c7c0217ec7c0be41b0e77a03bc161a651a213917"
+        },
+        "wallTimeMs": 118902.18992499996
+      },
+      "continued": {
+        "type": "turn.completed",
+        "receiptId": "7bce38dc805887c93dfdcbf5ed94c6d3",
+        "threadIdSha256": "9c8b733ca3eab257a7daa8b5627195e9f91e27e1dec3ecf07d7c4d8790c13ccd",
+        "usage": {
+          "input_tokens": 570299,
+          "cached_input_tokens": 516096,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 9070,
+          "reasoning_output_tokens": 3807
+        },
+        "stdoutSha256": "64fee5aec27e97064f0e6adca562b5ea98c9e791c009265b609137a8946ac43d",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "verification": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "outputSha256": "1a926f385ece24771a25303ba12a4ad014c278501b8595f32d0270d8b64795c9"
+        },
+        "wallTimeMs": 119958.50426399999
+      }
+    },
+    {
+      "case": "triple_value",
+      "fixtureSha256": "77bf944905cb62dce4e2123942a379c8d544d56a26095ae577cc712052257046",
+      "baseline": {
+        "resumed": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "outputSha256": "8dbc0ac4630e4f25d1ec088eae5fb9bac700c87e6f335146e4f119ae1abfb590"
+        },
+        "fresh": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "outputSha256": "cd027a7ff021d1384ecbc6a9a6507c0644f79ce7ccdc2d5b4dae4b0ca0c72e44"
+        }
+      },
+      "seedNormalization": {
+        "removedUntrackedAwaitingReviewState": true
+      },
+      "seed": {
+        "type": "turn.completed",
+        "receiptId": "f881fd05b782b05ae281487171b7b554",
+        "threadIdSha256": "091e01cd27211026750da46a24d0740401a2894d75d805a8c66d99e2f4f655d0",
+        "usage": {
+          "input_tokens": 211871,
+          "cached_input_tokens": 177408,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 3845,
+          "reasoning_output_tokens": 1258
+        },
+        "stdoutSha256": "49080353dff6c95679e8f60c1a1d1c7feb0d6a483fd50866528c75167aed8be9",
+        "stderrSha256": "bed858ad8f033bc2cd856b0e7f3d04bc35286d7abbd6ea41c0fa1f3026d79262"
+      },
+      "fresh": {
+        "type": "turn.completed",
+        "receiptId": "f7984fbeb242fb690f6da5dcb69134ca",
+        "threadIdSha256": "54850cb0652e3b4dbc699fc896cbafea18c35c4f56a05438c43ec6f171cd142f",
+        "usage": {
+          "input_tokens": 122026,
+          "cached_input_tokens": 99840,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 2352,
+          "reasoning_output_tokens": 861
+        },
+        "stdoutSha256": "f99e7f87dca9e57dec42356e64290ff9fea05ed249f4c7ee5f5dcb8ec92397b7",
+        "stderrSha256": "5c65f2b9b2c727e7a37ef6823dba71c53fe050c015b53e98b653b4bb7a884448",
+        "verification": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "outputSha256": "a4263ba52c24f1e5b4f137c9feb82d30c8f3050ea169b08f3ecb2a72c8f125d1"
+        },
+        "wallTimeMs": 91420.79049899988
+      },
+      "continued": {
+        "type": "turn.completed",
+        "receiptId": "c0ad86bebb5d53e6b0aaeea87181e196",
+        "threadIdSha256": "091e01cd27211026750da46a24d0740401a2894d75d805a8c66d99e2f4f655d0",
+        "usage": {
+          "input_tokens": 503115,
+          "cached_input_tokens": 446720,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 7249,
+          "reasoning_output_tokens": 2459
+        },
+        "stdoutSha256": "8ff31e906729a3728ca8d258706ecaf33ddee40a902a2e7d3f98c1f0cecba4ae",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "verification": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "outputSha256": "0e5ff260f471fc86b49d6a7046367c852df56dc61d3a9dc3d6e164a228da811d"
+        },
+        "wallTimeMs": 94213.4096929999
+      }
+    },
+    {
+      "case": "square_value",
+      "fixtureSha256": "ab2d28ee66dd45f5a9e518597314f16d2ddc767f429831bdfde16778ca9eae47",
+      "baseline": {
+        "resumed": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "outputSha256": "581a7d1573484392c60e7f5d69676f51828395d9395e93c07605bf8378721b4c"
+        },
+        "fresh": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "outputSha256": "6c91499d1ebffe28eb47ba1a618c06e9525ba200e73d60c082caa130caf134aa"
+        }
+      },
+      "seedNormalization": {
+        "removedUntrackedAwaitingReviewState": true
+      },
+      "seed": {
+        "type": "turn.completed",
+        "receiptId": "6fa9f1f77ada7b8a5b80608eb42833d8",
+        "threadIdSha256": "2a9e19556f4d7987c4c6f438196a14fac6c9396000468bc6d73c620b74027edc",
+        "usage": {
+          "input_tokens": 192932,
+          "cached_input_tokens": 160256,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 2853,
+          "reasoning_output_tokens": 696
+        },
+        "stdoutSha256": "5c86373654271443851a9fa6e65c422c08187ec66195957c4b7bd6a056867c05",
+        "stderrSha256": "068469dc0e633cc9eff112788c5d7ffb979fd2547f88e6e3aae9dd02a46abe2c"
+      },
+      "fresh": {
+        "type": "turn.completed",
+        "receiptId": "a0210a6ae70d9d845b50d29365c7ab2f",
+        "threadIdSha256": "527efc2cecbf84b7b490e69b27ca39a7da5948bcfba893b5c9ea5e25b4f57eb7",
+        "usage": {
+          "input_tokens": 508351,
+          "cached_input_tokens": 478208,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 4949,
+          "reasoning_output_tokens": 1142
+        },
+        "stdoutSha256": "67ff7b99583966059b13382ebd22fb5ee1e311b3ffe87afc50282457ab65381c",
+        "stderrSha256": "2e47a82511149353eef757e307aa683b5a0c5b17456e8ece09f5750b54a01571",
+        "verification": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "outputSha256": "f64ffb707fc82e14d1a29138dd02e125e7566a4d45dfa99fe8f28b5383cf48fe"
+        },
+        "wallTimeMs": 195372.67768900003
+      },
+      "continued": {
+        "type": "turn.completed",
+        "receiptId": "8d8b3be6778251729edfd56b9bed4dc9",
+        "threadIdSha256": "2a9e19556f4d7987c4c6f438196a14fac6c9396000468bc6d73c620b74027edc",
+        "usage": {
+          "input_tokens": 468024,
+          "cached_input_tokens": 412160,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 5029,
+          "reasoning_output_tokens": 1699
+        },
+        "stdoutSha256": "e250a9c8386363eeeed7fe4b9b767de7de0dc3c19c965714452512b1018fd562",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "verification": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "outputSha256": "3ada121548eda889af51afc5f995b726447691234834989707a7133c371afa3f"
+        },
+        "wallTimeMs": 69213.42140700016
+      }
+    },
+    {
+      "case": "absolute_value",
+      "fixtureSha256": "8db6aeb4a871898ae72bdab392cad5674b6fd756ba8b92e294161fd3427168fc",
+      "baseline": {
+        "resumed": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "outputSha256": "9a70487675bb3e1a841b17bc2872ad81456093389258553306e82fc07ce163e8"
+        },
+        "fresh": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "outputSha256": "27dfb1c4e8700008247a02f26dbef777bdab328f9ea38cd7dbaa9ae78843dc06"
+        }
+      },
+      "seedNormalization": null,
+      "seed": {
+        "type": "turn.completed",
+        "receiptId": "dcf3a356b08b4cd7fd9631b06002a8df",
+        "threadIdSha256": "5c12f60a511940d866433ff082ee3e474cb4881fa7c88bfad6c751c790946a9c",
+        "usage": {
+          "input_tokens": 83187,
+          "cached_input_tokens": 73472,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 1494,
+          "reasoning_output_tokens": 607
+        },
+        "stdoutSha256": "01c77c17629a0d66ddc0e031435e6034ecd37eb410007c4491f3b656768e6edc",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "fresh": {
+        "type": "turn.completed",
+        "receiptId": "179333b96fb8d9ebd9ef606ca927707b",
+        "threadIdSha256": "deb7997cc4cc2f9e7b953a79c402366f62a3fcf25e04d382e49740f57b784ce0",
+        "usage": {
+          "input_tokens": 919494,
+          "cached_input_tokens": 848640,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 8748,
+          "reasoning_output_tokens": 3228
+        },
+        "stdoutSha256": "fc5e3a6acff4b5bec24beb3bc68eb8892a2d3c7fdf6a5a9bf24f1e9dd00d034b",
+        "stderrSha256": "d6f0c020f600c080d3c04b5ddcae7979a823bb991eb83fdee90cb3ccbe091755",
+        "verification": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "outputSha256": "62612c46afe4a5006c00df0b957b7cd4d7cc3b81b7c65cc7123d793a2196c0b6"
+        },
+        "wallTimeMs": 411314.707807
+      },
+      "continued": {
+        "type": "turn.completed",
+        "receiptId": "c26c61970ceaeda5ff114d1ea9d637f3",
+        "threadIdSha256": "5c12f60a511940d866433ff082ee3e474cb4881fa7c88bfad6c751c790946a9c",
+        "usage": {
+          "input_tokens": 313049,
+          "cached_input_tokens": 277504,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 5070,
+          "reasoning_output_tokens": 2379
+        },
+        "stdoutSha256": "e3681895f483ab4a883296d8d5bbd4972feb0bac05930344a305de1346ca2ff2",
+        "stderrSha256": "ae30bffa079c2c43174bff119e2d656627580112963a02bf3eb46858d5a17f3a",
+        "verification": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "outputSha256": "3ffc03faa44f70f8330906cae39f6f50949c453e634b2dfedf69e279c8ea969c"
+        },
+        "wallTimeMs": 131960.4251550003
+      }
+    },
+    {
+      "case": "floor_value",
+      "fixtureSha256": "0b3afc7f995e5b2ba3ba2d16af6083a951370566b9a74ac34db4b31813f340ca",
+      "baseline": {
+        "resumed": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "outputSha256": "4f08b6037f5c6034031bd1a12ff005942325b375a99bd30d166ddbed4f959a63"
+        },
+        "fresh": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "outputSha256": "684ca2416625c18b699f19cd6128ba3a8ade987515bb144078c1cf97fe5a8c55"
+        }
+      },
+      "seedNormalization": null,
+      "seed": {
+        "type": "turn.completed",
+        "receiptId": "55b236301be737572c719c213a96e7bf",
+        "threadIdSha256": "e1d498427ec5b9731b421d475e202af8e5b1bc7a4b309bbe1bafe70b56541869",
+        "usage": {
+          "input_tokens": 226833,
+          "cached_input_tokens": 205568,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 3433,
+          "reasoning_output_tokens": 1011
+        },
+        "stdoutSha256": "2b65674980de4893f8ce25b668347a9484bbf1d4d7b2c57782bad65eadcd71a9",
+        "stderrSha256": "2435b0b159447fce81284ba74334f0caf3bb575237f081cac56a15eb92d0e6c7"
+      },
+      "fresh": {
+        "type": "turn.completed",
+        "receiptId": "2f66b7c68997fd60bf6704e6214f75c9",
+        "threadIdSha256": "c9657a9ec5e4e73a47e491955a868cf80cf585dd943841c60e3cc2999cc172fc",
+        "usage": {
+          "input_tokens": 349849,
+          "cached_input_tokens": 315136,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 5699,
+          "reasoning_output_tokens": 1485
+        },
+        "stdoutSha256": "a995589cf5bb9f75ea1106b636ed472db2ca12d2f401f12316e60608e603e683",
+        "stderrSha256": "1eaf4ba251ac4586442d42e5cb648c951a6b2551ac73fbfce421aad2b95834b6",
+        "verification": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "outputSha256": "26b231aeb80783e42af7a9bc828cb80591866d46eb2223bee3d51b2c78276078"
+        },
+        "wallTimeMs": 209901.77875099983
+      },
+      "continued": {
+        "type": "turn.completed",
+        "receiptId": "9fbd04ecaec29d85cbc9af043507d5c4",
+        "threadIdSha256": "e1d498427ec5b9731b421d475e202af8e5b1bc7a4b309bbe1bafe70b56541869",
+        "usage": {
+          "input_tokens": 397694,
+          "cached_input_tokens": 368384,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 5815,
+          "reasoning_output_tokens": 1960
+        },
+        "stdoutSha256": "f9794e98a014b02da88705434858a48a10a4e2f1fe31808b525ff64e7f750a50",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "verification": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "outputSha256": "e3f3a8f348149931d8dc38a79c98fbdb8d01af9bf515d58b167cdbb016d49585"
+        },
+        "wallTimeMs": 71679.84789199987
+      }
+    },
+    {
+      "case": "ceil_value",
+      "fixtureSha256": "c207b8f8e5fe8c2ddc913cbc0fd5ded2b457831b1f813a4be1736f1d747d4f11",
+      "baseline": {
+        "resumed": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "outputSha256": "860a6763d71e39659d15abab55d8401a8220609afddfd3aed78f9bd33cd78776"
+        },
+        "fresh": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "outputSha256": "bbe8cf16aa5be16cb94a04bcb5d2a1d435d88a51ef894609ccb6c1ac0f964951"
+        }
+      },
+      "seedNormalization": null,
+      "seed": {
+        "type": "turn.completed",
+        "receiptId": "e79ea28029b2cdbe6e58f0af185c01aa",
+        "threadIdSha256": "3d77b449e38516a8425568d845f5fad3e62111c2ea2e45661ff43e83622e9e7b",
+        "usage": {
+          "input_tokens": 65290,
+          "cached_input_tokens": 58368,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 1639,
+          "reasoning_output_tokens": 371
+        },
+        "stdoutSha256": "d8680ae17f3bb151d7f5e6143be9ab8cfdd62b5d11f5dea47ee9f86480b7913c",
+        "stderrSha256": "810b2e668e959435c155a3aca4b0ebe2ea65efe61b4fa9156f248379b7cbe674"
+      },
+      "fresh": {
+        "type": "turn.completed",
+        "receiptId": "6053298e727cd998116da9deae898543",
+        "threadIdSha256": "138fce9072fcf99977927ef460dddcb2d8885df3259b627507494663e57a01bb",
+        "usage": {
+          "input_tokens": 386506,
+          "cached_input_tokens": 354816,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 3026,
+          "reasoning_output_tokens": 1010
+        },
+        "stdoutSha256": "6d9561e0244fb9cd4db568e44d44233e2b9a54f9453bb532910c9bc8a4fad72d",
+        "stderrSha256": "b154eb8bc518cb7fe8fec16b049f1117119d1cdb5d919b33265384523df0852f",
+        "verification": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "outputSha256": "6f9aab186b6748326742b9e91242cda949b1d0f1f346cc8fe55a912e2b89ad04"
+        },
+        "wallTimeMs": 115126.91480500018
+      },
+      "continued": {
+        "type": "turn.completed",
+        "receiptId": "1ea72257fd596727efff172efb318287",
+        "threadIdSha256": "3d77b449e38516a8425568d845f5fad3e62111c2ea2e45661ff43e83622e9e7b",
+        "usage": {
+          "input_tokens": 138821,
+          "cached_input_tokens": 128000,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 2863,
+          "reasoning_output_tokens": 651
+        },
+        "stdoutSha256": "c858ecb2061d2465351fbeba9443b1b7f3ee5bbfcf0cf7e525bb97eaf196e1fc",
+        "stderrSha256": "02ac85b906a04438c9ede0e679e01a2ccd09cb09e6cdcf1d4ebad544fae1a4fc",
+        "verification": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "outputSha256": "f1100808ece4061d7d18d061c58079d4b18c240aa15d5889f13e4b476e5e2a25"
+        },
+        "wallTimeMs": 28516.34684100002
+      }
+    },
+    {
+      "case": "bounded_value",
+      "fixtureSha256": "15f7287f563f8ac14e71cff7b2803934c298720aee0e78721a6db47b0f9a40a4",
+      "baseline": {
+        "resumed": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "outputSha256": "827288710157a7bca72676d8b280a21044b2d827aea71c8205605079ac925f18"
+        },
+        "fresh": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "outputSha256": "f83471a50b5c926b1e2a6788076d157ef28740b421ee464e0bbde2abc8a3ea2f"
+        }
+      },
+      "seedNormalization": null,
+      "seed": {
+        "type": "turn.completed",
+        "receiptId": "5b81c59f210b5dde8be2d31f37fe9d73",
+        "threadIdSha256": "c47bdfcb7815aa09d024e6f07b0a03e84b93208fa32395513391c21fe4dc9377",
+        "usage": {
+          "input_tokens": 100988,
+          "cached_input_tokens": 79616,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 1635,
+          "reasoning_output_tokens": 593
+        },
+        "stdoutSha256": "ebda7b644e839b165734398dd3f37ef2ca02d326b42f8211192da439c40d199f",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "fresh": {
+        "type": "turn.completed",
+        "receiptId": "88662593d7b3edea472c94095e41e263",
+        "threadIdSha256": "5315b0e652a22c5c37ad8f325e59fed9d52eb8fa3d545ee1e81d1475d06ebf1b",
+        "usage": {
+          "input_tokens": 152438,
+          "cached_input_tokens": 122880,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 3237,
+          "reasoning_output_tokens": 941
+        },
+        "stdoutSha256": "d2bbc421b1aaf1d38a526536a6e2a8e96f2d1f6e215a0e57bc2917627856ffb1",
+        "stderrSha256": "454865d99d9a2b83601d194c75703cb86edf72e6385d2329742cf5400b2d81e2",
+        "verification": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "outputSha256": "e4ce479c828bd6c9559200621b07a6894fd7d33faa3de92089c78bca25b56378"
+        },
+        "wallTimeMs": 75602.10137400031
+      },
+      "continued": {
+        "type": "turn.completed",
+        "receiptId": "87caf32e17e9310632675fe7b804fa2d",
+        "threadIdSha256": "c47bdfcb7815aa09d024e6f07b0a03e84b93208fa32395513391c21fe4dc9377",
+        "usage": {
+          "input_tokens": 349582,
+          "cached_input_tokens": 316160,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 4834,
+          "reasoning_output_tokens": 1829
+        },
+        "stdoutSha256": "dcc84993fdcca2799c1d25d3c280eec0ebd906233f6d76f74cebccfc3062b918",
+        "stderrSha256": "1af189bdd80eee54bf99c0efc1862a4d193e5e6d600ff995892f6b0530762ab2",
+        "verification": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "outputSha256": "90ba7688af2f3eed8f13bab21568f84fa7be1cf427f2b29831fd1cb28dab932e"
+        },
+        "wallTimeMs": 98635.23165700026
+      }
+    },
+    {
+      "case": "negate_value",
+      "fixtureSha256": "2d92d3be3fd5d676aae7465bda154f89e7dd154a7a51a1d7e25263a2842ee8ae",
+      "baseline": {
+        "resumed": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "outputSha256": "9b507a25248143997edd769fb7e7b35867284c7b4edea798bb083c4623149631"
+        },
+        "fresh": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "outputSha256": "9fd36b05bca1b2d87bb315e7870210ddbffdad2714ad61903695da22a488ab02"
+        }
+      },
+      "seedNormalization": {
+        "removedUntrackedAwaitingReviewState": true
+      },
+      "seed": {
+        "type": "turn.completed",
+        "receiptId": "bcab8d8262b9f7272c0dc099b5b92e9a",
+        "threadIdSha256": "8472f2c7ffe4ef979e246d6c698d296a8c82dbed2f72db04c6ded02e9e429ecf",
+        "usage": {
+          "input_tokens": 203696,
+          "cached_input_tokens": 179456,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 4186,
+          "reasoning_output_tokens": 1668
+        },
+        "stdoutSha256": "2ce84f6585cfdeecb3e955edeb646c632f58ca9259769618ec07c71bf8b0f457",
+        "stderrSha256": "36f4f872f98932cbbb3b8fcd33fd7bf13e8930fff59991526c2bebf295cb73cd"
+      },
+      "fresh": {
+        "type": "turn.completed",
+        "receiptId": "449939b993a2c1a4cc295b4fda258257",
+        "threadIdSha256": "c9a258d7f7bae2707fbb78f865fc96eec8093e087de3bc78d86cad347afc952c",
+        "usage": {
+          "input_tokens": 443219,
+          "cached_input_tokens": 392448,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 4664,
+          "reasoning_output_tokens": 1270
+        },
+        "stdoutSha256": "7383b77c89b463e3ca372369368d507310bbbbb4e3c48e30392937432eda8756",
+        "stderrSha256": "f2fb94bc16429f7851276ed8c5bd13a635a57fe911937cba9501ccf8a8869805",
+        "verification": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "outputSha256": "301b3a6c8925dbd0149f19a3451cc5b0100e9d0babaf1b639c9bfd443d5f7a2e"
+        },
+        "wallTimeMs": 158035.21640300006
+      },
+      "continued": {
+        "type": "turn.completed",
+        "receiptId": "a50fde766282d8a4292ac75bca23072f",
+        "threadIdSha256": "8472f2c7ffe4ef979e246d6c698d296a8c82dbed2f72db04c6ded02e9e429ecf",
+        "usage": {
+          "input_tokens": 438274,
+          "cached_input_tokens": 404224,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 6973,
+          "reasoning_output_tokens": 2598
+        },
+        "stdoutSha256": "d10bbf7fea16391ee5cf7b8bdcb90acc958d7603fffcad4d9598b654ee8cb361",
+        "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "verification": {
+          "passed": true,
+          "command": "node --test test/operation.test.js",
+          "outputSha256": "666249e0ba3019836f632371018aa4fc665ae59d142e157ac0b599d2168f3395"
+        },
+        "wallTimeMs": 86155.21840899996
+      }
+    }
+  ],
+  "summary": {
+    "caseCount": 10,
+    "medianFreshInputTokens": 282716,
+    "medianContinuedInputTokens": 235349.5,
+    "medianTotalInputTokenReductionPct": 16.754092446129683,
+    "medianFreshUncachedInputTokens": 30229.5,
+    "medianContinuedUncachedInputTokens": 11429,
+    "medianUncachedInputTokenReductionPct": 62.19256024744041,
+    "medianFreshTimeMs": 117014.55236500007,
+    "medianContinuedTimeMs": 90184.31405099994,
+    "medianTimeToFixReductionPct": 22.92897573141959
+  },
+  "totalUsage": {
+    "inputTokens": 7174694,
+    "cachedInputTokens": 6451200,
+    "outputTokens": 98559
+  },
+  "cost": {
+    "amountUsd": null,
+    "note": "Codex usage events expose tokens, not billed USD; exact cost requires the account billing ledger."
+  }
+}

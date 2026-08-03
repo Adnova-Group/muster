@@ -179,11 +179,9 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // the "Wave dispatch: native Workflow vs prose fallback" section's worked-example pointer and
   // before "## Scope fences" -- disturbing neither the numbered step list, the native-vs-prose
   // bullets above it, nor any other named section. The new subsection documents that Codex rides
-  // its OWN native primitive (`collaboration.spawn_agent`/`wait_agent`/`list_agents`,
-  // `fork_turns: "none"`, `agent_type`) rather than a prose-loop substitute for the Claude-only
-  // `Workflow` tool, names `src/codex-dispatch.js`'s `resolveCodexWaveDispatch` (spawn_agent
-  // vs sequential-inline, gated on Codex's own `features.multi_agent`, default-on -- inverse of
-  // agent-teams' default-off) and `assertCodexSpawnAgentAccepted` (the fail-closed guard: a
+  // explicit non-wave primitive (`collaboration.spawn_agent`/`wait_agent`/`list_agents`,
+  // `fork_turns: "none"`, `agent_type`) alongside the production process-only wave lane and
+  // `assertCodexSpawnAgentAccepted` (the fail-closed guard: a
   // rejected profile throws a registration diagnostic naming the `agent_type`/task rather than
   // ever silently falling back to a generic agent), fixture-driven TDD in
   // test/codex-wave-dispatch.test.js. This whole subsection falls inside build-codex.mjs's
@@ -1389,5 +1387,17 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // owner-only key/state files, never a child of the Cowork/model process.
   // Re-pin #48 preserves progress-aware runner recovery in the generated
   // profile while retaining the configured non-waivable runaway boundary.
-  assert.equal(hash.digest("hex"), "e22ab36cc98990ff493de1737c8bf49b87f3a103014d8da5092c0140cfa75457");
+  // 2026-08-02 re-pin #49 (hermetic Codex wave admission): the shared Codex
+  // dispatch reference now requires every production wave to traverse the
+  // fail-closed codex-wave selector before any returned spawn packet is used.
+  // File count remains unchanged.
+  // 2026-08-02 re-pin #43 (process-only Codex waves): the shared orchestrator
+  // now distinguishes authenticated `codex exec -C` production waves from
+  // explicit non-wave spawn packets; no Claude dispatch behavior changed.
+  // File count remains unchanged.
+  // 2026-08-02 re-pin #44 (sealed process-wave instructions): the shared Codex
+  // reference removes its last sentence describing subagent collaboration as
+  // wave dispatch and labels those packet shapes non-wave only. The live
+  // worktree audit count is refreshed from 57 to 58; Claude behavior is unchanged.
+  assert.equal(hash.digest("hex"), "18d15e31b3de37879459407a8365c81c9434824d8fa27623631f7f94c415df3e");
 });

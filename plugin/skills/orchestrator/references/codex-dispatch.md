@@ -16,8 +16,10 @@ so this file is their single source. -->
 
 ### Codex-native dispatch: spawn_agent
 
-Codex has no `Workflow`-tool counterpart, so wave dispatch rides Codex's OWN native primitive,
-subagent collaboration itself, never a prose-loop substitute for the Claude-only `Workflow` tool.
+Every production wave MUST first run through `$MUSTER_CLI codex-wave <wave.json>` with trusted repository/base inputs supplied out of band. Production waves are process-only; never choose or invoke `spawn_agent` from a wave manifest because its declared write fences and read-only profile names are not mechanically enforceable in Codex's shared cwd. The versioned spawn shapes below apply only to explicit non-wave leaf delegation.
+
+Codex has no `Workflow`-tool counterpart. The following versioned subagent collaboration packets
+are reserved for explicit non-wave leaf delegation and never authorize a production wave.
 **The dispatch and barrier shapes are VERSION-DEPENDENT** (corrected 2026-07-25 against Codex
 0.145.0). Codex resolves its subagent API per MODEL from the catalog's `multi_agent_version`, and
 the live catalog puts `gpt-5.6-sol`/`terra` on v2 but `gpt-5.6-luna` -- muster's core tier -- on
@@ -53,12 +55,10 @@ integer string is the useful middle -- it keeps that many turns of context AND s
 a context fork and never use `"all"`: a forked history is copied into every spawned agent, so the
 standing quota policy (the 2026-07-15 quota-amplification fix) keeps `"none"` the spawn default.
 
-`resolveCodexWaveDispatch({ multiAgent, env })` (`src/codex-dispatch.js`) selects between this and a
-sequential-inline floor purely on the session's own `features.multi_agent` signal -- same
-DECLARED-not-auto-probed shape as the wave-dispatch capability check in SKILL.md, inverted: Codex
-ships `multi_agent` default-on, so only an explicit `multiAgent: false` (or
-`MUSTER_CODEX_MULTI_AGENT=0`) drops to `mode: "sequential-inline"`
-(one crew member at a time, never a partial/mixed fan-out).
+There is no shared-CWD production-wave selector or inline fallback. `runCodexWave`
+authenticates the trusted repository, exact base commit, and every registered linked worktree,
+then dispatches the complete wave through bounded `codex exec -C` processes. The versioned spawn
+packet helpers below are reserved for explicit non-wave leaf delegation.
 
 **Fail-closed on a rejected profile -- the whole point of this design.** `agent_type` names a
 custom-agent TOML profile (`.codex/agents/<id>.toml`) that pins that role's model, reasoning

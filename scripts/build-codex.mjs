@@ -120,6 +120,9 @@ function translateCodexProse(text) {
 }
 function translatePluginPaths(text) {
   return text
+    .replaceAll("${PLUGIN_ROOT}/plugin/commands/", `${"${PLUGIN_ROOT}"}/commands/`)
+    .replaceAll("${PLUGIN_ROOT}/plugin/skills/", `${"${PLUGIN_ROOT}"}/internal-skills/`)
+    .replaceAll("${PLUGIN_ROOT}/plugin/hooks/", `${"${PLUGIN_ROOT}"}/hooks/`)
     .replaceAll("plugin/commands/", `${"${PLUGIN_ROOT}"}/commands/`)
     .replaceAll("plugin/skills/", `${"${PLUGIN_ROOT}"}/internal-skills/`)
     .replaceAll("plugin/hooks/", `${"${PLUGIN_ROOT}"}/hooks/`);
@@ -136,7 +139,7 @@ const SCALE_GATE_MARKER_FILES = ["go.md", "diagnose.md", "audit.md", "runner.md"
 const BATCH_SCALE_GATE_FILES = ["go-backlog.md"];
 const PLAN_BACKLOG_SCALE_GATE_FILES = ["plan-backlog.md"];
 const SESSION_START_CLEAR_FILES = ["go.md", "diagnose.md", "audit.md", "runner.md", "plan.md", "go-backlog.md", "plan-backlog.md"];
-const registryFallbackRe = /when the running session's registry doesn't carry that type[\s\S]*?note the degradation in STATE/;
+const backlogWaveDispatchRe = /This transition is executable and authoritative; actual Agent\/Workflow\/spawn\/wait calls remain adapter-owned\.[\s\S]*?wave-sized concurrency always stays within that ceiling\)\./;
 // build-anchor-audit item: this previously anchored on a literal ending "instead of
 // blocking." that go-backlog.md's own source no longer carries at all (the sentence was
 // reworded to require propagated action-fence markers and reject `agent_id` exemptions)
@@ -145,6 +148,7 @@ const registryFallbackRe = /when the running session's registry doesn't carry th
 // and scoped to leave the FOLLOWING worktree-removal/node_modules-bootstrap sentences
 // (harness-neutral, no PreToolUse/hook content) untouched.
 const runnerCwdRe = /Runner cwd is its worktree, and the preflight above copies regular `[.]muster\/run-active`[\s\S]*?do not bypass the action fence\./;
+const backlogFencePropagationRe = /Before dispatching any writer, propagate the batch fence[\s\S]*?the worker stops or its wave reaches the barrier\.\n/;
 const captureWritesRe = /capture only ever writes[\s\S]*?deliberately omitted\./i;
 // adapt-command-file-arrays item (PR #163 reviewer nit): the four arrays above
 // are hand-maintained -- a NEW command file adopting the same boilerplate would
@@ -267,16 +271,18 @@ function adaptCommandForCodex(text, name, contract) {
   if (BATCH_SCALE_GATE_FILES.includes(name) && !text.includes("the whole batch counts as ONE run for the `PreToolUse` hook's scale-gate scoping")) throw new Error(`${name}: batch scale-gate anchor not found for Codex rewrite`);
   if (PLAN_BACKLOG_SCALE_GATE_FILES.includes(name) && !text.includes("the whole plan-backlog invocation counts as ONE run for the `PreToolUse` hook's scale-gate scoping")) throw new Error(`${name}: plan-backlog scale-gate anchor not found for Codex rewrite`);
   if (SESSION_START_CLEAR_FILES.includes(name) && !text.includes("`SessionStart` on a fresh session clears a stale marker automatically.")) throw new Error(`${name}: SessionStart stale-marker anchor not found for Codex rewrite`);
-  if (name === "go-backlog.md" && !registryFallbackRe.test(text)) throw new Error(`${name}: registry-fallback anchor not found for Codex rewrite`);
+  if (name === "go-backlog.md" && !backlogWaveDispatchRe.test(text)) throw new Error(`${name}: complete wave-dispatch anchor not found for Codex rewrite`);
   if (name === "go-backlog.md" && !runnerCwdRe.test(text)) throw new Error(`${name}: runner-cwd anchor not found for Codex rewrite`);
+  if (name === "go-backlog.md" && !backlogFencePropagationRe.test(text)) throw new Error(`${name}: action-fence propagation anchor not found for Codex rewrite`);
   if (name === "capture.md" && !captureWritesRe.test(text)) throw new Error(`${name}: capture-writes anchor not found for Codex rewrite`);
   let result = translatePluginPaths(translateCodexProse(text))
     .replaceAll("the `PreToolUse` hook uses to scope the scale-gate", "Muster's Codex lifecycle hooks use for state diagnostics")
     .replaceAll("the whole batch counts as ONE run for the `PreToolUse` hook's scale-gate scoping", "the whole batch counts as ONE run for Muster's Codex lifecycle diagnostics")
     .replaceAll("the whole plan-backlog invocation counts as ONE run for the `PreToolUse` hook's scale-gate scoping", "the whole plan-backlog invocation counts as ONE run for Muster's Codex lifecycle diagnostics")
     .replaceAll("`SessionStart` on a fresh session clears a stale marker automatically.", "Codex hooks never delete state markers automatically; on startup, verify and clear only a marker proven stale and owned by the interrupted workflow.")
-    .replace(registryFallbackRe, "call the model-version-resolved spawn -- `collaboration.spawn_agent` on v2 models, `multi_agent_v1.spawn_agent` on v1, resolved per the role's model from the catalog's `multi_agent_version`, never hardcoded to one shape -- with `agent_type: \"muster-runner\"`, `fork_turns: \"none\"` on v2 (v1 takes `fork_context: false`), and its other ordinary fields. " + contract.forkTurns + " `agent_type` is a Codex runtime extension and may be absent from the simplified displayed signature; include it anyway. Only an actual rejected tool call proves the profile unavailable. If that call rejects the type, fail the item closed with a profile-registration diagnostic and remediation to reinstall/start a new session; do not silently use a generic agent because that loses the pinned role/model policy")
+    .replace(backlogWaveDispatchRe, "This transition is executable and authoritative; Codex production actions are adapter-owned process members. Construct one complete `wave.json` whose members carry the emitted item id, `agentType: \"muster-runner\"`, runner brief as `prompt`, and a distinct freshly created registered linked worktree as `cwd`, then run `node ${PLUGIN_ROOT}/runtime/muster.mjs codex-wave <wave.json> --repository-root <trusted repo root> --base-sha <exact full base SHA>`. Production waves are process-only; never invoke a shared-CWD or inline dispatch path from the backlog or manifest. The runtime authenticates every pristine worktree, loads and digests the installed `muster-runner` policy, pins its model, effort, sandbox, and developer instructions outside the manifest, and owns the all-process barrier; treat missing provenance or any process failure as an item failure. Put the scheduler's cap in `maxConcurrentThreadsPerSession`; the runtime clamps it to trusted Codex capacity.")
     .replace(runnerCwdRe, "Runner cwd is its recorded worktree. Codex hooks provide diagnostics but do not replace the worktree path/base-SHA proof or the post-wave ownership check.")
+    .replace(backlogFencePropagationRe, "Do not copy `.muster/run-active` or `.muster/forbidden-actions` into process member worktrees: sealed `codex-wave` admission rejects every ignored artifact. Write the validated fixed-vocabulary member action sets to the separate no-follow fence document; the runtime injects and receipts that policy outside the user brief.\n")
     .replace(captureWritesRe, "Capture only writes the explicitly approved `.muster/backlog.md` bookkeeping artifact and dispatches no write-capable wave, so it deliberately has no run-active lifecycle.");
   if (name === "init.md") {
     const claudeResolver = [
@@ -376,6 +382,13 @@ function adaptCommandForCodex(text, name, contract) {
   if (directives[name]) result += `\n<!-- prompt-lint-disable ${directives[name]}: Codex compatibility transformation preserves the source workflow's safety directives and treats its deterministic STATE receipts as the evidence contract. -->\n`;
   const commandBinding = `\n\n## Codex harness binding\n\nRead \`${"${PLUGIN_ROOT}"}/runtime/codex-skill-adapter.md\` before following this command. Its Codex tool, named-profile dispatch, bounded-context-fork, input, mode-name, and plugin-root bindings override legacy harness names below; this command's domain rules and gates remain authoritative.\n`;
   result = result.replace(/^(---\r?\n[\s\S]*?\r?\n---)/, `$1${commandBinding}`);
+  if (result.includes("spawn_agent") && !result.includes("Every production wave MUST first run through")) {
+    result += `\nEvery production wave MUST first run through \`node ${"${PLUGIN_ROOT}"}/runtime/muster.mjs codex-wave <wave.json>\`. Production waves are process-only; any versioned \`spawn_agent\` packet described above is restricted to explicit non-wave leaf delegation.\n`;
+  }
+  result = result.replaceAll(
+    "codex-wave <wave.json> --repository-root",
+    "codex-wave <wave.json> --fence-file <trusted no-follow action-fence.json> --repository-root",
+  );
   return result;
 }
 function adaptCoordinationForCodex(text) {
@@ -408,15 +421,34 @@ function adaptOrchestratorForCodex(text, contract) {
   // multi-file anchors above.
   if (!orchestratorHardGateRe.test(text)) throw new Error("orchestrator Hard gate section not found for Codex rewrite");
   let result = text.replace(orchestratorHardGateRe, "- **SKILL discipline, not a hook block:** Codex hooks cannot reliably deny a main-loop Edit/Write during a wave either -- there was never a hard wave-guard deny to remove here, unlike Claude Code's field-tested and since-removed version (unscopable false positives; see CHANGELOG). This rule lives here, plus the review gate diffing what changed against what was dispatched after the fact -- a caught violation is a review-gate finding, not a blocked tool call. (Codex's `PreToolUse` hook still surfaces exactly one policy warning, unrelated to this rule -- see \"Codex enforcement model\", below.)\n");
+  const ironDispatchRe = /- \*\*Before you Edit or Write ANY file during a wave,[\s\S]*?Edited files with no dispatch line in STATE is, by definition, drift\.\n/;
+  if (!ironDispatchRe.test(result)) throw new Error("orchestrator iron dispatch rule not found for Codex rewrite");
+  result = result.replace(ironDispatchRe, "- **Before you Edit or Write ANY file during a wave, the complete process member MUST be recorded in `wave.json` and launched through `codex-wave`.** About to edit in the main loop? STOP -- that is inline drift.\n- **Announce before acting:** write `dispatching <task id> -> process-wave (<role>)` to STATE before launch. Edited files with no process-wave dispatch line are drift.\n");
   const implementerAnchor = "one implementer agent, given the task + the Crew Manifest as BRIEF.";
   if (!result.includes(implementerAnchor)) throw new Error("orchestrator implementer-agent anchor not found for Codex rewrite");
   result = result.replace(
     implementerAnchor,
-    "one implementer leaf agent, given a minimal dispatch packet: task id/text, relevant success criteria, absolute worktree/manifest/STATE paths, owned and frozen paths, dependency receipts, required provider or skill brief, and the return contract. Never attach unrelated plan items, capability inventories, or prior transcripts."
+    "one process-wave member, given a minimal prompt: task id/text, relevant success criteria, absolute worktree/manifest/STATE paths, owned and frozen paths, dependency receipts, required provider or skill brief, and the return contract. Never attach unrelated plan items, capability inventories, or prior transcripts."
+  );
+  const dispatchIntroRe = /Dispatch every task in the wave \*\*concurrently\*\*[\s\S]*?keep every rule below unchanged\):/;
+  if (!dispatchIntroRe.test(result)) throw new Error("orchestrator wave dispatch intro not found for Codex rewrite");
+  result = result.replace(dispatchIntroRe, "Build the complete process manifest before launch, then invoke `node ${PLUGIN_ROOT}/runtime/muster.mjs codex-wave <wave.json> --repository-root <trusted repo root> --base-sha <exact full base SHA>` once. The runtime owns bounded concurrency and the all-process barrier:");
+  result = result.replaceAll(
+    "codex-wave <wave.json> --repository-root",
+    "codex-wave <wave.json> --fence-file <trusted no-follow action-fence.json> --repository-root",
   );
   const worktreeIsolationAnchor = "give each its own git worktree (`isolation: \"worktree\"` on the Codex subagent dispatcher)";
   if (!result.includes(worktreeIsolationAnchor)) throw new Error("orchestrator worktree-isolation anchor not found for Codex rewrite");
-  result = result.replace(worktreeIsolationAnchor, "create a separate git worktree for each task, start the dispatched Codex subagent in that worktree, and record the path/base SHA in its brief");
+  result = result.replace(worktreeIsolationAnchor, "create a separate pristine registered linked worktree for each task, bind that absolute path to exactly one process-wave member, and record the path/base SHA in its prompt");
+  const readOnlySkip = "Read-only/single-task waves skip worktree creation, but any\n        writer that already runs in another cwd still receives this same propagation.";
+  if (!result.includes(readOnlySkip)) throw new Error("orchestrator read-only worktree skip anchor not found for Codex rewrite");
+  result = result.replace(readOnlySkip, "Every production member, including a read-only or single-task member, requires its own pristine registered linked worktree. The sealed process lane rejects ignored artifacts, so never copy `.muster/run-active` or `.muster/forbidden-actions` into a member worktree. Supply each validated action set through the separate no-follow fence document.");
+  const isolatedFenceRe = /Before dispatch, propagate the\n        active action fence[\s\S]*?after the worker has stopped\. /;
+  if (!isolatedFenceRe.test(result)) throw new Error("orchestrator isolated action-fence propagation anchor not found for Codex rewrite");
+  result = result.replace(isolatedFenceRe, "The sealed process worktree remains free of ignored `.muster` marker files; the no-follow fence document is the runtime-authenticated action-policy source. ");
+  const actionFenceCopyRe = /The hook resolves\nthese files from the tool payload's cwd,[\s\S]*?then remove the propagated files only after that worker stops or at the wave barrier\./;
+  if (!actionFenceCopyRe.test(result)) throw new Error("orchestrator action-fence copy anchor not found for Codex rewrite");
+  result = result.replace(actionFenceCopyRe, "For Codex process members, write the effective fixed-vocabulary action sets to the separate no-follow fence document. The runtime validates exact member coverage, injects the set separately from the user brief, and receipts its digest. Never copy outer run markers into a sealed member worktree, because admission rejects all ignored artifacts.");
   // build-anchor-audit item: this .replaceAll's target ("after a Claude Code restart") lived in
   // step 4a's old, verbose "Generic-subagent fallback (degraded path)" bullet. The prose-cutting
   // pass (commit 3b0b4d7, "cut prose 48.3%, no rule dropped") condensed that whole bullet down to
@@ -450,7 +482,7 @@ function adaptOrchestratorForCodex(text, contract) {
   // rather than ship the fabricated claim.
   const kimiResumeClause = /\*\*On Kimi the re-dispatch is\s+a native RESUME, never a fresh spawn\*\*[\s\S]*?Non-Kimi harnesses keep the fresh re-dispatch\.\s+/;
   if (!kimiResumeClause.test(result)) throw new Error("orchestrator Kimi resume clause not found for Codex rewrite");
-  result = result.replace(kimiResumeClause, "The re-dispatch spawns a fresh agent with the error appended -- this harness's subagent dispatch has no native resume primitive.\n        ");
+  result = result.replace(kimiResumeClause, "Retry the failed member once in a fresh bounded process-wave invocation with the error appended; never switch lanes.\n        ");
   if (result.includes("Codex subagent dispatcher's `resume`")) throw new Error("orchestrator Kimi resume clause leaked into the Codex build");
   // kimi-native-steer-binding item: the Channel steering section's Kimi
   // paragraph ships verbatim into this build (the section sits above the
@@ -469,7 +501,7 @@ function adaptOrchestratorForCodex(text, contract) {
   const providerStart = result.indexOf("      - **Provider kind:**");
   const failureStart = result.indexOf("      - **Subagent failure", providerStart);
   if (providerStart < 0 || failureStart < 0) throw new Error("orchestrator provider/model section not found");
-  const provider = `      - **Provider and model policy:** look up the role's chosen provider from \`node ${"${PLUGIN_ROOT}"}/runtime/muster.mjs capabilities --codex\`. When \`chosen.kind === "agent"\`, call \`collaboration.spawn_agent\` on v2 models or \`multi_agent_v1.spawn_agent\` on v1 -- the version is resolved per the role's model from the catalog's \`multi_agent_version\`, never hardcoded to one shape (the dispatch/barrier shapes table is in the wave-dispatch section below) -- with the ordinary task fields, \`fork_turns: "none"\` on v2 (v1 takes \`fork_context: false\`), plus \`agent_type: "<exact chosen.id>"\`. ${contract.forkTurns} Workers are leaves and must not spawn descendants unless an approved manifest explicitly delegates nested orchestration. Include an explicit cohesive-task budget, deterministic progress evidence, a configured repeated-identical/no-progress threshold, and a focused-test-first rule in every brief. Follow up, repair, replan, and independently re-review while progress changes. Respect the configured Codex thread concurrency and dispatch only manifest-ready, nonredundant workers. Codex dispatch has no cwd field, so every worktree-scoped brief must include the absolute \`WORKTREE CWD\`, absolute manifest and STATE paths inside it, and require that cwd for every tool call; never read the parent checkout's \`.muster\` artifacts. The profile TOML is the authoritative model, reasoning, and sandbox boundary. If the named type is rejected, stop with a registration diagnostic; do not silently inherit the parent model through a generic agent. For a skill provider, run \`node ${"${PLUGIN_ROOT}"}/runtime/resolve-skill-provider.mjs <chosen.source> <chosen.id>\`; this centrally validates provenance and the safe kebab-case id before constructing a path or invocation. If \`source === "builtin"\`, inject the verified workflow stdout into a general subagent brief and load relative assets through the command's optional third asset argument. If \`source === "installed"\`, follow stdout's explicit \`$skill-id\` invocation contract and never load the bundled fallback. For an MCP/inline provider, inject the resolved provider brief directly. Generic paths inherit the parent model and must follow the same conservation limits.\n`;
+  const provider = `      - **Provider and model policy:** every production member is exactly \`agentType: "muster-runner"\`; the manifest cannot select a model, effort, sandbox, read-only flag, or developer instructions. Put only the item brief into \`prompt\` and its distinct pristine registered worktree into \`cwd\`. Never call a subagent API from this production-wave step. Include an explicit cohesive-task budget, deterministic progress evidence, a configured repeated-identical/no-progress threshold, focused-test-first rule, absolute manifest/STATE paths, owned and frozen paths, dependency receipts, and the return contract in the prompt. Assemble all members before invoking \`codex-wave\`; trusted repository root/base SHA stay out of the manifest and are passed only as CLI flags. The runtime loads and digests its installed \`muster-runner\` instructions, pins the role's model, effort, and workspace-write sandbox, applies the trusted thread ceiling, launches every member with hermetic \`codex exec -C\`, and owns the barrier. Preserve each returned opaque \`receiptId\`; the authenticated binding stays in an owner-only runtime store, every thread uses a private persistent Codex home, the real Codex home/global user-skill root/sibling sessions are masked from worker tools, and returned JSONL redacts the thread UUID. Follow up, repair, replan, and independently re-review while bound progress evidence changes.\n`;
   const compactProvider = provider.replace(
     "look up the role's chosen provider from `node ${PLUGIN_ROOT}/runtime/muster.mjs capabilities --codex`.",
     "look up only the needed role with `node ${PLUGIN_ROOT}/runtime/muster.mjs capabilities --codex --role <role>`; do not reprint the full skills inventory during task dispatch."
@@ -496,8 +528,8 @@ function adaptOrchestratorForCodex(text, contract) {
   // spawn_agent" and "### Worktree isolation per harness + base-SHA receipts" INSIDE this same
   // span on the Claude-side source (both between this heading and the unmoved "## Scope fences"
   // end anchor) without ever extending this replacement text to cover them, so the Codex build
-  // silently dropped both subsections' Codex-relevant guidance (the `resolveCodexWaveDispatch`
-  // sequential-inline fallback + fail-closed spawn_agent guard, and `resolveWorktreeIsolation`'s
+  // silently dropped both subsections' Codex-relevant guidance (the process-only production-wave
+  // rule + fail-closed non-wave spawn guard, and `resolveWorktreeIsolation`'s
   // receipts-only mechanism + `buildBaseShaReceipt` provenance) — never reaching a CODEX-HOSTED
   // muster running the bundled plugin (test/codex-wave-dispatch.test.js and
   // test/worktree-isolation.test.js only prove the resolvers themselves, not that a generated
@@ -514,7 +546,8 @@ function adaptOrchestratorForCodex(text, contract) {
   const waveDispatchEnd = result.indexOf("## Scope fences", waveDispatchStart);
   if (waveDispatchStart < 0 || waveDispatchEnd < 0) throw new Error("orchestrator wave-dispatch section not found");
   result = result.slice(0, waveDispatchStart)
-    + `${waveDispatchHeading}\n\nCodex has no counterpart to Claude Code CLI's agent-teams \`Workflow\` tool: wave dispatch always rides Codex's own subagent collaboration protocol (spawn/wait/list) bound in the Provider and model policy above, never a deterministic native fan-out tool. **The dispatch and barrier shapes are VERSION-DEPENDENT**: Codex resolves its subagent API per MODEL from the catalog's \`multi_agent_version\`, so never hardcode one shape -- resolve the version from each dispatched role's model and fail closed to v1 rather than guessing v2.\n\n${contract.shapesTable}\n\n\`wait_agent\` BLOCKS until something happens, so there is no interval to tune and nothing to tight-poll -- call it in a loop until every dispatched member has settled (neither version is an all-barrier), and take receipts from the mailbox, not \`list_agents\`. \`node ${"${PLUGIN_ROOT}"}/runtime/muster.mjs wave-dispatch\` always resolves \`mode: "prose"\` on this harness (there is no Codex-side \`--agent-teams\`/\`MUSTER_AGENT_TEAMS\` declaration path); dispatch every wave task through the version-resolved spawn exactly as described above -- gated by this session's OWN \`multi_agent\` capability, declared not auto-probed same as every other check here: Codex ships \`multi_agent\` default-on, so only an explicit \`multiAgent: false\` (or \`MUSTER_CODEX_MULTI_AGENT=0\`) drops dispatch to \`mode: "sequential-inline"\` -- one crew member at a time, never a partial/mixed fan-out.\n\n### Worktree isolation: receipts-only\n\nCodex subagent dispatch has no cwd field on either API version, so Codex has no native worktree mechanism to select at all: run \`node ${"${PLUGIN_ROOT}"}/runtime/muster.mjs worktree-isolation --harness codex\` to confirm this harness always resolves \`mechanism: "receipts-only"\`. The brief's absolute \`WORKTREE CWD\` (Provider and model policy, above) plus a base-SHA receipt per dispatched crew member -- \`{taskId, mechanism, baseSha, worktreePath}\`, refused over a missing or non-hex \`baseSha\` -- stand in for the isolation guarantee muster cannot get from this harness; append the receipt to STATE alongside the dispatch line. Immediately after, run \`node ${"${PLUGIN_ROOT}"}/runtime/muster.mjs receipt-verify <baseSha> --cwd <absolute worktree path>\` and treat a nonzero exit as a receipt failure -- escalate it, never continue silently.\n\n`
+    + `${waveDispatchHeading}\n\nCodex has no counterpart to Claude Code CLI's agent-teams \`Workflow\` tool. Every production wave MUST first run through \`node ${"${PLUGIN_ROOT}"}/runtime/muster.mjs codex-wave <wave.json>\`. Production waves are process-only: never choose or invoke \`spawn_agent\` from a wave manifest, because declared write fences and read-only profile names are not mechanically enforceable in Codex's shared cwd. The process-wave input must name a distinct registered linked worktree root for every member. The runtime canonicalizes and verifies every path plus the trusted repository and exact base SHA before lane resolution, rejecting absent, nested/wrong, base-checkout, unregistered, dirty, or duplicate worktrees before it probes or starts Codex; once validated, it launches one hermetic \`codex exec -C\` process per member under the canonical thread ceiling and owns the all-process barrier.\n\n**The dispatch and barrier shapes are VERSION-DEPENDENT** only for explicit non-wave leaf delegation: Codex resolves its subagent API per MODEL from the catalog's \`multi_agent_version\`, so never hardcode one shape and fail closed to v1 rather than guessing v2. Production waves do not use these spawn shapes.\n\n${contract.shapesTable}\n\n${contract.forkTurns}\n\n\`wait_agent\` BLOCKS until something happens, so there is no interval to tune and nothing to tight-poll -- for explicit non-wave leaf delegation, call it in a loop until every dispatched member has settled and take receipts from the mailbox, not \`list_agents\`. \`node ${"${PLUGIN_ROOT}"}/runtime/muster.mjs wave-dispatch\` always resolves \`mode: "prose"\` on this harness; it never authorizes bypassing the process-only \`codex-wave\` production lane.\n\nNative review routing stays disabled: the paid native-review shadow benchmark rejected adoption with 0/10 schema-valid outputs. Production review continues through muster's canonical independent review gate; never route a wave verdict through \`codex review\`.\n\n### Worktree isolation: registered process roots or receipts-only\n\nThe process-wave lane enforces registered linked worktrees mechanically before execution. Codex subagent dispatch has no cwd field on either API version, so explicit non-wave delegation has no native worktree mechanism to select: run \`node ${"${PLUGIN_ROOT}"}/runtime/muster.mjs worktree-isolation --harness codex\` to confirm it resolves \`mechanism: "receipts-only"\`. Production waves do not use that weaker floor: \`codex-wave\` binds each member's absolute pristine worktree to the trusted common Git directory and exact base SHA before execution.\n\n`
+    + `Process-wave invocation is incomplete unless it appends \`--fence-file <trusted no-follow action-fence.json> --repository-root <trusted repo root> --base-sha <exact full base SHA>\` to the command above. The fence document maps every member id to its validated fixed-vocabulary action classes; its no-follow path, trusted repository values, and exact base travel out of band from \`wave.json\`. The runtime injects the fence separately from the user brief, receipts its digest, binds every member to the shared common Git directory and exact base, then revalidates immediately before each bounded launch.\n\n`
     + result.slice(waveDispatchEnd);
   const enforcement = result.indexOf("## Enforcement model: gates vs conventions");
   if (enforcement < 0) throw new Error("orchestrator enforcement section not found");
@@ -625,8 +658,12 @@ function codexSkill(source, id, contract) {
         "1. Select one code reviewer for ordinary waves. Add the security reviewer only when the task is security-scoped or the diff touches authentication, authorization, secrets, cryptography, shell execution, network boundaries, installers, or lifecycle hooks. Add a surface reviewer only when its definition-of-done gate fires. Never dispatch two reviewers for the same quality dimension; always use at least one reviewer."
       )
       ;
-    // Progress-aware review recovery is harness-neutral and remains canonical;
-    // Codex must not rewrite it back into a one-follow-up stop.
+    const fixLoopPrefixRe = /6\. If `blocked`: preserve the structured blocker notes, invalidate the reviewed candidate, and\n\s+re-dispatch the implementer for a materially changed repair, then obtain a fresh independent\n\s+review\./;
+    if (!fixLoopPrefixRe.test(body)) throw new Error("review-gate fix-loop context anchor not found for Codex rewrite");
+    body = body.replace(
+      fixLoopPrefixRe,
+      "6. If `blocked`: load the exact original opaque `receiptId` returned by `codex-wave`, write retained `sentBlockers` plus this review's `currentBlockers` to a review-state file, and run `node ${PLUGIN_ROOT}/runtime/muster.mjs codex-wave-resume <receipt-id> --review-state <file>`. The runtime authenticates its owner-only receipt, independently re-derives the trusted executable/version, canonical worktree/base/HEAD, full `muster-runner` policy and forbidden-action fence, computes only new blocker deltas, labels them as `<remote-text>` DATA, and resumes the exact persisted thread over stdin inside its private persistent Codex home with the same bubblewrap, hermetic environment and resource limits. Never invoke `codex exec resume` directly, use a recency selector, fresh re-dispatch, or repeat the original brief/transcript. Then obtain a fresh independent review."
+    );
   }
   if (id === "interview") {
     const presentApprovalAnchor = "Present both for approval via the **interactive user input** selection UI";

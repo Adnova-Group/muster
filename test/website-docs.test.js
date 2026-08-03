@@ -135,9 +135,10 @@ test("public entry points consistently document ten modes including Design and I
 });
 
 test("harness documentation routes and support claims are explicit", async () => {
-  const [config, harnesses, kimi, cowork] = await Promise.all([
+  const [config, harnesses, codex, kimi, cowork] = await Promise.all([
     read("website/.vitepress/config.js"),
     read("website/guides/harnesses.md"),
+    read("website/guides/codex.md"),
     read("website/guides/kimi.md"),
     read("website/guides/cowork.md"),
   ]);
@@ -158,6 +159,9 @@ test("harness documentation routes and support claims are explicit", async () =>
   assert.doesNotMatch(cowork, /write-capable wave items must run sequentially in the connected project/i);
   assert.doesNotMatch(cowork, /Parallel subagents \| Confirmed/i);
   assert.doesNotMatch(harnesses, /Confirmed subagent fan-out/i);
+  assert.match(codex, /Every production wave uses the process lane/);
+  assert.match(codex + harnesses, /codex-wave[\s\S]{0,80}codex exec -C/);
+  assert.doesNotMatch(harnesses, /Codex[^\n]*spawn_agent/);
 });
 
 test("Init documentation pins the canonical instruction authority pair and conflict hold", async () => {

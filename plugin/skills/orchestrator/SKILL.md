@@ -227,8 +227,8 @@ owns actual dispatch and waiting.
 
 **On Codex, read `references/codex-dispatch.md` (in this skill's directory) BEFORE dispatching
 wave 1** -- it is the canonical, single-sourced statement of this harness's dispatch mechanics
-(the version-dependent spawn/barrier shapes, the fork contract, the receipts rule, the
-sequential-inline floor, and the fail-closed rejected-profile rule); the Codex build embeds its
+(the process-only production-wave rule, version-dependent non-wave spawn/barrier shapes, the fork
+contract, receipts rule, and fail-closed rejected-profile rule); the Codex build embeds its
 contract blocks verbatim rather than maintaining a second copy here. Progressive disclosure: a
 non-Codex session never pays that file's tokens.
 
@@ -255,9 +255,9 @@ capability checks above):
   harness creates it, muster scripts nothing (docs/research/claude-code-desktop.md sec 2.2).
 - **Hermes** -- `hermes -w` or a kanban `worktree` workspace; Hermes creates and tears it down,
   muster only selects which invocation shape to dispatch into (docs/research/hermes.md sec 6).
-- **Codex** -- no native mechanism: `collaboration.spawn_agent` has no cwd field
-  (docs/research/codex-cli.md sec 6). The brief's absolute `WORKTREE CWD` (Codex-native dispatch,
-  above) plus the base-SHA receipt below stand in for isolation muster cannot get from the harness.
+- **Codex** -- production waves use muster's process lane: a separate authenticated registered
+  worktree passed to each `codex exec -C` process. Explicit non-wave `spawn_agent` delegation has
+  no cwd field and therefore never substitutes for this wave isolation.
 - **Kimi** -- exactly the Codex floor: its subagent dispatch carries no cwd/isolation parameter
   (docs/research/kimi-code-cli.md sec 7). muster supplies the worktree itself
   (`git worktree add .worktrees/<item-branch>` before dispatch), and the base-SHA receipt below

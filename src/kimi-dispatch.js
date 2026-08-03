@@ -497,7 +497,8 @@ export const KIMI_DISPATCH_MODES = Object.freeze({
   AGENT_CALLS: "agent-calls"
 });
 
-// Pick the native shape for a wave, mirroring resolveCodexWaveDispatch's
+// Pick the native shape for a Kimi wave. Codex production waves instead use
+// resolveCodexDispatchLane's unconditional process isolation.
 // declared-not-probed posture. The choice is structural, straight from the
 // binary's own guidance: AgentSwarm is for "the same kind of task over
 // different inputs"; "For a few differently-shaped tasks, make separate `Agent`

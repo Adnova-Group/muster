@@ -587,7 +587,7 @@ async function assertConfigSnapshot(dest, configPath, expected) {
   }
 }
 
-async function publishConfigBytes(dest, configPath, bytes, expected, beforeManagedMutation, operation = "publish") {
+async function publishConfigBytes(dest, configPath, bytes, expected, beforeManagedMutation, operation = "publish", commitReceipt = null) {
   if (process.platform !== "linux" || !fsConstants.O_DIRECTORY || !fsConstants.O_NOFOLLOW) {
     throw new Error(`Safe Kimi config.toml publication is unavailable on ${process.platform}: directory-relative publication is required`);
   }
@@ -596,8 +596,9 @@ async function publishConfigBytes(dest, configPath, bytes, expected, beforeManag
   const temporary = join(dirname(configPath), `.muster-config-tmp-${process.pid}-${randomBytes(8).toString("hex")}`);
   let temporaryHandle, stagedInfo;
   const directoryHandles = [];
-  let stagedPath, quarantinePath, originalPath, failedPath;
+  let stagedPath, quarantinePath, receiptPath, originalPath, failedPath;
   let retired = false, published = false, publishedInfo = null;
+  let handedOff = false;
 
   const changed = () => new Error(`Kimi config.toml changed during safe publication: ${configPath}`);
   const restore = async () => {
@@ -616,7 +617,20 @@ async function publishConfigBytes(dest, configPath, bytes, expected, beforeManag
       await unlink(originalPath);
     }
     if (published) await unlink(failedPath);
+    if (receiptPath) await unlink(receiptPath);
     await rmdir(quarantinePath);
+  };
+  const validateRetired = async () => {
+    if (!retired) return;
+    const snapshot = await readNoFollowRegular(originalPath, {
+      maxBytes: KIMI_CONFIG_MAX_BYTES,
+      label: `retired Kimi config.toml at ${originalPath}`,
+      expectedInfo: expected.info
+    });
+    if (!snapshot.bytes.equals(expected.bytes)) throw changed();
+  };
+  const closeDirectories = async () => {
+    for (const handle of directoryHandles.reverse()) await handle.close();
   };
 
   try {
@@ -661,8 +675,18 @@ async function publishConfigBytes(dest, configPath, bytes, expected, beforeManag
 
     quarantinePath = join(parentFdPath, `.muster-config-txn-${randomBytes(12).toString("hex")}`);
     await mkdir(quarantinePath, { mode: 0o700 });
+    receiptPath = join(quarantinePath, "receipt.json");
     originalPath = join(quarantinePath, "original");
     failedPath = join(quarantinePath, "failed-publication");
+    await atomicWrite(receiptPath, JSON.stringify({
+      format: 1,
+      target: basename(configPath),
+      expected: expected ? { dev: String(expected.info.dev), ino: String(expected.info.ino) } : null,
+      staged: { name: basename(temporary), dev: String(stagedInfo.dev), ino: String(stagedInfo.ino) },
+      manifestBefore: commitReceipt?.info
+        ? { dev: String(commitReceipt.info.dev), ino: String(commitReceipt.info.ino) }
+        : commitReceipt ? null : undefined
+    }) + "\n", { fsync: true, fsyncDir: true, mode: 0o600 });
     if (expected) {
       await rename(sourcePath, originalPath);
       retired = true;
@@ -678,24 +702,24 @@ async function publishConfigBytes(dest, configPath, bytes, expected, beforeManag
       catch (error) { if (error.code !== "ENOENT") throw error; }
     }
     await beforeManagedMutation?.({ operation: "config-retired", path: configPath });
+    await validateRetired();
 
     // link() is the publication CAS: it creates the final name only when it
     // is still absent, and therefore never overwrites a concurrent writer.
     await link(stagedPath, sourcePath);
-    publishedInfo = await lstat(sourcePath);
-    if (!sameFileIdentity(publishedInfo, stagedInfo) || !publishedInfo.isFile()) throw changed();
+    // link() is the commit point. Record it before any later fallible call so
+    // every post-link error takes the published rollback path.
+    publishedInfo = stagedInfo;
     published = true;
+    await beforeManagedMutation?.({ operation: "config-linked", path: configPath });
+    const linkedInfo = await lstat(sourcePath);
+    if (!sameFileIdentity(linkedInfo, publishedInfo) || !linkedInfo.isFile()) throw changed();
     await unlink(stagedPath);
     stagedPath = null;
     await beforeManagedMutation?.({ operation: "config-fsync", path: configPath });
     await directory.sync();
-    if (retired) {
-      await unlink(originalPath);
-      retired = false;
-    }
-    // The transaction directory is private and now empty. Failure to remove
-    // that empty shell is harmless; publication and rollback data are gone.
-    await rmdir(quarantinePath).catch(() => {});
+    await validateRetired();
+    handedOff = true;
   } catch (publicationError) {
     if (retired || published) {
       try { await restore(); }
@@ -710,8 +734,8 @@ async function publishConfigBytes(dest, configPath, bytes, expected, beforeManag
   } finally {
     await temporaryHandle?.close();
     if (stagedPath) await unlink(stagedPath).catch(error => { if (error.code !== "ENOENT") throw error; });
-    for (const handle of directoryHandles.reverse()) await handle.close();
-    if (stagedInfo && !stagedPath) {
+    if (!handedOff) await closeDirectories();
+    if (!handedOff && stagedInfo && !stagedPath) {
       try {
         await assertSafeManagedFiles(dest, [temporary]);
         const leftover = await lstat(temporary);
@@ -719,7 +743,27 @@ async function publishConfigBytes(dest, configPath, bytes, expected, beforeManag
       } catch (error) { if (error.code !== "ENOENT") { /* fail closed: leave uncertain debris */ } }
     }
   }
-  return { bytes, info: publishedInfo, parent: parentIdentity };
+  let settled = false;
+  return {
+    bytes,
+    info: publishedInfo,
+    parent: parentIdentity,
+    commit: async () => {
+      if (settled) return;
+      try {
+        await validateRetired();
+        if (retired) await unlink(originalPath);
+        await unlink(receiptPath);
+        await rmdir(quarantinePath);
+        settled = true;
+      } finally { await closeDirectories(); }
+    },
+    rollback: async () => {
+      if (settled) return;
+      try { await restore(); settled = true; }
+      finally { await closeDirectories(); }
+    }
+  };
 }
 
 async function removePublishedConfig(dest, configPath, expected, beforeManagedMutation, operation = "delete") {
@@ -736,10 +780,82 @@ async function removePublishedConfig(dest, configPath, expected, beforeManagedMu
 }
 
 async function rollbackConfig(dest, configPath, original, published, beforeManagedMutation) {
-  if (original) {
-    await publishConfigBytes(dest, configPath, original.bytes, published, beforeManagedMutation, "config-rollback");
-  } else {
-    await removePublishedConfig(dest, configPath, published, beforeManagedMutation, "config-rollback");
+  await published.rollback();
+}
+
+async function reconcileConfigTransactions(dest, configPath, manifestPath) {
+  let destInfo;
+  try { destInfo = await lstat(dest); }
+  catch (error) { if (error.code === "ENOENT") return; throw error; }
+  if (destInfo.isSymbolicLink() || !destInfo.isDirectory()) {
+    throw new Error(`Refusing to reconcile Kimi config.toml through a non-ordinary directory: ${dest}`);
+  }
+  const names = (await readdir(dest)).filter(name => name.startsWith(".muster-config-txn-")).sort();
+  for (const name of names) {
+    const directory = await openPinnedDirectory(dest, configPath);
+    try {
+      const parentInfo = await directory.stat();
+      if (!sameFileIdentity(parentInfo, destInfo)) throw new Error(`Kimi config.toml transaction ancestry changed: ${dest}`);
+      const parentFdPath = join("/proc/self/fd", String(directory.fd));
+      const quarantinePath = join(parentFdPath, name);
+      const quarantineInfo = await lstat(quarantinePath);
+      if (quarantineInfo.isSymbolicLink() || !quarantineInfo.isDirectory()) {
+        throw new Error(`Malformed Kimi config.toml transaction: ${join(dest, name)}`);
+      }
+      const receiptPath = join(quarantinePath, "receipt.json");
+      const receipt = JSON.parse((await readNoFollowRegular(receiptPath, {
+        maxBytes: 4096,
+        label: `Kimi config.toml transaction receipt at ${receiptPath}`
+      })).bytes.toString("utf8"));
+      if (receipt?.format !== 1 || receipt.target !== basename(configPath)
+          || !receipt.staged || typeof receipt.staged.name !== "string"
+          || !receipt.staged.name.startsWith(".muster-config-tmp-")
+          || receipt.staged.name.includes(sep)) {
+        throw new Error(`Malformed Kimi config.toml transaction receipt: ${join(dest, name)}`);
+      }
+      const matches = (info, identity) => info && identity
+        && String(info.dev) === identity.dev && String(info.ino) === identity.ino;
+      const statOrNull = async path => {
+        try { return await lstat(path); }
+        catch (error) { if (error.code === "ENOENT") return null; throw error; }
+      };
+      const sourcePath = join(parentFdPath, basename(configPath));
+      const originalPath = join(quarantinePath, "original");
+      const failedPath = join(quarantinePath, "failed-publication");
+      const stagedPath = join(parentFdPath, receipt.staged.name);
+      let source = await statOrNull(sourcePath);
+      const original = await statOrNull(originalPath);
+      const manifest = await statOrNull(manifestPath);
+      const committed = receipt.manifestBefore !== undefined && (receipt.manifestBefore === null
+        ? !!manifest
+        : !!manifest && !matches(manifest, receipt.manifestBefore));
+
+      if (committed) {
+        if (!matches(source, receipt.staged)) throw new Error(`Kimi config.toml committed transaction conflicts with ${configPath}`);
+      } else {
+        if (matches(source, receipt.staged)) {
+          await rename(sourcePath, failedPath);
+          source = null;
+        } else if (source && receipt.expected) {
+          throw new Error(`Kimi config.toml recovery found a concurrent replacement: ${configPath}`);
+        }
+        if (receipt.expected) {
+          if (!matches(original, receipt.expected)) throw new Error(`Kimi config.toml recovery lost its original: ${configPath}`);
+          if (!source) await link(originalPath, sourcePath);
+        }
+      }
+
+      const failed = await statOrNull(failedPath);
+      if (failed && !matches(failed, receipt.staged)) throw new Error(`Malformed Kimi config.toml failed publication: ${failedPath}`);
+      if (failed) await unlink(failedPath);
+      const staged = await statOrNull(stagedPath);
+      if (staged && !matches(staged, receipt.staged)) throw new Error(`Kimi config.toml staged transaction changed: ${stagedPath}`);
+      if (staged) await unlink(stagedPath);
+      if (original) await unlink(originalPath);
+      await unlink(receiptPath);
+      await rmdir(quarantinePath);
+      await directory.sync();
+    } finally { await directory.close(); }
   }
 }
 
@@ -933,6 +1049,7 @@ export async function runKimiInstall({
 
   // Prune stale files a prior install owned but this one no longer ships.
   const manifestPath = join(dest, "muster", KIMI_MANIFEST);
+  await reconcileConfigTransactions(dest, configPath, manifestPath);
   await reconcileOrphanedManifestQuarantine(dest, manifestPath);
   const previous = await readManifest(manifestPath, dest);
   const reconciliation = previous
@@ -1040,20 +1157,29 @@ export async function runKimiInstall({
     // merge (file now present) must not flip the receipt, or uninstall would
     // leave an empty config.toml husk behind.
     configCreated = mergedConfig.created || previous?.permissionRules?.created === true;
+    let manifestBefore;
+    try { manifestBefore = await lstat(manifestPath); }
+    catch (error) { if (error.code !== "ENOENT") throw error; }
     const published = await publishConfigBytes(
       dest,
       configPath,
       Buffer.from(mergedConfig.text),
       original,
-      _beforeManagedMutation
+      _beforeManagedMutation,
+      "publish",
+      { info: manifestBefore ?? null }
     );
+    let manifestPublished = false;
     try {
       await atomicWriteJson(manifestPath, {
         format: 1, owner: "muster", packageVersion,
         agents: agents.map(a => a.rel), skills: skills.map(s => s.rel), verbs: verbs.map(v => v.rel),
         permissionRules: { created: configCreated }
       }, dest, _beforeManagedMutation);
+      manifestPublished = true;
+      await published.commit();
     } catch (publicationError) {
+      if (manifestPublished) throw publicationError;
       try {
         await rollbackConfig(dest, configPath, original, published, _beforeManagedMutation);
       } catch (rollbackError) {
@@ -1064,7 +1190,7 @@ export async function runKimiInstall({
       }
       throw publicationError;
     }
-  }, { beforeOpen: configGuard });
+  }, { beforeOpen: configGuard, staleMs: 0 });
 
   return {
     dest, packageVersion, agents: agents.map(a => basename(a.rel)), skills: skillNames,
@@ -1241,6 +1367,8 @@ export async function runKimiUninstall({
 } = {}) {
   const dest = kimiHome(home);
   const manifestPath = join(dest, "muster", KIMI_MANIFEST);
+  const configPath = join(dest, "config.toml");
+  await reconcileConfigTransactions(dest, configPath, manifestPath);
   const recoveredManifestDeletion = await reconcileOrphanedManifestQuarantine(dest, manifestPath, _platform);
   const manifest = await readManifest(manifestPath, dest);
   if (!manifest) {
@@ -1249,7 +1377,6 @@ export async function runKimiUninstall({
   }
 
   const owned = [...manifest.agents, ...manifest.skills, ...(manifest.verbs || [])];
-  const configPath = join(dest, "config.toml");
   if (dryRun) {
     return {
       dryRun: true, dest, wouldRemove: owned, fileCount: owned.length,
@@ -1328,15 +1455,16 @@ export async function runKimiUninstall({
         await removePublishedConfig(dest, configPath, original, _beforeManagedMutation);
         configRemoved = true;
       } else {
-        await publishConfigBytes(
+        const published = await publishConfigBytes(
           dest,
           configPath,
           Buffer.from(stripped.text),
           original,
           _beforeManagedMutation
         );
+        await published.commit();
       }
-    }, { beforeOpen: configGuard });
+    }, { beforeOpen: configGuard, staleMs: 0 });
   }
 
   // Prune empty skill dirs (deepest first), then the agents/skills roots.

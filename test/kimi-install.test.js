@@ -1973,7 +1973,7 @@ test("runKimiInstall: live transaction teardown preserves a final-window directo
       }
     }), /changed during safe publication/);
     assert.ok(existsSync(movedTransaction));
-    assert.ok(readdirSync(root).some(name => name.startsWith(".muster-config-txn-") && !name.endsWith("-owned")));
+    assert.ok(readdirSync(root).some(name => name.startsWith(".muster-config-retired-")));
   } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
 });
 
@@ -1992,8 +1992,30 @@ test("runKimiInstall: recovery teardown preserves a final-window directory repla
         mkdirSync(transactionPath);
       }
     }), /transaction changed/);
-    assert.ok(existsSync(transactionPath));
     assert.ok(existsSync(movedTransaction));
+    assert.ok(readdirSync(root).some(name => name.startsWith(".muster-config-retired-")));
+  } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
+});
+
+test("runKimiUninstall: deletion transaction teardown preserves a final-window directory replacement", async () => {
+  const repo = fixtureRepo(), home = tmp();
+  let movedTransaction;
+  try {
+    const root = join(home, ".kimi-code");
+    await runKimiInstall({ home, repoRoot: repo });
+    await assert.rejects(runKimiUninstall({
+      home,
+      _beforeManagedMutation: ({ operation }) => {
+        if (operation !== "config-delete-txn-teardown-ready") return;
+        const transaction = readdirSync(root).find(name => name.startsWith(".muster-config-txn-"));
+        const transactionPath = join(root, transaction);
+        movedTransaction = `${transactionPath}-owned`;
+        renameSync(transactionPath, movedTransaction);
+        mkdirSync(transactionPath);
+      }
+    }), /changed during safe deletion/);
+    assert.ok(existsSync(movedTransaction));
+    assert.ok(readdirSync(root).some(name => name.startsWith(".muster-config-retired-")));
   } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
 });
 
@@ -2273,8 +2295,9 @@ test("runKimiInstall: live rollback stays bound to the pinned transaction direct
     }), /rollback failed|transaction swap/);
     assert.deepEqual(readFileSync(configPath), original);
     assert.equal(readFileSync(join(outside, "original"), "utf8"), "outside live sentinel\n");
-    const linkedTxn = readdirSync(root).find(name => name.startsWith(".muster-config-txn-") && !name.endsWith("-moved"));
-    rmSync(join(root, linkedTxn));
+    const retiredReplacement = readdirSync(root).find(name => name.startsWith(".muster-config-retired-"));
+    assert.ok(retiredReplacement);
+    rmSync(join(root, retiredReplacement));
     if (movedTxn) {
       const originalTxn = movedTxn.slice(0, -"-moved".length);
       renameSync(movedTxn, originalTxn);

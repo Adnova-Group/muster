@@ -33,9 +33,10 @@ async function readLock(path, maxBytes = 16 * 1024) {
     handle = await open(path, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0));
     const stat = await handle.stat();
     if (!stat.isFile() || stat.size > maxBytes) throw new Error(`unsafe Codex transaction lock: ${path}`);
+    const bytes = await handle.readFile("utf8");
     let record = null;
-    try { record = JSON.parse(await handle.readFile("utf8")); } catch { /* a partial crashed writer becomes reclaimable after expiry */ }
-    return { record, stat };
+    try { record = JSON.parse(bytes); } catch { /* a partial crashed writer becomes reclaimable after expiry */ }
+    return { record, stat, bytes };
   } finally { if (handle) await handle.close().catch(() => {}); }
 }
 
@@ -251,12 +252,16 @@ async function retirePrivateAcquisition(path, expected) {
   try {
     await rename(path, retirement.path);
   } catch (error) {
-    await removeRetirement(retirement).catch(() => {});
-    if (error.code === "ENOENT") return { removed: false, missing: true };
+    if (error.code === "ENOENT") {
+      await assertPrivateRetirementDirectory(retirement.dir);
+      await rmdir(retirement.dir);
+      return { removed: false, missing: true };
+    }
+    await rmdir(retirement.dir).catch(() => {});
     throw error;
   }
   const moved = await readLock(retirement.path);
-  if (!sameLock(moved, expected)) {
+  if (!sameLock(moved, expected) || moved.bytes !== expected.bytes) {
     await restoreOrRequireReplacement(path, retirement, moved, false);
     return { removed: false, missing: false };
   }
@@ -450,16 +455,29 @@ async function withPinnedCodexFileLock(path, callback, {
     try {
       acquisitionPath = join(dirname(path), `${basename(path)}.acquire-${acquisitionOwner}.${token}`);
       handle = await open(acquisitionPath, "wx", 0o600);
-      acquisitionExpected = { record: null, stat: await handle.stat() };
+      acquisitionExpected = { record: null, stat: await handle.stat(), bytes: "" };
       if (__afterAcquireOpenHook) await __afterAcquireOpenHook({ path, acquisitionPath });
-      await handle.writeFile(JSON.stringify({ format: 1, pid: process.pid, processIdentity, createdAt: Date.now(), token }) + "\n", "utf8");
+      const acquisitionRecord = { format: 1, pid: process.pid, processIdentity, createdAt: Date.now(), token };
+      const acquisitionBytes = JSON.stringify(acquisitionRecord) + "\n";
+      await handle.writeFile(acquisitionBytes, "utf8");
       await handle.sync();
+      acquisitionExpected = { record: acquisitionRecord, stat: await handle.stat(), bytes: acquisitionBytes };
       await handle.close();
       handle = null;
-      acquisitionExpected = await readLock(acquisitionPath);
       if (__beforeAcquirePublishHook) await __beforeAcquirePublishHook({ path, acquisitionPath });
+      const namedAcquisition = await readLock(acquisitionPath);
+      if (!sameLock(namedAcquisition, acquisitionExpected) || namedAcquisition.bytes !== acquisitionExpected.bytes) {
+        throw new Error(`Codex transaction lock acquisition stage changed: ${acquisitionPath}`);
+      }
       await link(acquisitionPath, path);
       published = true;
+      const publishedAcquisition = await readLock(path);
+      if (!sameLock(publishedAcquisition, acquisitionExpected) || publishedAcquisition.bytes !== acquisitionExpected.bytes) {
+        const result = await retireLock(path, publishedAcquisition);
+        published = false;
+        if (!result.removed && !result.missing) throw new Error(`Codex transaction lock ownership changed: ${path}`);
+        throw new Error(`Codex transaction lock acquisition stage changed: ${acquisitionPath}`);
+      }
       if (__beforeAcquireCleanupHook) await __beforeAcquireCleanupHook({ path, acquisitionPath });
       const acquisitionCleanup = await retirePrivateAcquisition(acquisitionPath, acquisitionExpected);
       if (!acquisitionCleanup.removed && !acquisitionCleanup.missing) {

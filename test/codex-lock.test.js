@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { lstat, mkdir, mkdtemp, open, readFile, rename, rm, symlink, utimes, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, open, readFile, readdir, rename, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { processStartIdentity, withCodexFileLock } from "../src/codex-lock.js";
@@ -188,6 +188,52 @@ test("withCodexFileLock preserves a replacement of its private acquisition stage
   }), /acquisition cleanup failed/);
   assert.equal(await readFile(replacementPath, "utf8"), replacement);
   await assert.rejects(lstat(lock), /ENOENT/);
+});
+
+test("withCodexFileLock never adopts a replacement after opening its acquisition stage", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-lock-open-stage-replacement-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const lock = join(tmp, "open-stage.lock");
+  let replacementPath;
+  const replacement = "replacement after open\n";
+  await assert.rejects(withCodexFileLock(lock, () => assert.fail("replacement stage must not publish"), {
+    __afterAcquireOpenHook: async ({ acquisitionPath }) => {
+      replacementPath = join(tmp, basename(acquisitionPath));
+      await rename(acquisitionPath, `${acquisitionPath}.owned`);
+      await writeFile(acquisitionPath, replacement);
+    }
+  }), /acquisition cleanup failed/);
+  assert.equal(await readFile(replacementPath, "utf8"), replacement);
+  await assert.rejects(lstat(lock), /ENOENT/);
+});
+
+test("withCodexFileLock preserves an in-place edit of an opened acquisition stage", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-lock-open-stage-edit-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const lock = join(tmp, "open-stage-edit.lock");
+  let editedPath;
+  const edited = "in-place stage edit\n";
+  await assert.rejects(withCodexFileLock(lock, () => assert.fail("edited stage must not publish"), {
+    __afterAcquireOpenHook: async ({ acquisitionPath }) => {
+      editedPath = join(tmp, basename(acquisitionPath));
+      await writeFile(acquisitionPath, edited);
+      throw new Error("injected in-place stage edit");
+    }
+  }), /acquisition cleanup failed/);
+  assert.equal(await readFile(editedPath, "utf8"), edited);
+  await assert.rejects(lstat(lock), /ENOENT/);
+});
+
+test("withCodexFileLock removes an empty retirement directory when its private stage is already absent", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-lock-missing-stage-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const lock = join(tmp, "missing-stage.lock");
+  let entered = false;
+  await withCodexFileLock(lock, () => { entered = true; }, {
+    __beforeAcquireCleanupHook: ({ acquisitionPath }) => rm(acquisitionPath)
+  });
+  assert.equal(entered, true);
+  assert.deepEqual((await readdir(tmp)).filter(name => name.startsWith(".muster-retired-")), []);
 });
 
 // The identity gap in stale reclamation: reclaimer A decides a lock is stale and

@@ -640,7 +640,6 @@ async function publishConfigBytes(dest, configPath, bytes, expected, beforeManag
     await rename(namedQuarantinePath, retirementPath);
     const retiredTransaction = await lstat(retirementPath);
     if (!sameFileIdentity(retiredTransaction, transactionInfo)) {
-      await rename(retirementPath, namedQuarantinePath);
       await directoryHandles.at(-1).sync();
       throw changed();
     }
@@ -649,7 +648,6 @@ async function publishConfigBytes(dest, configPath, bytes, expected, beforeManag
     try {
       await rmdir(retirementPath);
     } catch (error) {
-      await rename(retirementPath, namedQuarantinePath).catch(() => {});
       await directoryHandles.at(-1).sync();
       throw error;
     }
@@ -1062,6 +1060,30 @@ async function removePublishedConfig(dest, configPath, expected, beforeManagedMu
     const transactionPath = join(parentFdPath, `.muster-config-txn-${randomBytes(12).toString("hex")}`);
     await mkdir(transactionPath, { mode: 0o700 });
     transaction = await open(transactionPath, fsConstants.O_RDONLY | fsConstants.O_DIRECTORY | fsConstants.O_NOFOLLOW);
+    const transactionInfo = await transaction.stat();
+    const namedTransactionInfo = await lstat(transactionPath);
+    if (!sameFileIdentity(transactionInfo, namedTransactionInfo) || !transactionInfo.isDirectory()) {
+      throw new Error(`Kimi config.toml changed during safe deletion: ${configPath}`);
+    }
+    const retireDeletionTransaction = async () => {
+      const retirementPath = join(parentFdPath, `.muster-config-retired-${randomBytes(12).toString("hex")}`);
+      await beforeManagedMutation?.({ operation: "config-delete-txn-teardown-ready", path: configPath });
+      await rename(transactionPath, retirementPath);
+      const retiredTransaction = await lstat(retirementPath);
+      if (!sameFileIdentity(retiredTransaction, transactionInfo)) {
+        await directory.sync();
+        throw new Error(`Kimi config.toml changed during safe deletion: ${configPath}`);
+      }
+      await transaction.close();
+      transaction = null;
+      try {
+        await rmdir(retirementPath);
+      } catch (error) {
+        await directory.sync();
+        throw error;
+      }
+      await directory.sync();
+    };
     const txnFdPath = join("/proc/self/fd", String(transaction.fd));
     const receiptPath = join(txnFdPath, "receipt.json");
     const originalPath = join(txnFdPath, "original");
@@ -1090,10 +1112,7 @@ async function removePublishedConfig(dest, configPath, expected, beforeManagedMu
       await transaction.sync();
       await unlink(receiptPath);
       await transaction.sync();
-      await transaction.close();
-      transaction = null;
-      await rmdir(transactionPath);
-      await directory.sync();
+      await retireDeletionTransaction();
       throw new Error(`Kimi config.toml changed during safe deletion: ${configPath}`);
     }
     if (!retired.bytes.equals(expected.bytes)) {
@@ -1103,10 +1122,7 @@ async function removePublishedConfig(dest, configPath, expected, beforeManagedMu
       await transaction.sync();
       await unlink(receiptPath);
       await transaction.sync();
-      await transaction.close();
-      transaction = null;
-      await rmdir(transactionPath);
-      await directory.sync();
+      await retireDeletionTransaction();
       throw new Error(`Kimi config.toml changed during safe deletion: ${configPath}`);
     }
     await directory.sync();
@@ -1116,10 +1132,7 @@ async function removePublishedConfig(dest, configPath, expected, beforeManagedMu
     await transaction.sync();
     await unlink(receiptPath);
     await transaction.sync();
-    await transaction.close();
-    transaction = null;
-    await rmdir(transactionPath);
-    await directory.sync();
+    await retireDeletionTransaction();
   } finally {
     await transaction?.close().catch(() => {});
     for (const handle of handles.reverse()) await handle.close().catch(() => {});
@@ -1165,14 +1178,12 @@ async function reconcileConfigTransactions(dest, configPath, manifestPath, befor
         await rename(quarantinePath, retirementPath);
         const retiredTransaction = await lstat(retirementPath);
         if (!sameFileIdentity(retiredTransaction, transactionInfo)) {
-          await rename(retirementPath, quarantinePath);
           await directory.sync();
           throw new Error(`Kimi config.toml transaction changed: ${join(dest, name)}`);
         }
         try {
           await rmdir(retirementPath);
         } catch (error) {
-          await rename(retirementPath, quarantinePath).catch(() => {});
           await directory.sync();
           throw error;
         }

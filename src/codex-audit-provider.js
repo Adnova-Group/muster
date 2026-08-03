@@ -1,4 +1,8 @@
-import { codexSpawnAgentCall, CODEX_MULTI_AGENT_VERSIONS } from "./codex-dispatch.js";
+import {
+  codexSpawnAgentCall,
+  CODEX_MULTI_AGENT_VERSIONS,
+  resolveCodexMultiAgentVersion,
+} from "./codex-dispatch.js";
 import { codexProfileForAgentId } from "./codex.js";
 import { readCodexMultiAgentVersion } from "./codex-inventory.js";
 
@@ -84,14 +88,18 @@ function effectiveAgentProfile(id, inventory, manifestProfile) {
 export async function deriveCodexAuditCandidates(roleEntry, inventory, {
   profileForAgent = codexProfileForAgentId,
   versionForModel = readCodexMultiAgentVersion,
+  versionOverride,
 } = {}) {
   if (!Array.isArray(roleEntry?.chain)) throw new Error("deriveCodexAuditCandidates: role chain is required");
   const available = new Set(Array.isArray(inventory?.agents) ? inventory.agents : []);
   const agents = roleEntry.chain.filter(candidate => candidate?.kind === "agent");
   return Promise.all(agents.map(async candidate => {
     const profile = effectiveAgentProfile(candidate.id, inventory, profileForAgent(candidate.id));
-    const apiVersion = typeof profile.model === "string"
+    const catalogVersion = typeof profile.model === "string"
       ? await versionForModel(profile.model)
+      : null;
+    const apiVersion = typeof profile.model === "string" && (versionOverride != null || catalogVersion != null)
+      ? resolveCodexMultiAgentVersion({ override: versionOverride, catalogVersion })
       : null;
     return {
       id: candidate.id,
@@ -110,13 +118,18 @@ export async function deriveCodexAuditCandidates(roleEntry, inventory, {
 // callable in THIS active session. Packet construction happens after that
 // compatibility check, so an incompatible preference can never leak a wrong
 // v1/v2 payload onto the wire. Inline is a last resort with a stable receipt.
-export function selectCodexAuditProvider({ role, taskId, message, callableApis, candidates } = {}) {
+export function selectCodexAuditProvider({ role, taskId, message, callableApis, callableAgentIds, candidates } = {}) {
   if (typeof role !== "string" || !role) throw new Error("selectCodexAuditProvider: role is required");
   if (!Array.isArray(candidates)) throw new Error("selectCodexAuditProvider: candidates must be an array");
 
   const apis = normalizedApis(callableApis);
+  if (!Array.isArray(callableAgentIds) || callableAgentIds.some(id => typeof id !== "string" || !id)) {
+    throw new Error("selectCodexAuditProvider: callableAgentIds must be an array of active-session agent ids");
+  }
+  const activeAgents = new Set(callableAgentIds);
   const chain = candidates.map(normalizedCandidate);
-  const compatible = chain.find(candidate => candidate.available && apis.includes(candidate.apiVersion));
+  const compatible = chain.find(candidate => candidate.available && activeAgents.has(candidate.id)
+    && apis.includes(candidate.apiVersion));
 
   if (compatible) {
     const provider = {

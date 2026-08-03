@@ -17,7 +17,7 @@ const provider = (id, apiVersion, available = true) => ({
 function select(callableApis, candidates) {
   return selectCodexAuditProvider({
     role: "code-review", taskId: "audit-readability", message: "Review readability",
-    callableApis, candidates,
+    callableApis, callableAgentIds: candidates.filter(candidate => candidate.available).map(candidate => candidate.id), candidates,
   });
 }
 
@@ -83,6 +83,41 @@ test("candidate derivation enriches the full ordered chain from live inventory a
   assert.equal(select(["v2"], candidates).provider.id, "alternate");
 });
 
+test("candidate derivation applies the runtime API override before the model catalog version", async () => {
+  const roleEntry = { chain: [provider("reviewer", "v2")] };
+  const [candidate] = await deriveCodexAuditCandidates(roleEntry, { agents: ["reviewer"] }, {
+    profileForAgent: () => ({ model: "catalog-v2" }),
+    versionForModel: async () => "v2",
+    versionOverride: "v1",
+  });
+  assert.equal(candidate.apiVersion, "v1");
+  const result = selectCodexAuditProvider({
+    role: "code-review", taskId: "audit-readability", message: "Review readability",
+    callableApis: ["v1"], callableAgentIds: ["reviewer"], candidates: [candidate],
+  });
+  assert.equal(result.packet.tool, "multi_agent_v1.spawn_agent");
+});
+
+test("selection excludes providers absent from the active session registry", () => {
+  const result = selectCodexAuditProvider({
+    role: "code-review", taskId: "audit-readability", message: "Review readability",
+    callableApis: ["v2"], callableAgentIds: ["active-fallback"],
+    candidates: [provider("stale-preference", "v2"), provider("active-fallback", "v2")],
+  });
+  assert.equal(result.provider.id, "active-fallback");
+  assert.equal(result.packet.agent_type, "active-fallback");
+});
+
+test("selection degrades without emitting a packet when no compatible provider is active", () => {
+  const result = selectCodexAuditProvider({
+    role: "code-review", taskId: "audit-readability", message: "Review readability",
+    callableApis: ["v2"], callableAgentIds: [], candidates: [provider("inventory-only", "v2")],
+  });
+  assert.equal(result.mode, "inline");
+  assert.equal(result.packet, null);
+  assert.equal(result.degradation.code, "CODEX_AUDIT_NO_COMPATIBLE_PROVIDER");
+});
+
 test("candidate derivation uses the effective project profile instead of a shadowed manifest model", async () => {
   const roleEntry = { chain: [provider("reviewer", "v2")] };
   const candidates = await deriveCodexAuditCandidates(roleEntry, {
@@ -142,7 +177,7 @@ test("codex-audit-provider CLI derives candidates instead of accepting a handcra
   const { stdout } = await execFile(process.execPath, [
     new URL("../src/cli.js", import.meta.url).pathname,
     "codex-audit-provider", "--role", "code-review", "--task-id", "audit-readability",
-    "--callable-apis", "v2", "--message", "Review readability",
+    "--callable-apis", "v2", "--callable-agent-ids", "muster-reviewer", "--message", "Review readability",
   ], {
     cwd: dir,
     env: { ...process.env, HOME: home, CODEX_HOME: codexHome, PATH: `${bin}:${process.env.PATH || ""}` },
@@ -183,7 +218,7 @@ test("codex-audit-provider CLI refuses a project profile whose effective model u
   const { stdout } = await execFile(process.execPath, [
     new URL("../src/cli.js", import.meta.url).pathname,
     "codex-audit-provider", "--role", "code-review", "--task-id", "audit-readability",
-    "--callable-apis", "v2", "--message", "Review readability",
+    "--callable-apis", "v2", "--callable-agent-ids", "muster-reviewer", "--message", "Review readability",
   ], {
     cwd: dir,
     env: { ...process.env, HOME: home, CODEX_HOME: codexHome, PATH: `${bin}:${process.env.PATH || ""}` },
@@ -205,7 +240,7 @@ test("codex-audit-provider CLI refuses a project profile whose effective model u
   const untrusted = JSON.parse((await execFile(process.execPath, [
     new URL("../src/cli.js", import.meta.url).pathname,
     "codex-audit-provider", "--role", "code-review", "--task-id", "audit-readability",
-    "--callable-apis", "v2", "--message", "Review readability",
+    "--callable-apis", "v2", "--callable-agent-ids", "muster-reviewer", "--message", "Review readability",
   ], {
     cwd: dir,
     env: { ...process.env, HOME: home, CODEX_HOME: codexHome, PATH: `${bin}:${process.env.PATH || ""}` },
@@ -241,7 +276,7 @@ test("a valid complex profile with name different from filename remains an unres
   const { stdout } = await execFile(process.execPath, [
     new URL("../src/cli.js", import.meta.url).pathname,
     "codex-audit-provider", "--role", "code-review", "--task-id", "audit-readability",
-    "--callable-apis", "v2", "--message", "Review readability",
+    "--callable-apis", "v2", "--callable-agent-ids", "muster-reviewer", "--message", "Review readability",
   ], {
     cwd: dir,
     env: { ...process.env, HOME: home, CODEX_HOME: codexHome, PATH: `${bin}:${process.env.PATH || ""}` },

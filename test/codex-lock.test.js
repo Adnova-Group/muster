@@ -224,6 +224,23 @@ test("withCodexFileLock preserves an in-place edit of an opened acquisition stag
   await assert.rejects(lstat(lock), /ENOENT/);
 });
 
+test("withCodexFileLock compares private acquisition bytes without UTF-8 normalization", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-lock-stage-raw-bytes-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const lock = join(tmp, "raw-stage.lock");
+  let editedPath;
+  const edited = Buffer.from([0xff, 0xfe, 0x00]);
+  await assert.rejects(withCodexFileLock(lock, () => assert.fail("raw edited stage must not publish"), {
+    __afterAcquireOpenHook: async ({ acquisitionPath }) => {
+      editedPath = join(tmp, basename(acquisitionPath));
+      await writeFile(acquisitionPath, edited);
+      throw new Error("injected raw stage edit");
+    }
+  }), /acquisition cleanup failed/);
+  assert.deepEqual(await readFile(editedPath), edited);
+  await assert.rejects(lstat(lock), /ENOENT/);
+});
+
 test("withCodexFileLock removes an empty retirement directory when its private stage is already absent", async t => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-lock-missing-stage-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));

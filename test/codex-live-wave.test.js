@@ -318,6 +318,29 @@ test("runCodexWave private tmpfs hides host-temp and sibling-worktree paths whil
   assert.equal(await readFile(join(fixture.worktreeA, "result.txt"), "utf8"), "isolated");
 });
 
+test("runCodexWave supports packed refs when reflogs are disabled and absent", async t => {
+  const fixture = await waveFixture(t);
+  await git(fixture.repo, "config", "core.logAllRefUpdates", "false");
+  await git(fixture.repo, "pack-refs", "--all", "--prune");
+  await rm(join(fixture.repo, ".git", "logs"), { recursive: true, force: true });
+  const configured = member("a", fixture.worktreeA);
+  configured.prompt = JSON.stringify({
+    value: "packed-refs",
+    delayMs: 0,
+    commitDiscoveryPath: "packed-ref-proof.txt",
+    commitDiscoveryText: "packed ref commit\n",
+  });
+
+  await runCodexWave({
+    members: [configured],
+    codexCommand: fixture.codex,
+    repositoryRoot: fixture.repo,
+    baseSha: fixture.baseSha,
+  });
+
+  assert.equal((await git(fixture.worktreeA, "show", "HEAD:packed-ref-proof.txt")).stdout, "packed ref commit\n");
+});
+
 test("runCodexWave resumes an authenticated persistent thread inside the same hermetic boundary", async t => {
   const fixture = await waveFixture(t);
   const initial = await runCodexWave({

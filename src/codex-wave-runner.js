@@ -638,12 +638,25 @@ function isolatedCodexHomeBinds(home) {
   ];
 }
 
-function isolatedWorktreeGitBinds(authority, worktree) {
+async function optionalGitMetadataBind(path, { directory = false, readOnly = false } = {}) {
+  let info;
+  try { info = await lstat(path); }
+  catch (error) { if (error.code === "ENOENT") return []; throw error; }
+  if (info.isSymbolicLink() || (directory ? !info.isDirectory() : !info.isFile())) {
+    throw new Error(`runCodexWave: optional Git metadata has an unsafe type at ${JSON.stringify(path)}`);
+  }
+  return [{ source: path, destination: path, ...(readOnly ? { readOnly: true } : {}) }];
+}
+
+async function isolatedWorktreeGitBinds(authority, worktree) {
+  const logs = await optionalGitMetadataBind(join(authority.commonDir, "logs"), { directory: true });
+  const packedRefs = await optionalGitMetadataBind(join(authority.commonDir, "packed-refs"), { readOnly: true });
   return [
     { source: worktree.gitDir, destination: worktree.gitDir },
     { source: join(authority.commonDir, "objects"), destination: join(authority.commonDir, "objects") },
     { source: join(authority.commonDir, "refs"), destination: join(authority.commonDir, "refs") },
-    { source: join(authority.commonDir, "logs"), destination: join(authority.commonDir, "logs") },
+    ...logs,
+    ...packedRefs,
     { source: join(authority.commonDir, "config"), destination: join(authority.commonDir, "config"), readOnly: true },
     { source: join(authority.commonDir, "HEAD"), destination: join(authority.commonDir, "HEAD"), readOnly: true },
   ];
@@ -1152,7 +1165,7 @@ async function runProcessWave({
             stdinText: call.stdin,
             maskedPaths: fixLoopStore.maskedRoots,
             bindPaths: [
-              ...isolatedWorktreeGitBinds(authority, revalidated),
+              ...await isolatedWorktreeGitBinds(authority, revalidated),
               ...isolatedCodexHomeBinds(isolatedHome),
             ],
           });
@@ -1343,7 +1356,7 @@ export async function runCodexWaveContinuation({
       stdinText: call.stdin,
       maskedPaths: store.maskedRoots,
       bindPaths: [
-        ...isolatedWorktreeGitBinds(authority, revalidated),
+        ...await isolatedWorktreeGitBinds(authority, revalidated),
         ...isolatedCodexHomeBinds(isolatedHome),
       ],
   });

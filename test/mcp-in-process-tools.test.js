@@ -8,7 +8,7 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
 import { computeSprintWaves } from "../src/sprint-waves.js";
-import { evaluateInProcessTool, invokeInProcessTool } from "../mcp/in-process-tools.mjs";
+import { evaluateInProcessTool, invokeInProcessTool, IN_PROCESS_TOOL_NAMES } from "../mcp/in-process-tools.mjs";
 
 const execFileP = promisify(execFile);
 const rootDir = fileURLToPath(new URL("../", import.meta.url));
@@ -325,4 +325,54 @@ test("tally schema infrastructure failures never disclose filesystem paths", asy
     text: "muster: internal error: verdict schema unavailable",
   });
   assert.doesNotMatch(result.text, /ENOENT|nonexistent|private|deployment|verdict\.schema\.json/);
+});
+
+test("the exported pure-tool allowlist matches the documented twelve exactly", async () => {
+  // IN_PROCESS_TOOL_NAMES (the PURE_TOOLS source of truth) was previously never
+  // read by any test -- nothing caught the allowlist and docs/mcp-in-process-pure-tools.md's
+  // inventory sentence drifting apart. Parse that exact sentence and require the two
+  // to name the same twelve tools, and that the doc's named mutating exception
+  // (muster_backlog_publish) never joins the allowlist.
+  const docSource = await readFile(join(rootDir, "docs", "mcp-in-process-pure-tools.md"), "utf8");
+  const marker = "Twelve deterministic, read-only MCP operations";
+  const start = docSource.indexOf(marker);
+  assert.ok(start >= 0, "doc must still open with the twelve-tool inventory sentence");
+  const sentenceEnd = docSource.indexOf(".", docSource.indexOf(":", start));
+  const sentence = docSource.slice(start, sentenceEnd);
+  const verbs = [...sentence.matchAll(/`([^`]+)`/g)]
+    .map(([, verb]) => verb)
+    .filter((verb) => verb !== "src/cli.js");
+  assert.equal(verbs.length, 12, `expected twelve documented verbs, found ${JSON.stringify(verbs)}`);
+  const documentedNames = verbs.map((verb) => `muster_${verb.replace(/-/g, "_")}`).sort();
+  assert.deepEqual(
+    [...IN_PROCESS_TOOL_NAMES].sort(),
+    documentedNames,
+    "PURE_TOOLS allowlist must stay in sync with the documented twelve",
+  );
+  assert.ok(
+    !IN_PROCESS_TOOL_NAMES.includes("muster_backlog_publish"),
+    "the documented mutating exception must never join the in-process allowlist",
+  );
+});
+
+test("the in-process dispatcher and worker never reintroduce the removed child-process or temp-file transport", async () => {
+  const [dispatcherSource, workerSource] = await Promise.all([
+    readFile(new URL("../mcp/in-process-tools.mjs", import.meta.url), "utf8"),
+    readFile(new URL("../mcp/in-process-worker.mjs", import.meta.url), "utf8"),
+  ]);
+  for (const [label, source] of [
+    ["mcp/in-process-tools.mjs", dispatcherSource],
+    ["mcp/in-process-worker.mjs", workerSource],
+  ]) {
+    assert.doesNotMatch(
+      source,
+      /node:child_process|execFile|\bspawn\(/,
+      `${label} must not import or call the process boundary it replaced`,
+    );
+    assert.doesNotMatch(
+      source,
+      /mkdtemp|node:os\b|tmpdir\(/,
+      `${label} must not reconstruct the removed temporary-file transport`,
+    );
+  }
 });

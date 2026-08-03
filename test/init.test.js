@@ -840,6 +840,23 @@ test("project learning reports bounded parsing and depth as explicit incomplete 
   assert.deepEqual(await initializeProject(deep), depthInit);
 });
 
+test("project learning records a manifest just below the depth limit as complete", async () => {
+  const dir = await tmp();
+  const shallow = join(dir, "one", "two", "three", "four");
+  await mkdir(shallow, { recursive: true });
+  const toml = "[package]\n";
+  await writeFile(join(shallow, "Cargo.toml"), toml);
+  const initialized = await initializeProject(dir);
+  const profile = await readProfile(dir);
+  assert.deepEqual(profile.facts.manifests, [{
+    bytes: Buffer.byteLength(toml),
+    path: "one/two/three/four/Cargo.toml",
+    sha256: sha(toml),
+  }]);
+  assert.deepEqual(profile.facts.learning, { limitations: [], status: "complete" });
+  assert.deepEqual(await initializeProject(dir), initialized);
+});
+
 test("project learning accepts contained metadata paths longer than owned-artifact paths", async () => {
   const dir = await tmp();
   const parts = ["a".repeat(100), "b".repeat(100), "c".repeat(90)];

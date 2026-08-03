@@ -1,5 +1,5 @@
 import { constants as fsConstants } from "node:fs";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { link, lstat, mkdir, open, readFile, readdir, realpath, rename, rmdir, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
@@ -564,6 +564,25 @@ export function stripPermissionRules(existing, { created }) {
 
 const KIMI_CONFIG_MAX_BYTES = 16 * 1024 * 1024;
 
+function sha256(bytes) {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+async function syncDirectory(path) {
+  const handle = await open(path, fsConstants.O_RDONLY | fsConstants.O_DIRECTORY | fsConstants.O_NOFOLLOW);
+  try { await handle.sync(); } finally { await handle.close(); }
+}
+
+async function managedFileSnapshot(dest, path, maxBytes, label) {
+  await assertSafeManagedFiles(dest, [path]);
+  const parent = await captureManagedParentIdentity(dest, path);
+  let info;
+  try { info = await lstat(path); }
+  catch (error) { if (error.code === "ENOENT") return { bytes: null, info: null, parent }; throw error; }
+  const { bytes } = await readNoFollowRegular(path, { maxBytes, label, expectedInfo: info });
+  return { bytes, info, parent };
+}
+
 async function configSnapshot(dest, configPath) {
   await assertSafeManagedFiles(dest, [configPath]);
   const parent = await captureManagedParentIdentity(dest, configPath);
@@ -595,13 +614,38 @@ async function publishConfigBytes(dest, configPath, bytes, expected, beforeManag
   const parentIdentity = expected?.parent ?? await captureManagedParentIdentity(dest, configPath);
   const temporary = join(dirname(configPath), `.muster-config-tmp-${process.pid}-${randomBytes(8).toString("hex")}`);
   let temporaryHandle, stagedInfo;
+  let receiptData;
   const directoryHandles = [];
   let stagedPath, quarantinePath, receiptPath, originalPath, failedPath;
+  let manifestOriginalPath, manifestFailedPath, manifestPublishedInfo, manifestPublishedBytes;
   let retired = false, published = false, publishedInfo = null;
   let handedOff = false;
 
   const changed = () => new Error(`Kimi config.toml changed during safe publication: ${configPath}`);
+  const restoreManifest = async () => {
+    if (!manifestPublishedInfo) return;
+    const manifestPath = commitReceipt.path;
+    await assertSafeManagedFiles(dest, [manifestPath]);
+    await rename(manifestPath, manifestFailedPath);
+    await beforeManagedMutation?.({ operation: "manifest-rollback-retired", path: manifestPath });
+    const moved = await readNoFollowRegular(manifestFailedPath, {
+      maxBytes: 1024 * 1024,
+      label: `failed Kimi manifest publication at ${manifestFailedPath}`,
+      expectedInfo: manifestPublishedInfo
+    });
+    if (!moved.bytes.equals(manifestPublishedBytes)) {
+      await link(manifestFailedPath, manifestPath);
+      await unlink(manifestFailedPath);
+      throw new Error(`Kimi manifest changed during config rollback: ${manifestPath}`);
+    }
+    if (commitReceipt.info) await link(manifestOriginalPath, manifestPath);
+    await unlink(manifestFailedPath);
+    await syncDirectory(dirname(manifestPath));
+    await syncDirectory(quarantinePath);
+    manifestPublishedInfo = null;
+  };
   const restore = async () => {
+    await restoreManifest();
     const sourcePath = join("/proc/self/fd", String(directoryHandles.at(-1).fd), basename(configPath));
     if (published) {
       await rename(sourcePath, failedPath);
@@ -617,8 +661,11 @@ async function publishConfigBytes(dest, configPath, bytes, expected, beforeManag
       await unlink(originalPath);
     }
     if (published) await unlink(failedPath);
+    if (manifestOriginalPath) await unlink(manifestOriginalPath).catch(error => { if (error.code !== "ENOENT") throw error; });
     if (receiptPath) await unlink(receiptPath);
+    await syncDirectory(quarantinePath);
     await rmdir(quarantinePath);
+    await directoryHandles.at(-1).sync();
   };
   const validateRetired = async () => {
     if (!retired) return;
@@ -687,15 +734,31 @@ async function publishConfigBytes(dest, configPath, bytes, expected, beforeManag
     receiptPath = join(quarantinePath, "receipt.json");
     originalPath = join(quarantinePath, "original");
     failedPath = join(quarantinePath, "failed-publication");
-    await atomicWrite(receiptPath, JSON.stringify({
-      format: 1,
+    manifestOriginalPath = join(quarantinePath, "manifest-original");
+    manifestFailedPath = join(quarantinePath, "failed-manifest");
+    if (commitReceipt?.info) {
+      await link(commitReceipt.path, manifestOriginalPath);
+      const originalManifest = await readNoFollowRegular(manifestOriginalPath, {
+        maxBytes: 1024 * 1024,
+        label: `original Kimi manifest at ${manifestOriginalPath}`,
+        expectedInfo: commitReceipt.info
+      });
+      if (!originalManifest.bytes.equals(commitReceipt.bytes)) throw changed();
+    }
+    receiptData = {
+      format: 2,
       target: basename(configPath),
       expected: expected ? { dev: String(expected.info.dev), ino: String(expected.info.ino) } : null,
       staged: { name: basename(temporary), dev: String(stagedInfo.dev), ino: String(stagedInfo.ino) },
+      stagedSha256: sha256(bytes),
       manifestBefore: commitReceipt?.info
         ? { dev: String(commitReceipt.info.dev), ino: String(commitReceipt.info.ino) }
         : commitReceipt ? null : undefined
-    }) + "\n", { fsync: true, fsyncDir: true, mode: 0o600 });
+    };
+    await atomicWrite(receiptPath, JSON.stringify(receiptData) + "\n", { fsync: true, fsyncDir: true, mode: 0o600 });
+    // Persist the transaction directory entry and its receipt before the first
+    // destructive rename, then persist both sides of that rename.
+    await directory.sync();
     if (expected) {
       await rename(sourcePath, originalPath);
       retired = true;
@@ -710,6 +773,8 @@ async function publishConfigBytes(dest, configPath, bytes, expected, beforeManag
       try { await lstat(sourcePath); throw changed(); }
       catch (error) { if (error.code !== "ENOENT") throw error; }
     }
+    await directory.sync();
+    await syncDirectory(quarantinePath);
     await beforeManagedMutation?.({ operation: "config-retired", path: configPath });
     await validateRetired();
 
@@ -761,13 +826,34 @@ async function publishConfigBytes(dest, configPath, bytes, expected, beforeManag
     validate: validatePublished,
     commit: async () => {
       if (settled) return;
+      await validatePublished();
+      await validateRetired();
+      // Past this point the config and durable manifest agree. Cleanup is
+      // replayable by reconciliation, but rollback state must remain open for
+      // either validation failure above.
+      settled = true;
       try {
-        await validateRetired();
         if (retired) await unlink(originalPath);
+        if (manifestOriginalPath) await unlink(manifestOriginalPath).catch(error => { if (error.code !== "ENOENT") throw error; });
         await unlink(receiptPath);
+        await beforeManagedMutation?.({ operation: "config-cleanup-receipt-cleared", path: configPath });
+        await syncDirectory(quarantinePath);
         await rmdir(quarantinePath);
-        settled = true;
+        await directoryHandles.at(-1).sync();
       } finally { await closeDirectories(); }
+    },
+    recordManifest: (info, publishedBytes) => {
+      manifestPublishedInfo = info;
+      manifestPublishedBytes = publishedBytes;
+    },
+    recordManifestIntent: async (info, publishedBytes) => {
+      receiptData.manifestPublished = {
+        dev: String(info.dev), ino: String(info.ino), sha256: sha256(publishedBytes)
+      };
+      await atomicWrite(receiptPath, JSON.stringify(receiptData) + "\n", {
+        fsync: true, fsyncDir: true, mode: 0o600
+      });
+      await directoryHandles.at(-1).sync();
     },
     rollback: async () => {
       if (settled) return;
@@ -814,14 +900,27 @@ async function reconcileConfigTransactions(dest, configPath, manifestPath, befor
         throw new Error(`Malformed Kimi config.toml transaction: ${join(dest, name)}`);
       }
       const receiptPath = join(quarantinePath, "receipt.json");
-      const receipt = JSON.parse((await readNoFollowRegular(receiptPath, {
-        maxBytes: 4096,
-        label: `Kimi config.toml transaction receipt at ${receiptPath}`
-      })).bytes.toString("utf8"));
-      if (receipt?.format !== 1 || receipt.target !== basename(configPath)
+      let receiptBytes;
+      try {
+        receiptBytes = (await readNoFollowRegular(receiptPath, {
+          maxBytes: 4096,
+          label: `Kimi config.toml transaction receipt at ${receiptPath}`
+        })).bytes;
+      } catch (error) {
+        if (error.code !== "ENOENT") throw error;
+        if ((await readdir(quarantinePath)).length !== 0) {
+          throw new Error(`Malformed Kimi config.toml transaction without receipt: ${join(dest, name)}`);
+        }
+        await rmdir(quarantinePath);
+        await directory.sync();
+        continue;
+      }
+      const receipt = JSON.parse(receiptBytes.toString("utf8"));
+      if (receipt?.format !== 2 || receipt.target !== basename(configPath)
           || !receipt.staged || typeof receipt.staged.name !== "string"
           || !receipt.staged.name.startsWith(".muster-config-tmp-")
-          || receipt.staged.name.includes(sep)) {
+          || receipt.staged.name.includes(sep)
+          || !/^[0-9a-f]{64}$/.test(receipt.stagedSha256)) {
         throw new Error(`Malformed Kimi config.toml transaction receipt: ${join(dest, name)}`);
       }
       const matches = (info, identity) => info && identity
@@ -833,16 +932,75 @@ async function reconcileConfigTransactions(dest, configPath, manifestPath, befor
       const sourcePath = join(parentFdPath, basename(configPath));
       const originalPath = join(quarantinePath, "original");
       const failedPath = join(quarantinePath, "failed-publication");
+      const manifestOriginalPath = join(quarantinePath, "manifest-original");
+      const manifestFailedPath = join(quarantinePath, "failed-manifest");
       const stagedPath = join(parentFdPath, receipt.staged.name);
       let source = await statOrNull(sourcePath);
       const original = await statOrNull(originalPath);
-      const manifest = await statOrNull(manifestPath);
-      const committed = receipt.manifestBefore !== undefined && (receipt.manifestBefore === null
-        ? !!manifest
-        : !!manifest && !matches(manifest, receipt.manifestBefore));
+      let manifest = await statOrNull(manifestPath);
+      let failedManifest = await statOrNull(manifestFailedPath);
+      if (!manifest && receipt.manifestPublished && matches(failedManifest, receipt.manifestPublished)) {
+        const failedBytes = await readNoFollowRegular(manifestFailedPath, {
+          maxBytes: 1024 * 1024,
+          label: `failed Kimi manifest publication at ${manifestFailedPath}`,
+          expectedInfo: failedManifest
+        });
+        if (sha256(failedBytes.bytes) !== receipt.manifestPublished.sha256) {
+          throw new Error(`Kimi manifest changed during config recovery: ${manifestPath}`);
+        }
+        if (receipt.manifestBefore) {
+          const manifestOriginal = await statOrNull(manifestOriginalPath);
+          if (!matches(manifestOriginal, receipt.manifestBefore)) {
+            throw new Error(`Kimi config.toml recovery lost its original manifest: ${manifestPath}`);
+          }
+          await link(manifestOriginalPath, manifestPath);
+          manifest = await statOrNull(manifestPath);
+        }
+        await syncDirectory(dirname(manifestPath));
+      }
+      let committed = receipt.manifestPublished && matches(manifest, receipt.manifestPublished);
+
+      let configBytesValid = false;
+      if (matches(source, receipt.staged)) {
+        const current = await readNoFollowRegular(sourcePath, {
+          maxBytes: KIMI_CONFIG_MAX_BYTES,
+          label: `published Kimi config.toml at ${configPath}`,
+          expectedInfo: source
+        });
+        configBytesValid = sha256(current.bytes) === receipt.stagedSha256;
+      }
+
+      if (committed && !configBytesValid) {
+        await rename(manifestPath, manifestFailedPath);
+        const failedManifest = await readNoFollowRegular(manifestFailedPath, {
+          maxBytes: 1024 * 1024,
+          label: `failed Kimi manifest publication at ${manifestFailedPath}`,
+          expectedInfo: manifest
+        });
+        if (sha256(failedManifest.bytes) !== receipt.manifestPublished.sha256) {
+          await link(manifestFailedPath, manifestPath);
+          await unlink(manifestFailedPath);
+          throw new Error(`Kimi manifest changed during config recovery: ${manifestPath}`);
+        }
+        if (receipt.manifestBefore) {
+          const manifestOriginal = await statOrNull(manifestOriginalPath);
+          if (!matches(manifestOriginal, receipt.manifestBefore)) {
+            throw new Error(`Kimi config.toml recovery lost its original manifest: ${manifestPath}`);
+          }
+          await link(manifestOriginalPath, manifestPath);
+        }
+        await syncDirectory(dirname(manifestPath));
+        await syncDirectory(quarantinePath);
+        manifest = await statOrNull(manifestPath);
+        committed = false;
+      } else if (receipt.manifestPublished && manifest
+          && !matches(manifest, receipt.manifestPublished)
+          && !(receipt.manifestBefore && matches(manifest, receipt.manifestBefore))) {
+        throw new Error(`Kimi manifest transaction conflicts with ${manifestPath}`);
+      }
 
       if (committed) {
-        if (!matches(source, receipt.staged)) throw new Error(`Kimi config.toml committed transaction conflicts with ${configPath}`);
+        if (!configBytesValid) throw new Error(`Kimi config.toml committed transaction conflicts with ${configPath}`);
       } else {
         const alreadyRestored = receipt.expected && matches(source, receipt.expected);
         if (matches(source, receipt.staged)) {
@@ -867,7 +1025,12 @@ async function reconcileConfigTransactions(dest, configPath, manifestPath, befor
       if (staged && !matches(staged, receipt.staged)) throw new Error(`Kimi config.toml staged transaction changed: ${stagedPath}`);
       if (staged) await unlink(stagedPath);
       if (original) await unlink(originalPath);
+      const manifestOriginal = await statOrNull(manifestOriginalPath);
+      if (manifestOriginal) await unlink(manifestOriginalPath);
+      failedManifest = await statOrNull(manifestFailedPath);
+      if (failedManifest) await unlink(manifestFailedPath);
       await unlink(receiptPath);
+      await syncDirectory(quarantinePath);
       await rmdir(quarantinePath);
       await directory.sync();
     } finally { await directory.close(); }
@@ -1064,7 +1227,6 @@ export async function runKimiInstall({
 
   // Prune stale files a prior install owned but this one no longer ships.
   const manifestPath = join(dest, "muster", KIMI_MANIFEST);
-  await reconcileConfigTransactions(dest, configPath, manifestPath, _beforeManagedMutation);
   await reconcileOrphanedManifestQuarantine(dest, manifestPath);
   const previous = await readManifest(manifestPath, dest);
   const reconciliation = previous
@@ -1164,17 +1326,23 @@ export async function runKimiInstall({
   let configCreated;
   const configGuard = () => assertSafeManagedFiles(dest, [configPath]);
   await configGuard();
+  await _beforeManagedMutation?.({ operation: "config-lock-ready", path: configPath });
   await withFileMutationLock(configPath, async () => {
     await configGuard();
+    await reconcileConfigTransactions(dest, configPath, manifestPath, _beforeManagedMutation);
     const original = await configSnapshot(dest, configPath);
     const mergedConfig = mergePermissionRules(original ? original.bytes.toString("utf8") : null);
     // `created` is sticky across reinstalls: once muster made the file, a later
     // merge (file now present) must not flip the receipt, or uninstall would
     // leave an empty config.toml husk behind.
-    configCreated = mergedConfig.created || previous?.permissionRules?.created === true;
-    let manifestBefore;
-    try { manifestBefore = await lstat(manifestPath); }
-    catch (error) { if (error.code !== "ENOENT") throw error; }
+    const lockedPrevious = await readManifest(manifestPath, dest);
+    configCreated = mergedConfig.created || lockedPrevious?.permissionRules?.created === true;
+    const manifestBefore = await managedFileSnapshot(
+      dest,
+      manifestPath,
+      1024 * 1024,
+      `Kimi installation manifest at ${manifestPath}`
+    );
     const published = await publishConfigBytes(
       dest,
       configPath,
@@ -1182,19 +1350,33 @@ export async function runKimiInstall({
       original,
       _beforeManagedMutation,
       "publish",
-      { info: manifestBefore ?? null }
+      { path: manifestPath, ...manifestBefore }
     );
-    let manifestPublished = false;
+    const manifestValue = {
+      format: 1, owner: "muster", packageVersion,
+      agents: agents.map(a => a.rel), skills: skills.map(s => s.rel), verbs: verbs.map(v => v.rel),
+      permissionRules: { created: configCreated }
+    };
+    const manifestBytes = Buffer.from(JSON.stringify(manifestValue, null, 2) + "\n");
     try {
-      await atomicWriteJson(manifestPath, {
-        format: 1, owner: "muster", packageVersion,
-        agents: agents.map(a => a.rel), skills: skills.map(s => s.rel), verbs: verbs.map(v => v.rel),
-        permissionRules: { created: configCreated }
-      }, dest, _beforeManagedMutation, { beforeCommit: published.validate });
-      manifestPublished = true;
+      const manifestInfo = await atomicWriteJson(
+        manifestPath,
+        manifestValue,
+        dest,
+        _beforeManagedMutation,
+        {
+          fsync: true,
+          fsyncDir: true,
+          beforeCommit: async info => {
+            await published.validate();
+            await published.recordManifestIntent(info, manifestBytes);
+          }
+        }
+      );
+      published.recordManifest(manifestInfo, manifestBytes);
+      await _beforeManagedMutation?.({ operation: "manifest-published", path: manifestPath });
       await published.commit();
     } catch (publicationError) {
-      if (manifestPublished) throw publicationError;
       try {
         await rollbackConfig(dest, configPath, original, published, _beforeManagedMutation);
       } catch (rollbackError) {
@@ -1535,7 +1717,7 @@ async function atomicWriteJson(
       if (!publishedIdentity.isFile() || publishedIdentity.isSymbolicLink()) {
         throw new Error(`Refusing to publish a non-ordinary Kimi file: ${temporary}`);
       }
-      await beforeCommit?.();
+      await beforeCommit?.(publishedIdentity);
     }
   });
   return publishedIdentity;

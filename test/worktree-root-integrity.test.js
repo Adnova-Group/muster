@@ -6,6 +6,7 @@ import { mkdir, readFile, rm, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpProject } from "../test-support/helpers.js";
+import { runWithWorktreeIntegrity } from "../scripts/run-tests-with-worktree-integrity.mjs";
 
 const exec = promisify(execFile);
 const script = fileURLToPath(new URL("../scripts/check-worktree-root-integrity.mjs", import.meta.url));
@@ -39,7 +40,7 @@ test("worktree-root capture and verify preserve the exact repository identity", 
   assert.equal(result.topLevel, cwd);
   const recorded = JSON.parse(await readFile(snapshot, "utf8"));
   assert.equal(recorded.topLevel, cwd);
-  assert.deepEqual(recorded.trackedFiles, ["tracked.txt"]);
+  assert.deepEqual(recorded.trackedFiles, [Buffer.from("tracked.txt").toString("base64")]);
 });
 
 test("capture fails closed on core.worktree redirection and missing tracked files", async () => {
@@ -62,7 +63,7 @@ test("verify rejects top-level, config-byte, tracked-set, and linked-worktree dr
   const config = await fixture();
   await capture(config.cwd, config.snapshot);
   await git(config.cwd, "config", "--local", "muster.integrity-test", "changed");
-  await assert.rejects(() => verify(config.cwd, config.snapshot), /Git config bytes changed/i);
+  await assert.rejects(() => verify(config.cwd, config.snapshot), /common Git config bytes.*changed/i);
 
   const tracked = await fixture();
   await capture(tracked.cwd, tracked.snapshot);
@@ -82,12 +83,37 @@ test("verify rejects top-level, config-byte, tracked-set, and linked-worktree dr
   }
 });
 
-test("CI snapshots repository integrity before and verifies it after the full test gate", async () => {
+test("worktree-scoped config is bound and core.worktree is rejected", async () => {
+  const scoped = await fixture();
+  await git(scoped.cwd, "config", "extensions.worktreeConfig", "true");
+  await capture(scoped.cwd, scoped.snapshot);
+  await git(scoped.cwd, "config", "--worktree", "muster.integrity-test", "changed");
+  await assert.rejects(() => verify(scoped.cwd, scoped.snapshot), /worktree Git config bytes.*changed/i);
+
+  const redirected = await fixture();
+  await git(redirected.cwd, "config", "extensions.worktreeConfig", "true");
+  await git(redirected.cwd, "config", "--worktree", "core.worktree", "..");
+  await assert.rejects(() => capture(redirected.cwd, redirected.snapshot), /core\.worktree/i);
+});
+
+test("the full-gate wrapper retains its baseline in memory against recapture attempts", async () => {
+  const { cwd } = await fixture();
+  await assert.rejects(
+    () => runWithWorktreeIntegrity({
+      cwd,
+      runGate: async () => {
+        await git(cwd, "config", "--local", "muster.integrity-test", "changed");
+        await writeFile(join(cwd, "attacker-snapshot.json"), "{}\n");
+        return { status: 0, signal: null };
+      },
+    }),
+    /common Git config bytes.*changed/i,
+  );
+});
+
+test("CI runs the complete npm test gate inside one in-memory integrity wrapper", async () => {
   const workflow = await readFile(ci, "utf8");
-  const captureAt = workflow.indexOf("check-worktree-root-integrity.mjs capture");
-  const testAt = workflow.indexOf("npm test");
-  const verifyAt = workflow.indexOf("check-worktree-root-integrity.mjs verify");
-  assert.ok(captureAt >= 0 && captureAt < testAt, "CI must capture integrity before npm test");
-  assert.ok(verifyAt > testAt, "CI must verify integrity after npm test");
-  assert.match(workflow.slice(testAt, verifyAt + 200), /if:\s*always\(\)/i);
+  assert.match(workflow, /node scripts\/run-tests-with-worktree-integrity\.mjs/);
+  assert.equal(workflow.includes("check-worktree-root-integrity.mjs capture"), false);
+  assert.equal(workflow.includes("check-worktree-root-integrity.mjs verify"), false);
 });

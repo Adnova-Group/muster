@@ -20,6 +20,12 @@ const expectedPhases = [
   "runCodexDoctor"
 ];
 
+// Mutant-kill receipt (2026-08-03): add 13 padding lines to inspectHookScope,
+// then run this file. The guard failed with `inspectHookScope spans 151 lines;
+// maximum is 150` (2 pass, 1 fail). Removing the padding produced 3 pass /
+// 0 fail. `sha256sum src/codex-doctor.js` was byte-identical before and after:
+// 25fee5a32f61268f1e9e0a940139bf5361fd0efb46f1bbc937d43fdf39dbad8a.
+
 test("Codex doctor stays decomposed into named phases of at most 150 lines", async () => {
   const source = await readFile(doctorSourceUrl, "utf8");
   const starts = [...source.matchAll(/^(?:export )?async function ([A-Za-z0-9_]+)\(|^function ([A-Za-z0-9_]+)\(/gm)]
@@ -53,12 +59,23 @@ test("decomposed doctor phases preserve the public check ordering", async () => 
     mcpRunner: async () => ({ initialized: true, tools: [], toolCallOk: true })
   });
 
-  const names = report.checks.map(check => check.name);
-  const landmarks = [
-    "codex-cli", "codex-path-shadow", "codex-plugin", "codex-agents",
-    "codex-runtime", "codex-managed-scopes", "codex-thread-limits",
-    "codex-hook-state", "codex-mcp-handshake", "codex-hooks",
-    "codex-hook-trust", "codex-policy-limitations"
-  ];
-  assert.deepEqual(names.filter(name => landmarks.includes(name)), landmarks);
+  assert.deepEqual(report.checks.map(check => check.name), [
+    "codex-cli",
+    "codex-config-retirements",
+    "codex-path-shadow",
+    "codex-plugin",
+    "codex-agents",
+    "codex-runtime",
+    "codex-managed-scopes",
+    "codex-thread-limits",
+    "codex-hook-state",
+    "codex-mcp-handshake",
+    "codex-install-generation",
+    "codex-hooks",
+    "codex-hooks-overlap",
+    "codex-hook-interpreter",
+    "codex-hook-trust",
+    "codex-plugin-cache-hooks",
+    "codex-policy-limitations"
+  ]);
 });

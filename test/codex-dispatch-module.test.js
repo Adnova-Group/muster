@@ -22,3 +22,79 @@ test("the explicit leaf-dispatch module contains no production-wave fallback sel
   assert.doesNotMatch(source, /disjoint write sets[\s\S]{0,160}spawn_agent/i);
   assert.doesNotMatch(source, /resolveCodexWaveDispatch|resolveCodexDispatchLane/);
 });
+
+// finish-wave-dispatch-split item: PR #169 split Codex-specific logic out of
+// src/wave-dispatch.js into src/codex-dispatch.js, but duplicate definitions of the
+// spawn_agent packet builders (constants, resolver, packet builders, fail-closed
+// guard) remained in wave-dispatch.js -- dead weight nothing imported from there
+// (every real consumer -- src/cli.js, src/codex-audit-provider.js, and every
+// directly-relevant test -- already pulled these from codex-dispatch.js). Structural
+// assertion (a): those definitions are gone from wave-dispatch.js, not just
+// shadowed. Anchored to `export const/function NAME` so this does not trip on the
+// legitimate prose mention of codexSpawnAgentCall in resolveCodexDispatchLane's own
+// comment (wave-dispatch.js still correctly points readers at the canonical name).
+test("wave-dispatch.js carries no spawn_agent packet-builder duplicates (canonical only in codex-dispatch.js)", async () => {
+  const source = await readFile(new URL("../src/wave-dispatch.js", import.meta.url), "utf8");
+  for (const name of [
+    "CODEX_MULTI_AGENT_VERSIONS",
+    "resolveCodexMultiAgentVersion",
+    "codexSpawnAgentCall",
+    "CODEX_WAIT_TIMEOUT_MS",
+    "codexWaitAgentCall",
+    "assertCodexSpawnAgentAccepted",
+  ]) {
+    assert.doesNotMatch(
+      source,
+      new RegExp(`export (?:const|function) ${name}\\b`),
+      `wave-dispatch.js must not (re)define ${name} -- codex-dispatch.js is its one canonical home`
+    );
+  }
+  const wave = await import("../src/wave-dispatch.js");
+  for (const name of [
+    "CODEX_MULTI_AGENT_VERSIONS",
+    "resolveCodexMultiAgentVersion",
+    "codexSpawnAgentCall",
+    "CODEX_WAIT_TIMEOUT_MS",
+    "codexWaitAgentCall",
+    "assertCodexSpawnAgentAccepted",
+  ]) {
+    assert.equal(wave[name], undefined, `wave-dispatch.js must not export ${name}`);
+  }
+});
+
+// Structural assertion (b): behavior/import-path equivalence for the symbols that DO
+// stay reachable from both modules. codex-dispatch.js's codexExecCall/
+// interpretCodexExecExit/codexReviewCall used to be a second, independently
+// reimplemented (and hardening-drifted -- missing the production feature fence
+// wave-dispatch.js's copy grew) set of definitions with no consumer of their own;
+// they are now pure re-exports of the one canonical, production-consumed
+// (codex-wave-runner.js, test/codex-exec-lane.test.js) implementation in
+// wave-dispatch.js. Reference identity (not just deepEqual output) proves there is
+// exactly one function object behind both import paths -- a re-export, never a copy.
+test("codex-dispatch.js re-exports the exec-lane/review builders by identity, never a second implementation", async () => {
+  const codex = await import("../src/codex-dispatch.js");
+  const wave = await import("../src/wave-dispatch.js");
+  for (const name of ["codexExecCall", "interpretCodexExecExit", "codexReviewCall"]) {
+    assert.equal(typeof wave[name], "function", `wave-dispatch.js must export ${name}`);
+    assert.equal(codex[name], wave[name], `codex-dispatch.js's ${name} must be the exact same function object as wave-dispatch.js's (a pure re-export)`);
+  }
+  // The re-export must be a plain `export { ... } from "./wave-dispatch.js"` line --
+  // no wrapper logic reintroducing a second decision point for these names.
+  const source = await readFile(new URL("../src/codex-dispatch.js", import.meta.url), "utf8");
+  assert.match(
+    source,
+    /export \{\s*codexExecCall,\s*interpretCodexExecExit,\s*codexReviewCall\s*\} from "\.\/wave-dispatch\.js";/,
+    "codex-dispatch.js must re-export codexExecCall/interpretCodexExecExit/codexReviewCall as a single pure re-export statement, no local logic"
+  );
+});
+
+// resolveCodexDispatchLane/CODEX_EXEC_MODES are the one pair that is NOT a re-export
+// candidate: they are the production-wave LANE SELECTOR itself, and codex-dispatch.js
+// (this module's own header: "this module cannot select or downgrade that lane") must
+// never carry it under any name, re-exported or otherwise -- selection stays sole
+// property of the canonical wave runtime path (wave-dispatch.js / codex-wave-runner.js).
+test("codex-dispatch.js never re-exports the production-wave lane selector", async () => {
+  const codex = await import("../src/codex-dispatch.js");
+  assert.equal(codex.resolveCodexDispatchLane, undefined);
+  assert.equal(codex.CODEX_EXEC_MODES, undefined);
+});

@@ -187,51 +187,13 @@ export function assertCodexSpawnAgentAccepted({ taskId, agentType, rejected, rej
   );
 }
 
-// Build the argv for one wave member dispatched as its own `codex exec` process.
-// `--json` is always on: muster parses the JSONL event stream (thread.started /
-// turn.completed with usage / item.completed) rather than scraping prose.
-export function codexExecCall({ prompt, cwd, model, schemaPath, ephemeral = false, skipGitCheck = false, lastMessagePath } = {}) {
-  if (typeof prompt !== "string" || !prompt.trim()) throw new Error("codexExecCall: prompt is required");
-  const argv = ["exec", "--json"];
-  if (cwd) argv.push("-C", cwd);
-  if (model) argv.push("-m", model);
-  if (schemaPath) argv.push("--output-schema", schemaPath);
-  if (lastMessagePath) argv.push("-o", lastMessagePath);
-  if (ephemeral) argv.push("--ephemeral");
-  if (skipGitCheck) argv.push("--skip-git-repo-check");
-  argv.push(prompt);
-  return { command: "codex", argv, isolation: cwd ? "process-cwd" : "process" };
-}
-
-// `codex exec` exits 1 when a fatal error was reported, 0 otherwise. There are
-// no other distinct codes, so anything else is a harness fault rather than a
-// task verdict -- never silently read as success.
-export function interpretCodexExecExit(code) {
-  if (code === 0) return { ok: true, fatal: false };
-  if (code === 1) return { ok: false, fatal: true, reason: "codex exec reported a fatal error" };
-  return { ok: false, fatal: true, reason: `codex exec exited ${code} -- not a documented exec status` };
-}
-
-// ───────────────────────────────────────────────────────────────────────────
-// codex review: the native diff-review gate
-//
-// A first-class non-interactive reviewer with its OWN `review_model` (config
-// `review_model`), so the review leg neither pollutes the run's session nor
-// spends the orchestrator's model. Replaces muster's hand-dispatched reviewer
-// for the diff leg specifically -- the judgment legs (architecture, spec) still
-// route through muster's own reviewers.
-// ───────────────────────────────────────────────────────────────────────────
-
-export function codexReviewCall({ base, uncommitted = false, commit, title, prompt } = {}) {
-  const selectors = [base && "base", uncommitted && "uncommitted", commit && "commit"].filter(Boolean);
-  if (selectors.length !== 1) {
-    throw new Error(`codexReviewCall: pass exactly one of base | uncommitted | commit (got ${selectors.length ? selectors.join(", ") : "none"})`);
-  }
-  const argv = ["review"];
-  if (base) argv.push("--base", base);
-  if (uncommitted) argv.push("--uncommitted");
-  if (commit) argv.push("--commit", commit);
-  if (title) argv.push("--title", title);
-  if (prompt) argv.push(prompt);
-  return { command: "codex", argv };
-}
+// codexExecCall / interpretCodexExecExit / codexReviewCall used to be reimplemented
+// here, drifted out of sync with the hardened production versions (missing the
+// --disable plugin fence, --strict-config, --ignore-user-config/--ignore-rules, and
+// the shell_environment_policy lockdown the wave runtime's process lane grew over a
+// string of hardening fixes), and had no consumer of their own -- codex-wave-runner.js
+// (the canonical wave runtime, this module's own header) always imported the real
+// ones from wave-dispatch.js. Pure re-export: one implementation, canonical in
+// wave-dispatch.js's "codex exec: the process-level dispatch lane" / "codex review:
+// the native diff-review gate" sections, this module never selects or downgrades it.
+export { codexExecCall, interpretCodexExecExit, codexReviewCall } from "./wave-dispatch.js";

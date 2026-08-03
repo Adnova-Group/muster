@@ -338,6 +338,26 @@ test("JSON-RPC transport declines approvals and rejects unknown requests", async
   assert.equal(child.killed, true);
 });
 
+test("JSON-RPC transport declines or denies all four approval-request method names, never auto-approving any of them", async () => {
+  const child = fakeAppServerProcess();
+  const written = [];
+  child.stdin.setEncoding("utf8");
+  child.stdin.on("data", chunk => written.push(...chunk.trim().split("\n").filter(Boolean).map(JSON.parse)));
+  const client = await createCodexAppServerClient({ cwd: "/repo", spawnProcess: () => child, timeoutMs: 100 });
+  const requests = [
+    { id: 101, method: "item/commandExecution/requestApproval", expected: "decline" },
+    { id: 102, method: "item/fileChange/requestApproval", expected: "decline" },
+    { id: 103, method: "execCommandApproval", expected: "denied" },
+    { id: 104, method: "applyPatchApproval", expected: "denied" },
+  ];
+  for (const { id, method } of requests)
+    child.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params: {} })}\n`);
+  await new Promise(resolve => setImmediate(resolve));
+  for (const { id, expected } of requests)
+    assert.deepEqual(written.find(message => message.id === id)?.result, { decision: expected }, `id ${id} must resolve with decision "${expected}"`);
+  await client.close();
+});
+
 test("close, child exit, and transport error abort active secret input", async () => {
   for (const terminate of [
     async ({ client }) => client.close(),

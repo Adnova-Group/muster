@@ -1242,6 +1242,63 @@ test("runKimiInstall: a manifest publication fault rolls config.toml back byte-f
   } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
 });
 
+test("runKimiInstall: a post-publication durability fault restores config.toml byte-for-byte", async () => {
+  const repo = fixtureRepo(), home = tmp();
+  try {
+    const root = join(home, ".kimi-code"), configPath = join(root, "config.toml");
+    const original = Buffer.from("# mine\ndefault_plan_mode = true\n");
+    mkdirSync(root, { recursive: true });
+    writeFileSync(configPath, original);
+
+    await assert.rejects(runKimiInstall({
+      home,
+      repoRoot: repo,
+      _beforeManagedMutation: ({ operation }) => {
+        if (operation === "config-fsync") throw new Error("injected config durability fault");
+      }
+    }), /injected config durability fault/);
+    assert.deepEqual(readFileSync(configPath), original);
+    assert.ok(!existsSync(join(root, "muster", KIMI_MANIFEST)));
+  } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
+});
+
+test("runKimiInstall: a writer winning the final publication window is never overwritten", async () => {
+  const repo = fixtureRepo(), home = tmp();
+  try {
+    const root = join(home, ".kimi-code"), configPath = join(root, "config.toml");
+    mkdirSync(root, { recursive: true });
+    writeFileSync(configPath, "# original\n");
+
+    await assert.rejects(runKimiInstall({
+      home,
+      repoRoot: repo,
+      _beforeManagedMutation: ({ operation }) => {
+        if (operation === "config-retired") writeFileSync(configPath, "# concurrent writer\n");
+      }
+    }), /changed during safe publication|rollback failed|EEXIST/);
+    assert.equal(readFileSync(configPath, "utf8"), "# concurrent writer\n");
+    assert.ok(!existsSync(join(root, "muster", KIMI_MANIFEST)));
+  } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
+});
+
+test("runKimiUninstall: a final-window config replacement is not deleted", async () => {
+  const repo = fixtureRepo(), home = tmp();
+  try {
+    await runKimiInstall({ home, repoRoot: repo });
+    const root = join(home, ".kimi-code"), configPath = join(root, "config.toml");
+    await assert.rejects(runKimiUninstall({
+      home,
+      _beforeManagedMutation: ({ operation }) => {
+        if (operation !== "config-delete-ready") return;
+        renameSync(configPath, `${configPath}.prior`);
+        writeFileSync(configPath, "# concurrent writer\n");
+      }
+    }), /changed during safe deletion/);
+    assert.equal(readFileSync(configPath, "utf8"), "# concurrent writer\n");
+    assert.ok(existsSync(join(root, "muster", KIMI_MANIFEST)));
+  } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
+});
+
 test("runKimiUninstall: a pre-fence manifest (no permissionRules key) leaves config.toml alone", async () => {
   const repo = fixtureRepo(), home = tmp();
   try {

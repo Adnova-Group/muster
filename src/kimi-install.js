@@ -566,6 +566,7 @@ const KIMI_CONFIG_MAX_BYTES = 16 * 1024 * 1024;
 
 async function configSnapshot(dest, configPath) {
   await assertSafeManagedFiles(dest, [configPath]);
+  const parent = await captureManagedParentIdentity(dest, configPath);
   let info;
   try { info = await lstat(configPath); }
   catch (error) { if (error.code === "ENOENT") return null; throw error; }
@@ -574,7 +575,7 @@ async function configSnapshot(dest, configPath) {
     label: `Kimi config.toml at ${configPath}`,
     expectedInfo: info
   });
-  return { bytes, info };
+  return { bytes, info, parent };
 }
 
 async function assertConfigSnapshot(dest, configPath, expected) {
@@ -587,41 +588,147 @@ async function assertConfigSnapshot(dest, configPath, expected) {
 }
 
 async function publishConfigBytes(dest, configPath, bytes, expected, beforeManagedMutation, operation = "publish") {
+  if (process.platform !== "linux" || !fsConstants.O_DIRECTORY || !fsConstants.O_NOFOLLOW) {
+    throw new Error(`Safe Kimi config.toml publication is unavailable on ${process.platform}: directory-relative publication is required`);
+  }
   const mode = expected ? expected.info.mode & 0o777 : 0o666 & ~process.umask();
-  let stagedInfo;
-  await atomicWrite(configPath, bytes, {
-    mode,
-    fsync: true,
-    fsyncDir: true,
-    beforeRename: async temporary => {
-      await beforeManagedMutation?.({ operation, path: configPath, temporary });
-      await assertSafeManagedFiles(dest, [configPath]);
-      await assertConfigSnapshot(dest, configPath, expected);
-      stagedInfo = await lstat(temporary);
-      const staged = await readNoFollowRegular(temporary, {
-        maxBytes: KIMI_CONFIG_MAX_BYTES,
-        label: `staged Kimi config.toml at ${temporary}`,
-        expectedInfo: stagedInfo
-      });
-      if (!staged.bytes.equals(bytes)) {
-        throw new Error(`Staged Kimi config.toml failed byte validation: ${temporary}`);
+  const parentIdentity = expected?.parent ?? await captureManagedParentIdentity(dest, configPath);
+  const temporary = join(dirname(configPath), `.muster-config-tmp-${process.pid}-${randomBytes(8).toString("hex")}`);
+  let temporaryHandle, stagedInfo;
+  const directoryHandles = [];
+  let stagedPath, quarantinePath, originalPath, failedPath;
+  let retired = false, published = false, publishedInfo = null;
+
+  const changed = () => new Error(`Kimi config.toml changed during safe publication: ${configPath}`);
+  const restore = async () => {
+    const sourcePath = join("/proc/self/fd", String(directoryHandles.at(-1).fd), basename(configPath));
+    if (published) {
+      await rename(sourcePath, failedPath);
+      const moved = await lstat(failedPath);
+      if (!sameFileIdentity(moved, publishedInfo)) {
+        await link(failedPath, sourcePath);
+        await unlink(failedPath);
+        throw changed();
       }
     }
-  });
-  const published = await configSnapshot(dest, configPath);
-  if (!published || !published.bytes.equals(bytes)) {
-    throw new Error(`Published Kimi config.toml failed byte validation: ${configPath}`);
+    if (retired) {
+      await link(originalPath, sourcePath);
+      await unlink(originalPath);
+    }
+    if (published) await unlink(failedPath);
+    await rmdir(quarantinePath);
+  };
+
+  try {
+    temporaryHandle = await open(
+      temporary,
+      fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_NOFOLLOW,
+      mode
+    );
+    await temporaryHandle.chmod(mode);
+    await temporaryHandle.writeFile(bytes);
+    await temporaryHandle.sync();
+    stagedInfo = await temporaryHandle.stat();
+    await temporaryHandle.close();
+    temporaryHandle = null;
+
+    await beforeManagedMutation?.({ operation, path: configPath, temporary });
+    await assertSafeManagedFiles(dest, [configPath]);
+
+    let directory = await openPinnedDirectory(parentIdentity.base, configPath);
+    directoryHandles.push(directory);
+    let directoryInfo = await directory.stat();
+    if (!sameFileIdentity(directoryInfo, parentIdentity.directories[0].info) || !directoryInfo.isDirectory()) throw changed();
+    for (const expectedDirectory of parentIdentity.directories.slice(1)) {
+      directory = await openPinnedDirectory(
+        join("/proc/self/fd", String(directory.fd), expectedDirectory.name),
+        configPath
+      );
+      directoryHandles.push(directory);
+      directoryInfo = await directory.stat();
+      if (!sameFileIdentity(directoryInfo, expectedDirectory.info) || !directoryInfo.isDirectory()) throw changed();
+    }
+
+    const parentFdPath = join("/proc/self/fd", String(directory.fd));
+    const sourcePath = join(parentFdPath, basename(configPath));
+    stagedPath = join(parentFdPath, basename(temporary));
+    const staged = await readNoFollowRegular(stagedPath, {
+      maxBytes: KIMI_CONFIG_MAX_BYTES,
+      label: `staged Kimi config.toml at ${temporary}`,
+      expectedInfo: stagedInfo
+    });
+    if (!staged.bytes.equals(bytes)) throw new Error(`Staged Kimi config.toml failed byte validation: ${temporary}`);
+
+    quarantinePath = join(parentFdPath, `.muster-config-txn-${randomBytes(12).toString("hex")}`);
+    await mkdir(quarantinePath, { mode: 0o700 });
+    originalPath = join(quarantinePath, "original");
+    failedPath = join(quarantinePath, "failed-publication");
+    if (expected) {
+      await rename(sourcePath, originalPath);
+      retired = true;
+      const moved = await lstat(originalPath);
+      if (!sameFileIdentity(moved, expected.info) || !moved.isFile()) {
+        await link(originalPath, sourcePath);
+        await unlink(originalPath);
+        retired = false;
+        throw changed();
+      }
+    } else {
+      try { await lstat(sourcePath); throw changed(); }
+      catch (error) { if (error.code !== "ENOENT") throw error; }
+    }
+    await beforeManagedMutation?.({ operation: "config-retired", path: configPath });
+
+    // link() is the publication CAS: it creates the final name only when it
+    // is still absent, and therefore never overwrites a concurrent writer.
+    await link(stagedPath, sourcePath);
+    publishedInfo = await lstat(sourcePath);
+    if (!sameFileIdentity(publishedInfo, stagedInfo) || !publishedInfo.isFile()) throw changed();
+    published = true;
+    await unlink(stagedPath);
+    stagedPath = null;
+    await beforeManagedMutation?.({ operation: "config-fsync", path: configPath });
+    await directory.sync();
+    if (retired) {
+      await unlink(originalPath);
+      retired = false;
+    }
+    // The transaction directory is private and now empty. Failure to remove
+    // that empty shell is harmless; publication and rollback data are gone.
+    await rmdir(quarantinePath).catch(() => {});
+  } catch (publicationError) {
+    if (retired || published) {
+      try { await restore(); }
+      catch (rollbackError) {
+        throw new AggregateError(
+          [publicationError, rollbackError],
+          `Kimi config.toml rollback failed after publication failure: ${configPath}`
+        );
+      }
+    }
+    throw publicationError;
+  } finally {
+    await temporaryHandle?.close();
+    if (stagedPath) await unlink(stagedPath).catch(error => { if (error.code !== "ENOENT") throw error; });
+    for (const handle of directoryHandles.reverse()) await handle.close();
+    if (stagedInfo && !stagedPath) {
+      try {
+        await assertSafeManagedFiles(dest, [temporary]);
+        const leftover = await lstat(temporary);
+        if (sameFileIdentity(leftover, stagedInfo)) await unlink(temporary);
+      } catch (error) { if (error.code !== "ENOENT") { /* fail closed: leave uncertain debris */ } }
+    }
   }
-  return published;
+  return { bytes, info: publishedInfo, parent: parentIdentity };
 }
 
 async function removePublishedConfig(dest, configPath, expected, beforeManagedMutation, operation = "delete") {
   await beforeManagedMutation?.({ operation, path: configPath });
   await assertConfigSnapshot(dest, configPath, expected);
-  const identity = await captureManagedDeleteIdentity(dest, configPath);
+  await beforeManagedMutation?.({ operation: "config-delete-ready", path: configPath });
   await unlinkPinnedManaged(
     configPath,
-    identity,
+    { ...expected.parent, target: expected.info },
     { directory: `.muster-config-${randomBytes(12).toString("hex")}` },
     null,
     process.platform

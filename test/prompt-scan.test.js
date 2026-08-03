@@ -318,6 +318,42 @@ test("an ancestor swapped after the descriptor read is rejected as incomplete", 
   }
 });
 
+test("an ancestor replaced after enumeration cannot become a fresh trusted baseline", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "muster-ps-enumeration-race-"));
+  try {
+    const prompts = path.join(dir, "prompts");
+    const hidden = path.join(dir, ".muster");
+    const original = path.join(hidden, "original");
+    const replacement = path.join(hidden, "replacement");
+    mkdirSync(prompts);
+    mkdirSync(replacement, { recursive: true });
+    writeFileSync(path.join(prompts, "race.md"), "ORIGINAL_CONTENT");
+    writeFileSync(path.join(replacement, "race.md"), "REPLACEMENT_CONTENT");
+    const rootInfo = await lstat(dir);
+    let promptStats = 0;
+
+    const result = await scanRepoPrompts(dir, {
+      lstat: async (target) => {
+        if (target === dir) return rootInfo;
+        const info = await lstat(target);
+        if (target === prompts && ++promptStats === 2) {
+          renameSync(prompts, original);
+          renameSync(replacement, prompts);
+        }
+        return info;
+      },
+    });
+
+    assert.equal(result.complete, false);
+    assert.equal(result.clean, false);
+    assert.deepEqual(result.incompleteEvidence, [
+      { file: "prompts/race.md", reason: "read-failure" },
+    ]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("incomplete evidence is globally bounded even when every candidate is oversized", async () => {
   const dir = mkdtempSync(path.join(tmpdir(), "muster-ps-evidence-bound-"));
   try {

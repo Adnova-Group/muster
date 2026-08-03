@@ -113,9 +113,11 @@ async function collectScanEvidence(root, io = {}) {
         return;
       }
       let fileStat;
-      let ancestorSnapshot;
       try {
-        ancestorSnapshot = await snapshotDirectoryChain(scanRoot, dir, lstatFn);
+        // Bind every candidate to the directory identities that produced its
+        // Dirent. Establishing a fresh baseline here would bless a directory
+        // replacement that landed after enumeration.
+        await validateDirectoryChain(directorySnapshot, lstatFn);
         fileStat = await metadataFn(full);
       } catch {
         recordIncomplete(path, "read-failure");
@@ -143,7 +145,7 @@ async function collectScanEvidence(root, io = {}) {
             !sameIdentity(namedAfter, opened.info)) {
           throw new Error(`file changed while reading: ${path}`);
         }
-        await validateDirectoryChain(ancestorSnapshot, lstatFn);
+        await validateDirectoryChain(directorySnapshot, lstatFn);
       } catch (error) {
         recordIncomplete(path, error.fsSafe?.reason === "too-large" ? "size-limit" : "read-failure");
         if (shouldStop()) return;

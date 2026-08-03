@@ -119,7 +119,19 @@ test("missing trusted identity performs no Codex PATH execution", async () => {
   const runner = async (...args) => { calls.push(args); throw new Error("must not execute"); };
   assert.equal(await codexAvailable({ execFile: runner, env: {} }), false);
   const inventory = await readCodexInventory({ cwd: "/nonexistent", codexHome: "/nonexistent", execFile: runner, env: {} });
-  assert.deepEqual(inventory, { plugins: [], skills: [], mcpServers: [], agents: [] });
+  assert.deepEqual({
+    plugins: inventory.plugins,
+    skills: inventory.skills,
+    skillDescriptions: inventory.skillDescriptions,
+    mcpServers: inventory.mcpServers,
+    agents: inventory.agents,
+    agentProfiles: inventory.agentProfiles,
+  }, {
+    plugins: [], skills: [], skillDescriptions: {}, mcpServers: [], agents: [], agentProfiles: [],
+  });
+  assert.equal(inventory.skillInventory.source, "codex-app-server");
+  assert.equal(inventory.skillInventory.complete, false);
+  assert.match(inventory.skillInventory.errors.join("\n"), /trusted Codex package identity is unavailable/);
   assert.deepEqual(calls, []);
 });
 

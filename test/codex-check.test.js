@@ -7,6 +7,7 @@ import { readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFile, repoRoot, selectedPluginRoot } from "../test-support/codex-helpers.js";
+import { configureManagedCodexAppServer } from "../test-support/codex-app-server-fixture.js";
 import { trackedMkdtemp as mkdtemp } from "../test-support/helpers.js";
 
 test("Codex validation accepts removal of the obsolete static profile files", async () => {
@@ -135,8 +136,18 @@ test("Codex manifest validation fails closed on a bound skill absent from live C
     plan: [{ id: "t1", task: "Verify", mode: "single", deps: [], skills: [{ id: "definitely-not-installed", rationale: "Dogfood guard" }] }]
   }));
   const runtime = join(selectedPluginRoot, "runtime", "muster.mjs");
+  const codex = await configureManagedCodexAppServer(tmp);
   await assert.rejects(
-    () => execFile("node", [runtime, "manifest", "validate", "--codex", file], { cwd: tmp, env: { ...process.env, CODEX_HOME: join(tmp, "home") } }),
+    () => execFile("node", [runtime, "manifest", "validate", "--codex", file], {
+      cwd: tmp,
+      env: {
+        ...process.env,
+        HOME: codex.home,
+        CODEX_HOME: join(codex.home, ".codex"),
+        CODEX_MANAGED_PACKAGE_ROOT: codex.packageRoot,
+        PATH: `${codex.bin}:${process.env.PATH || ""}`,
+      },
+    }),
     error => error.code === 2 && /definitely-not-installed/.test(error.stdout)
   );
 });

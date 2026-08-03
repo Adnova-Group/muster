@@ -17,7 +17,7 @@ Muster is split into two layers with a hard boundary between them.
 | Deterministic CLI | `src/*.js` | Plain Node ESM | No |
 | Model-facing | skills, commands, agents, and adapters | Active harness | Yes |
 
-The **CLI layer** is ordinary Node. The published package has two runtime dependencies, `yaml` and `esbuild`, requires Node 20 or newer, and normally makes no model calls. Direct CLI verbs need no precompile, while tests, publishing, and adapter installation run the adapter build pipeline. Most verbs are fully local; five boundaries can use the network or active model account. `issue` shells out to `gh issue view` for an explicit issue reference. `vendor` fetches sources declared with `kind: github` in `vendor/manifest.yaml` (local sources stay offline). `doctor` verifies vendor note SHAs against pinned refs; if that remote check is unavailable, it reports the check as skipped offline, while a missing, unreadable, or invalid local vendor manifest still fails health. The opt-in adapter probe, `install kimi --probe`, performs an authenticated models request; omit `--probe` for an offline install. `codex-plan` starts `codex app-server --stdio` and begins one model turn on the active Codex account. The remaining deterministic verbs run without network access. The CLI handles project detection, provider resolution, token-overlap ranking, gate scoring, prioritization math, and pipeline loading and validation.
+The **CLI layer** is ordinary Node. The published package has two runtime dependencies, `yaml` and `esbuild`, requires Node 20 or newer, and normally makes no model calls. Direct CLI verbs need no precompile, while tests, publishing, and adapter installation run the adapter build pipeline. Most verbs are fully local; five boundaries can use the network or active model account: `issue` performs explicit issue lookup, `vendor` fetches declared remote sources, `doctor` verifies pinned remote sources, one opt-in adapter probe checks an authenticated account, and one adapter's native planning launcher begins a model turn. The remaining deterministic verbs run without network access. The CLI handles project detection, provider resolution, token-overlap ranking, gate scoring, prioritization math, and pipeline loading and validation.
 
 The **model-facing layer** is a set of markdown commands, skills, agents, and adapter bindings. These files instruct the active harness how to drive a run. They call the CLI for every deterministic decision, then use the harness's dispatch primitive for judgment work. The split is deliberate. Routing, scoring, and validation are reproducible because code owns them. Drafting, reviewing, and classifying are the model's job.
 
@@ -160,6 +160,8 @@ review and strategy to `gpt-5.6-sol`/high, and security to
 
 `install kimi --probe` performs the fourth network-capable CLI operation: an
 authenticated models request. Omit `--probe` to keep Kimi installation offline.
+
+### Codex adapter: native Plan launcher
 
 `codex-plan` is the fifth boundary: it starts Codex App Server and begins a
 model turn on the active Codex account. Other deterministic planning verbs stay offline.

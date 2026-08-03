@@ -577,7 +577,9 @@ async function handleCodexCommand(cmd, rest) {
     if (actionableMismatches > 0) process.exit(2);
     return true;
   } else if (cmd === "install" && rest[0] === "codex") {
-    out(await runCodexInstall({ scope: flagValue(rest, "--scope") || "project", dryRun: rest.includes("--dry-run") }));
+    const result = await runCodexInstall({ scope: flagValue(rest, "--scope") || "project", dryRun: rest.includes("--dry-run") });
+    out(result);
+    if (!result.ok) process.exitCode = 2;
     return true;
   } else if (cmd === "uninstall" && rest[0] === "codex") {
     out(await runCodexUninstall({ scope: flagValue(rest, "--scope") || "project", dryRun: rest.includes("--dry-run") }));

@@ -58,7 +58,9 @@ test("contributor and architecture docs describe the current build and dispatch 
   assert.match(architecture, /harness-neutral[\s\S]{0,220}(?:tier|effort|readOnly)/i);
   assert.match(architecture, /three nonredundant read-only briefs|three read-only briefs/i);
   assert.match(architecture, /system quality[\s\S]{0,220}coverage[\s\S]{0,180}security/i);
-  assert.match(architecture, /five boundaries[\s\S]{0,900}opt-in adapter probe[\s\S]{0,500}`codex-plan`/i);
+  assert.match(architecture, /five boundaries[^\n]*opt-in adapter probe[^\n]*native planning launcher/i);
+  assert.match(architecture, /### Kimi adapter:[\s\S]*`install kimi --probe`/i);
+  assert.match(architecture, /### Codex adapter:[\s\S]*`codex-plan`/i);
   const voice = await read("docs/profiles/VOICE.md");
   assert.doesNotMatch(voice, /single runtime dependency/i);
   assert.match(voice, /two runtime dependencies/i);

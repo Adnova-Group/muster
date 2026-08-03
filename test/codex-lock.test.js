@@ -153,6 +153,24 @@ test("withCodexFileLock runs the ancestry guard before acquisition-artifact reco
   assert.deepEqual(JSON.parse(await readFile(artifact, "utf8")), deadOwner("planted"));
 });
 
+test("withCodexFileLock runs the ancestry guard before stale-transition reconciliation", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-lock-guard-transition-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const trusted = join(tmp, "trusted"), outside = join(tmp, "outside");
+  await mkdir(join(outside, "nested"), { recursive: true });
+  await mkdir(trusted);
+  await symlink(outside, join(trusted, "redirect"));
+  const lock = join(trusted, "redirect", "nested", "guarded.lock");
+  const transition = `${join(outside, "nested", "guarded.lock")}.muster-transition`;
+  await writeFile(transition, "{\"format\":1");
+  let guardCalled = false;
+  await assert.rejects(withCodexFileLock(lock, () => assert.fail("guarded callback must not run"), {
+    beforeOpen: () => { guardCalled = true; throw new Error("rejected untrusted transition ancestry"); }
+  }), /rejected untrusted transition ancestry/);
+  assert.equal(guardCalled, true);
+  assert.equal(await readFile(transition, "utf8"), "{\"format\":1");
+});
+
 // The identity gap in stale reclamation: reclaimer A decides a lock is stale and
 // passes its dev/ino check, but BEFORE A unlinks, another process B reclaims the
 // same stale instance and becomes the legitimate new owner. unlink-by-path removes

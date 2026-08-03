@@ -263,10 +263,11 @@ async function clearStaleTransition(path, current) {
   return result.removed || result.missing;
 }
 
-async function transitionIsActive(path) {
+async function transitionIsActive(path, beforeMutation) {
   let current;
   try { current = await readLock(transitionPath(path)); }
   catch (error) { if (error.code === "ENOENT") return false; throw error; }
+  if (await transitionGateIsRecoverable(current) && beforeMutation) await beforeMutation();
   return !await clearStaleTransition(path, current);
 }
 
@@ -408,7 +409,7 @@ async function withPinnedCodexFileLock(path, callback, {
   const started = Date.now();
   let acquisitionsReconciled = false;
   for (;;) {
-    if (await transitionIsActive(path)) {
+    if (await transitionIsActive(path, beforeOpen)) {
       if (Date.now() - started >= timeoutMs) throw new Error(`timed out waiting for Codex transaction lock: ${path}`);
       await pause(Math.min(25, 5 + Math.floor((Date.now() - started) / 100)));
       continue;

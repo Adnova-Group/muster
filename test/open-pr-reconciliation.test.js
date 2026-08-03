@@ -8,6 +8,8 @@ const EXPECTED_PRS = [
 ];
 
 const EXPECTED_COUNTS = { total: 20, merged: 10, closed: 10, current: 0, awaitingDisposition: 0 };
+const EXPECTED_MERGED = [167, 168, 169, 170, 171, 172, 173, 174, 175, 176];
+const EXPECTED_CLOSED = [145, 146, 147, 148, 149, 150, 151, 152, 166, 185];
 
 test("final PR reconciliation records one current disposition per PR and leaves none awaiting", async () => {
   const ledger = JSON.parse(await readFile(
@@ -52,8 +54,11 @@ test("final PR reconciliation records one current disposition per PR and leaves 
   }
 
   assert.deepEqual(computed, EXPECTED_COUNTS);
+  assert.deepEqual(ledger.prs.filter(({ disposition }) => disposition === "merged").map(({ number }) => number), EXPECTED_MERGED);
+  assert.deepEqual(ledger.prs.filter(({ disposition }) => disposition === "closed").map(({ number }) => number), EXPECTED_CLOSED);
   assert.doesNotMatch(JSON.stringify(ledger), /awaiting-disposition/i);
   assert.match(narrative, /10 merged, 10 closed, 0 current, and 0 awaiting disposition/i);
   assert.doesNotMatch(narrative, /awaiting-disposition/i);
-  for (const number of EXPECTED_PRS) assert.match(narrative, new RegExp(`\\| ${number} \\|`));
+  for (const number of EXPECTED_MERGED) assert.match(narrative, new RegExp(`\\| ${number} \\| merged \\|`));
+  for (const number of EXPECTED_CLOSED) assert.match(narrative, new RegExp(`\\| ${number} \\| closed \\|`));
 });

@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { lstat, mkdir, mkdtemp, open, readFile, rm, symlink, utimes, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, open, readFile, rename, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { processStartIdentity, withCodexFileLock } from "../src/codex-lock.js";
 
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -170,6 +170,24 @@ test("withCodexFileLock runs the ancestry guard before stale-transition reconcil
   }), /rejected untrusted transition ancestry/);
   assert.equal(guardCalled, true);
   assert.deepEqual(JSON.parse(await readFile(transition, "utf8")), plantedTransition);
+});
+
+test("withCodexFileLock preserves a replacement of its private acquisition stage", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-lock-stage-replacement-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const lock = join(tmp, "stage.lock");
+  let replacementPath;
+  const replacement = "user replacement\n";
+  await assert.rejects(withCodexFileLock(lock, () => assert.fail("conflicted acquisition must not enter"), {
+    __beforeAcquireCleanupHook: async ({ acquisitionPath }) => {
+      replacementPath = join(tmp, basename(acquisitionPath));
+      await rename(acquisitionPath, `${acquisitionPath}.owned`);
+      await writeFile(acquisitionPath, replacement);
+      throw new Error("injected stage replacement");
+    }
+  }), /acquisition cleanup failed/);
+  assert.equal(await readFile(replacementPath, "utf8"), replacement);
+  await assert.rejects(lstat(lock), /ENOENT/);
 });
 
 // The identity gap in stale reclamation: reclaimer A decides a lock is stale and

@@ -631,11 +631,28 @@ async function publishConfigBytes(dest, configPath, bytes, expected, beforeManag
 
   const changed = () => new Error(`Kimi config.toml changed during safe publication: ${configPath}`);
   const removeTransactionDirectory = async () => {
-    const named = await lstat(namedQuarantinePath);
-    if (!sameFileIdentity(named, transactionInfo)) throw changed();
+    const retirementPath = join(
+      "/proc/self/fd",
+      String(directoryHandles.at(-1).fd),
+      `.muster-config-retired-${randomBytes(12).toString("hex")}`
+    );
+    await beforeManagedMutation?.({ operation: "config-txn-teardown-ready", path: configPath });
+    await rename(namedQuarantinePath, retirementPath);
+    const retiredTransaction = await lstat(retirementPath);
+    if (!sameFileIdentity(retiredTransaction, transactionInfo)) {
+      await rename(retirementPath, namedQuarantinePath);
+      await directoryHandles.at(-1).sync();
+      throw changed();
+    }
     await transactionHandle.close();
     transactionHandle = null;
-    await rmdir(namedQuarantinePath);
+    try {
+      await rmdir(retirementPath);
+    } catch (error) {
+      await rename(retirementPath, namedQuarantinePath).catch(() => {});
+      await directoryHandles.at(-1).sync();
+      throw error;
+    }
   };
   const restoreManifest = async () => {
     if (!manifestPublishedInfo) return;
@@ -666,6 +683,8 @@ async function publishConfigBytes(dest, configPath, bytes, expected, beforeManag
       return;
     }
     if (current && commitReceipt.info && sameFileIdentity(current, commitReceipt.info)) {
+      await (manifestDirectoryHandle?.sync() ?? syncDirectory(dirname(manifestPath)));
+      await beforeManagedMutation?.({ operation: "manifest-rollback-already-restored-durable", path: manifestPath });
       manifestPublishedInfo = null;
       return;
     }
@@ -1140,6 +1159,25 @@ async function reconcileConfigTransactions(dest, configPath, manifestPath, befor
       if (!sameFileIdentity(transactionInfo, quarantineInfo) || !transactionInfo.isDirectory()) {
         throw new Error(`Kimi config.toml transaction changed: ${join(dest, name)}`);
       }
+      const retireTransactionDirectory = async () => {
+        const retirementPath = join(parentFdPath, `.muster-config-retired-${randomBytes(12).toString("hex")}`);
+        await beforeManagedMutation?.({ operation: "config-recovery-txn-teardown-ready", path: configPath });
+        await rename(quarantinePath, retirementPath);
+        const retiredTransaction = await lstat(retirementPath);
+        if (!sameFileIdentity(retiredTransaction, transactionInfo)) {
+          await rename(retirementPath, quarantinePath);
+          await directory.sync();
+          throw new Error(`Kimi config.toml transaction changed: ${join(dest, name)}`);
+        }
+        try {
+          await rmdir(retirementPath);
+        } catch (error) {
+          await rename(retirementPath, quarantinePath).catch(() => {});
+          await directory.sync();
+          throw error;
+        }
+        await directory.sync();
+      };
       const transactionFdPath = join("/proc/self/fd", String(transaction.fd));
       const receiptPath = join(transactionFdPath, "receipt.json");
       let receiptBytes;
@@ -1155,8 +1193,7 @@ async function reconcileConfigTransactions(dest, configPath, manifestPath, befor
         }
         const named = await lstat(quarantinePath);
         if (!sameFileIdentity(named, transactionInfo)) throw new Error(`Kimi config.toml transaction changed: ${join(dest, name)}`);
-        await rmdir(quarantinePath);
-        await directory.sync();
+        await retireTransactionDirectory();
         continue;
       }
       const receipt = JSON.parse(receiptBytes.toString("utf8"));
@@ -1230,8 +1267,7 @@ async function reconcileConfigTransactions(dest, configPath, manifestPath, befor
           await transaction.sync();
           const named = await lstat(quarantinePath);
           if (!sameFileIdentity(named, transactionInfo)) throw new Error(`Kimi config.toml transaction changed: ${join(dest, name)}`);
-          await rmdir(quarantinePath);
-          await directory.sync();
+          await retireTransactionDirectory();
         };
         if (source && !matches(source, receipt.expected)) {
           throw new Error(`Kimi config.toml deletion transaction conflicts with ${configPath}`);
@@ -1265,8 +1301,7 @@ async function reconcileConfigTransactions(dest, configPath, manifestPath, befor
         await transaction.sync();
         const named = await lstat(quarantinePath);
         if (!sameFileIdentity(named, transactionInfo)) throw new Error(`Kimi config.toml transaction changed: ${join(dest, name)}`);
-        await rmdir(quarantinePath);
-        await directory.sync();
+        await retireTransactionDirectory();
         continue;
       }
       let manifest = await statOrNull(manifestRecoveryPath);
@@ -1408,8 +1443,7 @@ async function reconcileConfigTransactions(dest, configPath, manifestPath, befor
             await transaction.sync();
             const named = await lstat(quarantinePath);
             if (!sameFileIdentity(named, transactionInfo)) throw new Error(`Kimi config.toml transaction changed: ${join(dest, name)}`);
-            await rmdir(quarantinePath);
-            await directory.sync();
+            await retireTransactionDirectory();
             throw new Error(`Kimi config.toml recovery found a concurrent replacement: ${configPath}`);
           }
         } else if (source && receipt.expected && !alreadyRestored) {
@@ -1449,8 +1483,7 @@ async function reconcileConfigTransactions(dest, configPath, manifestPath, befor
       await transaction.sync();
       const named = await lstat(quarantinePath);
       if (!sameFileIdentity(named, transactionInfo)) throw new Error(`Kimi config.toml transaction changed: ${join(dest, name)}`);
-      await rmdir(quarantinePath);
-      await directory.sync();
+      await retireTransactionDirectory();
     } finally {
       for (const handle of manifestHandles.reverse()) await handle.close().catch(() => {});
       await transaction?.close().catch(() => {});

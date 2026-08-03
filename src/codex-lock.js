@@ -246,6 +246,24 @@ async function reconcileAcquisitionTemps(path) {
   }
 }
 
+async function retirePrivateAcquisition(path, expected) {
+  const retirement = await privateRetirement(path);
+  try {
+    await rename(path, retirement.path);
+  } catch (error) {
+    await removeRetirement(retirement).catch(() => {});
+    if (error.code === "ENOENT") return { removed: false, missing: true };
+    throw error;
+  }
+  const moved = await readLock(retirement.path);
+  if (!sameLock(moved, expected)) {
+    await restoreOrRequireReplacement(path, retirement, moved, false);
+    return { removed: false, missing: false };
+  }
+  await removeRetirement(retirement);
+  return { removed: true, missing: false };
+}
+
 async function transitionGateIsRecoverable(current) {
   // publishTransition exposes only a fully written staging inode. Invalid JSON
   // therefore cannot be an in-progress gate from this implementation. Still
@@ -427,20 +445,26 @@ async function withPinnedCodexFileLock(path, callback, {
     }
     let handle;
     let acquisitionPath;
+    let acquisitionExpected;
     let published = false;
     try {
       acquisitionPath = join(dirname(path), `${basename(path)}.acquire-${acquisitionOwner}.${token}`);
       handle = await open(acquisitionPath, "wx", 0o600);
+      acquisitionExpected = { record: null, stat: await handle.stat() };
       if (__afterAcquireOpenHook) await __afterAcquireOpenHook({ path, acquisitionPath });
       await handle.writeFile(JSON.stringify({ format: 1, pid: process.pid, processIdentity, createdAt: Date.now(), token }) + "\n", "utf8");
       await handle.sync();
       await handle.close();
       handle = null;
+      acquisitionExpected = await readLock(acquisitionPath);
       if (__beforeAcquirePublishHook) await __beforeAcquirePublishHook({ path, acquisitionPath });
       await link(acquisitionPath, path);
       published = true;
       if (__beforeAcquireCleanupHook) await __beforeAcquireCleanupHook({ path, acquisitionPath });
-      await unlink(acquisitionPath);
+      const acquisitionCleanup = await retirePrivateAcquisition(acquisitionPath, acquisitionExpected);
+      if (!acquisitionCleanup.removed && !acquisitionCleanup.missing) {
+        throw new Error(`Codex transaction lock acquisition stage changed: ${acquisitionPath}`);
+      }
       acquisitionPath = null;
       if (__afterAcquireWriteHook) await __afterAcquireWriteHook();
       if (__parentIdentityGuard) await __parentIdentityGuard();
@@ -471,9 +495,14 @@ async function withPinnedCodexFileLock(path, callback, {
           if (cleanupError.code !== "ENOENT") cleanupErrors.push(cleanupError);
         }
       }
-      if (acquisitionPath) await unlink(acquisitionPath).catch(cleanupError => {
-        if (cleanupError.code !== "ENOENT") cleanupErrors.push(cleanupError);
-      });
+      if (acquisitionPath && acquisitionExpected) {
+        try {
+          const result = await retirePrivateAcquisition(acquisitionPath, acquisitionExpected);
+          if (!result.removed && !result.missing) cleanupErrors.push(new Error(`Codex transaction lock acquisition stage changed: ${acquisitionPath}`));
+        } catch (cleanupError) {
+          if (cleanupError.code !== "ENOENT") cleanupErrors.push(cleanupError);
+        }
+      }
       if (cleanupErrors.length) throw new AggregateError([error, ...cleanupErrors], `Codex transaction lock acquisition cleanup failed: ${path}`);
       if (error.code !== "EEXIST") throw error;
       if (await reclaimIfStale(path, { staleMs, maxStaleMs }, __reclaimRaceHook, __afterReclaimValidationHook, __beforeRestoreHook)) continue;

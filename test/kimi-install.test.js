@@ -1269,6 +1269,33 @@ test("runKimiInstall: live first-install rollback fsyncs manifest and config abs
   } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
 });
 
+test("runKimiInstall: rollback fsyncs a concurrently restored prior manifest before cleanup", async () => {
+  const repo = fixtureRepo(), home = tmp();
+  let durable = false;
+  try {
+    await runKimiInstall({ home, repoRoot: repo });
+    const root = join(home, ".kimi-code");
+    const manifestPath = join(root, "muster", KIMI_MANIFEST);
+    const priorLink = join(home, "prior-manifest-link");
+    const before = readFileSync(manifestPath);
+    linkSync(manifestPath, priorLink);
+    await assert.rejects(runKimiInstall({
+      home,
+      repoRoot: repo,
+      _beforeManagedMutation: ({ operation }) => {
+        if (operation === "manifest-durability") {
+          rmSync(manifestPath, { force: true });
+          linkSync(priorLink, manifestPath);
+          throw new Error("injected rollback");
+        }
+        if (operation === "manifest-rollback-already-restored-durable") durable = true;
+      }
+    }), /injected rollback/);
+    assert.equal(durable, true);
+    assert.deepEqual(readFileSync(manifestPath), before);
+  } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
+});
+
 test("runKimiInstall: a post-publication durability fault restores config.toml byte-for-byte", async () => {
   const repo = fixtureRepo(), home = tmp();
   try {
@@ -1925,6 +1952,49 @@ test("Kimi lifecycle lock remains single-domain when .kimi-code is replaced duri
     rmSync(home, { recursive: true, force: true });
     rmSync(movedRoot, { recursive: true, force: true });
   }
+});
+
+test("runKimiInstall: live transaction teardown preserves a final-window directory replacement", async () => {
+  const repo = fixtureRepo(), home = tmp();
+  let movedTransaction;
+  try {
+    await runKimiInstall({ home, repoRoot: repo });
+    const root = join(home, ".kimi-code");
+    await assert.rejects(runKimiInstall({
+      home,
+      repoRoot: repo,
+      _beforeManagedMutation: ({ operation }) => {
+        if (operation !== "config-txn-teardown-ready") return;
+        const transaction = readdirSync(root).find(name => name.startsWith(".muster-config-txn-"));
+        const transactionPath = join(root, transaction);
+        movedTransaction = `${transactionPath}-owned`;
+        renameSync(transactionPath, movedTransaction);
+        mkdirSync(transactionPath);
+      }
+    }), /changed during safe publication/);
+    assert.ok(existsSync(movedTransaction));
+    assert.ok(readdirSync(root).some(name => name.startsWith(".muster-config-txn-") && !name.endsWith("-owned")));
+  } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
+});
+
+test("runKimiInstall: recovery teardown preserves a final-window directory replacement", async () => {
+  const repo = fixtureRepo(), home = tmp();
+  const root = join(home, ".kimi-code"), transactionPath = join(root, ".muster-config-txn-empty");
+  const movedTransaction = `${transactionPath}-owned`;
+  try {
+    mkdirSync(transactionPath, { recursive: true });
+    await assert.rejects(runKimiInstall({
+      home,
+      repoRoot: repo,
+      _beforeManagedMutation: ({ operation }) => {
+        if (operation !== "config-recovery-txn-teardown-ready") return;
+        renameSync(transactionPath, movedTransaction);
+        mkdirSync(transactionPath);
+      }
+    }), /transaction changed/);
+    assert.ok(existsSync(transactionPath));
+    assert.ok(existsSync(movedTransaction));
+  } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
 });
 
 test("runKimiInstall: restart recovers a process killed between retire and link", async () => {

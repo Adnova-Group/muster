@@ -1399,5 +1399,9 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // reference removes its last sentence describing subagent collaboration as
   // wave dispatch and labels those packet shapes non-wave only. The live
   // worktree audit count is refreshed from 57 to 58; Claude behavior is unchanged.
-  assert.equal(hash.digest("hex"), "18d15e31b3de37879459407a8365c81c9434824d8fa27623631f7f94c415df3e");
+  // 2026-08-02 re-pin #42 (in-process pure MCP tools): the shared MCP server
+  // dispatches a closed allowlist of twelve deterministic read-only tools to
+  // bounded workers before the legacy CLI transport. Mutating tools retain the
+  // process boundary. File count remains unchanged.
+  assert.equal(hash.digest("hex"), "2f8c2f4975c013ee5917b66c4b2b9425acf59cac520da68ffc9b6ea6bf26e2b3");
 });

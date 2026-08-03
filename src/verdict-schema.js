@@ -84,7 +84,7 @@ export function validateAgainstSchema(schema, data) {
 }
 
 // Convenience: load the real bundled schema and validate against it in one call.
-export async function validateVerdicts(verdicts) {
-  const schema = await loadVerdictSchema();
+export async function validateVerdicts(verdicts, schemaPath = VERDICT_SCHEMA_PATH) {
+  const schema = JSON.parse(await readFile(schemaPath, "utf8"));
   return validateAgainstSchema(schema, verdicts);
 }

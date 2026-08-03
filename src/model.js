@@ -79,12 +79,12 @@ export function capTier(tier, cap = process.env.MUSTER_MAX_TIER) {
 // apex, so the orchestrator never dispatches it. Opt back in with
 // MUSTER_ENABLE_APEX (legacy env MUSTER_ENABLE_FABLE still honored) once the
 // tier is available again.
-function apexEnabled() {
+function apexEnabled(env = process.env) {
   // Robust against MCPB boolean user_config, which substitutes as the string
   // "false"/"true": only "1"/"true"-ish values enable; "0"/"false"/"" do not
   // (isTruthyFlag in src/env-util.js -- shared with the --native-plugin ride's
   // parse in src/cli.js).
-  return isTruthyFlag(process.env.MUSTER_ENABLE_APEX ?? process.env.MUSTER_ENABLE_FABLE);
+  return isTruthyFlag(env.MUSTER_ENABLE_APEX ?? env.MUSTER_ENABLE_FABLE);
 }
 
 // The emission layer in one function: a DECLARED tier (a role's tier, or an
@@ -94,15 +94,18 @@ function apexEnabled() {
 // apply it to a manifest-declared agent tier (see claudeProfileForConfig), so a
 // per-agent override cannot smuggle a platform-disabled or over-cap tier into a
 // dispatch pin that the role path would have degraded.
-export function emissionTier(tier) {
+export function emissionTier(tier, env = process.env) {
   const canonical = normalizeTier(tier);
-  return capTier(canonical === "apex" && !apexEnabled() ? fallbackModelFor("apex") : canonical);
+  return capTier(
+    canonical === "apex" && !apexEnabled(env) ? fallbackModelFor("apex") : canonical,
+    env.MUSTER_MAX_TIER,
+  );
 }
 
-export function modelForRole(role) {
-  if (SCOUT.has(role)) return emissionTier("scout");
-  if (APEX.has(role)) return emissionTier("apex");
-  return emissionTier("core");
+export function modelForRole(role, env = process.env) {
+  if (SCOUT.has(role)) return emissionTier("scout", env);
+  if (APEX.has(role)) return emissionTier("apex", env);
+  return emissionTier("core", env);
 }
 
 // Apex degrades per this map — never fail the task over a model tier, and never

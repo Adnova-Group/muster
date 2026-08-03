@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import { integrationApprovalDigest, lifecycleReceiptDigest } from "../src/sprint-waves.js";
 import { readFile } from "node:fs/promises";
-import { mkdtempSync, writeFileSync, readFileSync, rmSync, renameSync, readdirSync, mkdirSync, copyFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, renameSync, readdirSync, mkdirSync, copyFileSync, cpSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawn, execFile } from "node:child_process";
@@ -753,9 +753,12 @@ test("F3: missing cowork/sprint-protocol.md at module load does not crash the se
   mkdirSync(path.join(tmp, "mcp"), { recursive: true });
   mkdirSync(path.join(tmp, "src"), { recursive: true });
   mkdirSync(path.join(tmp, "plugin", "hooks"), { recursive: true });
+  cpSync(path.join(rootDir, "src"), path.join(tmp, "src"), { recursive: true });
   copyFileSync(path.join(rootDir, "cowork", "mcp-server.mjs"), path.join(tmp, "cowork", "mcp-server.mjs"));
   copyFileSync(path.join(rootDir, "mcp", "server.mjs"), path.join(tmp, "mcp", "server.mjs"));
   copyFileSync(path.join(rootDir, "src", "backlog-publication.js"), path.join(tmp, "src", "backlog-publication.js"));
+  copyFileSync(path.join(rootDir, "mcp", "in-process-tools.mjs"), path.join(tmp, "mcp", "in-process-tools.mjs"));
+  copyFileSync(path.join(rootDir, "mcp", "in-process-worker.mjs"), path.join(tmp, "mcp", "in-process-worker.mjs"));
   copyFileSync(path.join(rootDir, "plugin", "hooks", "guidance.js"), path.join(tmp, "plugin", "hooks", "guidance.js"));
   writeFileSync(path.join(tmp, "package.json"), JSON.stringify({ version: "0.0.0-test", type: "module" }));
   // Deliberately no cowork/sprint-protocol.md written into the temp copy -- this omission IS
@@ -1234,7 +1237,7 @@ test("tools/call: muster_audit requires and analyzes its explicit target directo
   }
 });
 
-test("tools/call bounds in-flight work, rejects overload, and cancels children plus temp dirs", async () => {
+test("CLI-isolated tools/call bounds in-flight work, rejects overload, and cancels children plus temp dirs", async () => {
   const fixture = mkdtempSync(path.join(tmpdir(), "cowork-concurrency-"));
   const childTmp = path.join(fixture, "tmp");
   const fakeCli = path.join(fixture, "slow-cli.mjs");
@@ -1302,7 +1305,7 @@ test("tools/call bounds in-flight work, rejects overload, and cancels children p
     for (const id of [2, 3, 4]) {
       srv.stdin.write(JSON.stringify({
         jsonrpc: "2.0", id, method: "tools/call",
-        params: { name: "muster_wave", arguments: { manifest: { plan: [{ id: `task-${id}`, deps: [] }] } } },
+        params: { name: "muster_manifest_validate", arguments: { manifest: { plan: [{ id: `task-${id}`, deps: [] }] } } },
       }) + "\n");
     }
   });

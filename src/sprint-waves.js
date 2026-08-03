@@ -36,6 +36,7 @@
 import { createHash } from "node:crypto";
 import { computeWaves } from "./wave.js";
 import { execFileSync } from "node:child_process";
+import { compareStringsForEnvironment } from "./locale-order.js";
 
 export const SPRINT_PARALLEL_DEFAULT = 5;
 export const SPRINT_PARALLEL_MAX = 10;
@@ -463,7 +464,7 @@ function strongerReceipt(current, candidate) {
   return precedence[candidate.status] > precedence[current.status] ? candidate : current;
 }
 
-function canonicalReceipts(receipts, itemIds) {
+function canonicalReceipts(receipts, itemIds, environment = process.env) {
   if (!Array.isArray(receipts)) return { errors: ["receipts must be an array"], receipts: [] };
   if (receipts.length > SPRINT_RECONCILE_LIMITS.receipts) {
     return { errors: [`receipts exceeds limit ${SPRINT_RECONCILE_LIMITS.receipts}`], receipts: [] };
@@ -567,10 +568,10 @@ function canonicalReceipts(receipts, itemIds) {
   return {
     errors,
     receipts: [...byId.values()].sort((a, b) =>
-      a.itemId.localeCompare(b.itemId)
+      compareStringsForEnvironment(a.itemId, b.itemId, environment)
       || SPRINT_PHASES.indexOf(a.phase) - SPRINT_PHASES.indexOf(b.phase)
       || a.attempt - b.attempt
-      || a.id.localeCompare(b.id)),
+      || compareStringsForEnvironment(a.id, b.id, environment)),
     latestByPhase,
     byPhase,
   };
@@ -645,13 +646,13 @@ function canonicalInFlight(inFlight, itemIds) {
 // wait, terminal, or escalated. Callers pass the complete receipts currently
 // available on every wake, then dispatch every returned action before waiting again.
 export function reconcileSprintProgress(plan, progress = {}, {
-  verifyApproval, verifyReceipt, trustedRunId, now = Date.now(),
+  verifyApproval, verifyReceipt, trustedRunId, now = Date.now(), environment = process.env,
 } = {}) {
   const planResult = validateSprintPlan(plan);
   if (planResult.errors.length > 0) return invalidReconciliation(planResult.errors);
   if (!isRecord(progress)) return invalidReconciliation(["progress must be an object"]);
   const { orderedIds, itemIds, waveById } = planResult;
-  const receiptResult = canonicalReceipts(progress.receipts ?? [], itemIds);
+  const receiptResult = canonicalReceipts(progress.receipts ?? [], itemIds, environment);
   const inFlightResult = canonicalInFlight(progress.inFlight ?? [], itemIds);
   const errors = [...receiptResult.errors, ...inFlightResult.errors];
   for (const receipt of receiptResult.receipts) {

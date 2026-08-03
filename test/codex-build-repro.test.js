@@ -14,7 +14,7 @@ const repoRoot = new URL("../", import.meta.url).pathname;
 // (src/codex-release.js) plus package.json, so this fixture list can never
 // silently drift from what the skip-if-current check actually hashes.
 const fixtureEntries = [...CODEX_BUILD_INPUT_DIRS, "package.json"];
-const bundles = ["runtime/muster.mjs", "runtime/muster-mcp.mjs"];
+const bundles = ["runtime/muster.mjs", "runtime/muster-mcp.mjs", "runtime/in-process-worker.mjs", "runtime/verdict.schema.json"];
 
 test("default generated plugin has no ChatGPT app metadata", async () => {
   const { pluginRoot } = await resolveCodexPlugin(repoRoot);
@@ -54,6 +54,8 @@ test("Codex build ignores a project Work receipt and emits the full Codex artifa
     await assert.rejects(readFile(join(result.pluginRoot, ".app.json"), "utf8"), /ENOENT/);
     await readFile(join(result.pluginRoot, "runtime", "muster.mjs"), "utf8");
     await readFile(join(result.pluginRoot, "runtime", "muster-mcp.mjs"), "utf8");
+    await readFile(join(result.pluginRoot, "runtime", "in-process-worker.mjs"), "utf8");
+    await readFile(join(result.pluginRoot, "runtime", "verdict.schema.json"), "utf8");
     await readFile(join(result.pluginRoot, "skills", "muster", "SKILL.md"), "utf8");
     await readFile(join(result.pluginRoot, "agents", "muster-builder.toml"), "utf8");
     await readFile(join(work.pluginPath, "runtime", "chatgpt-work-server.mjs"), "utf8");
@@ -289,6 +291,8 @@ test("buildCodexPlugin's input-digest skip-if-current check can be bypassed with
   }));
   await writeFile(join(staged, "runtime", "muster.mjs"), "export {};\n");
   await writeFile(join(staged, "runtime", "muster-mcp.mjs"), "export {};\n");
+  await writeFile(join(staged, "runtime", "in-process-worker.mjs"), "export {};\n");
+  await writeFile(join(staged, "runtime", "verdict.schema.json"), "{}\n");
   await writeFile(join(staged, "skills", "muster", "SKILL.md"), "# Muster\n");
   await writeFile(join(staged, "agents", "muster-builder.toml"), "name = \"muster-builder\"\n");
   await publishCodexPlugin({

@@ -346,6 +346,12 @@ test("installed full Work runtime executes with Work-only capability semantics",
     { jsonrpc: "2.0", id: 7, method: "tools/call", params: {
       name: "muster_sprint_protocol", arguments: {},
     } },
+    { jsonrpc: "2.0", id: 8, method: "tools/call", params: {
+      name: "muster_wave", arguments: { manifest: { plan: [{ id: "a", task: "test", deps: [] }] } },
+    } },
+    { jsonrpc: "2.0", id: 9, method: "tools/call", params: {
+      name: "muster_tally", arguments: { verdicts: [{ reviewer: "code", findings: [] }] },
+    } },
   ];
   const result = await serverRpc({
     ...activation,
@@ -369,6 +375,9 @@ test("installed full Work runtime executes with Work-only capability semantics",
     response(7).content[0].text,
     (await readFile(join(root, "cowork", "sprint-protocol.md"), "utf8")).trim(),
   );
+  assert.equal(response(8).isError, false, response(8).content[0].text);
+  assert.equal(JSON.parse(response(8).content[0].text)[0][0].id, "a");
+  assert.equal(response(9).isError, false, response(9).content[0].text);
 });
 
 test("probe startup fails before MCP output for invalid or pre-existing attestation targets", async t => {
@@ -454,11 +463,13 @@ test("receipt v3 binds every Work activation artifact and rejects tampering", as
   assert.equal(receipt.artifactFlavor, "chatgpt-work");
   assert.equal(receipt.appId, "asdk_app_Receipt3");
   assert.ok(Object.hasOwn(receipt.artifacts, "runtime/muster.mjs"));
+  assert.ok(Object.hasOwn(receipt.artifacts, "runtime/in-process-worker.mjs"));
+  assert.ok(Object.hasOwn(receipt.artifacts, "runtime/verdict.schema.json"));
   assert.ok(Object.hasOwn(receipt.artifacts, "runtime/sprint-protocol.md"));
   assert.ok(Object.hasOwn(receipt.artifacts, "package.json"));
   assert.ok(Object.hasOwn(receipt.artifacts, "catalog/software.yaml"));
   assert.ok(Object.hasOwn(receipt.artifacts, "pipelines/prd.yaml"));
-  assert.equal(Object.keys(receipt.artifacts).length, 33);
+  assert.equal(Object.keys(receipt.artifacts).length, 35);
   for (const digest of Object.values(receipt.artifacts)) assert.match(digest, /^[a-f0-9]{64}$/);
   const mcp = JSON.parse(await readFile(join(installed.pluginPath, ".mcp.json"), "utf8"));
   assert.equal(mcp.mcpServers.muster.env.MUSTER_CHATGPT_WORK_RECEIPT_PATH, installed.configPath);

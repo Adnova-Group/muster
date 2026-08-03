@@ -638,6 +638,17 @@ function isolatedCodexHomeBinds(home) {
   ];
 }
 
+function isolatedWorktreeGitBinds(authority, worktree) {
+  return [
+    { source: worktree.gitDir, destination: worktree.gitDir },
+    { source: join(authority.commonDir, "objects"), destination: join(authority.commonDir, "objects") },
+    { source: join(authority.commonDir, "refs"), destination: join(authority.commonDir, "refs") },
+    { source: join(authority.commonDir, "logs"), destination: join(authority.commonDir, "logs") },
+    { source: join(authority.commonDir, "config"), destination: join(authority.commonDir, "config"), readOnly: true },
+    { source: join(authority.commonDir, "HEAD"), destination: join(authority.commonDir, "HEAD"), readOnly: true },
+  ];
+}
+
 async function assertNoExecutableSessionConfig(sessionHome) {
   for (const relativePath of ["AGENTS.md", "AGENTS.override.md", "hooks.json", "rules", "agents", "plugins"]) {
     try {
@@ -1141,7 +1152,7 @@ async function runProcessWave({
             stdinText: call.stdin,
             maskedPaths: fixLoopStore.maskedRoots,
             bindPaths: [
-              { source: authority.commonDir, destination: authority.commonDir },
+              ...isolatedWorktreeGitBinds(authority, revalidated),
               ...isolatedCodexHomeBinds(isolatedHome),
             ],
           });
@@ -1332,7 +1343,7 @@ export async function runCodexWaveContinuation({
       stdinText: call.stdin,
       maskedPaths: store.maskedRoots,
       bindPaths: [
-        { source: authority.commonDir, destination: authority.commonDir },
+        ...isolatedWorktreeGitBinds(authority, revalidated),
         ...isolatedCodexHomeBinds(isolatedHome),
       ],
   });

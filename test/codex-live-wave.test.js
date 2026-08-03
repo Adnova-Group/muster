@@ -70,7 +70,14 @@ if (args[0] === "exec" && args[1] === "--help") return process.stdout.write("--j
 const cwd = args.includes("-C") ? args[args.indexOf("-C") + 1] : process.cwd();
 const input = fs.readFileSync(0, "utf8");
 const isResume = args.includes("resume");
-const payload = isResume ? {value:"resumed",delayMs:10} : JSON.parse(input);
+let payload = isResume ? {value:"resumed",delayMs:10} : JSON.parse(input);
+const resumeProbePath = process.env.CODEX_HOME + "/resume-probe.json";
+if (!isResume && payload.installResumeProbe) {
+  fs.writeFileSync(resumeProbePath, JSON.stringify(payload.installResumeProbe), {mode:0o600});
+}
+if (isResume && fs.existsSync(resumeProbePath)) {
+  payload = {...payload, ...JSON.parse(fs.readFileSync(resumeProbePath, "utf8"))};
+}
 if (payload.writeIgnoredConfig) {
   fs.writeFileSync(process.env.CODEX_HOME + "/config.toml", '[projects."/trusted"]\\ntrust_level = "trusted"\\n', {mode:0o600});
 }
@@ -114,6 +121,11 @@ setTimeout(() => {
     fs.mkdirSync(path.dirname(cwd + "/" + payload.commitDiscoveryRenameTo), {recursive:true});
     require("node:child_process").execFileSync("git", ["mv", "--", payload.commitDiscoveryRenameFrom, payload.commitDiscoveryRenameTo], {cwd});
     require("node:child_process").execFileSync("git", ["commit", "-m", "rename discovery"], {cwd});
+  }
+  if (isResume && payload.resumeCommitPath) {
+    fs.writeFileSync(cwd + "/" + payload.resumeCommitPath, "resume commit\\n");
+    require("node:child_process").execFileSync("git", ["add", "--", payload.resumeCommitPath], {cwd});
+    require("node:child_process").execFileSync("git", ["commit", "-m", "resume proof"], {cwd});
   }
   fs.writeFileSync(cwd + "/result.txt", payload.value);
   const threadId = isResume && input.includes("wrong-thread")
@@ -276,13 +288,14 @@ test("runCodexWave private tmpfs hides host-temp and sibling-worktree paths whil
   const fixture = await waveFixture(t);
   const hostSentinel = join(fixture.root, "host-temp-sentinel");
   const siblingSentinel = join(fixture.worktreeB, "sibling-sentinel");
+  const siblingAdminSentinel = join((await git(fixture.worktreeB, "rev-parse", "--git-dir")).stdout.trim(), "index");
   await writeFile(hostSentinel, "host-original\n");
   await writeFile(siblingSentinel, "sibling-original\n");
   const probe = member("a", fixture.worktreeA);
   probe.prompt = JSON.stringify({
     value: "isolated",
     delayMs: 0,
-    probeTmpPaths: [hostSentinel, siblingSentinel],
+    probeTmpPaths: [hostSentinel, siblingSentinel, siblingAdminSentinel],
   });
 
   await runCodexWave({
@@ -297,6 +310,7 @@ test("runCodexWave private tmpfs hides host-temp and sibling-worktree paths whil
     // The private tmpfs may accept a new file at the same lexical path, but it
     // is a sandbox-local shadow: the host sentinel below remains untouched.
     { read: "ENOENT", write: "MODIFIED" },
+    { read: "ENOENT", write: "ENOENT" },
     { read: "ENOENT", write: "ENOENT" },
   ]);
   assert.equal(await readFile(hostSentinel, "utf8"), "host-original\n");
@@ -334,6 +348,48 @@ test("runCodexWave resumes an authenticated persistent thread inside the same he
   assert.match(launches, /MUSTER TRUSTED FORBIDDEN ACTIONS/);
   assert.match(launches, /Never perform, authorize, or facilitate any listed action/);
   assert.doesNotMatch(launches, /exec .*--ephemeral/);
+});
+
+test("runCodexWaveContinuation preserves private tmpfs isolation and writable assigned-worktree Git metadata", async t => {
+  const fixture = await waveFixture(t);
+  const hostSentinel = join(fixture.root, "resume-host-sentinel");
+  const siblingSentinel = join(fixture.worktreeB, "resume-sibling-sentinel");
+  const siblingAdminSentinel = join((await git(fixture.worktreeB, "rev-parse", "--git-dir")).stdout.trim(), "index");
+  await writeFile(hostSentinel, "host-original\n");
+  await writeFile(siblingSentinel, "sibling-original\n");
+  const configured = member("a", fixture.worktreeA);
+  configured.prompt = JSON.stringify({
+    value: "initial",
+    delayMs: 0,
+    installResumeProbe: {
+      probeTmpPaths: [hostSentinel, siblingSentinel, siblingAdminSentinel],
+      resumeCommitPath: "resume-proof.txt",
+    },
+  });
+  const initial = await runCodexWave({
+    members: [configured],
+    codexCommand: fixture.codex,
+    repositoryRoot: fixture.repo,
+    baseSha: fixture.baseSha,
+  });
+  await rm(join(fixture.worktreeA, "result.txt"));
+
+  await runCodexWaveContinuation({
+    receiptId: initial.results[0].receiptId,
+    blockers: ["verify retained containment"],
+    codexCommand: fixture.codex,
+    repositoryRoot: fixture.repo,
+  });
+
+  const observations = JSON.parse(await readFile(join(fixture.worktreeA, "tmp-isolation.json"), "utf8"));
+  assert.deepEqual(observations.map(({ read, write }) => ({ read, write })), [
+    { read: "ENOENT", write: "MODIFIED" },
+    { read: "ENOENT", write: "ENOENT" },
+    { read: "ENOENT", write: "ENOENT" },
+  ]);
+  assert.equal(await readFile(hostSentinel, "utf8"), "host-original\n");
+  assert.equal(await readFile(siblingSentinel, "utf8"), "sibling-original\n");
+  assert.equal((await git(fixture.worktreeA, "show", "HEAD:resume-proof.txt")).stdout, "resume commit\n");
 });
 
 test("runCodexWaveContinuation accepts an unchanged owner-only config created by Codex while user config stays ignored", async t => {

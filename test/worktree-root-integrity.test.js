@@ -96,6 +96,16 @@ test("worktree-scoped config is bound and core.worktree is rejected", async () =
   await assert.rejects(() => capture(redirected.cwd, redirected.snapshot), /core\.worktree/i);
 });
 
+test("effective config drift from an included file is rejected", async () => {
+  const included = await fixture();
+  const includePath = join(included.cwd, "external.gitconfig");
+  await writeFile(includePath, "[muster]\n  included = before\n");
+  await git(included.cwd, "config", "--local", "include.path", includePath);
+  await capture(included.cwd, included.snapshot);
+  await writeFile(includePath, "[muster]\n  included = after\n");
+  await assert.rejects(() => verify(included.cwd, included.snapshot), /effective Git config changed/i);
+});
+
 test("the full-gate wrapper retains its baseline in memory against recapture attempts", async () => {
   const { cwd } = await fixture();
   await assert.rejects(

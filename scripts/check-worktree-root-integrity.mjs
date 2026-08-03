@@ -76,6 +76,7 @@ export async function inspectRepository(invocationCwd) {
 
   const commonConfigPath = git(cwd, ["rev-parse", "--path-format=absolute", "--git-path", "config"]).toString("utf8").trim();
   const worktreeConfigPath = git(cwd, ["rev-parse", "--path-format=absolute", "--git-path", "config.worktree"]).toString("utf8").trim();
+  const effectiveConfigBytes = git(cwd, ["config", "--list", "--show-origin", "--show-scope", "-z"]);
   const trackedBytes = git(cwd, ["ls-files", "-z"]);
   const trackedIndexBytes = git(cwd, ["ls-files", "-v", "-z"]);
   const flagged = nulPathBytes(trackedIndexBytes).filter((entry) => entry[0] !== 0x48 || entry[1] !== 0x20);
@@ -88,6 +89,7 @@ export async function inspectRepository(invocationCwd) {
     topLevel,
     commonConfig: await configFileState(commonConfigPath),
     worktreeConfig: await configFileState(worktreeConfigPath),
+    effectiveConfig: effectiveConfigBytes.toString("base64"),
     trackedSet: trackedBytes.toString("base64"),
     trackedIndexState: trackedIndexBytes.toString("base64"),
     trackedFiles: nulPathBytes(trackedBytes).map((path) => path.toString("base64")),
@@ -101,10 +103,10 @@ async function readSnapshot(path) {
   if (stat.size > MAX_SNAPSHOT_BYTES) throw new Error(`integrity snapshot exceeds ${MAX_SNAPSHOT_BYTES} bytes`);
   const snapshot = JSON.parse(await readFile(path, "utf8"));
   const keys = Object.keys(snapshot).sort();
-  const expected = ["commonConfig", "linkedWorktreeInventory", "schemaVersion", "topLevel", "trackedFiles", "trackedIndexState", "trackedSet", "worktreeConfig"];
+  const expected = ["commonConfig", "effectiveConfig", "linkedWorktreeInventory", "schemaVersion", "topLevel", "trackedFiles", "trackedIndexState", "trackedSet", "worktreeConfig"];
   if (JSON.stringify(keys) !== JSON.stringify(expected) || snapshot.schemaVersion !== SNAPSHOT_VERSION
     || typeof snapshot.topLevel !== "string" || typeof snapshot.commonConfig !== "object"
-    || typeof snapshot.worktreeConfig !== "object"
+    || typeof snapshot.worktreeConfig !== "object" || typeof snapshot.effectiveConfig !== "string"
     || typeof snapshot.trackedSet !== "string" || typeof snapshot.trackedIndexState !== "string"
     || !Array.isArray(snapshot.trackedFiles)
     || typeof snapshot.linkedWorktreeInventory !== "string") {
@@ -121,6 +123,7 @@ export function verifyRepositoryState(current, expected) {
   if (JSON.stringify(current.worktreeConfig) !== JSON.stringify(expected.worktreeConfig)) {
     throw new Error("worktree Git config bytes or identity changed after the full gate");
   }
+  if (current.effectiveConfig !== expected.effectiveConfig) throw new Error("effective Git config changed after the full gate");
   if (current.trackedSet !== expected.trackedSet) throw new Error("tracked-file set changed after the full gate");
   if (current.trackedIndexState !== expected.trackedIndexState) throw new Error("tracked index flags changed after the full gate");
   if (current.linkedWorktreeInventory !== expected.linkedWorktreeInventory) {

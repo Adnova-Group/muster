@@ -1,11 +1,11 @@
 import { constants as fsConstants } from "node:fs";
 import { randomBytes } from "node:crypto";
-import { link, lstat, mkdir, open, readFile, readdir, realpath, rename, rmdir, unlink, writeFile } from "node:fs/promises";
+import { link, lstat, mkdir, open, readFile, readdir, realpath, rename, rmdir, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { exists, readdirSafe, readJson } from "./fs-util.js";
-import { atomicWrite, isContainedLexical } from "./fs-safe.js";
+import { atomicWrite, isContainedLexical, readNoFollowRegular, withFileMutationLock } from "./fs-safe.js";
 import { matchFrontmatter } from "./frontmatter.js";
 import { KIMI_LANES, kimiLaneEnv, kimiPreferenceForAgentId } from "./kimi.js";
 
@@ -562,6 +562,80 @@ export function stripPermissionRules(existing, { created }) {
   return { text };
 }
 
+const KIMI_CONFIG_MAX_BYTES = 16 * 1024 * 1024;
+
+async function configSnapshot(dest, configPath) {
+  await assertSafeManagedFiles(dest, [configPath]);
+  let info;
+  try { info = await lstat(configPath); }
+  catch (error) { if (error.code === "ENOENT") return null; throw error; }
+  const { bytes } = await readNoFollowRegular(configPath, {
+    maxBytes: KIMI_CONFIG_MAX_BYTES,
+    label: `Kimi config.toml at ${configPath}`,
+    expectedInfo: info
+  });
+  return { bytes, info };
+}
+
+async function assertConfigSnapshot(dest, configPath, expected) {
+  const current = await configSnapshot(dest, configPath);
+  if (!expected && !current) return;
+  if (!expected || !current || !sameFileIdentity(expected.info, current.info)
+      || !expected.bytes.equals(current.bytes)) {
+    throw new Error(`Kimi config.toml changed during safe publication: ${configPath}`);
+  }
+}
+
+async function publishConfigBytes(dest, configPath, bytes, expected, beforeManagedMutation, operation = "publish") {
+  const mode = expected ? expected.info.mode & 0o777 : 0o666 & ~process.umask();
+  let stagedInfo;
+  await atomicWrite(configPath, bytes, {
+    mode,
+    fsync: true,
+    fsyncDir: true,
+    beforeRename: async temporary => {
+      await beforeManagedMutation?.({ operation, path: configPath, temporary });
+      await assertSafeManagedFiles(dest, [configPath]);
+      await assertConfigSnapshot(dest, configPath, expected);
+      stagedInfo = await lstat(temporary);
+      const staged = await readNoFollowRegular(temporary, {
+        maxBytes: KIMI_CONFIG_MAX_BYTES,
+        label: `staged Kimi config.toml at ${temporary}`,
+        expectedInfo: stagedInfo
+      });
+      if (!staged.bytes.equals(bytes)) {
+        throw new Error(`Staged Kimi config.toml failed byte validation: ${temporary}`);
+      }
+    }
+  });
+  const published = await configSnapshot(dest, configPath);
+  if (!published || !published.bytes.equals(bytes)) {
+    throw new Error(`Published Kimi config.toml failed byte validation: ${configPath}`);
+  }
+  return published;
+}
+
+async function removePublishedConfig(dest, configPath, expected, beforeManagedMutation, operation = "delete") {
+  await beforeManagedMutation?.({ operation, path: configPath });
+  await assertConfigSnapshot(dest, configPath, expected);
+  const identity = await captureManagedDeleteIdentity(dest, configPath);
+  await unlinkPinnedManaged(
+    configPath,
+    identity,
+    { directory: `.muster-config-${randomBytes(12).toString("hex")}` },
+    null,
+    process.platform
+  );
+}
+
+async function rollbackConfig(dest, configPath, original, published, beforeManagedMutation) {
+  if (original) {
+    await publishConfigBytes(dest, configPath, original.bytes, published, beforeManagedMutation, "config-rollback");
+  } else {
+    await removePublishedConfig(dest, configPath, published, beforeManagedMutation, "config-rollback");
+  }
+}
+
 async function readManifest(manifestPath, dest) {
   const raw = await readJson(manifestPath);
   if (!raw) return null;
@@ -840,29 +914,50 @@ export async function runKimiInstall({
     installedVerbs.push(name);
   }
 
-  // The action-class fence: merge muster's marker-delimited [[permission.rules]]
-  // block into the user's config.toml (creating it when absent). Written BEFORE
-  // the manifest so the manifest stays the commit point; `created` is the
-  // receipt uninstall uses to remove a file muster made. Deliberately a plain
-  // writeFile, not a temp+rename: config.toml is the user's own file and is
-  // commonly a dotfiles SYMLINK -- a rename would silently replace the link
-  // with a regular file. A torn write is self-healing (reinstall re-converges
-  // the block; malformed markers fail loud rather than corrupting silently).
-  const existingConfig = (await exists(configPath)) ? await readFile(configPath, "utf8") : null;
-  const mergedConfig = mergePermissionRules(existingConfig);
-  // `created` is sticky across reinstalls: once muster made the file, a later
-  // merge (file now present) must not flip the receipt, or uninstall would
-  // leave an empty config.toml husk behind.
-  const configCreated = mergedConfig.created || previous?.permissionRules?.created === true;
-  await writeFile(configPath, mergedConfig.text, "utf8");
-
   await mkdir(dirname(manifestPath), { recursive: true });
   await assertSafeManagedFiles(dest, [manifestPath]);
-  await atomicWriteJson(manifestPath, {
-    format: 1, owner: "muster", packageVersion,
-    agents: agents.map(a => a.rel), skills: skills.map(s => s.rel), verbs: verbs.map(v => v.rel),
-    permissionRules: { created: configCreated }
-  }, dest, _beforeManagedMutation);
+  // The action-class fence is a single locked read/merge/publish/manifest
+  // transaction. The read is descriptor-pinned and no-follow; every ancestor
+  // is checked before lock acquisition and immediately before atomic rename.
+  // The staged bytes are read back and compared before publication. If the
+  // manifest commit fails, restore the exact original bytes (or exact absence)
+  // while still holding the same lock so an unreceipted fence is never left.
+  let configCreated;
+  const configGuard = () => assertSafeManagedFiles(dest, [configPath]);
+  await configGuard();
+  await withFileMutationLock(configPath, async () => {
+    await configGuard();
+    const original = await configSnapshot(dest, configPath);
+    const mergedConfig = mergePermissionRules(original ? original.bytes.toString("utf8") : null);
+    // `created` is sticky across reinstalls: once muster made the file, a later
+    // merge (file now present) must not flip the receipt, or uninstall would
+    // leave an empty config.toml husk behind.
+    configCreated = mergedConfig.created || previous?.permissionRules?.created === true;
+    const published = await publishConfigBytes(
+      dest,
+      configPath,
+      Buffer.from(mergedConfig.text),
+      original,
+      _beforeManagedMutation
+    );
+    try {
+      await atomicWriteJson(manifestPath, {
+        format: 1, owner: "muster", packageVersion,
+        agents: agents.map(a => a.rel), skills: skills.map(s => s.rel), verbs: verbs.map(v => v.rel),
+        permissionRules: { created: configCreated }
+      }, dest, _beforeManagedMutation);
+    } catch (publicationError) {
+      try {
+        await rollbackConfig(dest, configPath, original, published, _beforeManagedMutation);
+      } catch (rollbackError) {
+        throw new AggregateError(
+          [publicationError, rollbackError],
+          `Kimi config.toml rollback failed after manifest publication failure: ${configPath}`
+        );
+      }
+      throw publicationError;
+    }
+  }, { beforeOpen: configGuard });
 
   return {
     dest, packageVersion, agents: agents.map(a => basename(a.rel)), skills: skillNames,
@@ -1111,12 +1206,30 @@ export async function runKimiUninstall({
   // The fence block: manifest-gated (a pre-fence manifest has no
   // `permissionRules` and must not touch config.toml at all), marker-scoped
   // (only muster's block is removed; a config the user deleted first is a
-  // clean skip). Same plain-writeFile rationale as the install merge.
+  // clean skip). Reuse the install path's lock, no-follow snapshot, ancestry
+  // guard, staged-byte validation, and atomic publication discipline.
   let configRemoved = false;
-  if (manifest.permissionRules && (await exists(configPath))) {
-    const stripped = stripPermissionRules(await readFile(configPath, "utf8"), manifest.permissionRules);
-    if (stripped === null) { await unlink(configPath); configRemoved = true; }
-    else await writeFile(configPath, stripped.text, "utf8");
+  if (manifest.permissionRules) {
+    const configGuard = () => assertSafeManagedFiles(dest, [configPath]);
+    await configGuard();
+    await withFileMutationLock(configPath, async () => {
+      await configGuard();
+      const original = await configSnapshot(dest, configPath);
+      if (!original) return;
+      const stripped = stripPermissionRules(original.bytes.toString("utf8"), manifest.permissionRules);
+      if (stripped === null) {
+        await removePublishedConfig(dest, configPath, original, _beforeManagedMutation);
+        configRemoved = true;
+      } else {
+        await publishConfigBytes(
+          dest,
+          configPath,
+          Buffer.from(stripped.text),
+          original,
+          _beforeManagedMutation
+        );
+      }
+    }, { beforeOpen: configGuard });
   }
 
   // Prune empty skill dirs (deepest first), then the agents/skills roots.
@@ -1151,11 +1264,9 @@ export async function runKimiUninstall({
 // collision handling: this site's historical pid-only temp name
 // (`.tmp-<pid>`, no random) could hit EEXIST under atomicWrite's O_EXCL open
 // when a stale temp from a crashed install met a recycled pid, where the old
-// plain writeFile simply overwrote. Ordinary install publication keeps fsync
+// the former plain write simply overwrote. Ordinary install publication keeps fsync
 // off (a torn publish is self-healing on rerun); uninstall receipt publication
 // opts into both file and parent-directory fsync before destructive rename.
-// The fence block's config.toml write is deliberately NOT this helper -- see
-// the "deliberately a plain writeFile" comment at the install merge.
 async function atomicWriteJson(
   path,
   value,

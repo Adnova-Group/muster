@@ -1171,6 +1171,77 @@ test("runKimiInstall: malformed fence markers fail loud instead of clobbering", 
   } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
 });
 
+test("runKimiInstall: refuses a symlinked config.toml without changing its target", async () => {
+  const repo = fixtureRepo(), home = tmp(), outside = tmp();
+  try {
+    const root = join(home, ".kimi-code");
+    const outsideConfig = join(outside, "config.toml");
+    const original = "# outside\ndefault_plan_mode = true\n";
+    mkdirSync(root, { recursive: true });
+    writeFileSync(outsideConfig, original);
+    symlinkSync(outsideConfig, join(root, "config.toml"));
+
+    await assert.rejects(
+      runKimiInstall({ home, repoRoot: repo }),
+      /config\.toml|symlink|non-ordinary/i
+    );
+    assert.equal(readFileSync(outsideConfig, "utf8"), original);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test("runKimiInstall: an ancestor swapped after config staging is rejected before publication", async () => {
+  const repo = fixtureRepo(), home = tmp(), outside = tmp();
+  const root = join(home, ".kimi-code"), movedRoot = join(home, ".kimi-code-moved");
+  const outsideConfig = join(outside, "config.toml");
+  try {
+    mkdirSync(root, { recursive: true });
+    writeFileSync(join(root, "config.toml"), "# mine\n");
+    writeFileSync(outsideConfig, "# outside\n");
+
+    await assert.rejects(runKimiInstall({
+      home,
+      repoRoot: repo,
+      _beforeManagedMutation: ({ operation, path }) => {
+        if (operation !== "publish" || path !== join(root, "config.toml")) return;
+        renameSync(root, movedRoot);
+        symlinkSync(outside, root);
+      }
+    }), /config\.toml|symlink|non-ordinary|ancestry/i);
+    assert.equal(readFileSync(outsideConfig, "utf8"), "# outside\n");
+    assert.equal(readFileSync(join(movedRoot, "config.toml"), "utf8"), "# mine\n");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test("runKimiInstall: a manifest publication fault rolls config.toml back byte-for-byte", async () => {
+  const repo = fixtureRepo(), home = tmp();
+  try {
+    const root = join(home, ".kimi-code");
+    const configPath = join(root, "config.toml");
+    const original = Buffer.from("# mine\r\ndefault_plan_mode = true\r\n");
+    mkdirSync(root, { recursive: true });
+    writeFileSync(configPath, original);
+
+    await assert.rejects(runKimiInstall({
+      home,
+      repoRoot: repo,
+      _beforeManagedMutation: ({ operation, path }) => {
+        if (operation === "publish" && path.endsWith(KIMI_MANIFEST)) {
+          throw new Error("injected manifest publication fault");
+        }
+      }
+    }), /injected manifest publication fault/);
+    assert.deepEqual(readFileSync(configPath), original);
+  } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
+});
+
 test("runKimiUninstall: a pre-fence manifest (no permissionRules key) leaves config.toml alone", async () => {
   const repo = fixtureRepo(), home = tmp();
   try {

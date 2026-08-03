@@ -110,9 +110,11 @@ crew waves). An item's OWN crew may still fan out in parallel.
   and ordered-integration surface. This preserves the pre-existing flat-backlog order.
 - **Wave path (`annotated:true`).** For each object in `schedule.waves`, in emitted order:
   1. Record the wave base SHA. For every id in each emitted `buildReview.batches` array, first inspect
-     its emitted `items[id].deps`; when any predecessor was escalated or its build/review failed,
-     escalate the dependent immediately and never create its worktree or build it. Otherwise create a
-     dedicated `.worktrees/<validated-item-id>` worktree from that same wave base and run the runner's
+     its emitted `items[id].deps`. A predecessor whose build/review failed enters correction/replan, and
+     its dependents remain waiting while that recovery can make progress. Only when the predecessor
+     reaches a truthful terminal state does the dependent become terminally blocked without creating a
+     worktree. Otherwise create a dedicated `.worktrees/<validated-item-id>` worktree from that same wave
+     base and run the runner's
      `build-review-only` lifecycle there. The declared disposition is metadata for the later phase;
      this leg must not push, open a PR, merge, or integrate. Cowork's unavailable parallel fan-out changes only dispatch mode:
      execute these legs sequentially in their isolated worktrees (`sequential-isolated`). It does not
@@ -122,8 +124,10 @@ crew waves). An item's OWN crew may still fan out in parallel.
   2. Enforce the emitted `all-build-review-complete` barrier. Do not begin integration until every
      non-escalated build/review leg in this wave has a receipt and every escalation is recorded.
   3. Only after `all-build-review-complete`, traverse `schedule.waves[].integration.itemIds`
-     sequentially, preserving emitted order while omitting every escalated item or failed build/review
-     leg from disposition and integration. Each remaining id must have a reviewed branch receipt from step 1;
+     sequentially, preserving emitted order while omitting every truthfully terminal item from
+     disposition and integration. A recoverable failed build/review leg stays in correction/replan and
+     therefore keeps the barrier open; it is not silently omitted. Each remaining id must have a reviewed
+     branch receipt from step 1;
      apply its declared disposition now: `pr` pushes the item branch and opens its receipts-backed PR,
      `keep` preserves the local reviewed branch without a remote change, `merge-local` merges into the
      main-tree base without pushing, and `merge-push` merges then pushes the base. No other item may

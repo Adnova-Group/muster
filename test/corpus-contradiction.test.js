@@ -318,6 +318,9 @@ test("Cowork sprint recovery uses the canonical progress-aware terminal contract
   assert.doesNotMatch(text, /repeated\/unresolved round-1 finding recurring in round 2/i);
   assert.doesNotMatch(text, /any round-3 FAIL/i);
   assert.doesNotMatch(text, /dispatch that still fails after its retry/i);
+  assert.doesNotMatch(text, /predecessor was escalated or its build\/review failed[\s\S]{0,80}escalate the dependent immediately/i);
+  assert.doesNotMatch(text, /omitting every escalated item or failed build\/review leg/i);
+  assert.match(text, /dependents? (?:remain|stays?) waiting[\s\S]{0,120}truthful terminal state/i);
 });
 
 // ── residue scan: verb-rename leftovers outside the plugin/ prose scan ─────

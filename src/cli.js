@@ -1457,25 +1457,103 @@ async function handleCoreCommandPart5(cmd, rest) {
     const reap = rest.includes("--reap");
     const json = rest.includes("--json");
     const backlogPath = flagValue(rest, "--backlog") || join(".muster", "backlog.md");
-    // `Number.isFinite` (not `|| DEFAULT`) so an explicitly-passed `0` is honored as a
-    // real override instead of silently falling back to the default -- `0 || DEFAULT`
-    // would otherwise treat "explicitly zero" the same as "flag not passed at all".
-    const worktreeThresholdArg = Number(flagValue(rest, "--worktree-threshold"));
-    const worktreeThreshold = Number.isFinite(worktreeThresholdArg) ? worktreeThresholdArg : DEFAULT_WORKTREE_THRESHOLD;
-    const zombieStaleMinArg = Number(flagValue(rest, "--zombie-stale-min"));
-    const zombieStaleMin = Number.isFinite(zombieStaleMinArg) ? zombieStaleMinArg : null;
-    const claimStaleMinArg = Number(flagValue(rest, "--claim-stale-min"));
-    const claimStaleMin = Number.isFinite(claimStaleMinArg) ? claimStaleMinArg : null;
-    const result = await runHygiene({
-      backlogContent: () => readFile(backlogPath, "utf8").catch(() => null),
-      reap,
-      zombieOptions: zombieStaleMin != null ? { staleMs: zombieStaleMin * 60_000 } : {},
-      worktreeOptions: { threshold: worktreeThreshold },
-      claimOptions: claimStaleMin != null ? { staleMs: claimStaleMin * 60_000 } : {},
-    });
-    if (reap && result.claims.content != null && result.claims.releases.length > 0) {
-      await writeFile(backlogPath, result.claims.content, "utf8");
+    const hygieneNumber = (flag, fallback, multiplier = 1) => {
+      const raw = flagValue(rest, flag);
+      if (raw === undefined) {
+        if (rest.includes(flag)) fail(`hygiene ${flag} must be a non-negative finite number`);
+        return fallback;
+      }
+      if (!/^(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(raw)) {
+        fail(`hygiene ${flag} must be a non-negative finite number`);
+      }
+      const value = Number(raw);
+      if (!Number.isFinite(value) || value < 0 || !Number.isFinite(value * multiplier)) {
+        fail(`hygiene ${flag} must be a non-negative finite number`);
+      }
+      return value;
+    };
+    const worktreeThreshold = hygieneNumber("--worktree-threshold", DEFAULT_WORKTREE_THRESHOLD);
+    const zombieStaleMin = hygieneNumber("--zombie-stale-min", null, 60_000);
+    const claimStaleMin = hygieneNumber("--claim-stale-min", null, 60_000);
+
+    const absoluteBacklogPath = resolve(backlogPath);
+    const assertNoSymlinkAncestors = async () => {
+      let component = dirname(absoluteBacklogPath);
+      while (true) {
+        try {
+          if ((await lstat(component)).isSymbolicLink()) {
+            throw new Error(`hygiene backlog path must not contain symlinks: ${backlogPath}`);
+          }
+        } catch (error) {
+          if (error.code !== "ENOENT") throw error;
+        }
+        const parent = dirname(component);
+        if (parent === component) break;
+        component = parent;
+      }
+    };
+    let backlogIdentity = null;
+    let backlogBytes = null;
+    const readPinnedBacklog = async (expectedInfo = null) => {
+      await assertNoSymlinkAncestors();
+      const pathInfo = await lstat(absoluteBacklogPath);
+      if (!pathInfo.isFile()) throw new Error(`unsafe regular file: hygiene backlog ${backlogPath}`);
+      if (expectedInfo && (pathInfo.ino !== expectedInfo.ino || pathInfo.dev !== expectedInfo.dev)) {
+        throw new Error(`file changed while reading: hygiene backlog ${backlogPath}`);
+      }
+      if (!fsConstants.O_NOFOLLOW || process.env.MUSTER_TEST_FORCE_NO_NOFOLLOW === "1") {
+        throw new Error("hygiene backlog cannot be read safely: O_NOFOLLOW is unavailable");
+      }
+      return readNoFollowRegular(absoluteBacklogPath, {
+        maxBytes: MAX_HYGIENE_BACKLOG_BYTES,
+        label: `hygiene backlog ${backlogPath}`,
+        expectedInfo: pathInfo,
+      });
+    };
+    const readBacklog = async () => {
+      try {
+        const { bytes, info } = await readPinnedBacklog();
+        backlogIdentity = info;
+        backlogBytes = bytes;
+        return bytes.toString("utf8");
+      } catch (error) {
+        if (error.code === "ENOENT") return null;
+        throw error;
+      }
+    };
+    const executeHygiene = async () => {
+      const result = await runHygiene({
+        backlogContent: readBacklog,
+        reap,
+        zombieOptions: zombieStaleMin != null ? { staleMs: zombieStaleMin * 60_000 } : {},
+        worktreeOptions: { threshold: worktreeThreshold },
+        claimOptions: claimStaleMin != null ? { staleMs: claimStaleMin * 60_000 } : {},
+        dispatchReceiptStore: ({ processes, reap: shouldClean }) =>
+          readDispatchReceipts({ processes, reap: shouldClean }),
+      });
+      if (reap && result.claims.content != null && result.claims.releases.length > 0) {
+        await atomicWrite(absoluteBacklogPath, result.claims.content, {
+          mode: backlogIdentity.mode & 0o777,
+          beforeRename: async () => {
+            const current = await readPinnedBacklog(backlogIdentity);
+            if (!current.bytes.equals(backlogBytes)) {
+              throw new Error(`hygiene backlog content changed before publication: ${backlogPath}`);
+            }
+          },
+        });
+      }
+      return result;
+    };
+    let backlogParentExists = true;
+    try {
+      await lstat(dirname(absoluteBacklogPath));
+    } catch (error) {
+      if (error.code === "ENOENT") backlogParentExists = false;
+      else throw error;
     }
+    const result = reap && backlogParentExists
+      ? await withFileMutationLock(absoluteBacklogPath, executeHygiene)
+      : await executeHygiene();
     if (json) out(result);
     else process.stdout.write(renderHygieneReport(result) + "\n");
     return true;

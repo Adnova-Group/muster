@@ -241,6 +241,22 @@ test("withCodexFileLock compares private acquisition bytes without UTF-8 normali
   await assert.rejects(lstat(lock), /ENOENT/);
 });
 
+test("withCodexFileLock preserves a public replacement that wins after candidate link", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-lock-public-winner-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const lock = join(tmp, "public-winner.lock");
+  const movedCandidate = `${lock}.candidate`;
+  const replacement = "public race winner\n";
+  await assert.rejects(withCodexFileLock(lock, () => assert.fail("replaced public lock must not enter"), {
+    __afterAcquirePublishHook: async () => {
+      await rename(lock, movedCandidate);
+      await writeFile(lock, replacement);
+    }
+  }), /acquisition stage changed/);
+  assert.equal(await readFile(lock, "utf8"), replacement);
+  await lstat(movedCandidate);
+});
+
 test("withCodexFileLock removes an empty retirement directory when its private stage is already absent", async t => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-lock-missing-stage-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));

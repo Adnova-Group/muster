@@ -422,6 +422,7 @@ async function withPinnedCodexFileLock(path, callback, {
   __beforeRestoreHook,
   __afterAcquireWriteHook,
   __afterAcquireOpenHook,
+  __afterAcquirePublishHook,
   __beforeAcquirePublishHook,
   __beforeAcquireCleanupHook,
   __parentIdentityGuard
@@ -471,11 +472,10 @@ async function withPinnedCodexFileLock(path, callback, {
       }
       await link(acquisitionPath, path);
       published = true;
+      if (__afterAcquirePublishHook) await __afterAcquirePublishHook({ path, acquisitionPath });
       const publishedAcquisition = await readLock(path);
       if (!sameLock(publishedAcquisition, acquisitionExpected) || !publishedAcquisition.bytes.equals(acquisitionExpected.bytes)) {
-        const result = await retireLock(path, publishedAcquisition);
         published = false;
-        if (!result.removed && !result.missing) throw new Error(`Codex transaction lock ownership changed: ${path}`);
         throw new Error(`Codex transaction lock acquisition stage changed: ${acquisitionPath}`);
       }
       if (__beforeAcquireCleanupHook) await __beforeAcquireCleanupHook({ path, acquisitionPath });

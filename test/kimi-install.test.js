@@ -1244,6 +1244,31 @@ test("runKimiInstall: a manifest publication fault rolls config.toml back byte-f
   } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
 });
 
+test("runKimiInstall: live first-install rollback fsyncs manifest and config absence before cleanup", async () => {
+  const repo = fixtureRepo(), home = tmp();
+  let manifestAbsenceDurable = false, configAbsenceDurable = false;
+  try {
+    const root = join(home, ".kimi-code");
+    const manifestPath = join(root, "muster", KIMI_MANIFEST);
+    await assert.rejects(runKimiInstall({
+      home,
+      repoRoot: repo,
+      _beforeManagedMutation: ({ operation }) => {
+        if (operation === "manifest-durability") {
+          rmSync(manifestPath, { force: true });
+          throw new Error("injected missing-manifest fault");
+        }
+        if (operation === "manifest-rollback-absence-durable") manifestAbsenceDurable = true;
+        if (operation === "config-rollback-absence-durable") configAbsenceDurable = true;
+      }
+    }), /injected missing-manifest fault/);
+    assert.equal(manifestAbsenceDurable, true);
+    assert.equal(configAbsenceDurable, true);
+    assert.ok(!existsSync(join(root, "config.toml")));
+    assert.ok(!existsSync(manifestPath));
+  } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
+});
+
 test("runKimiInstall: a post-publication durability fault restores config.toml byte-for-byte", async () => {
   const repo = fixtureRepo(), home = tmp();
   try {
@@ -1799,6 +1824,21 @@ test("Kimi lifecycle lock reconciles a dead private acquisition artifact", async
   } finally { rmSync(home, { recursive: true, force: true }); }
 });
 
+test("Kimi lifecycle lock reconciles a crash-torn private acquisition artifact", async () => {
+  const home = tmp(), lockPath = join(home, "config.toml.muster-lock");
+  try {
+    const moduleUrl = new URL("../src/codex-lock.js", import.meta.url).href;
+    const crash = `import { withCodexFileLock } from ${JSON.stringify(moduleUrl)}; await withCodexFileLock(${JSON.stringify(lockPath)}, () => {}, { __afterAcquireOpenHook: () => process.exit(91) });`;
+    assert.throws(
+      () => execFileSync(process.execPath, ["--input-type=module", "-e", crash], { stdio: "ignore" }),
+      error => error.status === 91
+    );
+    assert.ok(readdirSync(home).some(name => name.includes(".acquire-")));
+    await withCodexFileLock(lockPath, () => {});
+    assert.ok(!readdirSync(home).some(name => name.includes(".acquire-")));
+  } finally { rmSync(home, { recursive: true, force: true }); }
+});
+
 test("Kimi lifecycle lock withdraws a published owner when private cleanup fails", async () => {
   const home = tmp(), lockPath = join(home, "config.toml.muster-lock");
   try {
@@ -1832,6 +1872,58 @@ test("Kimi lifecycle lock rejects a replaced pinned parent before callback entry
   } finally {
     rmSync(home, { recursive: true, force: true });
     rmSync(moved, { recursive: true, force: true });
+  }
+});
+
+test("Kimi lifecycle lock retires its pinned owner when the parent changes during callback", async () => {
+  const home = tmp(), moved = `${home}-moved`, lockPath = join(home, "config.toml.muster-lock");
+  try {
+    await assert.rejects(withCodexFileLock(lockPath, () => {
+      renameSync(home, moved);
+      mkdirSync(home);
+    }), /lock parent changed/);
+    assert.ok(!existsSync(join(moved, "config.toml.muster-lock")));
+    let entered = false;
+    await withCodexFileLock(lockPath, () => { entered = true; }, { staleMs: 0 });
+    assert.equal(entered, true);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+    rmSync(moved, { recursive: true, force: true });
+  }
+});
+
+test("Kimi lifecycle lock remains single-domain when .kimi-code is replaced during a callback", async () => {
+  const repo = fixtureRepo(), home = tmp();
+  const root = join(home, ".kimi-code"), movedRoot = join(home, ".kimi-code-moved");
+  let second, secondEntered = false, swapped = false;
+  try {
+    await runKimiInstall({ home, repoRoot: repo });
+    await assert.rejects(runKimiInstall({
+      home,
+      repoRoot: repo,
+      _beforeManagedMutation: async ({ operation }) => {
+        if (operation !== "config-retired" || swapped) return;
+        swapped = true;
+        renameSync(root, movedRoot);
+        mkdirSync(root);
+        second = runKimiInstall({
+          home,
+          repoRoot: repo,
+          _beforeManagedMutation: ({ operation: secondOperation }) => {
+            if (secondOperation === "config-lock-ready") secondEntered = true;
+          }
+        });
+        await new Promise(resolve => setTimeout(resolve, 75));
+        assert.equal(secondEntered, false, "replacement-root callback must remain behind the stable lifecycle lock");
+      }
+    }), /manifest ancestry changed/);
+    await second;
+    assert.equal(secondEntered, true);
+  } finally {
+    await second?.catch(() => {});
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+    rmSync(movedRoot, { recursive: true, force: true });
   }
 });
 
@@ -1952,7 +2044,7 @@ test("runKimiInstall: restart restores a manifest retired before CAS publication
   } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
 });
 
-test("runKimiInstall: restart rejects an in-place edit of a published manifest", async () => {
+test("runKimiInstall: recovery preserves an in-place edit of a published manifest", async () => {
   const repo = fixtureRepo(), home = tmp();
   try {
     const root = join(home, ".kimi-code"), configPath = join(root, "config.toml");
@@ -1967,12 +2059,12 @@ test("runKimiInstall: restart rejects an in-place edit of a published manifest",
       () => execFileSync(process.execPath, ["--input-type=module", "-e", script], { stdio: "ignore" }),
       error => error.status === 78
     );
-    writeFileSync(manifestPath, "{}\n");
+    const concurrent = Buffer.from("{}\n");
+    writeFileSync(manifestPath, concurrent);
 
-    await runKimiInstall({ home, repoRoot: repo });
-    await runKimiUninstall({ home });
-    assert.deepEqual(readFileSync(configPath), original);
-    assert.ok(!readdirSync(root).some(name => name.startsWith(".muster-config-txn-")));
+    await assert.rejects(runKimiInstall({ home, repoRoot: repo }), /manifest changed during config recovery/);
+    assert.deepEqual(readFileSync(manifestPath), concurrent);
+    assert.ok(readdirSync(root).some(name => name.startsWith(".muster-config-txn-")));
   } finally { rmSync(repo, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
 });
 
@@ -2024,6 +2116,10 @@ test("runKimiInstall: first-install rollback fsyncs durable manifest absence bef
     );
     assert.ok(!existsSync(manifestPath));
     assert.ok(readdirSync(root).some(name => name.startsWith(".muster-config-txn-")));
+    assert.throws(
+      () => execFileSync(process.execPath, ["--input-type=module", "-e", crash("config-recovery-config-absence-durable")], { stdio: "ignore" }),
+      error => error.status === 90
+    );
     await runKimiInstall({ home, repoRoot: repo });
     assert.ok(existsSync(manifestPath));
     assert.ok(!readdirSync(root).some(name => name.startsWith(".muster-config-txn-")));

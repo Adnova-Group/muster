@@ -226,8 +226,23 @@ async function reconcileAcquisitionTemps(path) {
     let current;
     try { current = await readLock(temporary); }
     catch (error) { if (error.code === "ENOENT") continue; throw error; }
-    if (!await ownerInstanceIsGone(current)) continue;
-    await retireLock(temporary, current, { stale: ownerInstanceIsGone });
+    let ownerGone = await ownerInstanceIsGone(current);
+    if (!lockIdentity(current.record)) {
+      const encodedOwner = name.slice(prefix.length, name.lastIndexOf("."));
+      try {
+        const [pidText, namedIdentity] = Buffer.from(encodedOwner, "base64url").toString("utf8").split("\0");
+        const pid = Number(pidText);
+        if (Number.isInteger(pid) && pid > 0) {
+          ownerGone = !processAlive(pid);
+          if (!ownerGone && namedIdentity) {
+            const actualIdentity = await processStartIdentity(pid);
+            ownerGone = Boolean(actualIdentity && actualIdentity !== namedIdentity);
+          }
+        }
+      } catch { /* malformed foreign artifacts remain fail-closed */ }
+    }
+    if (!ownerGone) continue;
+    await retireLock(temporary, current, { stale: () => true });
   }
 }
 
@@ -333,7 +348,10 @@ async function reclaimIfStale(path, options, onReclaimRaceWindow, afterValidatio
 }
 
 export async function withCodexFileLock(path, callback, options = {}) {
-  if (!fsConstants.O_NOFOLLOW) throw new Error("Codex transaction lock requires O_NOFOLLOW");
+  const platform = options.__platform ?? process.platform;
+  if (platform !== "linux" || !fsConstants.O_NOFOLLOW) {
+    return withPinnedCodexFileLock(path, callback, options);
+  }
   const parentPath = dirname(path);
   const parent = await open(parentPath, fsConstants.O_RDONLY | fsConstants.O_DIRECTORY | fsConstants.O_NOFOLLOW);
   try {
@@ -379,14 +397,16 @@ async function withPinnedCodexFileLock(path, callback, {
   __afterReleaseValidationHook,
   __beforeRestoreHook,
   __afterAcquireWriteHook,
+  __afterAcquireOpenHook,
   __beforeAcquirePublishHook,
   __beforeAcquireCleanupHook,
   __parentIdentityGuard
 } = {}) {
   const token = randomUUID();
   const processIdentity = await processStartIdentity();
+  const acquisitionOwner = Buffer.from(`${process.pid}\0${processIdentity ?? ""}`).toString("base64url");
   const started = Date.now();
-  await reconcileAcquisitionTemps(path);
+  let acquisitionsReconciled = false;
   for (;;) {
     if (await transitionIsActive(path)) {
       if (Date.now() - started >= timeoutMs) throw new Error(`timed out waiting for Codex transaction lock: ${path}`);
@@ -400,12 +420,17 @@ async function withPinnedCodexFileLock(path, callback, {
     // through a swapped ancestor into an attacker's target (codex-release.js's
     // residual (i)). O_CREAT|O_EXCL ("wx") itself does not guard ancestors.
     if (beforeOpen) await beforeOpen();
+    if (!acquisitionsReconciled) {
+      await reconcileAcquisitionTemps(path);
+      acquisitionsReconciled = true;
+    }
     let handle;
     let acquisitionPath;
     let published = false;
     try {
-      acquisitionPath = join(dirname(path), `${basename(path)}.acquire-${process.pid}-${token}`);
+      acquisitionPath = join(dirname(path), `${basename(path)}.acquire-${acquisitionOwner}.${token}`);
       handle = await open(acquisitionPath, "wx", 0o600);
+      if (__afterAcquireOpenHook) await __afterAcquireOpenHook({ path, acquisitionPath });
       await handle.writeFile(JSON.stringify({ format: 1, pid: process.pid, processIdentity, createdAt: Date.now(), token }) + "\n", "utf8");
       await handle.sync();
       await handle.close();
@@ -466,16 +491,25 @@ async function withPinnedCodexFileLock(path, callback, {
   try { return await callback(); }
   finally {
     clearInterval(heartbeat);
-    if (releaseGuard) await releaseGuard();
+    let guardError = null;
+    try { if (releaseGuard) await releaseGuard(); }
+    catch (error) { guardError = error; }
+    let releaseError = null;
     try {
       const current = await readLock(path);
-      if (current.record?.token !== token) return;
-      const result = await retireLock(path, current, {
-        afterValidation: __afterReleaseValidationHook
-      });
-      if (!result.removed && !result.missing) {
-        throw new Error(`Codex transaction lock ownership changed: ${path}`);
+      if (current.record?.token === token) {
+        const result = await retireLock(path, current, {
+          afterValidation: __afterReleaseValidationHook
+        });
+        if (!result.removed && !result.missing) {
+          throw new Error(`Codex transaction lock ownership changed: ${path}`);
+        }
       }
-    } catch (error) { if (error.code !== "ENOENT") throw error; }
+    } catch (error) { if (error.code !== "ENOENT") releaseError = error; }
+    if (guardError && releaseError) {
+      throw new AggregateError([guardError, releaseError], `Codex transaction lock release failed: ${path}`);
+    }
+    if (guardError) throw guardError;
+    if (releaseError) throw releaseError;
   }
 }

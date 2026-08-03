@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { lstat, mkdtemp, open, readFile, rm, utimes, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, open, readFile, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { processStartIdentity, withCodexFileLock } from "../src/codex-lock.js";
@@ -123,6 +123,34 @@ test("withCodexFileLock invokes beforeOpen ahead of a clean lock acquisition", a
     beforeOpen: () => { order.push("beforeOpen"); }
   });
   assert.deepEqual(order, ["beforeOpen", "callback"], "beforeOpen must run before the callback on a clean acquisition");
+});
+
+test("withCodexFileLock retains the portable path implementation off Linux", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-lock-portable-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const lock = join(tmp, "portable.lock");
+  let entered = false;
+  await withCodexFileLock(lock, () => { entered = true; }, { __platform: "darwin" });
+  assert.equal(entered, true);
+  await assert.rejects(lstat(lock), /ENOENT/);
+});
+
+test("withCodexFileLock runs the ancestry guard before acquisition-artifact reconciliation", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-lock-guard-reconcile-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const trusted = join(tmp, "trusted"), outside = join(tmp, "outside");
+  await mkdir(join(outside, "nested"), { recursive: true });
+  await mkdir(trusted);
+  await symlink(outside, join(trusted, "redirect"));
+  const lock = join(trusted, "redirect", "nested", "guarded.lock");
+  const artifact = join(outside, "nested", "guarded.lock.acquire-planted");
+  await writeFile(artifact, JSON.stringify(deadOwner("planted")) + "\n");
+  let guardCalled = false;
+  await assert.rejects(withCodexFileLock(lock, () => assert.fail("guarded callback must not run"), {
+    beforeOpen: () => { guardCalled = true; throw new Error("rejected untrusted ancestry"); }
+  }), /rejected untrusted ancestry/);
+  assert.equal(guardCalled, true);
+  assert.deepEqual(JSON.parse(await readFile(artifact, "utf8")), deadOwner("planted"));
 });
 
 // The identity gap in stale reclamation: reclaimer A decides a lock is stale and

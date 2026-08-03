@@ -646,6 +646,8 @@ async function publishConfigBytes(dest, configPath, bytes, expected, beforeManag
     try { current = await lstat(manifestTarget); }
     catch (error) { if (error.code !== "ENOENT") throw error; }
     if (!current && !commitReceipt.info) {
+      await (manifestDirectoryHandle?.sync() ?? syncDirectory(dirname(manifestPath)));
+      await beforeManagedMutation?.({ operation: "manifest-rollback-absence-durable", path: manifestPath });
       manifestPublishedInfo = null;
       return;
     }
@@ -723,6 +725,10 @@ async function publishConfigBytes(dest, configPath, bytes, expected, beforeManag
       await link(originalPath, sourcePath);
       await directoryHandles.at(-1).sync();
       await unlink(originalPath);
+    }
+    if (published && !retired) {
+      await directoryHandles.at(-1).sync();
+      await beforeManagedMutation?.({ operation: "config-rollback-absence-durable", path: configPath });
     }
     if (published) await unlink(failedPath);
     if (manifestOriginalPath) await unlink(manifestOriginalPath).catch(error => { if (error.code !== "ENOENT") throw error; });
@@ -1302,15 +1308,13 @@ async function reconcileConfigTransactions(dest, configPath, manifestPath, befor
       const manifestAlreadyRestored = receipt.manifestBefore && matches(manifest, receipt.manifestBefore);
       let committed = receipt.configOnlyCommitted === true || manifestCommitted;
       let manifestBytesValid = false;
-      let manifestObservedSha = null;
       if (manifestCommitted) {
         const currentManifest = await readNoFollowRegular(manifestRecoveryPath, {
           maxBytes: 1024 * 1024,
           label: `published Kimi manifest at ${manifestPath}`,
           expectedInfo: manifest
         });
-        manifestObservedSha = sha256(currentManifest.bytes);
-        manifestBytesValid = manifestObservedSha === receipt.manifestPublished.sha256;
+        manifestBytesValid = sha256(currentManifest.bytes) === receipt.manifestPublished.sha256;
       }
       if (manifestAlreadyRestored) {
         await syncManifestRecovery();
@@ -1336,7 +1340,7 @@ async function reconcileConfigTransactions(dest, configPath, manifestPath, befor
             label: `failed Kimi manifest publication at ${manifestFailedPath}`,
             expectedInfo: manifest
           });
-          if (sha256(movedManifest.bytes) !== manifestObservedSha) throw new Error("digest mismatch");
+          if (sha256(movedManifest.bytes) !== receipt.manifestPublished.sha256) throw new Error("digest mismatch");
         } catch {
           await link(manifestFailedPath, manifestRecoveryPath);
           await syncManifestRecovery();
@@ -1421,6 +1425,10 @@ async function reconcileConfigTransactions(dest, configPath, manifestPath, befor
         }
       }
 
+      if (!receipt.expected && !await statOrNull(sourcePath)) {
+        await directory.sync();
+        await beforeManagedMutation?.({ operation: "config-recovery-config-absence-durable", path: configPath });
+      }
       const failed = await statOrNull(failedPath);
       if (failed && !matches(failed, receipt.staged)) throw new Error(`Malformed Kimi config.toml failed publication: ${failedPath}`);
       if (failed) await unlink(failedPath);
@@ -1816,10 +1824,11 @@ export async function runKimiInstall(options = {}) {
   await mkdir(dest, { recursive: true });
   await assertWritableDir(dest);
   const lifecycleGuard = () => assertSafeManagedFiles(dest, [configPath]);
+  const lifecycleAnchor = join(dirname(dest), ".muster-kimi-lifecycle");
   await lifecycleGuard();
   await options._beforeManagedMutation?.({ operation: "lifecycle-lock-ready", path: configPath });
   return withFileMutationLock(
-    configPath,
+    lifecycleAnchor,
     () => runKimiInstallUnlocked(options),
     { beforeOpen: lifecycleGuard, staleMs: 1_000 }
   );
@@ -1835,19 +1844,25 @@ async function persistUninstallManifest(manifestPath, manifest, dest) {
 
 async function publishConfigManifest(path, bytes, dest, beforeManagedMutation, published) {
   const handles = [];
-  let directory = await openPinnedDirectory(published.manifestParent.base, path);
-  handles.push(directory);
-  let directoryInfo = await directory.stat();
-  if (!sameFileIdentity(directoryInfo, published.manifestParent.directories[0].info) || !directoryInfo.isDirectory()) {
-    throw new Error(`Kimi manifest ancestry changed during safe publication: ${path}`);
-  }
-  for (const expectedDirectory of published.manifestParent.directories.slice(1)) {
-    directory = await openPinnedDirectory(join("/proc/self/fd", String(directory.fd), expectedDirectory.name), path);
+  let directory;
+  try {
+    directory = await openPinnedDirectory(published.manifestParent.base, path);
     handles.push(directory);
-    directoryInfo = await directory.stat();
-    if (!sameFileIdentity(directoryInfo, expectedDirectory.info) || !directoryInfo.isDirectory()) {
+    let directoryInfo = await directory.stat();
+    if (!sameFileIdentity(directoryInfo, published.manifestParent.directories[0].info) || !directoryInfo.isDirectory()) {
       throw new Error(`Kimi manifest ancestry changed during safe publication: ${path}`);
     }
+    for (const expectedDirectory of published.manifestParent.directories.slice(1)) {
+      directory = await openPinnedDirectory(join("/proc/self/fd", String(directory.fd), expectedDirectory.name), path);
+      handles.push(directory);
+      directoryInfo = await directory.stat();
+      if (!sameFileIdentity(directoryInfo, expectedDirectory.info) || !directoryInfo.isDirectory()) {
+        throw new Error(`Kimi manifest ancestry changed during safe publication: ${path}`);
+      }
+    }
+  } catch (error) {
+    for (const opened of handles.reverse()) await opened.close().catch(() => {});
+    throw error;
   }
   const parentFdPath = join("/proc/self/fd", String(directory.fd));
   const target = join(parentFdPath, basename(path));
@@ -2171,10 +2186,11 @@ export async function runKimiUninstall(options = {}) {
   await mkdir(dest, { recursive: true });
   await assertWritableDir(dest);
   const lifecycleGuard = () => assertSafeManagedFiles(dest, [configPath]);
+  const lifecycleAnchor = join(dirname(dest), ".muster-kimi-lifecycle");
   await lifecycleGuard();
   await options._beforeManagedMutation?.({ operation: "lifecycle-lock-ready", path: configPath });
   return withFileMutationLock(
-    configPath,
+    lifecycleAnchor,
     () => runKimiUninstallUnlocked(options),
     { beforeOpen: lifecycleGuard, staleMs: 1_000 }
   );

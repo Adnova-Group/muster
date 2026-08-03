@@ -1403,5 +1403,9 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // dispatches a closed allowlist of twelve deterministic read-only tools to
   // bounded workers before the legacy CLI transport. Mutating tools retain the
   // process boundary. File count remains unchanged.
-  assert.equal(hash.digest("hex"), "2f8c2f4975c013ee5917b66c4b2b9425acf59cac520da68ffc9b6ea6bf26e2b3");
+  // 2026-08-03 re-pin #50 (runner prompt quality): runner.md now leads with
+  // affirmative one-item constraints and carries three worked PASS/BLOCKED
+  // terminal receipts. The generated Codex command receives the same examples;
+  // no file was added or removed from the shared surface.
+  assert.equal(hash.digest("hex"), "765377f31419eda3122077095edf02a275441feb4e41c447c33855557af19463");
 });

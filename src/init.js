@@ -36,6 +36,8 @@ import {
   readNoFollowRegular,
   resolveContainedRealpath,
   safeRelativePath,
+  sha256,
+  SHA256_HEX_RE,
 } from "./fs-safe.js";
 
 const pexecFile = promisify(execFile);
@@ -43,7 +45,9 @@ const PROFILE_FORMAT = "muster.project-profile";
 const RECEIPT_FORMAT = "muster.init-receipt";
 const FINGERPRINT_BASIS = "muster.repository-state.v2";
 const LEGACY_FINGERPRINT_BASES = new Set(["muster.repository-state.v1", FINGERPRINT_BASIS]);
-const HEX64 = /^[0-9a-f]{64}$/;
+const HEX64 = SHA256_HEX_RE;
+// Union with the 40-char git SHA shape -- not an exact match of HEX64/
+// SHA256_HEX_RE, so it stays as its own declaration.
 const GIT_HEAD = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const CLAUDE_AUTHORITY_POINTER = Buffer.from("# Claude Code\n\n@AGENTS.md\n");
 const NATIVE_ARTIFACTS = new Set([
@@ -76,7 +80,6 @@ export const INIT_LIMITS = Object.freeze({
 });
 
 const utf8Sort = (a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b));
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const envelope = (receipt, observedNativeEvidence = null) => ({ receipt, observedNativeEvidence });
 
 function decodePathBytes(bytes, label) {

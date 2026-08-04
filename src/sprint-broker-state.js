@@ -1,10 +1,11 @@
 import { constants } from "node:fs";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { lstat, mkdir, open, rename, rmdir, unlink } from "node:fs/promises";
 import { dirname } from "node:path";
+import { sha256, SHA256_HEX_RE } from "./fs-safe.js";
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-export const sprintStateHash = (text) => createHash("sha256").update(text).digest("hex");
+export const sprintStateHash = sha256;
 
 async function protectedRead(path, label, { optional = false } = {}) {
   let stat;
@@ -43,7 +44,7 @@ function validateState(state) {
   }
   const allowed = new Set(["implementation", "review", "integration", "approval"]);
   for (const [digest, principal] of Object.entries(state.callbackPrincipals)) {
-    if (!/^[0-9a-f]{64}$/.test(digest) || typeof principal?.actorId !== "string" || !principal.actorId
+    if (!SHA256_HEX_RE.test(digest) || typeof principal?.actorId !== "string" || !principal.actorId
       || !Array.isArray(principal.purposes) || principal.purposes.length < 1
       || new Set(principal.purposes).size !== principal.purposes.length
       || principal.purposes.some((purpose) => !allowed.has(purpose))) throw new Error("trusted assignment callback principals are invalid");
@@ -70,7 +71,7 @@ export function createSprintBrokerStateStore({ statePath, checkpointPath, lockPa
       const checkpoint = JSON.parse(checkpointText);
       if (typeof checkpoint.runId !== "string" || !checkpoint.runId
         || !Number.isSafeInteger(checkpoint.version) || checkpoint.version < 1
-        || !/^[0-9a-f]{64}$/.test(checkpoint.contentHash)) {
+        || !SHA256_HEX_RE.test(checkpoint.contentHash)) {
         throw new Error("broker monotonic checkpoint is invalid");
       }
       if (checkpoint.runId !== state.runId || state.version < checkpoint.version

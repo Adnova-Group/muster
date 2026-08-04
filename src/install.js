@@ -3,8 +3,8 @@ import { constants } from "node:fs";
 import { join, basename, dirname } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { createHash, randomBytes } from "node:crypto";
-import { readNoFollowRegular } from "./fs-safe.js";
+import { randomBytes } from "node:crypto";
+import { readNoFollowRegular, sha256 } from "./fs-safe.js";
 
 async function readIfExists(p) {
   try { return await readFile(p, "utf8"); } catch { return null; }
@@ -39,10 +39,6 @@ const LEGACY_STYLE_DIGESTS = new Set([
   "502075b0d10f2ed3ac79a48a08db702c1e2c83e12048e45fbfba062f15a706c5",
   "fc7eba324504fc84429156fc3527bfd09f4ce2994bfb73886633a87a6242b79b",
 ]);
-
-function digest(bytes) {
-  return createHash("sha256").update(bytes).digest("hex");
-}
 
 async function statIfExists(path) {
   try { return await lstat(path); }
@@ -202,7 +198,7 @@ export async function runUninstall({ home = homedir() } = {}) {
     legacyStyle = "absent";
   } else if (existing.kind === "unsafe") {
     legacyStyle = "unsafe";
-  } else if (!LEGACY_STYLE_DIGESTS.has(digest(existing.bytes))) {
+  } else if (!LEGACY_STYLE_DIGESTS.has(sha256(existing.bytes))) {
     legacyStyle = "unowned";
   } else {
     const backup = await readRegularNoFollow(bak);

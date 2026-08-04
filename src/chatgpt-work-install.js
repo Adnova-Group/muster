@@ -24,7 +24,7 @@
 //   exact prior plugin/marketplace/receipt trio; if restoration itself fails
 //   the error escalates to HUMAN-HOLD instead of leaving mixed state.
 
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { execFile as execFileCb } from "node:child_process";
 import {
   cp, lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile,
@@ -34,7 +34,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from "node:pat
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { withCodexFileLock } from "./codex-lock.js";
-import { ordinaryDirectoryPath as walkOrdinaryDirectoryPath } from "./fs-safe.js";
+import { ordinaryDirectoryPath as walkOrdinaryDirectoryPath, sha256 } from "./fs-safe.js";
 
 const execFile = promisify(execFileCb);
 const CONNECTION_ID = /^asdk_app_[A-Za-z0-9][A-Za-z0-9_-]*$/;
@@ -89,8 +89,11 @@ const ARTIFACT_PATHS = [
   ...CATALOG_ARTIFACTS,
   ...PIPELINE_ARTIFACTS,
 ];
+// Order-swapped char class ([a-f0-9] vs the shared SHA256_HEX_RE's
+// [0-9a-f]) -- functionally identical but not an EXACT match of the shared
+// pattern's literal text, so left as its own declaration (see the dedupe
+// item's exact-match-only rule for the regex consolidation).
 const HEX64 = /^[a-f0-9]{64}$/;
-const sha256 = bytes => createHash("sha256").update(bytes).digest("hex");
 
 function gitVerificationEnvironment() {
   const env = { ...process.env };

@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import {
   lstat,
   mkdir,
@@ -13,6 +12,7 @@ import {
   assertContainedNoSymlinkPath,
   atomicWrite,
   readNoFollowRegular,
+  sha256,
 } from "./fs-safe.js";
 
 export const DESIGN_SOURCE = Object.freeze({
@@ -66,10 +66,6 @@ const IGNORE_PATH = join(".muster", "design-ignores");
 const PROVIDER_PATH = join(".muster", "design-provider.json");
 const MAX_CACHE_ENTRIES = 64;
 const scanCache = new Map();
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
-}
 
 function xmlText(value) {
   return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");

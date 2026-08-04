@@ -97,6 +97,8 @@ as a skill (the other is `audit-pattern-dead-code-duplication`).
 
 ## Appended patterns
 
+- (2026-08-04, source: SonarSource, Cognitive Complexity, quoted verbatim: "Increment when there is a break in the linear (top-to-bottom, left-to-right) flow of the code" / "Increment when structures that break the flow are nested" — https://www.sonarsource.com/blog/cognitive-complexity-because-testability-understandability/) Nesting-weighted split ranking: rank oversized-function candidates by depth-weighted flow breaks (count if/for/catch/&&/|| with a nesting multiplier via a simple scan), not raw lines — this formalizes the existing flat-switch false-positive note: `src/cli.js`'s dispatch chain ranks low, `runCodexDoctor`-shaped nested flows rank high, so the split effort lands where comprehension actually suffers. — false-positive note: generated or vendored code is out of scope; a high score on a linear switch means the scan is miscounting, not the code.
+
 (none yet -- `muster-improver` may append dated, evidenced entries here from run receipts; see
 `plugin/skills/improve/SKILL.md`.)
 

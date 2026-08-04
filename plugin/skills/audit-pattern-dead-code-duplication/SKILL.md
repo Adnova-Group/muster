@@ -75,7 +75,9 @@ survey briefs seeded as a skill (the other is `audit-pattern-readability`).
   finding that only checked `src/` is incomplete.
 - **Mandatory contract-surface check before ANY deletion**: never propose or perform a bucket-A/B
   deletion straight off one grep pass. Independently re-verify with a SECOND tool/method (see the
-  false positives below) before it enters the ledger as delete-eligible.
+  false positives below) before it enters the ledger as delete-eligible. When a retention
+  decision's expiry is genuinely ambiguous (see the post-supersession entry below), say so in the
+  finding instead of guessing.
 - A shared-export consolidation collapses ALL prior sites to import ONE export, not just the
   majority -- a partial consolidation that leaves even one site with its own copy re-creates the
   drift risk the fix was for.
@@ -114,6 +116,8 @@ survey briefs seeded as a skill (the other is `audit-pattern-readability`).
      STRING literal (inside a doc-quoting assertion), not only as an import, before deleting.
 
 ## Appended patterns
+
+- (2026-08-04, source: docs/decisions/codex-fix-loop-reconcile.md — PR 152's binding-object layer was superseded by the receipt layer INSIDE its own branch before merge, leaving `createCodexFixLoopBinding`/`planCodexFixContinuation`/`fingerprintCodexRoleProfile` "orphaned relative to any live entry point" with only their own tests as consumers) Post-supersession orphan sweep: after any documented in-branch supersession, grep the superseded layer's exports for bucket-B status (imported only by their own tests) — supersession-born zombies are the highest-confidence bucket-B class because a decision record already names them non-live; the contract-surface check still applies before deletion. — false-positive note: a superseded layer explicitly retained as design documentation (the reconcile record says retention was a deliberate, separately-scoped call) is filed as a "has the retention decision expired?" question, never a direct delete order.
 
 (none yet -- `muster-improver` may append dated, evidenced entries here from run receipts; see
 `plugin/skills/improve/SKILL.md`.)

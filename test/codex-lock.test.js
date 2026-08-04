@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { lstat, mkdtemp, open, readFile, rm, utimes, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, open, readFile, readdir, rename, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { processStartIdentity, withCodexFileLock } from "../src/codex-lock.js";
 
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -123,6 +123,150 @@ test("withCodexFileLock invokes beforeOpen ahead of a clean lock acquisition", a
     beforeOpen: () => { order.push("beforeOpen"); }
   });
   assert.deepEqual(order, ["beforeOpen", "callback"], "beforeOpen must run before the callback on a clean acquisition");
+});
+
+test("withCodexFileLock retains the portable path implementation off Linux", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-lock-portable-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const lock = join(tmp, "portable.lock");
+  let entered = false;
+  await withCodexFileLock(lock, () => { entered = true; }, { __platform: "darwin" });
+  assert.equal(entered, true);
+  await assert.rejects(lstat(lock), /ENOENT/);
+});
+
+test("withCodexFileLock runs the ancestry guard before acquisition-artifact reconciliation", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-lock-guard-reconcile-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const trusted = join(tmp, "trusted"), outside = join(tmp, "outside");
+  await mkdir(join(outside, "nested"), { recursive: true });
+  await mkdir(trusted);
+  await symlink(outside, join(trusted, "redirect"));
+  const lock = join(trusted, "redirect", "nested", "guarded.lock");
+  const artifact = join(outside, "nested", "guarded.lock.acquire-planted");
+  await writeFile(artifact, JSON.stringify(deadOwner("planted")) + "\n");
+  let guardCalled = false;
+  await assert.rejects(withCodexFileLock(lock, () => assert.fail("guarded callback must not run"), {
+    beforeOpen: () => { guardCalled = true; throw new Error("rejected untrusted ancestry"); }
+  }), /rejected untrusted ancestry/);
+  assert.equal(guardCalled, true);
+  assert.deepEqual(JSON.parse(await readFile(artifact, "utf8")), deadOwner("planted"));
+});
+
+test("withCodexFileLock runs the ancestry guard before stale-transition reconciliation", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-lock-guard-transition-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const trusted = join(tmp, "trusted"), outside = join(tmp, "outside");
+  await mkdir(join(outside, "nested"), { recursive: true });
+  await mkdir(trusted);
+  await symlink(outside, join(trusted, "redirect"));
+  const lock = join(trusted, "redirect", "nested", "guarded.lock");
+  const transition = `${join(outside, "nested", "guarded.lock")}.muster-transition`;
+  const plantedTransition = deadOwner("planted-transition");
+  await writeFile(transition, JSON.stringify(plantedTransition) + "\n");
+  let guardCalled = false;
+  await assert.rejects(withCodexFileLock(lock, () => assert.fail("guarded callback must not run"), {
+    beforeOpen: () => { guardCalled = true; throw new Error("rejected untrusted transition ancestry"); }
+  }), /rejected untrusted transition ancestry/);
+  assert.equal(guardCalled, true);
+  assert.deepEqual(JSON.parse(await readFile(transition, "utf8")), plantedTransition);
+});
+
+test("withCodexFileLock preserves a replacement of its private acquisition stage", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-lock-stage-replacement-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const lock = join(tmp, "stage.lock");
+  let replacementPath;
+  const replacement = "user replacement\n";
+  await assert.rejects(withCodexFileLock(lock, () => assert.fail("conflicted acquisition must not enter"), {
+    __beforeAcquireCleanupHook: async ({ acquisitionPath }) => {
+      replacementPath = join(tmp, basename(acquisitionPath));
+      await rename(acquisitionPath, `${acquisitionPath}.owned`);
+      await writeFile(acquisitionPath, replacement);
+      throw new Error("injected stage replacement");
+    }
+  }), /acquisition cleanup failed/);
+  assert.equal(await readFile(replacementPath, "utf8"), replacement);
+  await assert.rejects(lstat(lock), /ENOENT/);
+});
+
+test("withCodexFileLock never adopts a replacement after opening its acquisition stage", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-lock-open-stage-replacement-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const lock = join(tmp, "open-stage.lock");
+  let replacementPath;
+  const replacement = "replacement after open\n";
+  await assert.rejects(withCodexFileLock(lock, () => assert.fail("replacement stage must not publish"), {
+    __afterAcquireOpenHook: async ({ acquisitionPath }) => {
+      replacementPath = join(tmp, basename(acquisitionPath));
+      await rename(acquisitionPath, `${acquisitionPath}.owned`);
+      await writeFile(acquisitionPath, replacement);
+    }
+  }), /acquisition cleanup failed/);
+  assert.equal(await readFile(replacementPath, "utf8"), replacement);
+  await assert.rejects(lstat(lock), /ENOENT/);
+});
+
+test("withCodexFileLock preserves an in-place edit of an opened acquisition stage", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-lock-open-stage-edit-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const lock = join(tmp, "open-stage-edit.lock");
+  let editedPath;
+  const edited = "in-place stage edit\n";
+  await assert.rejects(withCodexFileLock(lock, () => assert.fail("edited stage must not publish"), {
+    __afterAcquireOpenHook: async ({ acquisitionPath }) => {
+      editedPath = join(tmp, basename(acquisitionPath));
+      await writeFile(acquisitionPath, edited);
+      throw new Error("injected in-place stage edit");
+    }
+  }), /acquisition cleanup failed/);
+  assert.equal(await readFile(editedPath, "utf8"), edited);
+  await assert.rejects(lstat(lock), /ENOENT/);
+});
+
+test("withCodexFileLock compares private acquisition bytes without UTF-8 normalization", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-lock-stage-raw-bytes-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const lock = join(tmp, "raw-stage.lock");
+  let editedPath;
+  const edited = Buffer.from([0xff, 0xfe, 0x00]);
+  await assert.rejects(withCodexFileLock(lock, () => assert.fail("raw edited stage must not publish"), {
+    __afterAcquireOpenHook: async ({ acquisitionPath }) => {
+      editedPath = join(tmp, basename(acquisitionPath));
+      await writeFile(acquisitionPath, edited);
+      throw new Error("injected raw stage edit");
+    }
+  }), /acquisition cleanup failed/);
+  assert.deepEqual(await readFile(editedPath), edited);
+  await assert.rejects(lstat(lock), /ENOENT/);
+});
+
+test("withCodexFileLock preserves a public replacement that wins after candidate link", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-lock-public-winner-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const lock = join(tmp, "public-winner.lock");
+  const movedCandidate = `${lock}.candidate`;
+  const replacement = "public race winner\n";
+  await assert.rejects(withCodexFileLock(lock, () => assert.fail("replaced public lock must not enter"), {
+    __afterAcquirePublishHook: async () => {
+      await rename(lock, movedCandidate);
+      await writeFile(lock, replacement);
+    }
+  }), /acquisition stage changed/);
+  assert.equal(await readFile(lock, "utf8"), replacement);
+  await lstat(movedCandidate);
+});
+
+test("withCodexFileLock removes an empty retirement directory when its private stage is already absent", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-lock-missing-stage-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const lock = join(tmp, "missing-stage.lock");
+  let entered = false;
+  await withCodexFileLock(lock, () => { entered = true; }, {
+    __beforeAcquireCleanupHook: ({ acquisitionPath }) => rm(acquisitionPath)
+  });
+  assert.equal(entered, true);
+  assert.deepEqual((await readdir(tmp)).filter(name => name.startsWith(".muster-retired-")), []);
 });
 
 // The identity gap in stale reclamation: reclaimer A decides a lock is stale and

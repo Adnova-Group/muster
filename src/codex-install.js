@@ -13,7 +13,7 @@ import { codexAvailable } from "./codex-inventory.js";
 import { codexMcpOverlay, resolveCodexRuntimeIdentity, runCodexCommand } from "./codex-runtime-identity.js";
 import { escapeRe } from "./keyword.js";
 import { assertRegularTree, generateCodexProfiles } from "./codex-release.js";
-import { processAlive, processStartIdentity } from "./codex-lock.js";
+import { pause, processAlive, processStartIdentity, sameInode as sameScopeLockInode } from "./codex-lock.js";
 import {
   CODEX_THREAD_LIMIT_REMEDIATION,
   REQUIRED_CODEX_THREAD_LIMITS,
@@ -1024,7 +1024,6 @@ async function scopeLockText(token) {
     createdAt: Date.now()
   }) + "\n";
 }
-const pause = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
 
 async function writeExclusiveSafe(path, content) {
   await ordinaryDirectoryPath(dirname(path), { create: true });
@@ -1078,7 +1077,6 @@ async function staleScopeLock(state) {
   return age >= SCOPE_LOCK_MAX_STALE_MS;
 }
 
-const sameScopeLockInode = (left, right) => left.dev === right.dev && left.ino === right.ino;
 const sameScopeLockOwner = (left, right) => left.token === right.token && left.pid === right.pid
   && left.processIdentity === right.processIdentity && left.createdAt === right.createdAt
   && left.owner === right.owner && left.format === right.format;

@@ -3,7 +3,7 @@ import { constants as fsConstants } from "node:fs";
 import { link, lstat, mkdir, open, readFile, readdir, rename, rmdir, unlink, utimes } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 
-const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+export const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 export function processAlive(pid) {
   if (!Number.isInteger(pid) || pid < 1) return false;
@@ -58,7 +58,7 @@ function lockIdentity(record) {
   return JSON.stringify({ pid, token, createdAt, processIdentity });
 }
 
-const sameInode = (left, right) => left.dev === right.dev && left.ino === right.ino;
+export const sameInode = (left, right) => left.dev === right.dev && left.ino === right.ino;
 const transitionPath = path => `${path}.muster-transition`;
 
 function sameLock(current, expected) {

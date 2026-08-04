@@ -15,8 +15,9 @@ not a safe, behavior-preserving refactor**, and therefore cannot reach the ≥25
 without a deliberate semantics decision this item's dispatch did not authorize. Both lock
 implementations are deliberately, not accidentally, different protocols — each with its own passing
 test suite pinning the exact points where they diverge. The safe subset actually landed in this item
-is a 2-line, zero-risk dedup: `pause` and `sameInode` (byte-identical helper functions) are now
-exported from `codex-lock.js` and imported by `codex-install.js` instead of being duplicated
+is a 2-line, zero-risk dedup: `sameInode` (byte-identical) and `pause` (functionally identical,
+differing only in its parameter name) are now exported from `codex-lock.js` and imported by
+`codex-install.js` instead of being duplicated
 (`src/codex-install.js` net -2 lines: 3592 → 3590). Verbatim counts confirming zero behavior change
 are in **Verification** below.
 
@@ -44,10 +45,12 @@ owned by the test's own live `process.pid` with no recorded `processIdentity` is
 `codex-lock.js`'s `lockIsStale` does the opposite by design — its own test is titled
 `test/codex-lock.test.js:67`, `"withCodexFileLock never reclaims an exact live owner solely because
 maxStaleMs elapsed"`. (`maxStaleMs` is accepted as an option but is not read inside `lockIsStale`,
-which only branches on `staleMs`, liveness, and identity match.) `withCodexFileLock` is shared by
-`src/chatgpt-work-install.js`, `src/codex-release.js`, `src/fs-safe.js`, and Kimi install — changing
-its core staleness rule to accommodate the scope lock's hard cap would regress all of those callers,
-not just codex-install.js.
+which only branches on `staleMs`, liveness, and identity match.) `withCodexFileLock`'s direct
+importers are `src/chatgpt-work-install.js`, `src/codex-release.js`, and `src/fs-safe.js`; Kimi
+install consumes it transitively through `src/fs-safe.js`'s `withFileMutationLock` (`src/kimi-install.js`
+imports `withFileMutationLock` from `./fs-safe.js`, which itself calls `withCodexFileLock` at
+`src/fs-safe.js:434`). Changing `withCodexFileLock`'s core staleness rule to accommodate the scope
+lock's hard cap would regress all of those callers, not just codex-install.js.
 
 **3. The retirement-directory mode check has an escape hatch the shared primitive lacks.**
 `codex-install.js`'s `assertPrivateScopeRetirementDirectory` accepts an optional `modeCapability`
@@ -83,19 +86,22 @@ and still satisfy these five tests' exact checkpoint assertions, because the che
 do not exist in `withCodexFileLock`'s protocol.
 
 **6. Uninstall does not have a separate duplicated retirement path.**
-The survey evidence for this item flagged `runCodexUninstall` (`src/codex-install.js:3447-3592`) as
+The survey evidence for this item flagged `runCodexUninstall` (`src/codex-install.js:3445-3590`) as
 hand-rolling "its own scope-retirement calls." On inspection this is not a second, duplicated
 implementation: `runCodexUninstall` calls the same shared `withScopeRegistryTransaction(home,
-uninstallScope)` that `runCodexInstall` calls (`src/codex-install.js:3580`, mirroring
-`src/codex-install.js:2872`). There is no additional mechanical swap available on the uninstall side
+uninstallScope)` that `runCodexInstall` calls (`src/codex-install.js:3578`, mirroring
+`src/codex-install.js:2870`). There is no additional mechanical swap available on the uninstall side
 independent of the install-side unification question above.
 
 ## Landed change (this item)
 
-`pause` (`src/codex-lock.js:6`) and `sameInode` (`src/codex-lock.js:61`) are byte-identical to
-codex-install.js's private `pause` and `sameScopeLockInode`. Both are now `export`ed from
-`codex-lock.js` and imported into `codex-install.js` (`sameInode` aliased to `sameScopeLockInode` at
-the import so all eight existing call sites are untouched):
+`sameInode` (`src/codex-lock.js:61`) is byte-identical to codex-install.js's private
+`sameScopeLockInode`. `pause` (`src/codex-lock.js:6`) is functionally identical to codex-install.js's
+private `pause` but not byte-identical: codex-lock.js's parameter is named `ms`, codex-install.js's
+was named `milliseconds` — same body (`new Promise(resolve => setTimeout(resolve, <param>))`), same
+behavior, different parameter name. Both are now `export`ed from `codex-lock.js` and imported into
+`codex-install.js` (`sameInode` aliased to `sameScopeLockInode` at the import so all eight existing
+call sites are untouched):
 
 ```js
 import { pause, processAlive, processStartIdentity, sameInode as sameScopeLockInode } from "./codex-lock.js";

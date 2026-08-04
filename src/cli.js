@@ -7,7 +7,13 @@ import { validateManifest, manifestWarnings } from "./manifest.js";
 import { writeMemory, readMemory } from "./memory.js";
 import { computeWaves, nextTasks } from "./wave.js";
 import { computeSprintWaves, reconcileSprintProgress } from "./sprint-waves.js";
-import { BACKLOG_RECEIPT_MAX_BYTES, checkBacklogReceipts, makeGitReachabilityVerifier } from "./backlog-receipts.js";
+import {
+  BACKLOG_RECEIPT_MAX_BYTES,
+  assertTrustedGitCommand,
+  checkBacklogReceipts,
+  makeGitReachabilityVerifier,
+  trustedGitEnvironment,
+} from "./backlog-receipts.js";
 import { tallyReview, verdictsTallyCorruptionErrors } from "./review.js";
 import { validateVerdicts } from "./verdict-schema.js";
 import { pickWinner } from "./tournament.js";
@@ -912,12 +918,12 @@ async function handleBacklogReceipts(rest) {
     });
     content = bytes.toString("utf8");
   }
-  const resolvedRelease = spawnSync("git", [
+  const resolvedRelease = spawnSync(assertTrustedGitCommand(), [
     "-c", "core.warnAmbiguousRefs=true", "rev-parse", "--verify", "--end-of-options", `${releaseRef}^{commit}`,
   ], {
     cwd: process.cwd(),
     encoding: "utf8",
-    env: { ...process.env, GIT_NO_REPLACE_OBJECTS: "1" },
+    env: trustedGitEnvironment(),
     stdio: ["ignore", "pipe", "pipe"],
   });
   if (resolvedRelease.error || resolvedRelease.status !== 0 || resolvedRelease.stderr.length !== 0) {

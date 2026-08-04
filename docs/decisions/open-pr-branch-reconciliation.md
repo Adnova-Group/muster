@@ -1,30 +1,68 @@
 # Open PR branch reconciliation
 
-This record reconciles PRs 145–152, 166–176, and 185 as observed at `2026-08-02T03:40:35.000Z` against base commit `248f556c790ff1b9765c053c89a7d7e1669a4419`. The machine-readable authority is [open-pr-branch-reconciliation.json](open-pr-branch-reconciliation.json).
+This reconciles every currently open pull request and branch this run was chartered to own -- PRs
+145–152, 166–176, and 185 -- into backlog truth, observed live from GitHub at
+`2026-08-03T22:14:32.000Z` against base commit `95b3bf9c2d6c8ffc75469b01b4b0c1ee94679be1`. The
+machine-readable authority is [open-pr-branch-reconciliation.json](open-pr-branch-reconciliation.json).
 
-Every PR was still open when inspected. Consequently, every entry is `awaiting-disposition`: an implementation or review receipt did not make the backlog item complete while its promised external disposition remained undone. No GitHub state was changed by this reconciliation.
+This run made no GitHub mutation. Every PR was verified read-only via `gh pr view` per PR, and every
+claimed merge commit was cross-checked with `git merge-base --is-ancestor` against this worktree's
+local `HEAD` before being trusted. **None of the 20 PRs are open anymore** -- 10 merged, 10 closed
+without merging -- so there is no open PR left unowned. Each closed-unmerged PR was further checked
+for whether its promised functionality actually landed on main under a different implementation
+(a legitimate supersede) or is genuinely missing (a gap this run flags honestly rather than papering
+over as "superseded").
 
-| PR | Proposed disposition | Reason / owner |
-|---:|---|---|
-| 145 | active backlog owner | `@rnbennett` — rebase and isolate the missing MCP-specific runtime pin |
-| 146 | supersede with reviewed current-base implementation | Codex 0.146.0 exposes a non-session app-server strict parser; retain PR 146's outcome with bounded zero-turn checks and transactional rollback, but do not merge its conflicting stale head |
-| 147 | active backlog owner | `@rnbennett` — obtain durable exact-head code/security review receipts despite green CI |
-| 148 | active backlog owner | `@rnbennett` — reconcile the process wave with the later isolation lane |
-| 149 | close with rationale | Canonical thread ceiling landed and evolved on main |
-| 150 | close with rationale | Current event-driven watcher supersedes the stale branch |
-| 151 | close with rationale | Its own benchmark rejected adoption and prohibited production routing |
-| 152 | close with rationale | Current provider-aware follow-up loop supersedes the module |
-| 166 | active backlog owner | `@rnbennett` — repair failed/cancelled CI and obtain exact-head re-review |
-| 167 | active backlog owner | `@rnbennett` — refresh desktop contracts against current init/CLI |
-| 168 | active backlog owner | `@rnbennett` — rebase the CLI handler split |
-| 169 | active backlog owner | `@rnbennett` — rebase the Codex dispatch split and retain Kimi parity |
-| 170 | active backlog owner | `@rnbennett` — refresh the census consumer migration |
-| 171 | active backlog owner | `@rnbennett` — rerun the Kimi builtin reachability census |
-| 172 | active backlog owner | `@rnbennett` — repair failed/cancelled CI and obtain exact-head re-review |
-| 173 | active backlog owner | `@rnbennett` — repair failed/cancelled CI and obtain exact-head re-review |
-| 174 | active backlog owner | `@rnbennett` — repair failed/cancelled CI and obtain exact-head re-review |
-| 175 | active backlog owner | `@rnbennett` — repair failed/cancelled CI and obtain exact-head re-review |
-| 176 | active backlog owner | `@rnbennett` — rebase the post-consolidation walker migration and repair CI |
-| 185 | active backlog owner | `@rnbennett` — refresh launcher protocol and generated docs |
+| PR | Disposition | GitHub evidence | Landed on main? |
+|---:|---|---|---|
+| 145 | close-with-rationale | Closed 2026-08-03 01:32:20Z; `merged_at` null | **No — gap.** MCP-specific Node runtime pin (`test/codex-mcp-node-pin.test.js`) absent; only the distinct lifecycle-hook pin landed. |
+| 146 | close-with-rationale | Closed 2026-08-03 01:32:18Z; `merged_at` null | Yes — `src/codex-strict-config.js` + test, independent implementation on main. |
+| 147 | close-with-rationale | Closed 2026-08-03 01:32:16Z; `merged_at` null | Yes — exact-hash hook trust check already in `src/codex-doctor.js` (predates this PR). |
+| 148 | close-with-rationale | Closed 2026-08-03 01:32:14Z; `merged_at` null | Yes — `src/codex-wave-runner.js` + test, independent implementation on main. |
+| 149 | close-with-rationale | Closed 2026-08-03 01:32:12Z; `merged_at` null | Yes — canonical thread ceiling landed (`fed5177`, `cb1b3fc`). |
+| 150 | close-with-rationale | Closed 2026-08-03 01:32:11Z; `merged_at` null | Yes — event-driven watcher fix landed (`2101dc9`). |
+| 151 | close-with-rationale | Closed 2026-08-03 01:32:09Z; `merged_at` null | N/A — the PR's own benchmark rejected adoption; nothing was meant to land. |
+| 152 | close-with-rationale | Closed 2026-08-03 01:32:07Z; `merged_at` null | Yes — `src/codex-fix-loop.js` + tests, independent implementation on main. |
+| 166 | close-with-rationale | Closed 2026-08-03 01:32:05Z; `merged_at` null | **No — gap.** `src/codex-doctor.js` is still a single 1416-line file; no concern-based split exists. |
+| 167 | merged | Merged 2026-08-03 01:31:50Z at `df18f5232ca773c4c85a96100b39e3d59b09e4f5` | Yes — merge commit is an ancestor of local `HEAD`. |
+| 168 | merged | Merged 2026-08-03 01:31:50Z at `01a82dd131f67bb3c8fcbc5a1e6c9299ca8492fa` | Yes — merge commit is an ancestor of local `HEAD`. |
+| 169 | merged | Merged 2026-08-03 01:31:50Z at `9c6eeab778818167a0f5bffd6ae6ff9cea15226c` | Yes — merge commit is an ancestor of local `HEAD`. |
+| 170 | merged | Merged 2026-08-03 01:31:50Z at `a8376b0c69a97fe36fc7f93a3d475aefaf64eebd` | Yes — merge commit is an ancestor of local `HEAD`. |
+| 171 | merged | Merged 2026-08-03 01:31:50Z at `ddea8ce88164d0e2ae4f75bb6c4aab55c198de63` | Yes — merge commit is an ancestor of local `HEAD`. |
+| 172 | merged | Merged 2026-08-03 01:31:50Z at `75a7c44463c6310c6b9c3ab2fe9c0b1729d5e158` | Yes — merge commit is an ancestor of local `HEAD`. |
+| 173 | merged | Merged 2026-08-03 01:31:50Z at `75232fcf6a93d81cec2eb6dc5b13753a2af6ca42` | Yes — merge commit is an ancestor of local `HEAD`. |
+| 174 | merged | Merged 2026-08-03 01:31:50Z at `f8a3e62c88ae91c0db75e90448d6e42de6ccb94e` | Yes — merge commit is an ancestor of local `HEAD`. |
+| 175 | merged | Merged 2026-08-03 01:31:49Z at `a92ab72f9c009db65c4700e1215e064636b89997` | Yes — merge commit is an ancestor of local `HEAD`. |
+| 176 | merged | Merged 2026-08-03 01:31:49Z at `1c6963c5536cd9692d61cf203d806e2931a5e345` | Yes — merge commit is an ancestor of local `HEAD`. |
+| 185 | close-with-rationale | Closed 2026-08-03 01:32:03Z; `merged_at` null | Yes — `src/codex-plan-launch.js` + test, independent implementation on main. |
 
-The dispatcher coordinates every later action; only the human performs merges or destructive closes. Before any action, the live PR head must equal the ledger's full `observedHeadSha`. A merge additionally requires green current checks and a passing review at that exact head. Active owners own branch repair and re-review; they do not own permission to mutate `main`.
+**Summary: 10 merged, 10 closed with rationale, 0 active-with-owner (no PR remains open).**
+
+## False completed state corrected
+
+The tracked copy of this artifact in this worktree, inherited at base commit `95b3bf9`, was itself
+stale: it recorded all 20 PRs as `observedState: "OPEN"` / `backlogState: "awaiting-disposition"` as of
+an `2026-08-02T03:40:35.000Z` snapshot. That is no longer true for any of the 20 PRs and has been
+replaced in full by the live-verified data above. No other tracked file in this worktree references
+any of these PRs' branch names or titles as complete, so no further correction was needed elsewhere.
+
+## Genuine gaps flagged for the dispatcher (not superseded, not this run's to fix)
+
+Two closed-unmerged PRs (145, 166) promised functionality this run could **not** find anywhere on
+main under any name, unlike the other eight closed-unmerged PRs whose outcomes verifiably landed
+through independent implementations. Both PRs are terminally closed on GitHub and this run does not
+reopen, merge, or otherwise mutate them (read-only `gh` only). The honest recommendation is a fresh
+backlog item for each, not treating the closed PR as done:
+
+- **#145** — the MCP-specific entrypoint/nested-launch Node runtime pin is still missing; only a
+  narrower lifecycle-hook interpreter pin landed.
+- **#166** — the "refactor Codex doctor by concern" split never landed; `src/codex-doctor.js` remains
+  a single 1416-line file.
+
+## Execution preconditions (unchanged posture)
+
+This reconciliation is read-only evidence, not an action queue. Merges already happened externally
+(GitHub reports real `merged_at` timestamps and merge commits, all verified as ancestors of this
+worktree's local `HEAD`); this run performed zero merges, closes, comments, or any other GitHub
+mutation. Any further action on the two flagged gaps belongs to the dispatcher and a human, never to
+this run.

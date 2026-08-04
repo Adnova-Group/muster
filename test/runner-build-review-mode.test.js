@@ -58,8 +58,13 @@ test("scheduled Claude and Cowork legs select build-review-only, then dispositio
       `${label} must defer disposition until the barrier`);
     assert.match(wave, /failed.*omit.*disposition.*integration/is,
       `${label} must omit failed build/review legs from disposition and integration`);
-    assert.match(wave, /dependent.*escalat(?:e|es).*immediately.*never build/is,
-      `${label} must fail dependent legs closed before build`);
+    // self-healing-backlog-recovery (wave-1, 2026-08-03) replaced fail-dependents-immediately
+    // with progress-aware recovery: dependents wait while the predecessor's correction/replan
+    // can make progress, and only a truthful terminal state blocks them — still without a worktree.
+    assert.match(wave, /predecessor.*correction\/replan.*dependents remain waiting/is,
+      `${label} must keep dependents waiting during recoverable predecessor failure`);
+    assert.match(wave, /truthful terminal state.*terminally blocked without creating a\s+worktree/is,
+      `${label} must terminally block dependents workless only on a truthful terminal predecessor state`);
     for (const disposition of ["pr", "keep", "merge-local", "merge-push"]) {
       assert.match(wave, new RegExp(`\\b${disposition}\\b`), `${label} must map ${disposition}`);
     }

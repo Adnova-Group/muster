@@ -224,7 +224,10 @@ test("backlog-publish revalidates ancestry immediately before publication", asyn
         MUSTER_SWAP_OUTSIDE: outside,
       },
     }),
-    /symlink|contained under the run root/i,
+    // The wave-1 lock hardening (pin-git-receipt-provenance family) pins the transaction lock's
+    // parent directory, so an ancestry swap is now rejected at that earlier layer; either
+    // rejection message proves the same property — the swapped publication never lands.
+    /symlink|contained under the run root|transaction lock parent changed/i,
   );
   assert.equal(await readFile(join(outside, "backlog.md"), "utf8"), "external\n");
   assert.equal(await readFile(join(displaced, "backlog.md"), "utf8"), "original\n");

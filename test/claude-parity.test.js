@@ -1436,6 +1436,10 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // audit-pattern-readability.md gains the indentation-lies/two-modules-in-one/bare-argument/
   // error-message/comment-rot hunt elements; audit-pattern-tech-debt.md's stale raw-mkdtempSync
   // count is reworded to a re-derive-fresh instruction; plugin/skills/improve/SKILL.md's step 4
-  // names its append entry format. File count unchanged at 159.
-  assert.equal(hash.digest("hex"), "4761f85f9af3c99adb41bdc760ebf71afb053d68c23cf66420d04fd67bea474b");
+  // names its append entry format. Re-pin 2026-08-04b: go-backlog.md's dispatch-and-failure
+  // boundary aligned to the reviewed self-healing semantics (dependents wait during recoverable
+  // predecessor correction/replan; terminal blocking only on a truthful terminal state), closing
+  // the divergence from the Cowork sprint protocol that runner-build-review-mode.test.js guards.
+  // File count unchanged at 159.
+  assert.equal(hash.digest("hex"), "e362d233306d24872ab904de6024ff95bf84b8def86b6612bee5f8b44663fa91");
 });

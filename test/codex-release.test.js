@@ -604,7 +604,10 @@ test("publishCodexPlugin re-validates pluginsRoot canonically before the pointer
   };
   await assert.rejects(
     publishCodexPlugin({ pluginsRoot, stagedPlugin: await stagedPlugin(root, "mid-swap"), packageVersion: "0.5.0", marketplaceTemplate, copyStagedPlugin }),
-    /symlink|ordinary directory|realpath|resolves to/i,
+    // The wave-1 transaction-lock parent pin now catches the swap one layer earlier;
+    // either rejection proves the property, and the pointer-commit assertion below
+    // still verifies nothing reached the evil tree.
+    /symlink|ordinary directory|realpath|resolves to|transaction lock parent changed/i,
     "an ancestor swapped in after the copy must be caught by the pre-pointer-commit re-validation"
   );
   // The marketplace pointer must NEVER have been committed through the swapped
@@ -637,7 +640,9 @@ test("publishCodexPlugin refuses the copy-failure rollback through an ancestor s
   };
   await assert.rejects(
     publishCodexPlugin({ pluginsRoot, stagedPlugin: await stagedPlugin(root, "rollback"), packageVersion: "0.5.0", marketplaceTemplate, copyStagedPlugin }),
-    /rollback refused|symlink|ordinary directory/i,
+    // Same earlier-layer acceptance as above; the canary assertion below still
+    // proves the rollback never deleted through the link.
+    /rollback refused|symlink|ordinary directory|transaction lock parent changed/i,
     "a rollback through a swapped-in ancestor must be refused, not executed"
   );
   assert.equal(

@@ -17,9 +17,24 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { selectedPluginRoot } from "../test-support/codex-helpers.js";
+import { lintPrompt } from "../src/prompt-lint.js";
 
 const root = new URL("../", import.meta.url);
 const read = (p) => readFile(new URL(p, root), "utf8");
+
+test("runner prompt gives direct affirmative guidance and worked terminal receipts", async () => {
+  const text = await read("plugin/commands/runner.md");
+  const lint = lintPrompt(text, { isAgent: true, hasTools: true });
+  assert.ok(lint.rubric.clarity >= 1, `runner clarity must be >= 1, got ${lint.rubric.clarity}`);
+  assert.ok(lint.rubric.examples >= 1, `runner examples must be >= 1, got ${lint.rubric.examples}`);
+  assert.ok(lint.total >= 10, `runner prompt total must be >= 10, got ${lint.total}`);
+
+  const examples = [...text.matchAll(/<example\b[\s\S]*?<\/example>/gi)].map((match) => match[0]);
+  assert.ok(examples.length >= 2 && examples.length <= 5,
+    `runner must carry 2-5 worked receipt examples, got ${examples.length}`);
+  assert.ok(examples.some((example) => /\bPASS\b/.test(example)), "examples must include a PASS receipt");
+  assert.ok(examples.some((example) => /\bBLOCKED\b/.test(example)), "examples must include a BLOCKED receipt");
+});
 
 test("plugin/commands/runner.md documents the runner's standing cadence with the settled /loop x dmi fact", async () => {
   const text = await read("plugin/commands/runner.md");

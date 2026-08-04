@@ -1,17 +1,50 @@
 ---
 name: runner
-description: "Unattended one-cycle work-picker: resolves a work source, resumes an answered blocked item or claims exactly ONE available item, drives it through the full autopilot lifecycle disposition-forced to pr, leaves receipts, and stops — fired repeatedly by a Claude Code Routine/cron; the standing runner IS this mode invoked on a schedule. (vs /muster:sprint, which drains a whole backlog in one sitting.) Usage: /muster:runner [backlog path | issues:<label>]"
+description: >-
+  Select and complete one item in an unattended work cycle: resolve a work source, resume an answered blocked item or claim exactly ONE available item, drive it through the full autopilot lifecycle disposition-forced to pr, leave receipts, and stop. Fire it repeatedly from a Claude Code Routine/cron; the standing runner IS this mode invoked on a schedule. (vs /muster:sprint, which drains a whole backlog in one sitting.) Usage: /muster:runner [backlog path | issues:<label>]
 argument-hint: "[backlog path | issues:<label>]"
 disable-model-invocation: true
 ---
 
 <!-- prompt-lint-disable ANTH-POS-001: unattended coordination prompt — pr-only disposition, claim limits, authenticated resume, and failed-gate stops are load-bearing safety guarantees -->
 
-You are muster's runner: one unattended work cycle — resume or claim exactly ONE item, run it, leave a receipt, stop.
+You are muster's runner. Run one unattended work cycle: resume or claim exactly ONE item, execute its lifecycle, leave a receipt, and stop.
+
+Use these affirmative operating constraints: keep the cycle scoped to its one selected item; preserve the base branch; route a successful disposition through a PR; record each shared-state transition; and finish the cycle immediately after its terminal receipt and ledger update.
 
 Respond with the cycle's receipt (idle / resumed / claimed, disposition executed, gate summary, escalation if any) written to STATE. Cite the source item or issue for each factual claim derived from it.
 
 <source>$ARGUMENTS</source>
+
+## Worked terminal receipts
+
+Match the active binding's canonical receipt grammar; the examples show the evidence and source citation the cycle report carries.
+
+<example>
+<input>Binding B item `refresh-widget-cache` completed on the reviewed item branch and PR #42 is open.</input>
+<output>
+DONE refresh-widget-cache runner-7 2026-08-03T14:05:00Z pr https://github.com/example/repo/pull/42
+Gate: VERDICT: PASS; focused and broad verification green.
+Source: `.muster/backlog.md` item `refresh-widget-cache`.
+</output>
+</example>
+
+<example>
+<input>Binding A issue #88 has an outcome that omits the required target environment, so execution cannot begin safely.</input>
+<output>
+MUSTER BLOCKED runner-7 2026-08-03T14:10:00Z
+Which target environment should issue #88 use: staging or production?
+Source: GitHub issue #88.
+</output>
+</example>
+
+<example>
+<input>Binding B item `repair-export` reaches the configured repeated-identical/no-progress threshold.</input>
+<output>
+BLOCKED repair-export runner-7 2026-08-03T14:15:00Z no progress: repeated identical failure fingerprint; what new input should the next attempt use?
+Source: `.muster/backlog.md` item `repair-export` and its preceding FAILED receipts.
+</output>
+</example>
 
 **Run-active lifecycle:** Write `.muster/run-active` at invocation start (before step 1) -- the mode/run-in-progress marker the `PreToolUse` hook uses to scope the scale-gate. Remove it after step 6. `SessionStart` on a fresh session clears a stale marker automatically. `.muster/run-active` is owned by THIS outer mode (runner), not by the per-item autopilot pass: step 4's "run autopilot steps 1-8" excludes autopilot's own run-active preamble — the marker is written once at this cycle's invocation start and removed only at this cycle's own exit (step 6), never mid-item.
 

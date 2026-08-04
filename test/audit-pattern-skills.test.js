@@ -1,8 +1,9 @@
-// test/audit-pattern-skills.test.js — audit-pillar-pattern-library item.
+// test/audit-pattern-skills.test.js — audit-pillar-pattern-library item, extended by
+// audit-pattern-batch2 (the 10th, documentation, pattern skill).
 //
 // Proves the item's hard criterion: 0 audit pillars remain persona-only. Every pillar named
-// by the item (architecture, tech-debt, coverage, simplification, readability, security,
-// UX/design, prompt quality, dead-code/duplication) resolves to a real, on-disk hunt-list
+// (architecture, tech-debt, coverage, simplification, readability, security, UX/design,
+// prompt quality, dead-code/duplication, documentation) resolves to a real, on-disk hunt-list
 // pattern skill (plugin/skills/audit-pattern-<pillar>/SKILL.md), and buildAuditManifest's
 // generated plan composes that skill onto the dimension's persona via the SAME `plan[].skills:
 // [{id, rationale}]` brief-binding mechanism the orchestrator already turns into a "REQUIRED
@@ -17,10 +18,12 @@ import { scanRepoPrompts } from "../src/prompt-scan.js";
 const root = new URL("../", import.meta.url);
 const read = (p) => readFile(new URL(p, root), "utf8");
 
-// The item's 9 named pillars, mapped to the dimension id(s)/skill id that cover them. Nine
-// pillar NAMES, but only 8 are dispatched crew dimensions -- dead-code/duplication composes
-// into two existing dimensions (tech-debt + simplification) instead of adding a 9th crew role
-// (see src/audit.js's PATTERN_SKILL comment for the full rationale).
+// The 10 named pillars (the audit-pillar-pattern-library item's original 9, plus the
+// audit-pattern-batch2 item's approved 10th, `documentation`), mapped to the dimension
+// id(s)/skill id that cover them. 10 pillar NAMES, but only 8 are dispatched crew dimensions --
+// dead-code/duplication composes into tech-debt + simplification, and documentation composes
+// into readability + design-ux, instead of either adding its own crew role (see src/audit.js's
+// PATTERN_SKILL comment for the full rationale).
 const NAMED_PILLARS = {
   architecture: "audit-pattern-architecture",
   "tech-debt": "audit-pattern-tech-debt",
@@ -31,6 +34,7 @@ const NAMED_PILLARS = {
   "UX/design": "audit-pattern-design-ux",
   "prompt quality": "audit-pattern-prompt-quality",
   "dead-code/duplication": "audit-pattern-dead-code-duplication",
+  documentation: "audit-pattern-documentation",
 };
 
 function frontmatter(text) {
@@ -41,7 +45,7 @@ function frontmatter(text) {
 
 // ── (a) every pillar has a resolvable pattern skill: 0 persona-only ────────────────────────
 
-test("every one of the item's 9 named pillars resolves to an on-disk SKILL.md with matching frontmatter name", async () => {
+test("every one of the 10 named pillars resolves to an on-disk SKILL.md with matching frontmatter name", async () => {
   for (const [pillar, skillId] of Object.entries(NAMED_PILLARS)) {
     const text = await read(`plugin/skills/${skillId}/SKILL.md`).catch((e) => {
       assert.fail(`pillar "${pillar}" has no resolvable pattern skill at plugin/skills/${skillId}/SKILL.md: ${e.message}`);
@@ -52,7 +56,7 @@ test("every one of the item's 9 named pillars resolves to an on-disk SKILL.md wi
   }
 });
 
-test("every audit-pattern-* directory under plugin/skills is one of the 9 named pillars (no orphaned pattern skill)", async () => {
+test("every audit-pattern-* directory under plugin/skills is one of the 10 named pillars (no orphaned pattern skill)", async () => {
   const dirs = (await readdir(new URL("plugin/skills", root), { withFileTypes: true }))
     .filter((d) => d.isDirectory() && d.name.startsWith("audit-pattern-"))
     .map((d) => d.name);
@@ -80,6 +84,16 @@ test("the dead-code/duplication pillar composes into BOTH tech-debt and simplifi
     );
   }
   assert.ok(!AUDIT_DIMENSIONS.some((d) => d.id === "dead-code-duplication"), "dead-code-duplication must not be a separate dispatched dimension");
+});
+
+test("the documentation pillar composes into BOTH readability and design-ux (not a 10th crew role)", () => {
+  for (const dim of ["readability", "design-ux"]) {
+    assert.ok(
+      PATTERN_SKILL[dim].some((s) => s.id === "audit-pattern-documentation"),
+      `dimension "${dim}" must bind audit-pattern-documentation`
+    );
+  }
+  assert.ok(!AUDIT_DIMENSIONS.some((d) => d.id === "documentation"), "documentation must not be a separate dispatched dimension");
 });
 
 // ── (b) composition wiring: generated briefs (plan[].skills) carry the reference ───────────
@@ -127,7 +141,7 @@ test("every canonical audit-pattern-* SKILL.md passes muster's own prompt-lint g
   // matches a loose "audit-pattern-" substring filter; disambiguate by path prefix so this
   // count stays exactly 9 regardless of how many portable copies exist.
   const mine = result.prompts.filter((p) => p.file.startsWith("plugin/skills/audit-pattern-"));
-  assert.equal(mine.length, 9, "all 9 canonical pattern skills must be discovered as prompt docs by the repo-wide scan");
+  assert.equal(mine.length, 10, "all 10 canonical pattern skills must be discovered as prompt docs by the repo-wide scan");
   const failing = mine.filter((p) => !p.passing);
   assert.deepEqual(failing, [], `audit-pattern-* SKILL.md file(s) failing prompt-lint: ${JSON.stringify(failing)}`);
 });
@@ -135,7 +149,7 @@ test("every canonical audit-pattern-* SKILL.md passes muster's own prompt-lint g
 test("every portable audit-pattern-* skill shim (repo-root skills/) also passes prompt-lint", async () => {
   const result = await scanRepoPrompts(new URL("../", import.meta.url).pathname);
   const portable = result.prompts.filter((p) => p.file.startsWith("skills/audit-pattern-") && !p.file.startsWith("plugin/"));
-  assert.equal(portable.length, 9, "all 9 portable pattern-skill shims must be discovered as prompt docs by the repo-wide scan");
+  assert.equal(portable.length, 10, "all 10 portable pattern-skill shims must be discovered as prompt docs by the repo-wide scan");
   const failing = portable.filter((p) => !p.passing);
   assert.deepEqual(failing, [], `portable audit-pattern-* SKILL.md shim(s) failing prompt-lint: ${JSON.stringify(failing)}`);
 });

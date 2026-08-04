@@ -123,8 +123,8 @@ For annotated go-backlog files, Codex dispatches every ready implementation/revi
 | Pipelines | all of them |
 | MCP tools | 31 tools: 30 CLI-wrapper tools plus `muster_sprint_protocol` |
 | Custom-agent profiles | 27 |
-| Skills | 86 total: 14 public + 72 internal |
-| Internal skill breakdown | 21 native orchestration + 51 capability |
+| Skills | 87 total: 14 public + 73 internal |
+| Internal skill breakdown | 22 native orchestration + 51 capability |
 
 ## Inspecting a Codex install
 

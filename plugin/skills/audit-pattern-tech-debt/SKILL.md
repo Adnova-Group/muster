@@ -62,8 +62,11 @@ Hunt-list for the **tech-debt** audit dimension (`buildAuditManifest`, `src/audi
 
 ## Appended patterns
 
-(none yet -- `muster-improver` may append dated, evidenced entries here from run receipts; see
-`plugin/skills/improve/SKILL.md`.)
+- (2026-08-04, source: 2026-08-04 INCIDENT — /tmp inodes 98%, muster-init-* fixture debris 33k inodes each, "exit-sweeps never fired for killed processes"; earlier tmp-fixture-leak: 78,290 leaked dirs) SIGKILL-surviving reap coverage: enumerate every distinct temp-dir prefix (`grep -rhoE '"muster-[a-z0-9-]+-"' src/ test/ test-support/ scripts/`) and verify each is covered by an age-gated reap path (`hygiene --reap` or equivalent) that does NOT depend on the creating process exiting cleanly — exit-sweep registration alone is insufficient by proven incident. — false-positive note: prefixes only ever created under a suite that also runs an age-gated sweep are covered; verify the sweep's prefix list actually names them.
+- (2026-08-04, source: live probe — plugin/skills/orchestrator/SKILL.md changed 79 times since 2026-06-01 with test/claude-parity.test.js co-changing 33 of them (42%); STATE names parity re-pins #9/#10/#13/#22 as recurring commit content) Change-coupling tax detection: run `git log --since=<window> --name-only` co-change analysis; a file pair co-changing in >40% of either's commits with no import relationship is shotgun-surgery-shaped — for guard pins, evaluate whether the pin can auto-derive instead of demanding a manual re-pin commit per prose edit. — false-positive note: a guard co-changing with its guarded artifact is the guard WORKING; only file it when re-pin commits routinely carry zero other content (pure mechanical tax).
+
+(`muster-improver` may append further dated, evidenced entries here from run receipts, gated by
+user approval; see `plugin/skills/improve/SKILL.md`.)
 
 Report findings as a bullet list, one finding per line: severity (P0/P1/P2), location
 (file:line), problem, suggested fix -- matching the audit dispatch's own return contract

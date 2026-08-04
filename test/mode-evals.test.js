@@ -745,6 +745,9 @@ const STRUCTURAL_SKILLS = [
   "audit-pattern-design-ux",
   "audit-pattern-prompt-quality",
   "audit-pattern-dead-code-duplication",
+  // audit-pattern-batch2: the approved 10th pattern skill, composed onto BOTH readability and
+  // design-ux (same two-dimension precedent as audit-pattern-dead-code-duplication above).
+  "audit-pattern-documentation",
 ];
 // The content-pipeline layer (eval/modes extended to pipelines/*.yaml phase prompts) --
 // the "honest graded subset" of the content pipelines (knowledge/software pipelines like

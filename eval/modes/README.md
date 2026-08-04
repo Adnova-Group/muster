@@ -299,7 +299,7 @@ heads-up line names the correct replacement command).
 | autopilot.md -> go.md | structural (alias-class check) | 0 — same alias-class check |
 | sprint.md -> go-backlog.md | structural (alias-class check) | 0 — same alias-class check |
 
-### Skill-protocol skills (`plugin/skills/*/SKILL.md`, 21: the 10 below + router + improve + 9 audit-pattern-* hunt-list skills)
+### Skill-protocol skills (`plugin/skills/*/SKILL.md`, 22: the 10 below + router + improve + 10 audit-pattern-* hunt-list skills)
 
 | surface | tier | cases |
 |---|---|---|
@@ -324,6 +324,7 @@ heads-up line names the correct replacement command).
 | audit-pattern-design-ux | structural | 0 — same shape, composed onto the conditional design-ux (frontend) dimension; see `test/audit-pattern-skills.test.js` |
 | audit-pattern-prompt-quality | structural | 0 — same shape, composed onto the conditional prompt-quality dimension; see `test/audit-pattern-skills.test.js` |
 | audit-pattern-dead-code-duplication | structural | 0 — composed onto BOTH the tech-debt and simplification dimensions (not a dispatched dimension of its own); see `test/audit-pattern-skills.test.js` |
+| audit-pattern-documentation | structural | 0 — approved via the audit-pattern-batch2 improver cycle, composed onto BOTH readability (unconditional) and design-ux (conditional, information-architecture half) dimensions (not a dispatched dimension of its own); see `test/audit-pattern-skills.test.js` |
 
 ### Native-builtin providers (`plugin/builtins/muster-*/SKILL.md`, 7)
 

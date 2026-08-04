@@ -58,8 +58,10 @@ Hunt-list for the **simplification** audit dimension (`buildAuditManifest`, `src
 
 ## Appended patterns
 
-(none yet -- `muster-improver` may append dated, evidenced entries here from run receipts; see
-`plugin/skills/improve/SKILL.md`.)
+- (2026-08-04, source: scoped-audit-shakedown architecture ledger P1 — "hooks.js is 4 concerns incl. 2 generic lexers codex-thread-limits.js already reimplemented") Reimplemented-lexer sweep: grep for hand-rolled TOML/config tokenizers and line-parsers across `src/*.js` (`grep -rn "tokenize\|lexToml\|parseToml\|readToml\|splitToml" src/`); two modules each owning a private lexer for the same format is the crypto-helper class at parser grain — consolidate to one shared lexer with both consumers importing it. — false-positive note: deliberately divergent parsers with different tolerance contracts (strict fail-closed vs tolerant read-and-recover) are not duplicates; verify the contracts differ before merging, same rule as `isContainedLexical` vs `resolveContainedRealpath`.
+
+(`muster-improver` may append further dated, evidenced entries here from run receipts, gated by
+user approval; see `plugin/skills/improve/SKILL.md`.)
 
 Report findings as a bullet list, one finding per line: severity (P0/P1/P2), location
 (file:line), problem, suggested fix -- matching the audit dispatch's own return contract

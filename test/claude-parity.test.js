@@ -40,7 +40,12 @@ test("Claude orchestration surface remains byte-identical outside release metada
     hash.update(await readFile(join(root, path)));
     hash.update("\0");
   }
-  assert.equal(paths.length, 159); // previous 150-file surface +9: audit-pillar-pattern-library's 9 new
+  assert.equal(paths.length, 160); // previous 159-file surface +1: audit-pattern-batch2's new
+  // plugin/skills/audit-pattern-documentation/SKILL.md (the 10th pattern skill, approved via the
+  // second improver batch, composed onto readability + design-ux). The batch also appended 19
+  // dated entries across the other 9 existing plugin/skills/audit-pattern-*/SKILL.md files and
+  // fixed 2 new prompt-lint false triggers those appends introduced -- content changes only, no
+  // new files there. previous 150-file surface +9: audit-pillar-pattern-library's 9 new
   // plugin/skills/audit-pattern-<pillar>/SKILL.md hunt-list pattern skills (architecture,
   // tech-debt, coverage, simplification, readability, security, design-ux, prompt-quality,
   // dead-code-duplication), one dir + one file each, following the exact one-dir-per-skill
@@ -1444,5 +1449,25 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // dated, receipt-sourced hunt patterns from the scoped audit shakedown land in the
   // architecture, coverage, and design-ux pattern skills' Appended-patterns sections
   // (user-approved; entries follow improve step 4's format).
-  assert.equal(hash.digest("hex"), "f32551e9d4e89db210a91b11e1058d1a0a13c5f8cd79904473ba8e91cda62814");
+  // Re-pin 2026-08-04d (audit-pattern-batch2, the approved second improver batch): file count
+  // 159 -> 160, one new file -- plugin/skills/audit-pattern-documentation/SKILL.md, the 10th
+  // pattern skill, composed onto readability (unconditional) + design-ux (conditional IA half)
+  // via the same two-dimension precedent audit-pattern-dead-code-duplication established. It is
+  // seeded with 5 entries migrated verbatim from the 8 existing pattern skills' proposal ledger
+  // (2 from prompt-quality, 2 from readability, 1 from design-ux). The remaining ~19 ledger
+  // entries were appended verbatim to their proposed skills' own Appended-patterns sections
+  // (content changes only, no new files there), with one user-approved edit: the coverage
+  // flake-class entry's citation was trimmed to the in-repo precedent only (dropping the Luo et
+  // al. FSE 2014 "corroborating literature" clause). Two of the newly appended entries
+  // (dead-code-duplication's post-supersession-orphan entry, and the documentation skill's own
+  // "Where to dig" charter prose) each introduced a new GUARD-IDK-001 prompt-lint trigger word
+  // ("question"/"fact"); both files gained a one-line "say so" qualifier to stay passing, per
+  // the same convention every other pattern skill in this family already uses.
+  // Re-pin 2026-08-04e (audit-pattern-batch2 review polish, content-only, file count unchanged
+  // at 160): the 9 amended canonical pattern skills' stale "(none yet -- muster-improver may
+  // append ...)" placeholder -- self-contradictory once real dated entries sit above it -- is
+  // replaced with a one-liner that survives future appends ("may append further dated,
+  // evidenced entries here from run receipts, gated by user approval"); the new
+  // audit-pattern-documentation skill already omitted the placeholder and needed no change.
+  assert.equal(hash.digest("hex"), "3ab74b1a725a48ed90fe8e06f9b2630733a0d2a3e2ac5ac6c6ff1a0859259ac0");
 });

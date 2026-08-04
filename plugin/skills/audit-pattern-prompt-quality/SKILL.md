@@ -62,8 +62,10 @@ Read the source for exact regexes/thresholds; do not paraphrase them here where 
 
 ## Appended patterns
 
-(none yet -- `muster-improver` may append dated, evidenced entries here from run receipts; see
-`plugin/skills/improve/SKILL.md`.)
+- (2026-08-04, source: audit-pillar-pattern-library fix-loop root cause — "survey hunt lists lived only in driver dispatch briefs") Brief-only procedure persistence: when a run receipt or STATE credits an operational procedure that exists only in a transient dispatch brief, the procedure must land in a versioned skill/command doc; operational knowledge with no versioned home is the finding. — false-positive note: genuinely one-off, run-specific constraints ("no benchmarks this run") belong in the brief and nowhere else.
+
+(`muster-improver` may append further dated, evidenced entries here from run receipts, gated by
+user approval; see `plugin/skills/improve/SKILL.md`.)
 
 Report findings as a bullet list, one finding per line: severity (P0/P1/P2), location
 (file:line), problem, suggested fix -- matching the audit dispatch's own return contract

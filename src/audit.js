@@ -35,6 +35,11 @@ const DESIGN_DIMENSION = {
 // own (that would add a 9th crew role, a protocol redesign, out of scope): its hunt list
 // (audit-pattern-dead-code-duplication) composes into BOTH `tech-debt` (dead-code half) and
 // `simplification` (duplication half), whose `focus` text above already names those concerns.
+//
+// audit-pattern-batch2: the same precedent extends to the tenth pattern skill,
+// `audit-pattern-documentation` (docs/decisions/audit-pattern-batch2.md) -- also not a
+// dispatched dimension of its own. It composes into `readability` (unconditional home) and
+// `design-ux` (conditional, information-architecture half).
 export const PATTERN_SKILL = Object.freeze({
   architecture: [{
     id: "audit-pattern-architecture",
@@ -64,10 +69,16 @@ export const PATTERN_SKILL = Object.freeze({
       rationale: "Duplication half of the dead-code/duplication pillar (composes with simplification); seeded verbatim from the 2026-08-04 dedupe-crypto-helpers survey."
     },
   ],
-  readability: [{
-    id: "audit-pattern-readability",
-    rationale: "Hunt-list for the readability audit dimension: oversized-function/misleading-indentation sweep, hand-rolled-duplication-of-an-existing-primitive check; seeded verbatim from the 2026-08-04 structure survey (split-codex-install + codex-install-lock-unification)."
-  }],
+  readability: [
+    {
+      id: "audit-pattern-readability",
+      rationale: "Hunt-list for the readability audit dimension: oversized-function/misleading-indentation sweep, hand-rolled-duplication-of-an-existing-primitive check; seeded verbatim from the 2026-08-04 structure survey (split-codex-install + codex-install-lock-unification)."
+    },
+    {
+      id: "audit-pattern-documentation",
+      rationale: "Unconditional documentation-pillar half composed onto readability: decision-record receipt audits, citation drift, count claims, timeless language."
+    },
+  ],
   security: [{
     id: "audit-pattern-security",
     rationale: "Hunt-list for the security audit dimension: fs-safe.js routing check, path-traversal/symlink-guard classes, GUARD-SEP-003 remote-text re-anchoring coverage."
@@ -76,10 +87,16 @@ export const PATTERN_SKILL = Object.freeze({
     id: "audit-pattern-prompt-quality",
     rationale: "Hunt-list for the prompt-quality audit dimension: points into src/prompt-lint.js's rule ids and `muster prompt scan` (single-source; read on demand, not duplicated here)."
   }],
-  "design-ux": [{
-    id: "audit-pattern-design-ux",
-    rationale: "Hunt-list for the UX/design audit dimension: points into the pinned Impeccable audit/critique workflows and `muster design gate` (single-source; read on demand, not duplicated here)."
-  }],
+  "design-ux": [
+    {
+      id: "audit-pattern-design-ux",
+      rationale: "Hunt-list for the UX/design audit dimension: points into the pinned Impeccable audit/critique workflows and `muster design gate` (single-source; read on demand, not duplicated here)."
+    },
+    {
+      id: "audit-pattern-documentation",
+      rationale: "Conditional information-architecture half of the documentation pillar composed onto design-ux: Diátaxis quadrant routing for README/website."
+    },
+  ],
 });
 
 // opts.paths, when non-empty, scopes the whole audit to those paths/subsystems. Kept as

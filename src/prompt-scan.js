@@ -3,8 +3,10 @@
 // Extracted from cli.js so it is independently importable and unit-testable.
 // Bounded (skip vendored/build dirs, text extensions only, per-file + total caps)
 // so it stays fast and safe to run on any tree. Deterministic — the lint is no-LLM.
-import { readdir, readFile, stat } from "node:fs/promises";
-import { join, relative, extname } from "node:path";
+import { constants as fsConstants } from "node:fs";
+import { lstat, readdir } from "node:fs/promises";
+import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { readNoFollowRegular } from "./fs-safe.js";
 import { lintPrompt } from "./prompt-lint.js";
 import { discoverPrompts } from "./prompt-discover.js";
 
@@ -16,10 +18,54 @@ export const SCAN_MAX_FILE = 256 * 1024;
 export const SCAN_MAX_FILES = 5000;
 export const SCAN_MAX_INCOMPLETE_EVIDENCE = 100;
 
+function sameIdentity(current, prior) {
+  const currentMtime = current.mtimeNs ?? current.mtimeMs;
+  const priorMtime = prior.mtimeNs ?? prior.mtimeMs;
+  const currentCtime = current.ctimeNs ?? current.ctimeMs;
+  const priorCtime = prior.ctimeNs ?? prior.ctimeMs;
+  return current.ino === prior.ino && current.dev === prior.dev &&
+    current.mode === prior.mode && current.nlink === prior.nlink &&
+    current.size === prior.size && currentMtime === priorMtime &&
+    currentCtime === priorCtime;
+}
+
+function sameDirectoryIdentity(current, prior) {
+  return current.isDirectory() && prior.isDirectory() && sameIdentity(current, prior);
+}
+
+async function snapshotDirectoryChain(root, dir, lstatFn) {
+  const rel = relative(root, dir);
+  if (rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+    throw new Error("scan directory escaped the root");
+  }
+  const paths = [root];
+  let current = root;
+  for (const part of rel ? rel.split(sep) : []) {
+    current = join(current, part);
+    paths.push(current);
+  }
+  const infos = await Promise.all(paths.map((path) => lstatFn(path, { bigint: true })));
+  if (infos.some((info) => info.isSymbolicLink() || !info.isDirectory())) {
+    throw new Error("scan directory contains a symlink or non-directory ancestor");
+  }
+  return { paths, infos };
+}
+
+async function validateDirectoryChain(snapshot, lstatFn) {
+  const current = await Promise.all(snapshot.paths.map((path) => lstatFn(path, { bigint: true })));
+  if (current.some((info, index) => !sameDirectoryIdentity(info, snapshot.infos[index]))) {
+    throw new Error("scan directory changed while reading");
+  }
+}
+
 async function collectScanEvidence(root, io = {}) {
   const readdirFn = io.readdir ?? readdir;
-  const readFileFn = io.readFile ?? readFile;
-  const statFn = io.stat ?? stat;
+  const lstatFn = io.lstat ?? lstat;
+  // `stat` is retained as a test seam for the candidate's pre-open metadata;
+  // the default is deliberately lstat so the name is never followed.
+  const metadataFn = io.stat ?? lstatFn;
+  const readNoFollowFn = io.readNoFollowRegular ?? readNoFollowRegular;
+  const scanRoot = resolve(root);
   const files = [];
   const incompleteEvidence = [];
   let fileLimitWitnessFound = false;
@@ -33,35 +79,81 @@ async function collectScanEvidence(root, io = {}) {
   };
   async function walk(dir) {
     if (shouldStop()) return;
+    let directorySnapshot;
+    let childDirectoryInfos;
     let ents;
-    try { ents = await readdirFn(dir, { withFileTypes: true }); } catch {
-      recordIncomplete(relative(root, dir) || ".", "directory-read-failure");
+    try {
+      directorySnapshot = await snapshotDirectoryChain(scanRoot, dir, lstatFn);
+      ents = await readdirFn(dir, { withFileTypes: true });
+      childDirectoryInfos = new Map();
+      for (const entry of ents) {
+        if (!entry.isDirectory() || SCAN_SKIP_DIRS.has(entry.name)) continue;
+        const childInfo = await lstatFn(join(dir, entry.name), { bigint: true });
+        if (childInfo.isSymbolicLink() || !childInfo.isDirectory()) {
+          throw new Error("scan child directory changed after enumeration");
+        }
+        childDirectoryInfos.set(entry.name, childInfo);
+      }
+      await validateDirectoryChain(directorySnapshot, lstatFn);
+    } catch {
+      recordIncomplete(relative(scanRoot, dir) || ".", "directory-read-failure");
       return;
     }
     ents.sort((a, b) => a.name.localeCompare(b.name));
     for (const e of ents) {
       const full = join(dir, e.name);
-      if (e.isDirectory()) {
-        if (!SCAN_SKIP_DIRS.has(e.name)) await walk(full);
-        if (shouldStop()) return;
-        continue;
-      }
-      const isPromptName = /\.(prompt|tmpl)$/i.test(e.name);
-      if (!SCAN_TEXT_EXT.has(extname(e.name).toLowerCase()) && !isPromptName) continue;
-      const path = relative(root, full);
+      if (SCAN_SKIP_DIRS.has(e.name) && (e.isDirectory() || e.isSymbolicLink())) continue;
+      const path = relative(scanRoot, full);
       if (e.isSymbolicLink()) {
         recordIncomplete(path, "symlink");
         if (shouldStop()) return;
         continue;
       }
-      if (!e.isFile()) continue;
+      if (e.isDirectory()) {
+        const evidenceBefore = incompleteEvidence.length;
+        try {
+          // The parent snapshot is the authority for this Dirent. Validate it
+          // across the entire recursive handoff so the child cannot bless a
+          // replacement directory as its own fresh baseline.
+          await validateDirectoryChain(directorySnapshot, lstatFn);
+          const childBefore = await lstatFn(full, { bigint: true });
+          if (!sameDirectoryIdentity(childBefore, childDirectoryInfos.get(e.name))) {
+            throw new Error("scan child directory changed during recursive handoff");
+          }
+          await walk(full);
+          const childAfter = await lstatFn(full, { bigint: true });
+          if (!sameDirectoryIdentity(childAfter, childDirectoryInfos.get(e.name))) {
+            throw new Error("scan child directory changed during recursive handoff");
+          }
+          await validateDirectoryChain(directorySnapshot, lstatFn);
+        } catch {
+          if (incompleteEvidence.length === evidenceBefore) {
+            recordIncomplete(path, "directory-read-failure");
+          }
+        }
+        if (shouldStop()) return;
+        continue;
+      }
+      const isPromptName = /\.(prompt|tmpl)$/i.test(e.name);
+      if (!SCAN_TEXT_EXT.has(extname(e.name).toLowerCase()) && !isPromptName) continue;
+      if (!e.isFile()) {
+        recordIncomplete(path, "read-failure");
+        if (shouldStop()) return;
+        continue;
+      }
       if (files.length >= SCAN_MAX_FILES) {
         recordIncomplete(path, "file-limit");
         fileLimitWitnessFound = true;
         return;
       }
       let fileStat;
-      try { fileStat = await statFn(full); } catch {
+      try {
+        // Bind every candidate to the directory identities that produced its
+        // Dirent. Establishing a fresh baseline here would bless a directory
+        // replacement that landed after enumeration.
+        await validateDirectoryChain(directorySnapshot, lstatFn);
+        fileStat = await metadataFn(full);
+      } catch {
         recordIncomplete(path, "read-failure");
         if (shouldStop()) return;
         continue;
@@ -72,8 +164,24 @@ async function collectScanEvidence(root, io = {}) {
         continue;
       }
       let raw;
-      try { raw = await readFileFn(full); } catch {
-        recordIncomplete(path, "read-failure");
+      try {
+        if (!fsConstants.O_NOFOLLOW || !fsConstants.O_NONBLOCK) {
+          throw new Error("safe prompt reads require O_NOFOLLOW and O_NONBLOCK");
+        }
+        const opened = await readNoFollowFn(full, {
+          maxBytes: SCAN_MAX_FILE,
+          label: path,
+          expectedInfo: fileStat,
+        });
+        raw = opened.bytes;
+        const namedAfter = await lstatFn(full);
+        if (namedAfter.isSymbolicLink() || !namedAfter.isFile() ||
+            !sameIdentity(namedAfter, opened.info)) {
+          throw new Error(`file changed while reading: ${path}`);
+        }
+        await validateDirectoryChain(directorySnapshot, lstatFn);
+      } catch (error) {
+        recordIncomplete(path, error.fsSafe?.reason === "too-large" ? "size-limit" : "read-failure");
         if (shouldStop()) return;
         continue;
       }
@@ -86,7 +194,7 @@ async function collectScanEvidence(root, io = {}) {
       files.push({ path, content: bytes.toString("utf8") });
     }
   }
-  await walk(root);
+  await walk(scanRoot);
   return { files, incompleteEvidence, incompleteEvidenceTruncated };
 }
 

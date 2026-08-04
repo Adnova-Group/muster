@@ -69,7 +69,8 @@ test("contributor and architecture docs describe the current build and dispatch 
 test("binding inventory and docs index match the public surface", async () => {
   const binding = await read("docs/binding-interface.md");
   assert.match(binding, /ten modes plus the three.*aliases/i);
-  assert.match(binding, /thirty-three files|33 files/i);
+  // Re-derived 2026-08-04: the 9 audit-pattern hunt-list skills widened the prose scope 33->42.
+  assert.match(binding, /forty-two files|42 files/i);
   const index = await read("docs/README.md");
   for (const expected of ["Architecture", "Binding", "Operations", "Research", "Historical"]) {
     assert.match(index, new RegExp(`## ${expected}`, "i"));

@@ -20,9 +20,9 @@ and explicitly parked, not built.
 
 "Plugin prose" here means the model-facing surface Claude Code actually loads and reads at
 dispatch time: `plugin/commands` (the ten modes plus the three legacy aliases,
-as `*.md` files), `plugin/skills` (the twenty-one core skills, one `SKILL.md` per
+as `*.md` files), `plugin/skills` (the twenty-two core skills, one `SKILL.md` per
 subdirectory), muster's own agents in `plugin/agents` (seven `muster-*.md` files; not the
-vendored `wsh-*.md` personas), and `plugin/output-styles/muster.md` -- forty-two files.
+vendored `wsh-*.md` personas), and `plugin/output-styles/muster.md` -- forty-three files.
 
 Two adjacent trees were deliberately excluded, with evidence rather than assertion:
 
@@ -264,7 +264,7 @@ scanned.
 
 ## Grep audit
 
-Reproducible commands, run from the repo root against the forty-two-file "plugin prose" scope
+Reproducible commands, run from the repo root against the forty-three-file "plugin prose" scope
 defined above (`FILES` set to every `*.md` in `plugin/commands`, every `SKILL.md` in
 `plugin/skills`, every `muster-*.md` in `plugin/agents`, and every `*.md` in
 `plugin/output-styles`):
@@ -291,7 +291,7 @@ stale:
 ```
 AskUserQuestion    files=14  mentions=36
 dispatch (Agent/Task tool)  files=7  mentions=18
-hook (PreToolUse/SessionStart/UserPromptSubmit)  files=11  mentions=29
+hook (PreToolUse/SessionStart/UserPromptSubmit)  files=15  mentions=33
 worktree   files=7  mentions=62
 ```
 
@@ -379,7 +379,22 @@ prose, which grew independently on this base branch since the prior refresh; eve
 is re-derived fresh from the live tree by `test/docs-binding-interface.test.js`'s own grep-audit
 procedure, not carried forward from any prior entry's arithmetic.
 
-Every one of those 145 mentions accounted for above: AskUserQuestion under Ask; Agent/Task tool
+Counts refreshed again for the audit-pattern-batch2 item (composed base branch, 2026-08-04): the
+item's approved second improver batch adds a 10th `plugin/skills/audit-pattern-documentation/
+SKILL.md` pattern skill and appends 19 dated entries across the other 9, widening the
+`plugin/skills` scope from twenty-one to twenty-two directories (forty-two to forty-three total
+prose files, both fixed above). Four of the newly appended entries each name `hook` as an
+ordinary English word inside their own finding text -- `audit-pattern-architecture/SKILL.md`'s
+lock-protocol census ("public vs private hook seams"), `audit-pattern-coverage/SKILL.md`'s
+mock-altitude entry ("a documented injection hook"), `audit-pattern-security/SKILL.md`'s
+integrity-pairing entry ("the exact-hash hook trust check"), and
+`audit-pattern-documentation/SKILL.md`'s decision-record-audit entry ("hook-trust's '20
+commits'") -- four new files and four new mentions on the hook row (11/29 -> 15/33). No entry
+added an AskUserQuestion, dispatch, or worktree mention; those three rows are unchanged. Every
+number above is re-derived fresh from the live tree, not carried forward from this or any prior
+entry's arithmetic.
+
+Every one of those 149 mentions accounted for above: AskUserQuestion under Ask; Agent/Task tool
 and `subagent_type` under Dispatch; hook/PreToolUse/SessionStart/UserPromptSubmit under
 Enforce; worktree under Isolate. Receipts and Capability scan bind to mechanisms (the native
 todo tool, the plugin registry) that plugin prose refers to by their STATE/task-board/`muster

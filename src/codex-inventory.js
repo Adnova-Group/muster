@@ -18,12 +18,13 @@ export const CODEX_COUNTS = Object.freeze({
   agents: 27,
   // audit-pillar-pattern-library item: 9 new plugin/skills/audit-pattern-<pillar>/ hunt-list
   // pattern skills (one dir + SKILL.md each), ported into internal-skills like any other
-  // native skill dir -- 12 -> 21.
-  nativeSkills: 21,
+  // native skill dir -- 12 -> 21. audit-pattern-batch2 item: 1 more (the approved
+  // documentation pillar, composed onto readability + design-ux) -- 21 -> 22.
+  nativeSkills: 22,
   builtinSkills: 51,
   publicSkills: 14,
-  // 63 -> 72: nativeSkills (21) + builtinSkills (51).
-  internalSkills: 72,
+  // 72 -> 73: nativeSkills (22) + builtinSkills (51).
+  internalSkills: 73,
   pipelines: 20,
   mcpTools: 31,
   primaryModes: 10,

@@ -88,6 +88,13 @@ test("CI explicitly gates checked backlog completion on release reachability", a
   assert.match(backlog, /reopen.*unchecked|unchecked.*reopen/is);
   assert.match(backlog, /backlog-receipts - --release-ref/);
   assert.match(backlog, /Only those same verified bytes/i);
+  assert.match(backlog, /tracked canonical/i);
+  assert.match(backlog, /reviewable.*(?:commit|PR)|(?:commit|PR).*reviewable/is);
+  assert.match(backlog, /clean worktree/i);
+
+  const audit = await read("plugin/commands/audit.md");
+  assert.match(audit, /tracked canonical/i);
+  assert.doesNotMatch(audit, /\.muster\/backlog\.md` \(gitignored, run-local\)/i);
 });
 
 test("trusted PR receipt gate runs base verifier against HEAD-bound PR data before lifecycle code", async () => {

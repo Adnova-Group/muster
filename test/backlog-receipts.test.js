@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile, spawnSync } from "node:child_process";
 import { promisify } from "node:util";
-import { chmod, symlink, writeFile } from "node:fs/promises";
+import { chmod, readFile, symlink, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { deflateSync } from "node:zlib";
 import {
@@ -42,6 +42,59 @@ test("every non-withdrawn checked item needs a reachable merge or done receipt",
   assert.match(result.errors[0].reason, /missing.*merge.*done/i);
   assert.match(result.errors[1].reason, /40-character/i);
   assert.match(result.errors[2].reason, /not reachable.*refs\/heads\/main/i);
+});
+
+test("the tracked canonical backlog projects every completed item into the CI receipt gate", async () => {
+  const root = new URL("../", import.meta.url).pathname;
+  const tracked = await pexecFile("git", ["ls-files", "--error-unmatch", ".muster/backlog.md"], { cwd: root });
+  assert.equal(tracked.stdout.trim(), ".muster/backlog.md");
+
+  const backlog = await readFile(new URL("../.muster/backlog.md", import.meta.url), "utf8");
+  const baseline = checkBacklogReceipts(backlog, { releaseRef: "main", isReachable: () => true });
+  assert.equal(baseline.ok, true);
+  assert.ok(baseline.summary.checked > 0);
+
+  const mutated = backlog.replace(/\s+\{(?:merge|done): [0-9a-f]{40}\}/, "");
+  assert.notEqual(mutated, backlog, "fixture must remove one canonical completion receipt");
+  const result = checkBacklogReceipts(mutated, { releaseRef: "main", isReachable: () => true });
+  assert.equal(result.ok, false);
+  assert.match(result.errors[0].reason, /missing.*merge.*done/i);
+});
+
+test("trusted CI rejects canonical backlog deletion, symlink, demotion, and broken receipts", async () => {
+  const script = new URL("../scripts/check-backlog-receipts.mjs", import.meta.url).pathname;
+  const cases = {
+    deletion: async (cwd) => unlink(join(cwd, ".muster/backlog.md")),
+    symlink: async (cwd) => {
+      await unlink(join(cwd, ".muster/backlog.md"));
+      await symlink("../seed.txt", join(cwd, ".muster/backlog.md"));
+    },
+    demotion: async (cwd, seed) => writeFile(join(cwd, ".muster/backlog.md"), `- [ ] complete {id: complete} {done: ${seed}}\n`),
+    missing: async (cwd) => writeFile(join(cwd, ".muster/backlog.md"), "- [x] complete {id: complete}\n"),
+    unreachable: async (cwd) => writeFile(join(cwd, ".muster/backlog.md"), `- [x] complete {id: complete} {done: ${"3".repeat(40)}}\n`),
+  };
+
+  for (const [name, mutate] of Object.entries(cases)) {
+    const cwd = await tmpProject({ "seed.txt": "seed\n", ".muster/.keep": "" });
+    await pexecFile("git", ["init", "-b", "main"], { cwd });
+    await pexecFile("git", ["add", "."], { cwd });
+    await pexecFile("git", ["-c", "user.name=Muster Test", "-c", "user.email=test@example.invalid", "commit", "-m", "seed"], { cwd });
+    const seed = (await pexecFile("git", ["rev-parse", "HEAD"], { cwd })).stdout.trim();
+    await writeFile(join(cwd, ".muster/backlog.md"), `- [x] complete {id: complete} {done: ${seed}}\n`);
+    await pexecFile("git", ["add", ".muster/backlog.md"], { cwd });
+    await pexecFile("git", ["-c", "user.name=Muster Test", "-c", "user.email=test@example.invalid", "commit", "-m", "canonical"], { cwd });
+    const release = (await pexecFile("git", ["rev-parse", "HEAD"], { cwd })).stdout.trim();
+    await mutate(cwd, seed);
+    await pexecFile("git", ["add", "-A"], { cwd });
+    await pexecFile("git", ["-c", "user.name=Muster Test", "-c", "user.email=test@example.invalid", "commit", "-m", name], { cwd });
+    await assert.rejects(
+      () => pexecFile(process.execPath, [script, "--release-ref", release], { cwd }),
+      (error) => {
+        assert.notEqual(error.code, 0, `${name} must fail trusted receipt verification`);
+        return true;
+      },
+    );
+  }
 });
 
 test("withdrawn is the only explicit exemption and requires a reason", () => {
@@ -317,7 +370,7 @@ test("checked-item processing is capped and repeated receipt SHAs are verified o
 });
 
 test("CI scanner rejects invalid canonical tracked backlog files", async () => {
-  const cwd = await tmpProject({ "seed.txt": "seed\n", "nested/backlog.md": "- [x] stale {id: stale}\n" });
+  const cwd = await tmpProject({ "seed.txt": "seed\n", ".muster/backlog.md": "- [ ] canonical {id: canonical}\n", "nested/backlog.md": "- [x] stale {id: stale}\n" });
   await pexecFile("git", ["init", "-b", "main"], { cwd });
   await pexecFile("git", ["add", "."], { cwd });
   await pexecFile("git", ["-c", "user.name=Muster Test", "-c", "user.email=test@example.invalid", "commit", "-m", "seed"], { cwd });
@@ -330,7 +383,7 @@ test("CI scanner rejects invalid canonical tracked backlog files", async () => {
 });
 
 test("CI scanner validates immutable index blobs rather than replaced working-tree bytes", async () => {
-  const cwd = await tmpProject({ "seed.txt": "seed\n", "roadmap.txt": "- [x] stale {id: indexed}\n" });
+  const cwd = await tmpProject({ "seed.txt": "seed\n", ".muster/backlog.md": "- [ ] canonical {id: canonical}\n", "roadmap.txt": "- [x] stale {id: indexed}\n" });
   await pexecFile("git", ["init", "-b", "main"], { cwd });
   await pexecFile("git", ["add", "."], { cwd });
   await pexecFile("git", ["-c", "user.name=Muster Test", "-c", "user.email=test@example.invalid", "commit", "-m", "seed"], { cwd });
@@ -344,7 +397,7 @@ test("CI scanner validates immutable index blobs rather than replaced working-tr
 });
 
 test("CI scanner disables replacement objects that map a stale checklist to harmless bytes", async () => {
-  const cwd = await tmpProject({ "seed.txt": "seed\n", "roadmap.txt": "- [x] stale {id: replaced}\n" });
+  const cwd = await tmpProject({ "seed.txt": "seed\n", ".muster/backlog.md": "- [ ] canonical {id: canonical}\n", "roadmap.txt": "- [x] stale {id: replaced}\n" });
   await pexecFile("git", ["init", "-b", "main"], { cwd });
   await pexecFile("git", ["add", "."], { cwd });
   await pexecFile("git", ["-c", "user.name=Muster Test", "-c", "user.email=test@example.invalid", "commit", "-m", "seed"], { cwd });
@@ -361,7 +414,7 @@ test("CI scanner disables replacement objects that map a stale checklist to harm
 });
 
 test("CI scanner rejects a valid zlib object whose bytes do not match its tree OID", async () => {
-  const cwd = await tmpProject({ "seed.txt": "seed\n", "roadmap.txt": "- [x] stale {id: rehashed}\n" });
+  const cwd = await tmpProject({ "seed.txt": "seed\n", ".muster/backlog.md": "- [ ] canonical {id: canonical}\n", "roadmap.txt": "- [x] stale {id: rehashed}\n" });
   await pexecFile("git", ["init", "-b", "main"], { cwd });
   await pexecFile("git", ["add", "."], { cwd });
   await pexecFile("git", ["-c", "user.name=Muster Test", "-c", "user.email=test@example.invalid", "commit", "-m", "seed"], { cwd });
@@ -381,7 +434,7 @@ test("CI scanner rejects a valid zlib object whose bytes do not match its tree O
 });
 
 test("CI scanner discovers checked items with any filename, parser indentation, and later NUL bytes", async () => {
-  const cwd = await tmpProject({ "seed.txt": "seed\n", "plans/release-checklist.txt": "\u00a0- [x] stale {id: renamed}\n\0binary tail\n" });
+  const cwd = await tmpProject({ "seed.txt": "seed\n", ".muster/backlog.md": "- [ ] canonical {id: canonical}\n", "plans/release-checklist.txt": "\u00a0- [x] stale {id: renamed}\n\0binary tail\n" });
   await pexecFile("git", ["init", "-b", "main"], { cwd });
   await pexecFile("git", ["add", "."], { cwd });
   await pexecFile("git", ["-c", "user.name=Muster Test", "-c", "user.email=test@example.invalid", "commit", "-m", "seed"], { cwd });
@@ -396,7 +449,7 @@ test("CI scanner discovers checked items with any filename, parser indentation, 
 });
 
 test("CI scanner rejects a stale checked item in a bare-CR checklist", async () => {
-  const cwd = await tmpProject({ "seed.txt": "seed\n", "roadmap.txt": "heading\r- [x] stale {id: bare-cr}\rnext" });
+  const cwd = await tmpProject({ "seed.txt": "seed\n", ".muster/backlog.md": "- [ ] canonical {id: canonical}\n", "roadmap.txt": "heading\r- [x] stale {id: bare-cr}\rnext" });
   await pexecFile("git", ["init", "-b", "main"], { cwd });
   await pexecFile("git", ["add", "."], { cwd });
   await pexecFile("git", ["-c", "user.name=Muster Test", "-c", "user.email=test@example.invalid", "commit", "-m", "seed"], { cwd });
@@ -411,6 +464,7 @@ test("CI scanner rejects a stale checked item in a bare-CR checklist", async () 
 test("CI scanner fails closed on an oversized tracked checklist instead of reading it unbounded", async () => {
   const cwd = await tmpProject({
     "seed.txt": "seed\n",
+    ".muster/backlog.md": "- [ ] canonical {id: canonical}\n",
     "roadmap.txt": `- [x] stale {id: oversized}\n${"a".repeat(BACKLOG_RECEIPT_MAX_BYTES)}`,
   });
   await pexecFile("git", ["init", "-b", "main"], { cwd });

@@ -80,7 +80,8 @@ the worker stops or its wave reaches the barrier.
    live pending/running/done tick duplicating what the board already tracks. On a harness with no
    native task-tracking primitive, there is no board to be authoritative — fall back to the
    orchestrator's documented no-board path and keep the pending/running/done tick in STATE itself
-   (note the fallback once). Mirror onto `backlog.md` after the item's disposition executes. A checked
+   (note the fallback once). `.muster/backlog.md` is the tracked canonical FILE-backlog artifact; mirror
+   onto it after the item's disposition executes. A checked
    item must carry exactly one deterministic product receipt: `{merge: <40-hex SHA>}` for a merge or
    `{done: <40-hex SHA>}` for an intentionally complete non-merge disposition. Before publishing the
    tick, pipe the staged complete backlog bytes to
@@ -92,7 +93,7 @@ the worker stops or its wave reaches the barrier.
    `{withdrawn: <reason>}` is the only explicit exemption and requires a non-empty reason. Check the
    box (`- [x]`) only for done items that pass this contract; an escalated item stays unchecked with a `{escalated:
    <runId or date>}` annotation appended instead, so a future go-backlog run can resurface it.
-   Every FILE-backlog tick, claim, heartbeat, completion, and escalation annotation is published through `$MUSTER_CLI backlog-publish <backlog.md> --expect <sha256>` with the complete staged file on stdin. On a changed-before-publication failure, reread, reapply the still-valid mutation, and retry; never edit or rename the backlog directly.
+   Every FILE-backlog tick, claim, heartbeat, completion, and escalation annotation is published through `$MUSTER_CLI backlog-publish <backlog.md> --expect <sha256>` with the complete staged file on stdin. On a changed-before-publication failure, reread, reapply the still-valid mutation, and retry; never edit or rename the backlog directly. A successful publication is not yet durable truth: stage those exact tracked canonical bytes in a reviewable receipt-state commit and PR, then require a clean worktree assertion. Do not mark the board item complete until that commit is release-reachable and the trusted backlog receipt gate passes.
 3. **Per item, SEQUENTIALLY** — run go steps 1-8 (branch, detect, route, spec gate, plan, orchestrate waves, escalation check, finish/disposition) using the item text as the outcome and the item's disposition as `manifest.mergeDisposition` — default `pr` when unannotated. Each item is already a known single item — go's own step -1 scope check does not run per item. Each item's board
    task (step 2) flips to in_progress at claim; completed only once its disposition executes AND its
    review gate has recorded PASS — the orchestrator's `TaskCompleted` gating hook (`.muster/task-board.json`)

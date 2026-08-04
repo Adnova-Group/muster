@@ -4,11 +4,12 @@
 // a temp credentials file. No real ~/.kimi-code and no live network are touched.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { closeSync, ftruncateSync, mkdtempSync, mkdirSync, openSync, writeFileSync, rmSync, existsSync, linkSync, readFileSync, readdirSync, renameSync, statSync, symlinkSync } from "node:fs";
+import { closeSync, ftruncateSync, mkdirSync, openSync, writeFileSync, rmSync, existsSync, linkSync, readFileSync, readdirSync, renameSync, statSync, symlinkSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
+import { trackedMkdtempSync as mkdtempSync } from "../test-support/helpers.js";
 import { runKimiInstall, runKimiUninstall, probeKimiModels, stampModelPreference, stampSkillName, KIMI_MANIFEST, KIMI_EXPECTED_MODEL_IDS, KIMI_PERMISSION_RULES, KIMI_RULES_MARKER_BEGIN, KIMI_RULES_MARKER_END, renderPermissionRulesBlock, mergePermissionRules, stripPermissionRules } from "../src/kimi-install.js";
 import { readInstalledKimi } from "../src/harness.js";
 import { KIMI_LANES, kimiLaneEnv, kimiModelPreferenceForTier, kimiPreferenceForAgentId } from "../src/kimi.js";

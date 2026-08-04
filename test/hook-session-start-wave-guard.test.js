@@ -6,12 +6,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  mkdtempSync, existsSync, utimesSync,
+  existsSync, utimesSync,
 } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import os from "node:os";
 import { cleanDir, makeMarker, makeRunActive as makeRunMarker, spawnHook } from "./test-support/hook-helpers.js";
+import { trackedMkdtempSync as mkdtempSync } from "../test-support/helpers.js";
 
 function runActiveExists(dir) {
   return existsSync(path.join(dir, ".muster", "run-active"));

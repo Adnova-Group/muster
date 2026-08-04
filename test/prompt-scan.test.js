@@ -10,7 +10,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import {
-  mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync, symlinkSync,
+  mkdirSync, writeFileSync, chmodSync, rmSync, symlinkSync,
   linkSync, renameSync, unlinkSync,
 } from "node:fs";
 import { lstat, writeFile } from "node:fs/promises";
@@ -18,6 +18,7 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
+import { trackedMkdtempSync as mkdtempSync } from "../test-support/helpers.js";
 import { readNoFollowRegular } from "../src/fs-safe.js";
 import {
   collectScanFiles,

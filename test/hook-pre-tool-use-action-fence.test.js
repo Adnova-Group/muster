@@ -11,11 +11,12 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  mkdtempSync, mkdirSync, writeFileSync, readFileSync, utimesSync, statSync,
+  mkdirSync, writeFileSync, readFileSync, utimesSync, statSync,
 } from "node:fs";
 import os from "node:os";
 import { cleanDir, makeRunActive, spawnHook } from "./test-support/hook-helpers.js";
 import { classifyToolName, classifyBashCommand, classifyAction } from "../plugin/hooks/action-guard.js";
+import { trackedMkdtempSync as mkdtempSync } from "../test-support/helpers.js";
 
 const HOOK = path.join(
   path.dirname(fileURLToPath(import.meta.url)),

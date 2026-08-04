@@ -6,10 +6,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { trackedMkdtempSync as mkdtempSync } from "../test-support/helpers.js";
 import {
   kimiSwarmCall, kimiAgentCall, kimiGoalInvocation, kimiProcessDispatch, withKimiProcessBriefFile, interpretKimiGoalExit, resolveKimiWaveDispatch,
   interpretKimiBackgroundCompletion, detectKimiQuotaFault, quotaFaultLines,

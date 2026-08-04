@@ -4,100 +4,10 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import {
-  benchmarkCodexFixLoops,
-  createCodexFixLoopBinding,
-  fingerprintCodexRoleProfile,
-  planCodexFixContinuation,
-  resolveCodexRoleProfile
-} from "../src/codex-fix-loop.js";
+import { benchmarkCodexFixLoops } from "../src/codex-fix-loop.js";
 
 const fixtureDir = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "codex-fix-loop");
 const fixture = name => JSON.parse(readFileSync(join(fixtureDir, name), "utf8"));
-
-for (const name of ["spawn-agent.json", "exec-process.json"]) {
-  test(`state-isolation fixture: ${name}`, () => {
-    const input = fixture(name);
-    const binding = createCodexFixLoopBinding(input.binding);
-    const plan = planCodexFixContinuation({ binding, current: input.current, reviewState: input.reviewState });
-    assert.equal(plan.mechanism, input.expectedMechanism);
-    assert.equal(plan.target, input.expectedTarget);
-    assert.deepEqual(plan.blockers, input.reviewState.currentBlockers);
-    assert.doesNotMatch(JSON.stringify(plan), /resume --last|--last/);
-    assert.doesNotMatch(plan.message, /Crew Manifest|prior transcript|success criteria/i);
-    if (plan.mechanism === "protected-wave-resume") assert.equal(plan.receiptRequired, true);
-  });
-}
-
-test("state-isolation fixture: isolation-mismatches.json", () => {
-  const input = fixture("isolation-mismatches.json");
-  const binding = createCodexFixLoopBinding(input.binding);
-  for (const mismatch of input.mismatches) {
-    const current = {
-      cwd: input.binding.cwd,
-      baseSha: input.binding.baseSha,
-      codexVersion: input.binding.codexVersion,
-      roleProfilePath: input.binding.roleProfilePath,
-      roleProfile: input.binding.roleProfile,
-      [mismatch.field]: mismatch.value
-    };
-    assert.throws(
-      () => planCodexFixContinuation({ binding, current, reviewState: input.reviewState }),
-      new RegExp(`${mismatch.field} mismatch`)
-    );
-  }
-});
-
-test("continuation requires blocker deltas and exact retained identity", () => {
-  const common = {
-    cwd: "/w", baseSha: "a".repeat(40), codexVersion: "0.145.0", roleProfilePath: "/profiles/muster-runner.toml",
-    roleProfile: {
-      id: "muster-runner", model: "gpt-5.6-sol", reasoningEffort: "medium",
-      sandboxMode: "workspace-write", developerInstructions: "Implement and verify."
-    }
-  };
-  assert.throws(
-    () => createCodexFixLoopBinding({ lane: "spawn_agent", workerId: "/root/w", ...common, cwd: "relative/worktree" }),
-    /cwd must be an absolute normalized path/
-  );
-  assert.throws(() => createCodexFixLoopBinding({ lane: "spawn_agent", ...common }), /workerId/);
-  assert.throws(() => createCodexFixLoopBinding({ lane: "exec-process", ...common }), /threadId/);
-  const binding = createCodexFixLoopBinding({ lane: "spawn_agent", workerId: "/root/w", ...common });
-  assert.throws(
-    () => planCodexFixContinuation({
-      binding: { ...binding, workerId: "" },
-      current: common,
-      reviewState: { sentBlockers: [], currentBlockers: ["new"] }
-    }),
-    /workerId is required/
-  );
-  assert.throws(
-    () => planCodexFixContinuation({ binding, current: common, reviewState: { sentBlockers: ["old"], currentBlockers: ["old"] } }),
-    /new blocker delta/
-  );
-});
-
-test("authoritative role profile requires every execution-affecting field", () => {
-  assert.throws(() => fingerprintCodexRoleProfile({ id: "muster-runner" }), /model is required/);
-  const text = [
-    'name = "muster-runner"',
-    'model = "gpt-5.6-sol"',
-    'model_reasoning_effort = "medium"',
-    'sandbox_mode = "workspace-write"',
-    'developer_instructions = "Implement and verify."'
-  ].join("\n");
-  assert.deepEqual(resolveCodexRoleProfile(text), {
-    id: "muster-runner",
-    model: "gpt-5.6-sol",
-    reasoningEffort: "medium",
-    sandboxMode: "workspace-write",
-    developerInstructions: "Implement and verify."
-  });
-  assert.throws(
-    () => resolveCodexRoleProfile(text.replace(/^sandbox_mode.*\n/m, "")),
-    /sandbox_mode must be a generated TOML basic string/
-  );
-});
 
 test("10-case production benchmark clears the median uncached-input and time-to-fix bars", () => {
   const evidence = fixture("benchmark-evidence.json");

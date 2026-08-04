@@ -398,10 +398,6 @@ function parseCodexTurnResult(stdout) {
   return { completed: false, usage: UNKNOWN_CODEX_USAGE };
 }
 
-export function parseCodexTurnUsage(stdout) {
-  return parseCodexTurnResult(stdout).usage;
-}
-
 function validateMembers(members) {
   if (!Array.isArray(members) || members.length === 0) throw new Error("runCodexWave: members must be a non-empty array");
   if (members.length > CODEX_WAVE_LIMITS.members) {

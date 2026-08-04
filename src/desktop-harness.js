@@ -62,8 +62,6 @@ const ALIASES = Object.freeze({
   work: "chatgpt-work",
 });
 
-export const DESKTOP_HARNESS_SURFACES = Object.freeze(Object.keys(CONTRACTS));
-
 export function resolveDesktopHarness(surface) {
   const declared = typeof surface === "string" ? surface.trim().toLowerCase() : "";
   const key = ALIASES[declared] || declared;

@@ -245,6 +245,40 @@ test("strict config: install validates the complete write and restores config by
   await assert.rejects(readFile(join(cwd, ".codex", "agents", ".muster-managed.json")), /ENOENT/);
 });
 
+test("strict config: malformed TOML fixture blocks install and restores config bytes exactly", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-strict-malformed-install-"));
+  const cwd = join(tmp, "project"), home = join(tmp, "home"), codexHome = join(home, ".codex");
+  const sharedPath = join(codexHome, "config.toml"), projectPath = join(cwd, ".codex", "config.toml");
+  const sharedOriginal = Buffer.from("model = \"gpt-5.6-sol\"\r\n# preserve shared bytes\r\n");
+  const projectOriginal = Buffer.from("model = \"project-choice\"\r\n[broken\r\n# preserve malformed project bytes\r\n");
+  await mkdir(codexHome, { recursive: true });
+  await mkdir(join(cwd, ".codex"), { recursive: true });
+  await writeFile(sharedPath, sharedOriginal);
+  await writeFile(projectPath, projectOriginal);
+
+  // Mirrors the real app-server diagnostic shape proven live against an actual
+  // unclosed-table fixture in "real Codex validates unknown and malformed
+  // config without a model turn" above (`TOML parse error at line N, column M`).
+  // This test closes the install-level composition gap that test cannot: it
+  // proves the full runCodexInstall transaction -- not just the standalone
+  // parser call -- blocks on a malformed-TOML fixture and restores exact
+  // pre-install bytes, the same three-in-one proof the unknown-key test above
+  // already carries for its own fixture kind.
+  await assert.rejects(
+    runCodexInstall({
+      cwd, home, repoRoot,
+      execFile: async () => { throw new Error("codex absent"); },
+      strictConfigRunner: async () => {
+        throw new Error(`project config file ${projectPath}: TOML parse error at line 2, column 8\n  unclosed table, expected \`]\``);
+      }
+    }),
+    /project config file .*config\.toml: TOML parse error at line 2, column 8/
+  );
+  assert.deepEqual(await readFile(sharedPath), sharedOriginal);
+  assert.deepEqual(await readFile(projectPath), projectOriginal);
+  await assert.rejects(readFile(join(cwd, ".codex", "agents", ".muster-managed.json")), /ENOENT/);
+});
+
 test("strict config: rollback preserves malformed config bytes exactly", async () => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-strict-binary-rollback-"));
   const cwd = join(tmp, "project"), home = join(tmp, "home"), codexHome = join(home, ".codex");

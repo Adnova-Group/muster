@@ -23,16 +23,20 @@
 //
 //  (b) SHA256_ONE_LINER_DEFINITION -- a NEW standalone helper whose entire
 //      value/body is exactly createHash("sha256").update(<single arg>)
-//      .digest("hex"): either `const NAME = (...) => <call>` (arrow, optionally
-//      exported) or `function NAME(...) { return <call>; }` (optionally
-//      exported). This only flags a *definition* -- a reusable named form,
-//      covering aliased const forms too -- not every inline occurrence of the
-//      call chain. Plenty of legitimate inline call sites remain outside
-//      fs-safe.js (each hashing one specific, already-touched value inline for
-//      its own domain purpose, e.g. codex-wave-runner.js's per-field digests);
-//      those were never "duplicated helpers" the item's survey enumerated, and
-//      requiring the OWNING file to name a definition it never had would not
-//      catch anything a real regression would introduce. An explicit non-default
+//      .digest("hex"): a concise arrow (`const NAME = (...) => <call>`), a
+//      BLOCK-bodied arrow whose sole statement is that return
+//      (`const NAME = (...) => { return <call>; }`), or a function
+//      declaration whose sole statement is that return
+//      (`function NAME(...) { return <call>; }`) -- any of the three
+//      optionally `export`ed. This only flags a *definition* -- a reusable
+//      named form, covering aliased const forms and both arrow-body styles --
+//      not every inline occurrence of the call chain. Plenty of legitimate
+//      inline call sites remain outside fs-safe.js (each hashing one
+//      specific, already-touched value inline for its own domain purpose,
+//      e.g. codex-wave-runner.js's per-field digests); those were never
+//      "duplicated helpers" the item's survey enumerated, and requiring the
+//      OWNING file to name a definition it never had would not catch
+//      anything a real regression would introduce. An explicit non-default
 //      .update(x, "utf8") encoding or a non-"hex" digest is a different shape
 //      entirely and never matches either rule.
 import { test } from "node:test";
@@ -68,14 +72,23 @@ const SHA256_ONE_LINER_CALL =
   /createHash\(\s*(['"])sha256\1\s*\)\.update\(\s*[^,()]*\s*\)\.digest\(\s*(['"])hex\2\s*\)/;
 
 // A NEW DEFINITION of that shape: the call is the entire arrow-function body
-// (optionally parenthesized params) assigned to a const, or the sole `return`
-// statement of a function declaration -- i.e. reachable by name as a reusable
-// helper, `export`ed or not. Embedding the same call chain inline inside a
-// larger expression/object/template at its own one-off call site does not
-// match this -- see the header comment above for why that is deliberate.
+// (optionally parenthesized params, concise OR block-bodied-with-a-single-
+// return) assigned to a const, or the sole `return` statement of a function
+// declaration -- i.e. reachable by name as a reusable helper, `export`ed or
+// not. Embedding the same call chain inline inside a larger expression/
+// object/template at its own one-off call site does not match this -- see
+// the header comment above for why that is deliberate.
+//
+// The arrow branch's `(?:\{\s*return\s+)?` covers BOTH arrow-body styles with
+// one alternative: absent for the concise form (`=> <call>`), present for the
+// block-bodied form (`=> { return <call>; }`) -- a block-bodied arrow with
+// no `return` at all can never equal this shape's value in the first place,
+// so there is no third case to add.
 const SHA256_ONE_LINER_DEFINITION = new RegExp(
-  String.raw`(?:export\s+)?(?:const\s+[A-Za-z_$][\w$]*\s*=\s*(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>\s*|` +
-    String.raw`function\s+[A-Za-z_$][\w$]*\s*\([^)]*\)\s*\{\s*return\s+)` +
+  String.raw`(?:export\s+)?(?:` +
+    String.raw`const\s+[A-Za-z_$][\w$]*\s*=\s*(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>\s*(?:\{\s*return\s+)?|` +
+    String.raw`function\s+[A-Za-z_$][\w$]*\s*\([^)]*\)\s*\{\s*return\s+` +
+    String.raw`)` +
     SHA256_ONE_LINER_CALL.source +
     String.raw`\s*;?\s*\}?`,
 );
@@ -97,6 +110,20 @@ test("convention: the exact hex-64 regex literal /^[0-9a-f]{64}$/ appears nowher
     `exact /^[0-9a-f]{64}$/ literal reachable outside fs-safe.js -- import SHA256_HEX_RE ` +
       `from ./fs-safe.js instead:\n${offenders.join("\n")}`,
   );
+});
+
+// Direct regex-level proof for all three definition shapes (independent of
+// which files currently exist in src/): a reviewer-caught gap had the concise
+// arrow and function-declaration forms covered but missed the block-bodied
+// arrow (`=> { return <call>; }`) -- this pins all three permanently against
+// synthetic source, not just today's real files.
+test("SHA256_ONE_LINER_DEFINITION matches all three definition shapes", () => {
+  const concise = 'const sha256 = value => createHash("sha256").update(value).digest("hex");';
+  const blockBodied = 'const h = (v) => { return createHash("sha256").update(v).digest("hex"); };';
+  const functionDecl = 'function sha256(value) {\n  return createHash("sha256").update(value).digest("hex");\n}';
+  assert.ok(SHA256_ONE_LINER_DEFINITION.test(concise), "concise arrow body must match");
+  assert.ok(SHA256_ONE_LINER_DEFINITION.test(blockBodied), "block-bodied arrow with a single return must match");
+  assert.ok(SHA256_ONE_LINER_DEFINITION.test(functionDecl), "function declaration with a single return must match");
 });
 
 test("convention: no src/ file outside fs-safe.js defines a new createHash-sha256-hex one-liner helper", () => {

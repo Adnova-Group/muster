@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
-import { createHash, randomUUID, sign, timingSafeEqual, verify } from "node:crypto";
+import { randomUUID, sign, timingSafeEqual, verify } from "node:crypto";
 import { resolve } from "node:path";
-import { SHA256_HEX_RE } from "./fs-safe.js";
+import { sha256, SHA256_HEX_RE } from "./fs-safe.js";
 import { buildSprintReceipt, integrationApprovalDigest } from "./sprint-waves.js";
 
 const RECEIPT_KEYS = ["id", "itemId", "phase", "status", "attempt", "candidateSha", "findings",
@@ -70,7 +70,7 @@ function verifyFreshApproval(approval, assignment, receipt, publicKey, runId, no
 
 export function authenticateSprintBrokerCallback(token, state) {
   if (typeof token !== "string" || !SHA256_HEX_RE.test(token)) throw new Error("broker callback authentication failed");
-  const digest = createHash("sha256").update(token).digest("hex");
+  const digest = sha256(token);
   const match = Object.entries(state?.callbackPrincipals ?? {}).find(([candidate]) => {
     if (!SHA256_HEX_RE.test(candidate)) return false;
     return timingSafeEqual(Buffer.from(candidate, "hex"), Buffer.from(digest, "hex"));

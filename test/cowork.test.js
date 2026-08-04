@@ -3,12 +3,13 @@ import assert from "node:assert/strict";
 import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import { integrationApprovalDigest, lifecycleReceiptDigest } from "../src/sprint-waves.js";
 import { readFile } from "node:fs/promises";
-import { mkdtempSync, writeFileSync, readFileSync, rmSync, renameSync, readdirSync, mkdirSync, copyFileSync, cpSync } from "node:fs";
+import { writeFileSync, readFileSync, rmSync, renameSync, readdirSync, mkdirSync, copyFileSync, cpSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawn, execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
+import { trackedMkdtempSync as mkdtempSync } from "../test-support/helpers.js";
 
 const root = new URL("../", import.meta.url);
 const read = (p) => readFile(new URL(p, root), "utf8");

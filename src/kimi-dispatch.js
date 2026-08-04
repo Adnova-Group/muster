@@ -221,6 +221,16 @@ const kimiProcessBriefPrompt = path =>
 // APIProviderQuotaExhaustedError, serializes it with retryable: false, and its
 // own retry policy refuses to retry it. muster matches exactly what the binary
 // itself classifies on -- nothing more, nothing invented.
+//
+// ADDENDUM (2026-08-04): a live `kimi -p` 403 captured in this session read
+// "You've reached your usage limit for this billing cycle..." -- NOT present
+// in the installed binary's own string table (confirmed via `strings`), so
+// this specific wording is the upstream provider's raw error text passed
+// through unclassified rather than mapped onto APIProviderQuotaExhaustedError
+// by the binary itself. The semantics are still an unambiguous quota fault
+// (quota exhausted, refreshes next cycle, purchase/upgrade to continue now),
+// so it is added as a sixth pattern, captured verbatim from the live provider
+// response rather than from the binary's classifier source.
 export const KIMI_QUOTA_ERROR_NAME = "APIProviderQuotaExhaustedError";
 export const KIMI_QUOTA_ERROR_CODES = Object.freeze(["exceeded_current_quota_error", "insufficient_quota"]);
 export const KIMI_QUOTA_MESSAGE_PATTERNS = Object.freeze([
@@ -228,7 +238,8 @@ export const KIMI_QUOTA_MESSAGE_PATTERNS = Object.freeze([
   /check your account balance/i,
   /insufficient balance/i,
   /recharge your account|please recharge/i,
-  /account (?:is )?in arrears/i
+  /account (?:is )?in arrears/i,
+  /reached your usage limit for this billing cycle/i
 ]);
 
 // Detect the quota/balance fail-fast signature in a kimi process's captured

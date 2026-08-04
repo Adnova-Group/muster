@@ -2,13 +2,14 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, utimesSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync, utimesSync } from "node:fs";
 import os from "node:os";
 import {
   cleanDir, makeRunActive,
   editPayload as editPayloadBase, spawnHook, uniqueSid,
 } from "./test-support/hook-helpers.js";
 import { cumFile, readCum, CROSSING_MAX_AGE_MS, cooldownFile, DEFAULT_INVITE_COOLDOWN_MS } from "../plugin/hooks/inline-budget.js";
+import { trackedMkdtempSync as mkdtempSync } from "../test-support/helpers.js";
 
 // The border invitation, PreToolUse half (see pre-tool-use.js docblock and
 // guidance.js: CREW_INVITATION): a cumulative distinct-inline-file counter

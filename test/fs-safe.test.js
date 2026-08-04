@@ -189,7 +189,12 @@ test("ordinaryDirectoryPath: rejects a symlinked or non-directory component and 
 test("ordinaryDirectoryPath: all four consumers import the shared walker instead of declaring their own", async () => {
   const root = dirname(dirname(fileURLToPath(import.meta.url)));
   const consumers = [
-    ["src/codex-install.js", /ordinaryDirectoryPath/],
+    // codex-install.js's split (split-codex-install, 2026-08-04) moved the
+    // walker wrapper into codex-install-shared.js, the leaf module every
+    // other codex-install-*.js concern module (and the codex-install.js
+    // facade itself) imports it from -- that file is now the sole owner of
+    // the fs-safe.js integration for the whole codex-install family.
+    ["src/codex-install-shared.js", /ordinaryDirectoryPath/],
     ["src/codex-doctor.js", /ordinaryDirectoryPath/],
     ["src/chatgpt-work-install.js", /ordinaryDirectoryPath/],
     ["mcp/chatgpt-work-server.mjs", /ordinaryDirectoryPath/],

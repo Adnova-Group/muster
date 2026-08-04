@@ -20,9 +20,9 @@ and explicitly parked, not built.
 
 "Plugin prose" here means the model-facing surface Claude Code actually loads and reads at
 dispatch time: `plugin/commands` (the ten modes plus the three legacy aliases,
-as `*.md` files), `plugin/skills` (the twelve core skills, one `SKILL.md` per
+as `*.md` files), `plugin/skills` (the twenty-one core skills, one `SKILL.md` per
 subdirectory), muster's own agents in `plugin/agents` (seven `muster-*.md` files; not the
-vendored `wsh-*.md` personas), and `plugin/output-styles/muster.md` -- thirty-three files.
+vendored `wsh-*.md` personas), and `plugin/output-styles/muster.md` -- forty-two files.
 
 Two adjacent trees were deliberately excluded, with evidence rather than assertion:
 
@@ -264,7 +264,7 @@ scanned.
 
 ## Grep audit
 
-Reproducible commands, run from the repo root against the thirty-three-file "plugin prose" scope
+Reproducible commands, run from the repo root against the forty-two-file "plugin prose" scope
 defined above (`FILES` set to every `*.md` in `plugin/commands`, every `SKILL.md` in
 `plugin/skills`, every `muster-*.md` in `plugin/agents`, and every `*.md` in
 `plugin/output-styles`):
@@ -289,10 +289,10 @@ both numbers on every test run from the live prose tree, so this table cannot si
 stale:
 
 ```
-AskUserQuestion    files=13  mentions=35
-dispatch (Agent/Task tool)  files=6  mentions=17
+AskUserQuestion    files=14  mentions=36
+dispatch (Agent/Task tool)  files=7  mentions=18
 hook (PreToolUse/SessionStart/UserPromptSubmit)  files=11  mentions=29
-worktree   files=5  mentions=58
+worktree   files=7  mentions=62
 ```
 
 Counts refreshed for the release action-fence follow-up: `go.md`, `go-backlog.md`, and the
@@ -367,7 +367,19 @@ equivalent (resolution "before worktree teardown") -- two more `worktree` mentio
 lines (26 -> 28). File counts unchanged (still the same 5 files); AskUserQuestion, dispatch, and
 hook counts are untouched by this item.
 
-Every one of those 120 mentions accounted for above: AskUserQuestion under Ask; Agent/Task tool
+Counts refreshed again for the audit-pillar-pattern-library item (composed base branch,
+2026-08-04): the item's 9 new `plugin/skills/audit-pattern-architecture/SKILL.md`-shaped
+hunt-list skills widen the `plugin/skills` scope from twelve to twenty-one directories (thirty-three to
+forty-two total prose files, both fixed above). One of the nine,
+`audit-pattern-architecture/SKILL.md`, cites the doc's own primitive-binding vocabulary
+verbatim in a single line ("AskUserQuestion, Agent tool, hooks, worktrees") -- one new file and
+one new mention each on the AskUserQuestion (14/36) and dispatch (7/18) rows. The worktree row
+(7/62) also reflects that same line plus `plugin/commands/audit.md`'s own worktree-isolation
+prose, which grew independently on this base branch since the prior refresh; every number above
+is re-derived fresh from the live tree by `test/docs-binding-interface.test.js`'s own grep-audit
+procedure, not carried forward from any prior entry's arithmetic.
+
+Every one of those 145 mentions accounted for above: AskUserQuestion under Ask; Agent/Task tool
 and `subagent_type` under Dispatch; hook/PreToolUse/SessionStart/UserPromptSubmit under
 Enforce; worktree under Isolate. Receipts and Capability scan bind to mechanisms (the native
 todo tool, the plugin registry) that plugin prose refers to by their STATE/task-board/`muster

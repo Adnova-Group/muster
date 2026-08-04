@@ -729,7 +729,23 @@ const SKILLS = [
 // its own to grade with a dataset case; its coverage is the guard test that pins its own
 // contract instead (test/skill-improve.test.js), the same STRUCTURAL_MODES/Init posture one
 // layer down.
-const STRUCTURAL_SKILLS = ["improve"];
+// audit-pillar-pattern-library item: 9 read-on-demand hunt-list pattern skills
+// (plugin/skills/audit-pattern-<pillar>/SKILL.md), each composed onto an audit dimension's
+// persona via `plan[].skills` (src/audit.js's PATTERN_SKILL map) -- no independent
+// response-quality behavior of their own to grade, same STRUCTURAL_MODES/improve posture.
+// Their coverage is test/audit-pattern-skills.test.js's contract guard instead.
+const STRUCTURAL_SKILLS = [
+  "improve",
+  "audit-pattern-architecture",
+  "audit-pattern-tech-debt",
+  "audit-pattern-coverage",
+  "audit-pattern-simplification",
+  "audit-pattern-readability",
+  "audit-pattern-security",
+  "audit-pattern-design-ux",
+  "audit-pattern-prompt-quality",
+  "audit-pattern-dead-code-duplication",
+];
 // The content-pipeline layer (eval/modes extended to pipelines/*.yaml phase prompts) --
 // the "honest graded subset" of the content pipelines (knowledge/software pipelines like
 // prd already have gate-achievability coverage from the skill-protocol layer above, so

@@ -119,10 +119,23 @@ test("non-dimension plan tasks (consolidate/fix/verify/capture) carry no skills 
 
 // ── (c) packaging-surface lint parity: the new skills pass the repo's own prompt-lint gate ──
 
-test("every audit-pattern-* SKILL.md passes muster's own prompt-lint gate (repo-wide scan, 0 failing among them)", async () => {
+test("every canonical audit-pattern-* SKILL.md passes muster's own prompt-lint gate (repo-wide scan, 0 failing among them)", async () => {
   const result = await scanRepoPrompts(new URL("../", import.meta.url).pathname);
-  const mine = result.prompts.filter((p) => p.file.includes("audit-pattern-"));
-  assert.equal(mine.length, 9, "all 9 pattern skills must be discovered as prompt docs by the repo-wide scan");
+  // Scoped to the CANONICAL plugin/skills/ location -- the pattern-library-ripples item added
+  // a portable-package mirror at the repo-root skills/audit-pattern-*/SKILL.md too (the same
+  // Agent Plugins shim convention every other plugin/skills/* entry already has), which also
+  // matches a loose "audit-pattern-" substring filter; disambiguate by path prefix so this
+  // count stays exactly 9 regardless of how many portable copies exist.
+  const mine = result.prompts.filter((p) => p.file.startsWith("plugin/skills/audit-pattern-"));
+  assert.equal(mine.length, 9, "all 9 canonical pattern skills must be discovered as prompt docs by the repo-wide scan");
   const failing = mine.filter((p) => !p.passing);
   assert.deepEqual(failing, [], `audit-pattern-* SKILL.md file(s) failing prompt-lint: ${JSON.stringify(failing)}`);
+});
+
+test("every portable audit-pattern-* skill shim (repo-root skills/) also passes prompt-lint", async () => {
+  const result = await scanRepoPrompts(new URL("../", import.meta.url).pathname);
+  const portable = result.prompts.filter((p) => p.file.startsWith("skills/audit-pattern-") && !p.file.startsWith("plugin/"));
+  assert.equal(portable.length, 9, "all 9 portable pattern-skill shims must be discovered as prompt docs by the repo-wide scan");
+  const failing = portable.filter((p) => !p.passing);
+  assert.deepEqual(failing, [], `portable audit-pattern-* SKILL.md shim(s) failing prompt-lint: ${JSON.stringify(failing)}`);
 });

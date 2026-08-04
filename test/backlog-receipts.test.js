@@ -269,7 +269,10 @@ test("operational git failures throw instead of masquerading as ordinary unreach
 });
 
 test("receipt provenance ignores PATH Git shadows and hostile Git environment overrides", async () => {
-  const cwd = await tmpProject({ "roadmap.md": "- [x] retired {withdrawn: test fixture}\n" });
+  const cwd = await tmpProject({
+    "roadmap.md": "- [x] retired {withdrawn: test fixture}\n",
+    ".muster/backlog.md": "- [x] retired {id: retired} {withdrawn: test fixture}\n",
+  });
   await pexecFile("git", ["init", "-b", "main"], { cwd });
   await pexecFile("git", ["add", "."], { cwd });
   await pexecFile("git", ["-c", "user.name=Muster Test", "-c", "user.email=test@example.invalid", "commit", "-m", "seed"], { cwd });

@@ -377,7 +377,23 @@ export async function withCodexFileLock(path, callback, options = {}) {
     return withPinnedCodexFileLock(path, callback, options);
   }
   const parentPath = dirname(path);
-  const parent = await open(parentPath, fsConstants.O_RDONLY | fsConstants.O_DIRECTORY | fsConstants.O_NOFOLLOW);
+  let parent;
+  try {
+    parent = await open(parentPath, fsConstants.O_RDONLY | fsConstants.O_DIRECTORY | fsConstants.O_NOFOLLOW);
+  } catch (error) {
+    // Opening a symlinked parentPath with O_DIRECTORY|O_NOFOLLOW fails at the
+    // kernel with a bare ENOTDIR/ELOOP before the caller's guard (passed as
+    // beforeOpen; e.g. fs-safe.js's symlinked-ancestor walk) ever gets to run
+    // -- the retry loop below only fires it ahead of each lock-file creation
+    // attempt, which this initial parent-pinning open precedes. Give the
+    // guard a chance to name the containment rule; if it doesn't throw (the
+    // guard finds nothing wrong -- a genuine unrelated failure), the original
+    // system error still propagates untouched, so fail-closed is unchanged
+    // and the "beforeOpen runs exactly once per attempt" contract on the
+    // happy path is undisturbed (this catch never fires there).
+    if (options.beforeOpen) await options.beforeOpen();
+    throw error;
+  }
   try {
     const parentInfo = await parent.stat();
     const namedParentInfo = await lstat(parentPath);

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 
 import { computeSprintWaves } from "../src/sprint-waves.js";
 import { evaluateInProcessTool, invokeInProcessTool, IN_PROCESS_TOOL_NAMES } from "../mcp/in-process-tools.mjs";
+import { selectedPluginRoot } from "../test-support/codex-helpers.js";
 
 const execFileP = promisify(execFile);
 const rootDir = fileURLToPath(new URL("../", import.meta.url));
@@ -16,9 +17,9 @@ const serverPath = join(rootDir, "cowork", "mcp-server.mjs");
 const cliPath = join(rootDir, "src", "cli.js");
 const INIT = { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "0" } } };
 
-function rpc(requests, { env = {} } = {}) {
+function rpc(requests, { env = {}, entrypoint = serverPath } = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [serverPath], {
+    const child = spawn(process.execPath, [entrypoint], {
       cwd: rootDir,
       env: { ...process.env, ...env },
       stdio: ["pipe", "pipe", "inherit"],
@@ -57,9 +58,18 @@ function rpc(requests, { env = {} } = {}) {
 
 const call = (id, name, args) => ({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: args } });
 
-test("twelve deterministic read-only MCP calls stay byte-equivalent without invoking the CLI", async (t) => {
+test("generated Codex MCP replays all twelve pure calls and cancellation with zero CLI subprocesses", async (t) => {
   const fixture = await mkdtemp(join(tmpdir(), "muster-mcp-pure-"));
   t.after(() => rm(fixture, { recursive: true, force: true }));
+  const runtime = join(fixture, "runtime");
+  const marker = join(fixture, "cli-subprocess-marker.txt");
+  await cp(join(selectedPluginRoot, "runtime"), runtime, { recursive: true });
+  await cp(join(selectedPluginRoot, "package.json"), join(fixture, "package.json"));
+  await writeFile(join(runtime, "muster.mjs"), [
+    'import { writeFile } from "node:fs/promises";',
+    `await writeFile(${JSON.stringify(marker)}, process.argv.slice(2).join(" "));`,
+    'process.stdout.write("CLI SUBPROCESS INVOKED\\n");',
+  ].join("\n"));
   const plan = {
     plan: [
       { id: "a", task: "Build", mode: "single", deps: [] },
@@ -101,18 +111,26 @@ test("twelve deterministic read-only MCP calls stay byte-equivalent without invo
     return stdout.trim();
   }));
 
-  const forbiddenCli = join(fixture, "forbidden-cli.mjs");
-  await writeFile(forbiddenCli, "throw new Error('pure MCP call crossed the process boundary');\n");
   const responses = await rpc([
     INIT,
     ...cases.map(([name, args], index) => call(index + 2, name, args)),
-  ], { env: { NODE_ENV: "test", MUSTER_COWORK_TEST_CLI: forbiddenCli } });
+    call(14, "muster_wave", { manifest: plan }),
+    { jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: 14 } },
+  ], {
+    entrypoint: join(runtime, "muster-mcp.mjs"),
+    env: { NODE_ENV: "test" },
+  });
 
   cases.forEach(([name], index) => {
     const response = responses.get(index + 2).result;
     assert.equal(response.isError, false, name);
     assert.equal(response.content[0].text, expected[index], `${name} output bytes`);
   });
+  assert.deepEqual(responses.get(14).result, {
+    content: [{ type: "text", text: "muster MCP request cancelled" }],
+    isError: true,
+  });
+  await assert.rejects(readFile(marker, "utf8"), { code: "ENOENT" });
 });
 
 test("an immediately cancelled in-process pure call preserves the cancellation bytes", async () => {

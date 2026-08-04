@@ -502,7 +502,26 @@ export async function prepareCodexInstall({ scope, dryRun, cwd, inventoryCwd, ho
 }
 
 
-export async function runCodexInstall({ scope = "project", dryRun = false, cwd = process.cwd(), home = homedir(), repoRoot, execFile, strictConfigRunner, runtimeIdentity, hookInventory, scopeLockOptions, nodeExecPath = process.execPath } = {}) {
+// -- runCodexInstall, decomposed into named phase helpers -------------------
+//
+// This used to be one 504-line function with a load-bearing indentation lie:
+// two `try {` at the same column (installConfig's own outer try and, on the
+// very next line, its TRUE inner try), the inner catch dedented to the outer
+// try's own column (looking like it closed the outer try), and ~175 lines
+// of code that were actually still protected by the outer try/catch printed
+// flush with the function body instead of indented inside it. A structural
+// brace-depth trace (not text indentation) proved the true nesting before
+// any line moved: see the commit message for split-codex-install for the
+// trace. The decomposition below makes every function's try/catch honestly
+// its own -- no function nests a second try/catch inside itself anymore.
+//
+// Every phase function takes a single mutable `ctx` object standing in for
+// what used to be runCodexInstall's/installConfig's closure-captured local
+// variables (files, dir, threadLimitConfigPath, originals/changed/written,
+// etc.). Reading/writing `ctx.x` instead of a bare `x` is the only mechanical
+// change inside each moved block; no logic, branch, or ordering changed.
+
+async function beginCodexInstallContext({ scope = "project", dryRun = false, cwd = process.cwd(), home = homedir(), repoRoot, execFile, strictConfigRunner, runtimeIdentity, hookInventory, scopeLockOptions, nodeExecPath = process.execPath } = {}) {
   const inventoryCwd = resolve(cwd);
   cwd = await codexProjectRoot(cwd);
   const executor = execFile || execFileDefault;
@@ -514,496 +533,532 @@ export async function runCodexInstall({ scope = "project", dryRun = false, cwd =
     if (process.env.CODEX_MANAGED_PACKAGE_ROOT) throw error;
     /* Codex genuinely absent: local install still proceeds without PATH probing. */
   }
-  const { files, profileContents, declarations, distributionRoot, pluginCacheSourceRoot, dir, manifestPath, declarationConfigPath, declarationOwnership, threadLimitConfigPath, threadLimitManifestPath, packageVersion, canonicalUserExpected, hooks, staleFiles, present, planned } =
-    await prepareCodexInstall({ scope, dryRun, cwd, inventoryCwd, home, repoRoot, execFile: executor, runtimeIdentity: identity, hookInventory, allowInjected: Boolean(execFile), nodeExecPath });
+  const prepared = await prepareCodexInstall({ scope, dryRun, cwd, inventoryCwd, home, repoRoot, execFile: executor, runtimeIdentity: identity, hookInventory, allowInjected: Boolean(execFile), nodeExecPath });
+  const { files, profileContents, declarations, distributionRoot, pluginCacheSourceRoot, dir, manifestPath, declarationConfigPath, declarationOwnership, threadLimitConfigPath, threadLimitManifestPath, packageVersion, canonicalUserExpected, hooks, staleFiles, present, planned } = prepared;
   const trustedPluginCacheTree = present && identity && !execFile
     ? await assertRegularTree(pluginCacheSourceRoot)
     : null;
-  let originals, changed, written, activationProofStart, activationTransactionStable = true;
-  const publishedConfigCandidates = new Map();
-  const configCandidates = new Map();
-  const configCandidateSources = new Map();
-  let pluginStagingHome = null;
-  let stagedPluginCachePath = null;
-  let publishedPluginCache = null;
-  const authoritativeRollbackPaths = new Set();
-  let actions = [];
-  let canonicalUserTrust = null;
-  const prunedScopes = [], prunedHookState = [], prunedProjectTrust = [];
-  if (!dryRun) {
-    originals = new Map(); changed = []; written = new Map();
-    await withScopeRegistryTransaction(home, async registry => {
-      const checkedOwnership = await verifyDeclarationOwnershipSnapshot(
-        declarationOwnership, manifestPath, declarationConfigPath
-      );
-      const manifest = ownershipSnapshotManifest(checkedOwnership.manifest);
-      const manifestExists = checkedOwnership.manifest.exists;
-      const declarationConfigExists = checkedOwnership.config.exists;
-      const declarationSeparatorAdded = manifestExists && manifest.declarationSeparatorAdded === true;
-      const currentHookConfigSnapshot = await safeExists(hooks.configPath) ? await readSafe(hooks.configPath) : null;
-      if (currentHookConfigSnapshot !== hooks.configSnapshot) {
-        throw new Error(`Codex hook configuration concurrent state change detected at ${hooks.configPath}; no installation state was modified.`);
+  return {
+    scope, dryRun, cwd, home, execFile, strictConfigRunner, hookInventory, scopeLockOptions, inventoryCwd, executor, identity,
+    files, profileContents, declarations, distributionRoot, pluginCacheSourceRoot, dir, manifestPath, declarationConfigPath,
+    declarationOwnership, threadLimitConfigPath, threadLimitManifestPath, packageVersion, canonicalUserExpected, hooks,
+    staleFiles, present, planned, trustedPluginCacheTree,
+    originals: undefined, changed: undefined, written: undefined,
+    activationProofStart: undefined, activationTransactionStable: true,
+    publishedConfigCandidates: new Map(), configCandidates: new Map(), configCandidateSources: new Map(),
+    pluginStagingHome: null, stagedPluginCachePath: null, publishedPluginCache: null,
+    authoritativeRollbackPaths: new Set(), actions: [], canonicalUserTrust: null,
+    prunedScopes: [], prunedHookState: [], prunedProjectTrust: []
+  };
+}
+
+async function verifyCodexInstallPreconditions(ctx, registry) {
+  const checkedOwnership = await verifyDeclarationOwnershipSnapshot(
+    ctx.declarationOwnership, ctx.manifestPath, ctx.declarationConfigPath
+  );
+  ctx.manifest = ownershipSnapshotManifest(checkedOwnership.manifest);
+  ctx.manifestExists = checkedOwnership.manifest.exists;
+  ctx.declarationConfigExists = checkedOwnership.config.exists;
+  ctx.declarationSeparatorAdded = ctx.manifestExists && ctx.manifest.declarationSeparatorAdded === true;
+  const currentHookConfigSnapshot = await safeExists(ctx.hooks.configPath) ? await readSafe(ctx.hooks.configPath) : null;
+  if (currentHookConfigSnapshot !== ctx.hooks.configSnapshot) {
+    throw new Error(`Codex hook configuration concurrent state change detected at ${ctx.hooks.configPath}; no installation state was modified.`);
+  }
+  await validateManagedHookAliasGraph({ home: ctx.home, cwd: ctx.cwd, inventoryCwd: ctx.inventoryCwd, entries: registry.entries, currentDir: ctx.dir, currentConfig: ctx.hooks.originalConfig });
+  await ordinaryDirectoryPath(ctx.dir, { create: true });
+  for (const configPath of new Set([ctx.threadLimitConfigPath, ctx.declarationConfigPath])) {
+    await verifyCodexConfigRetirementReceipt(configPath);
+  }
+}
+
+async function writeCodexInstallArtifacts(ctx, registry) {
+  // Codex's own plugin registration rewrites config.toml. Preserve the
+  // exact pre-registration bytes here; the config transaction below is
+  // deliberately derived only after registration has completed.
+  for (const configPath of new Set([ctx.threadLimitConfigPath, ctx.declarationConfigPath])) {
+    await snapshot(ctx.originals, ctx.changed, configPath);
+  }
+  ctx.currentScope = await scopeEntry(ctx.scope, ctx.cwd, ctx.home);
+  await snapshot(ctx.originals, ctx.changed, registry.path);
+  // Reconcile on every install: prune scopes whose configDir no
+  // longer exists (deleted worktrees) and collapse any case-duplicate
+  // scope (e.g. a WSL /mnt/c path registered under two castings) into
+  // one canonical-case survivor. currentScope is appended, not
+  // pre-filtered against the existing entries: reconcileScopeRegistryEntries'
+  // dev/ino keying (order-preserving, first physical occurrence wins)
+  // already collapses a plain reinstall's already-registered scope
+  // with the freshly appended currentScope for the same physical
+  // directory, so a separate sameScopeEntry pre-filter here would be
+  // redundant -- proven by the reinstall/dedup assertions in
+  // test/codex.test.js, which stay green without it.
+  // Every pruned entry is reported below (path + reason) instead of
+  // removed silently, since a prune is a best-effort guess (see
+  // reconcileScopeRegistryEntries).
+  ctx.candidateScopeEntries = [...registry.entries, ctx.currentScope];
+  ctx.reconciled = await reconcileScopeRegistryEntries(
+    ctx.candidateScopeEntries,
+    { onPrune: pruned => ctx.prunedScopes.push(pruned) }
+  );
+  await transactionWrite(ctx.written, registry.path, registryText(ctx.reconciled));
+  for (const file of ctx.files) {
+    const destination = join(ctx.dir, file);
+    await snapshot(ctx.originals, ctx.changed, destination);
+    await transactionWrite(ctx.written, destination, ctx.profileContents.get(file));
+  }
+  for (const file of ctx.staleFiles) {
+    const destination = join(ctx.dir, file);
+    await snapshot(ctx.originals, ctx.changed, destination);
+    await transactionRemove(ctx.written, destination);
+  }
+  ctx.declarationConfigCreated = ctx.manifestExists && ctx.manifest.declarationConfigCreated !== undefined
+    ? ctx.manifest.declarationConfigCreated
+    : !ctx.declarationConfigExists;
+  for (const [file, sourceBytes] of ctx.hooks.sourceFiles) {
+    const destination = join(ctx.hooks.runtimeDir, file);
+    await snapshot(ctx.originals, ctx.changed, destination);
+    await transactionWrite(ctx.written, destination, sourceBytes);
+  }
+  for (const file of ctx.hooks.staleFiles) {
+    const destination = join(ctx.hooks.runtimeDir, file);
+    await snapshot(ctx.originals, ctx.changed, destination);
+    await transactionRemove(ctx.written, destination);
+  }
+  await snapshot(ctx.originals, ctx.changed, ctx.hooks.configPath);
+  await transactionWrite(ctx.written, ctx.hooks.configPath, JSON.stringify(ctx.hooks.config, null, 2) + "\n");
+  await snapshot(ctx.originals, ctx.changed, ctx.hooks.manifestPath);
+  await transactionWrite(ctx.written, ctx.hooks.manifestPath, JSON.stringify(ctx.hooks.manifest, null, 2) + "\n");
+}
+
+// The TRUE inner try/catch from the old installConfig -- now honestly its
+// own function-level try/catch instead of a second `try {` mis-indented to
+// look like a sibling of installConfig's own outer try.
+async function applyThreadLimitsAndHookState(ctx) {
+  try {
+    const threadLimitOriginal = await exactFileSnapshot(ctx.threadLimitConfigPath);
+    const configExistedBefore = threadLimitOriginal.exists;
+    const existingConfigText = configSnapshotText(threadLimitOriginal, ctx.threadLimitConfigPath);
+    // Reconcile config.toml's [hooks.state] trust cache against the
+    // SAME candidate/survivor scope sets the registry reconciliation
+    // above just computed, before raising the thread limits on the
+    // result -- see reconcileConfigTomlHookState's own rationale: this
+    // is the fix for codex-hook-bombardment (a dead or case-duplicated
+    // scope's hook definitions stay trusted, and thus still fire,
+    // forever without this). No ownedHookStateKeys is threaded through
+    // here for an ORDINARY reinstall: the current scope is always in
+    // `reconciled` (kept), so it is never a pruning candidate in the
+    // first place -- a plain reinstall that re-adds equivalent groups
+    // must never re-prompt Codex's own hook trust review.
+    //
+    // A canonical-scope collapse (hooks.skipped, see prepareHooks'
+    // userScopeHooksHealthy) is the one install-time exception: it just
+    // vacated every owned group this scope held with nothing re-added
+    // in its place, so its now-orphaned trust-cache entries must be
+    // pruned too -- exactly like runCodexUninstall's own departing-
+    // scope prune, narrowed to the EXACT keys previousOwnedHookStateKeys
+    // captured (see that field's rationale in prepareHooks) so a
+    // co-located non-muster hooks.state entry at this same path is
+    // never swept up. `reconciled` (kept) is unchanged either way --
+    // this scope's profiles/registration stay live; only its own
+    // vacated hook trust is eligible for narrowed pruning.
+    const hookStateEntries = ctx.hooks.skipped && ctx.hooks.previousOwnedHookStateKeys.length
+      ? ctx.candidateScopeEntries.map(entry => sameScopeEntry(entry, ctx.currentScope)
+          ? { ...entry, ownedHookStateKeys: ctx.hooks.previousOwnedHookStateKeys }
+          : entry)
+      : ctx.candidateScopeEntries;
+    const hookStateKeptEntries = ctx.hooks.skipped && ctx.hooks.pruneWholePreviousHookState
+      ? ctx.reconciled.filter(entry => !sameScopeEntry(entry, ctx.currentScope))
+      : ctx.reconciled;
+    const hookStateReconcile = reconcileConfigTomlHookState(existingConfigText, hookStateEntries, hookStateKeptEntries, {
+      onPrune: pruned => (pruned.type === "hooks.state" ? ctx.prunedHookState : ctx.prunedProjectTrust).push(pruned)
+    });
+    if (!hookStateReconcile.parseOk) throw new Error("Codex config.toml cannot be safely reconciled because its TOML string, array, or table boundaries are malformed or unsupported");
+    const previousManifest = await safeExists(ctx.threadLimitManifestPath)
+      ? validateThreadLimitManifest(
+        await readJson(ctx.threadLimitManifestPath),
+        ctx.threadLimitManifestPath,
+        ctx.threadLimitConfigPath,
+      )
+      : null;
+    const legacyManifest = Object.hasOwn(previousManifest?.installed || {}, "max_threads");
+    const reconciledThreadText = legacyManifest
+      ? restoreCodexThreadLimits(hookStateReconcile.text, previousManifest)
+      : hookStateReconcile.text;
+    const threadLimits = ensureCodexThreadLimits(reconciledThreadText);
+    // A repeat install must not re-derive before/sectionCreated/
+    // configCreated from the already-managed file -- that would
+    // permanently lose the true pre-Muster baseline the very first
+    // install recorded, so an eventual last-scope uninstall could
+    // never fully restore it. Mirrors prepareHooks' identical
+    // `previous?.hookConfigCreated ?? !configExists` guard above.
+    const currentCanonicalValue = threadLimits.before.max_concurrent_threads_per_session;
+    // A missing live key is an authoritative user deletion, not an
+    // unchanged managed value. Rebase this key's ownership so the
+    // default added by this reinstall is removed on uninstall instead
+    // of resurrecting the stale pre-deletion user value.
+    const before = previousManifest && !legacyManifest && currentCanonicalValue !== null
+      ? previousManifest.before
+      : threadLimits.before;
+    const installed = previousManifest && !legacyManifest && currentCanonicalValue !== null
+      ? previousManifest.installed
+      : threadLimits.installed;
+    const ownershipRebased = previousManifest && !legacyManifest && currentCanonicalValue === null;
+    const sectionCreated = previousManifest && !legacyManifest && !ownershipRebased
+      ? previousManifest.sectionCreated
+      : threadLimits.sectionCreated;
+    const configCreated = previousManifest && !ownershipRebased
+      ? previousManifest.configCreated
+      : !(ctx.scope === "user" ? ctx.declarationConfigExists : configExistedBefore);
+    await snapshot(ctx.originals, ctx.changed, ctx.threadLimitConfigPath);
+    ctx.configCandidates.set(ctx.threadLimitConfigPath, Buffer.from(threadLimits.text));
+    ctx.configCandidateSources.set(ctx.threadLimitConfigPath, threadLimitOriginal);
+    await snapshot(ctx.originals, ctx.changed, ctx.threadLimitManifestPath);
+    await transactionWrite(ctx.written, ctx.threadLimitManifestPath, JSON.stringify({
+      format: 1, owner: "muster", configPath: ctx.threadLimitConfigPath,
+      before, installed,
+      sectionCreated, configCreated
+    }, null, 2) + "\n");
+  } catch (error) {
+    throw new Error(`Codex config.toml thread limits could not be enforced at ${ctx.threadLimitConfigPath}: ${error.message}. ${CODEX_THREAD_LIMIT_REMEDIATION}`);
+  }
+}
+
+async function writeCodexDeclarationsAndVerifyHookActivation(ctx) {
+  // Declarations are appended only after the shared [agents] thread-limit
+  // table is reconciled. This keeps pre-existing root assignments at the
+  // TOML root and also makes the first user-scope install byte-identical
+  // to every reinstall.
+  const declarationOriginal = await exactFileSnapshot(ctx.declarationConfigPath);
+  const currentDeclarationText = ctx.configCandidates.has(ctx.declarationConfigPath)
+    ? new TextDecoder("utf-8", { fatal: true }).decode(ctx.configCandidates.get(ctx.declarationConfigPath))
+    : configSnapshotText(declarationOriginal, ctx.declarationConfigPath);
+  const declarationReconcile = reconcileAgentDeclarations(
+    currentDeclarationText,
+    ctx.declarations,
+    {
+      separatorAdded: ctx.declarationSeparatorAdded,
+      receipt: ctx.manifest?.declarationRegion,
+      manifestPath: ctx.manifestPath
+    }
+  );
+  await snapshot(ctx.originals, ctx.changed, ctx.declarationConfigPath);
+  ctx.configCandidates.set(ctx.declarationConfigPath, Buffer.from(declarationReconcile.text));
+  if (!ctx.configCandidateSources.has(ctx.declarationConfigPath)) {
+    ctx.configCandidateSources.set(ctx.declarationConfigPath, declarationOriginal);
+  }
+  await snapshot(ctx.originals, ctx.changed, ctx.manifestPath);
+  await transactionWrite(ctx.written, ctx.manifestPath, JSON.stringify({
+    format: 1, owner: "muster", files: ctx.files, packageVersion: ctx.packageVersion,
+    declarationConfigCreated: ctx.declarationConfigCreated,
+    declarationSeparatorAdded: declarationReconcile.separatorAdded,
+    declarationRegion: declarationReconcile.receipt
+  }, null, 2) + "\n");
+  await validateManagedHookAliasGraph({ home: ctx.home, cwd: ctx.cwd, inventoryCwd: ctx.inventoryCwd, entries: ctx.reconciled, currentDir: ctx.dir, currentConfig: ctx.hooks.config });
+  if (ctx.hooks.skipped) {
+    ctx.canonicalUserTrust = await inspectEffectiveUserScopeHooks({
+      home: ctx.home, packageVersion: ctx.packageVersion, expected: ctx.canonicalUserExpected, cwd: ctx.inventoryCwd, activationCwd: ctx.cwd,
+      runtimeIdentity: ctx.identity, hookInventory: ctx.hookInventory
+    });
+    if (!ctx.canonicalUserTrust) {
+      throw new Error("The canonical user hook scope changed or became inactive during install; cannot remove the project hook fallback");
+    }
+    await ctx.scopeLockOptions?.afterCanonicalVerification?.();
+  }
+  const hookMutationProof = await hookActivationSnapshot({ home: ctx.home, cwd: ctx.cwd, inventoryCwd: ctx.inventoryCwd });
+  if (ctx.hooks.skipped && !sameHookActivationSnapshot(ctx.canonicalUserTrust.activationSnapshot, hookMutationProof)) {
+    throw new Error("The canonical user hook scope changed after effective verification; cannot remove the project hook fallback");
+  }
+  if (!activationSnapshotMatchesWrites(hookMutationProof, ctx.written)) {
+    throw new Error("Codex hook activation state diverged from the transaction's exact writes before verification");
+  }
+}
+
+async function validateAndPublishStrictCodexConfig(ctx) {
+  // Parse after every shared and scoped config candidate is complete.
+  // Plugin registration then runs only against a private CODEX_HOME;
+  // its resulting config is parsed again before the exact bytes are
+  // exclusively published to the real configuration paths.
+  // Production always takes the bounded native parser path; tests with an
+  // injected command runner opt into this boundary explicitly.
+  const configParser = ctx.strictConfigRunner || (!ctx.execFile && ctx.identity ? runCodexStrictConfigCheck : null);
+  const transactionTargets = [...new Set([ctx.threadLimitConfigPath, ctx.declarationConfigPath])];
+  const candidateSnapshots = new Map();
+  for (const path of transactionTargets) candidateSnapshots.set(path, {
+    exists: true, bytes: ctx.configCandidates.get(path), dev: null, ino: null
+  });
+  const projectConfigPath = join(ctx.cwd, ".codex", "config.toml");
+  const liveExpected = new Map();
+  for (const path of transactionTargets) liveExpected.set(path, ctx.configCandidateSources.get(path));
+  if (!liveExpected.has(projectConfigPath)) liveExpected.set(projectConfigPath, await exactFileSnapshot(projectConfigPath));
+  const runConfigParser = async () => {
+    if (!configParser) return;
+    const projectCandidate = candidateSnapshots.get(projectConfigPath) || liveExpected.get(projectConfigPath);
+    await configParser({
+      cwd: ctx.cwd,
+      codexHome: codexHome(ctx.home),
+      runtimeIdentity: ctx.identity,
+      configSnapshots: {
+        shared: { path: ctx.threadLimitConfigPath, ...candidateSnapshots.get(ctx.threadLimitConfigPath) },
+        project: { path: projectConfigPath, ...projectCandidate }
       }
-      await validateManagedHookAliasGraph({ home, cwd, inventoryCwd, entries: registry.entries, currentDir: dir, currentConfig: hooks.originalConfig });
-      await ordinaryDirectoryPath(dir, { create: true });
-      for (const configPath of new Set([threadLimitConfigPath, declarationConfigPath])) {
-        await verifyCodexConfigRetirementReceipt(configPath);
+    });
+  };
+  const verifyLive = async phase => {
+    const concurrent = [];
+    for (const [path, expected] of liveExpected) {
+      let current;
+      try { current = await exactFileSnapshot(path); }
+      catch { current = { exists: false, bytes: null, dev: null, ino: null }; }
+      if (!sameExactFileSnapshot(expected, current)) concurrent.push(path);
+    }
+    if (concurrent.length) throw concurrentConfigError(`Codex config changed during ${phase}: ${concurrent.join(", ")}; concurrent bytes were preserved`);
+  };
+  ctx.verifyUnpublishedLive = verifyLive;
+  const runVerifiedConfigParser = async phase => {
+    try { await runConfigParser(); }
+    catch (error) {
+      await verifyLive(`${phase} failure`);
+      throw error;
+    }
+    await verifyLive(phase);
+  };
+  await runVerifiedConfigParser("strict validation");
+  if (ctx.present) {
+    await ordinaryDirectoryPath(dirname(codexHome(ctx.home)), { create: true });
+    ctx.pluginStagingHome = await mkdtemp(join(dirname(codexHome(ctx.home)), ".muster-codex-plugin-config-"));
+    try {
+      const stagedConfigPath = join(ctx.pluginStagingHome, "config.toml");
+      await atomicWriteSafe(stagedConfigPath, candidateSnapshots.get(ctx.threadLimitConfigPath).bytes);
+      ctx.actions = await registerPlugin(ctx.executor, ctx.distributionRoot, {
+        dryRun: false,
+        runtimeIdentity: ctx.identity,
+        commandOptions: { env: { ...process.env, CODEX_HOME: ctx.pluginStagingHome } }
+      });
+      const registered = await exactFileSnapshot(stagedConfigPath);
+      if (!registered.exists) throw new Error("Codex staged plugin registration removed config.toml");
+      const finalShared = { exists: true, bytes: registered.bytes, dev: null, ino: null };
+      candidateSnapshots.set(ctx.threadLimitConfigPath, finalShared);
+      ctx.configCandidates.set(ctx.threadLimitConfigPath, registered.bytes);
+      if (ctx.identity && !ctx.execFile) {
+        ctx.stagedPluginCachePath = join(ctx.pluginStagingHome, "plugins", "cache", "muster", "muster", ctx.packageVersion);
+        await assertPrivatePluginCache(ctx.stagedPluginCachePath, ctx.packageVersion, {
+          sourceRoot: ctx.pluginCacheSourceRoot, sourceTree: ctx.trustedPluginCacheTree
+        });
       }
+    } catch (error) {
+      await rm(ctx.pluginStagingHome, { recursive: true, force: true });
+      ctx.pluginStagingHome = null;
+      throw error;
+    }
+    await verifyLive("staged plugin registration");
+    await runVerifiedConfigParser("final strict validation");
+  }
+
+  if (ctx.stagedPluginCachePath) {
+    ctx.publishedPluginCache = await publishStagedPluginCache(
+      ctx.stagedPluginCachePath, codexHome(ctx.home), ctx.packageVersion,
+      ctx.pluginCacheSourceRoot, ctx.trustedPluginCacheTree
+    );
+    ctx.stagedPluginCachePath = null;
+  }
+
+  // Retire the expected name and publish by exclusive hard-link. Any
+  // writer that wins after validation remains authoritative and blocks
+  // this install instead of being overwritten.
+  for (const path of transactionTargets) {
+    const current = await exactFileSnapshot(path);
+    if (!sameExactFileSnapshot(liveExpected.get(path), current)) {
+      throw concurrentConfigError(`Codex config changed before strict candidate publication: ${path}; concurrent bytes were preserved`);
+    }
+    ctx.publishedConfigCandidates.set(path, await publishConfigCandidate(
+      path, liveExpected.get(path), candidateSnapshots.get(path).bytes
+    ));
+  }
+  for (const [path, receipt] of ctx.publishedConfigCandidates) {
+    if (!sameExactFileSnapshot(receipt.published, await exactFileSnapshot(path))) {
+      throw concurrentConfigError(`Codex config changed during strict candidate publication: ${path}; concurrent bytes were preserved`);
+    }
+  }
+  for (const [path, receipt] of ctx.publishedConfigCandidates) {
+    if (!sameExactFileSnapshot(receipt.published, await exactFileSnapshot(path))) {
+      throw concurrentConfigError(`Codex config changed at the strict config commit point: ${path}; concurrent bytes were preserved`);
+    }
+    if (receipt.retired && !sameExactFileSnapshot(receipt.expected, await exactFileSnapshot(receipt.retired))) {
+      throw concurrentConfigError(`Codex config writer changed the retired baseline before the commit point: ${path}; concurrent bytes will be restored`);
+    }
+  }
+  await verifyPublishedPluginCache(ctx.publishedPluginCache);
+  for (const [path, receipt] of ctx.publishedConfigCandidates) {
+    if (!receipt.retired) continue;
+    await retainConfigArtifacts(path, [receipt.retired]);
+  }
+  if (ctx.pluginStagingHome) {
+    await rm(ctx.pluginStagingHome, { recursive: true, force: true });
+    ctx.pluginStagingHome = null;
+  }
+  await verifyPublishedPluginCache(ctx.publishedPluginCache);
+  for (const configPath of new Set([ctx.threadLimitConfigPath, ctx.declarationConfigPath])) {
+    await verifyCodexConfigRetirementReceipt(configPath);
+  }
+}
+
+// Orchestrates the three phases above inside ONE honest try, with the TRUE
+// outer catch (rollback) as this function's own -- no longer a second `}
+// catch` dedented to look like it belonged to a different, shallower try.
+async function publishCodexConfigTransaction(ctx) {
+  try {
+    await applyThreadLimitsAndHookState(ctx);
+    await writeCodexDeclarationsAndVerifyHookActivation(ctx);
+    await validateAndPublishStrictCodexConfig(ctx);
+  } catch (error) {
+    const rollbackErrors = [];
+    if (!ctx.publishedConfigCandidates.size && ctx.verifyUnpublishedLive && !error?.musterConcurrentConfig) {
+      try { await ctx.verifyUnpublishedLive("failed config transaction"); }
+      catch (concurrentError) { error = concurrentError; }
+    }
+    for (const receipt of [...ctx.publishedConfigCandidates.values()].reverse()) {
       try {
-        // Codex's own plugin registration rewrites config.toml. Preserve the
-        // exact pre-registration bytes here; the config transaction below is
-        // deliberately derived only after registration has completed.
-        for (const configPath of new Set([threadLimitConfigPath, declarationConfigPath])) {
-          await snapshot(originals, changed, configPath);
+        await rollbackConfigCandidate(receipt);
+        if (!sameExactFileSnapshot(receipt.expected, await exactFileSnapshot(receipt.path))) {
+          ctx.authoritativeRollbackPaths.add(receipt.path);
         }
-        const currentScope = await scopeEntry(scope, cwd, home);
-        await snapshot(originals, changed, registry.path);
-        // Reconcile on every install: prune scopes whose configDir no
-        // longer exists (deleted worktrees) and collapse any case-duplicate
-        // scope (e.g. a WSL /mnt/c path registered under two castings) into
-        // one canonical-case survivor. currentScope is appended, not
-        // pre-filtered against the existing entries: reconcileScopeRegistryEntries'
-        // dev/ino keying (order-preserving, first physical occurrence wins)
-        // already collapses a plain reinstall's already-registered scope
-        // with the freshly appended currentScope for the same physical
-        // directory, so a separate sameScopeEntry pre-filter here would be
-        // redundant -- proven by the reinstall/dedup assertions in
-        // test/codex.test.js, which stay green without it.
-        // Every pruned entry is reported below (path + reason) instead of
-        // removed silently, since a prune is a best-effort guess (see
-        // reconcileScopeRegistryEntries).
-        const candidateScopeEntries = [...registry.entries, currentScope];
-        const reconciled = await reconcileScopeRegistryEntries(
-          candidateScopeEntries,
-          { onPrune: pruned => prunedScopes.push(pruned) }
-        );
-        await transactionWrite(written, registry.path, registryText(reconciled));
-        for (const file of files) {
-          const destination = join(dir, file);
-          await snapshot(originals, changed, destination);
-          await transactionWrite(written, destination, profileContents.get(file));
-        }
-        for (const file of staleFiles) {
-          const destination = join(dir, file);
-          await snapshot(originals, changed, destination);
-          await transactionRemove(written, destination);
-        }
-        const declarationConfigCreated = manifestExists && manifest.declarationConfigCreated !== undefined
-          ? manifest.declarationConfigCreated
-          : !declarationConfigExists;
-        for (const [file, sourceBytes] of hooks.sourceFiles) {
-          const destination = join(hooks.runtimeDir, file);
-          await snapshot(originals, changed, destination);
-          await transactionWrite(written, destination, sourceBytes);
-        }
-        for (const file of hooks.staleFiles) {
-          const destination = join(hooks.runtimeDir, file);
-          await snapshot(originals, changed, destination);
-          await transactionRemove(written, destination);
-        }
-        await snapshot(originals, changed, hooks.configPath);
-        await transactionWrite(written, hooks.configPath, JSON.stringify(hooks.config, null, 2) + "\n");
-        await snapshot(originals, changed, hooks.manifestPath);
-        await transactionWrite(written, hooks.manifestPath, JSON.stringify(hooks.manifest, null, 2) + "\n");
-        const installConfig = async () => {
-          let verifyUnpublishedLive = null;
-          try {
-          try {
-          const threadLimitOriginal = await exactFileSnapshot(threadLimitConfigPath);
-          const configExistedBefore = threadLimitOriginal.exists;
-          const existingConfigText = configSnapshotText(threadLimitOriginal, threadLimitConfigPath);
-          // Reconcile config.toml's [hooks.state] trust cache against the
-          // SAME candidate/survivor scope sets the registry reconciliation
-          // above just computed, before raising the thread limits on the
-          // result -- see reconcileConfigTomlHookState's own rationale: this
-          // is the fix for codex-hook-bombardment (a dead or case-duplicated
-          // scope's hook definitions stay trusted, and thus still fire,
-          // forever without this). No ownedHookStateKeys is threaded through
-          // here for an ORDINARY reinstall: the current scope is always in
-          // `reconciled` (kept), so it is never a pruning candidate in the
-          // first place -- a plain reinstall that re-adds equivalent groups
-          // must never re-prompt Codex's own hook trust review.
-          //
-          // A canonical-scope collapse (hooks.skipped, see prepareHooks'
-          // userScopeHooksHealthy) is the one install-time exception: it just
-          // vacated every owned group this scope held with nothing re-added
-          // in its place, so its now-orphaned trust-cache entries must be
-          // pruned too -- exactly like runCodexUninstall's own departing-
-          // scope prune, narrowed to the EXACT keys previousOwnedHookStateKeys
-          // captured (see that field's rationale in prepareHooks) so a
-          // co-located non-muster hooks.state entry at this same path is
-          // never swept up. `reconciled` (kept) is unchanged either way --
-          // this scope's profiles/registration stay live; only its own
-          // vacated hook trust is eligible for narrowed pruning.
-          const hookStateEntries = hooks.skipped && hooks.previousOwnedHookStateKeys.length
-            ? candidateScopeEntries.map(entry => sameScopeEntry(entry, currentScope)
-                ? { ...entry, ownedHookStateKeys: hooks.previousOwnedHookStateKeys }
-                : entry)
-            : candidateScopeEntries;
-          const hookStateKeptEntries = hooks.skipped && hooks.pruneWholePreviousHookState
-            ? reconciled.filter(entry => !sameScopeEntry(entry, currentScope))
-            : reconciled;
-          const hookStateReconcile = reconcileConfigTomlHookState(existingConfigText, hookStateEntries, hookStateKeptEntries, {
-            onPrune: pruned => (pruned.type === "hooks.state" ? prunedHookState : prunedProjectTrust).push(pruned)
-          });
-          if (!hookStateReconcile.parseOk) throw new Error("Codex config.toml cannot be safely reconciled because its TOML string, array, or table boundaries are malformed or unsupported");
-          const previousManifest = await safeExists(threadLimitManifestPath)
-            ? validateThreadLimitManifest(
-              await readJson(threadLimitManifestPath),
-              threadLimitManifestPath,
-              threadLimitConfigPath,
-            )
-            : null;
-          const legacyManifest = Object.hasOwn(previousManifest?.installed || {}, "max_threads");
-          const reconciledThreadText = legacyManifest
-            ? restoreCodexThreadLimits(hookStateReconcile.text, previousManifest)
-            : hookStateReconcile.text;
-          const threadLimits = ensureCodexThreadLimits(reconciledThreadText);
-          // A repeat install must not re-derive before/sectionCreated/
-          // configCreated from the already-managed file -- that would
-          // permanently lose the true pre-Muster baseline the very first
-          // install recorded, so an eventual last-scope uninstall could
-          // never fully restore it. Mirrors prepareHooks' identical
-          // `previous?.hookConfigCreated ?? !configExists` guard above.
-          const currentCanonicalValue = threadLimits.before.max_concurrent_threads_per_session;
-          // A missing live key is an authoritative user deletion, not an
-          // unchanged managed value. Rebase this key's ownership so the
-          // default added by this reinstall is removed on uninstall instead
-          // of resurrecting the stale pre-deletion user value.
-          const before = previousManifest && !legacyManifest && currentCanonicalValue !== null
-            ? previousManifest.before
-            : threadLimits.before;
-          const installed = previousManifest && !legacyManifest && currentCanonicalValue !== null
-            ? previousManifest.installed
-            : threadLimits.installed;
-          const ownershipRebased = previousManifest && !legacyManifest && currentCanonicalValue === null;
-          const sectionCreated = previousManifest && !legacyManifest && !ownershipRebased
-            ? previousManifest.sectionCreated
-            : threadLimits.sectionCreated;
-          const configCreated = previousManifest && !ownershipRebased
-            ? previousManifest.configCreated
-            : !(scope === "user" ? declarationConfigExists : configExistedBefore);
-          await snapshot(originals, changed, threadLimitConfigPath);
-          configCandidates.set(threadLimitConfigPath, Buffer.from(threadLimits.text));
-          configCandidateSources.set(threadLimitConfigPath, threadLimitOriginal);
-          await snapshot(originals, changed, threadLimitManifestPath);
-          await transactionWrite(written, threadLimitManifestPath, JSON.stringify({
-            format: 1, owner: "muster", configPath: threadLimitConfigPath,
-            before, installed,
-            sectionCreated, configCreated
-          }, null, 2) + "\n");
-        } catch (error) {
-          throw new Error(`Codex config.toml thread limits could not be enforced at ${threadLimitConfigPath}: ${error.message}. ${CODEX_THREAD_LIMIT_REMEDIATION}`);
-        }
-        // Declarations are appended only after the shared [agents] thread-limit
-        // table is reconciled. This keeps pre-existing root assignments at the
-        // TOML root and also makes the first user-scope install byte-identical
-        // to every reinstall.
-        const declarationOriginal = await exactFileSnapshot(declarationConfigPath);
-        const currentDeclarationText = configCandidates.has(declarationConfigPath)
-          ? new TextDecoder("utf-8", { fatal: true }).decode(configCandidates.get(declarationConfigPath))
-          : configSnapshotText(declarationOriginal, declarationConfigPath);
-        const declarationReconcile = reconcileAgentDeclarations(
-          currentDeclarationText,
-          declarations,
-          {
-            separatorAdded: declarationSeparatorAdded,
-            receipt: manifest?.declarationRegion,
-            manifestPath
-          }
-        );
-        await snapshot(originals, changed, declarationConfigPath);
-        configCandidates.set(declarationConfigPath, Buffer.from(declarationReconcile.text));
-        if (!configCandidateSources.has(declarationConfigPath)) {
-          configCandidateSources.set(declarationConfigPath, declarationOriginal);
-        }
-        await snapshot(originals, changed, manifestPath);
-        await transactionWrite(written, manifestPath, JSON.stringify({
-          format: 1, owner: "muster", files, packageVersion,
-          declarationConfigCreated,
-          declarationSeparatorAdded: declarationReconcile.separatorAdded,
-          declarationRegion: declarationReconcile.receipt
-        }, null, 2) + "\n");
-        await validateManagedHookAliasGraph({ home, cwd, inventoryCwd, entries: reconciled, currentDir: dir, currentConfig: hooks.config });
-        if (hooks.skipped) {
-          canonicalUserTrust = await inspectEffectiveUserScopeHooks({
-            home, packageVersion, expected: canonicalUserExpected, cwd: inventoryCwd, activationCwd: cwd,
-            runtimeIdentity: identity, hookInventory
-          });
-          if (!canonicalUserTrust) {
-            throw new Error("The canonical user hook scope changed or became inactive during install; cannot remove the project hook fallback");
-          }
-          await scopeLockOptions?.afterCanonicalVerification?.();
-        }
-        const hookMutationProof = await hookActivationSnapshot({ home, cwd, inventoryCwd });
-        if (hooks.skipped && !sameHookActivationSnapshot(canonicalUserTrust.activationSnapshot, hookMutationProof)) {
-          throw new Error("The canonical user hook scope changed after effective verification; cannot remove the project hook fallback");
-        }
-        if (!activationSnapshotMatchesWrites(hookMutationProof, written)) {
-          throw new Error("Codex hook activation state diverged from the transaction's exact writes before verification");
-        }
-
-        // Parse after every shared and scoped config candidate is complete.
-        // Plugin registration then runs only against a private CODEX_HOME;
-        // its resulting config is parsed again before the exact bytes are
-        // exclusively published to the real configuration paths.
-        // Production always takes the bounded native parser path; tests with an
-        // injected command runner opt into this boundary explicitly.
-        const configParser = strictConfigRunner || (!execFile && identity ? runCodexStrictConfigCheck : null);
-        {
-          const transactionTargets = [...new Set([threadLimitConfigPath, declarationConfigPath])];
-          const candidateSnapshots = new Map();
-          for (const path of transactionTargets) candidateSnapshots.set(path, {
-            exists: true, bytes: configCandidates.get(path), dev: null, ino: null
-          });
-          const projectConfigPath = join(cwd, ".codex", "config.toml");
-          const liveExpected = new Map();
-          for (const path of transactionTargets) liveExpected.set(path, configCandidateSources.get(path));
-          if (!liveExpected.has(projectConfigPath)) liveExpected.set(projectConfigPath, await exactFileSnapshot(projectConfigPath));
-          const runConfigParser = async () => {
-            if (!configParser) return;
-            const projectCandidate = candidateSnapshots.get(projectConfigPath) || liveExpected.get(projectConfigPath);
-            await configParser({
-              cwd,
-              codexHome: codexHome(home),
-              runtimeIdentity: identity,
-              configSnapshots: {
-                shared: { path: threadLimitConfigPath, ...candidateSnapshots.get(threadLimitConfigPath) },
-                project: { path: projectConfigPath, ...projectCandidate }
-              }
-            });
-          };
-          const verifyLive = async phase => {
-            const concurrent = [];
-            for (const [path, expected] of liveExpected) {
-              let current;
-              try { current = await exactFileSnapshot(path); }
-              catch { current = { exists: false, bytes: null, dev: null, ino: null }; }
-              if (!sameExactFileSnapshot(expected, current)) concurrent.push(path);
-            }
-            if (concurrent.length) throw concurrentConfigError(`Codex config changed during ${phase}: ${concurrent.join(", ")}; concurrent bytes were preserved`);
-          };
-          verifyUnpublishedLive = verifyLive;
-          const runVerifiedConfigParser = async phase => {
-            try { await runConfigParser(); }
-            catch (error) {
-              await verifyLive(`${phase} failure`);
-              throw error;
-            }
-            await verifyLive(phase);
-          };
-          await runVerifiedConfigParser("strict validation");
-          if (present) {
-            await ordinaryDirectoryPath(dirname(codexHome(home)), { create: true });
-            pluginStagingHome = await mkdtemp(join(dirname(codexHome(home)), ".muster-codex-plugin-config-"));
-            try {
-              const stagedConfigPath = join(pluginStagingHome, "config.toml");
-              await atomicWriteSafe(stagedConfigPath, candidateSnapshots.get(threadLimitConfigPath).bytes);
-              actions = await registerPlugin(executor, distributionRoot, {
-                dryRun: false,
-                runtimeIdentity: identity,
-                commandOptions: { env: { ...process.env, CODEX_HOME: pluginStagingHome } }
-              });
-              const registered = await exactFileSnapshot(stagedConfigPath);
-              if (!registered.exists) throw new Error("Codex staged plugin registration removed config.toml");
-              const finalShared = { exists: true, bytes: registered.bytes, dev: null, ino: null };
-              candidateSnapshots.set(threadLimitConfigPath, finalShared);
-              configCandidates.set(threadLimitConfigPath, registered.bytes);
-              if (identity && !execFile) {
-                stagedPluginCachePath = join(pluginStagingHome, "plugins", "cache", "muster", "muster", packageVersion);
-                await assertPrivatePluginCache(stagedPluginCachePath, packageVersion, {
-                  sourceRoot: pluginCacheSourceRoot, sourceTree: trustedPluginCacheTree
-                });
-              }
-            } catch (error) {
-              await rm(pluginStagingHome, { recursive: true, force: true });
-              pluginStagingHome = null;
-              throw error;
-            }
-            await verifyLive("staged plugin registration");
-            await runVerifiedConfigParser("final strict validation");
-          }
-
-          if (stagedPluginCachePath) {
-            publishedPluginCache = await publishStagedPluginCache(
-              stagedPluginCachePath, codexHome(home), packageVersion,
-              pluginCacheSourceRoot, trustedPluginCacheTree
-            );
-            stagedPluginCachePath = null;
-          }
-
-          // Retire the expected name and publish by exclusive hard-link. Any
-          // writer that wins after validation remains authoritative and blocks
-          // this install instead of being overwritten.
-          for (const path of transactionTargets) {
-            const current = await exactFileSnapshot(path);
-            if (!sameExactFileSnapshot(liveExpected.get(path), current)) {
-              throw concurrentConfigError(`Codex config changed before strict candidate publication: ${path}; concurrent bytes were preserved`);
-            }
-            publishedConfigCandidates.set(path, await publishConfigCandidate(
-              path, liveExpected.get(path), candidateSnapshots.get(path).bytes
-            ));
-          }
-          for (const [path, receipt] of publishedConfigCandidates) {
-            if (!sameExactFileSnapshot(receipt.published, await exactFileSnapshot(path))) {
-              throw concurrentConfigError(`Codex config changed during strict candidate publication: ${path}; concurrent bytes were preserved`);
-            }
-          }
-        }
-        for (const [path, receipt] of publishedConfigCandidates) {
-          if (!sameExactFileSnapshot(receipt.published, await exactFileSnapshot(path))) {
-            throw concurrentConfigError(`Codex config changed at the strict config commit point: ${path}; concurrent bytes were preserved`);
-          }
-          if (receipt.retired && !sameExactFileSnapshot(receipt.expected, await exactFileSnapshot(receipt.retired))) {
-            throw concurrentConfigError(`Codex config writer changed the retired baseline before the commit point: ${path}; concurrent bytes will be restored`);
-          }
-        }
-        await verifyPublishedPluginCache(publishedPluginCache);
-        for (const [path, receipt] of publishedConfigCandidates) {
-          if (!receipt.retired) continue;
-          await retainConfigArtifacts(path, [receipt.retired]);
-        }
-        if (pluginStagingHome) {
-          await rm(pluginStagingHome, { recursive: true, force: true });
-          pluginStagingHome = null;
-        }
-        await verifyPublishedPluginCache(publishedPluginCache);
-        for (const configPath of new Set([threadLimitConfigPath, declarationConfigPath])) {
-          await verifyCodexConfigRetirementReceipt(configPath);
-        }
-          } catch (error) {
-            const rollbackErrors = [];
-            if (!publishedConfigCandidates.size && verifyUnpublishedLive && !error?.musterConcurrentConfig) {
-              try { await verifyUnpublishedLive("failed config transaction"); }
-              catch (concurrentError) { error = concurrentError; }
-            }
-            for (const receipt of [...publishedConfigCandidates.values()].reverse()) {
-              try {
-                await rollbackConfigCandidate(receipt);
-                if (!sameExactFileSnapshot(receipt.expected, await exactFileSnapshot(receipt.path))) {
-                  authoritativeRollbackPaths.add(receipt.path);
-                }
-              } catch (rollbackError) {
-                // Once candidate rollback cannot prove the expected bytes at
-                // this path, the outer snapshot rollback must not overwrite
-                // whatever a concurrent writer left there.
-                authoritativeRollbackPaths.add(receipt.path);
-                rollbackErrors.push(rollbackError);
-              }
-            }
-            try { await rollbackPublishedPluginCache(publishedPluginCache); }
-            catch (rollbackError) { rollbackErrors.push(rollbackError); }
-            publishedPluginCache = null;
-            if (pluginStagingHome) {
-              try { await rm(pluginStagingHome, { recursive: true, force: true }); }
-              catch (rollbackError) { rollbackErrors.push(rollbackError); }
-              pluginStagingHome = null;
-            }
-            publishedConfigCandidates.clear();
-            if (rollbackErrors.length) {
-              throw new AggregateError([error, ...rollbackErrors],
-                `${error.message}; ${rollbackErrors.length} config rollback operation(s) also failed`, { cause: error });
-            }
-            throw error;
-          }
-        };
-        if (!present) actions = [];
-        await installConfig();
-        // Strict config publication intentionally changes config.toml after the
-        // hook transaction is proven. Start the hooks/list stability window
-        // only once every intentional activation input is at its committed
-        // identity, while still requiring all transaction-managed hook writes
-        // to match their exact receipts.
-        activationProofStart = await hookActivationSnapshot({ home, cwd, inventoryCwd });
-        activationTransactionStable = activationSnapshotMatchesWrites(activationProofStart, written);
-      } catch (error) {
-        const rollbackErrors = [];
-        // Config candidates are never written by the generic transaction:
-        // before publication these live paths remain untouched, and after
-        // publication the identity-aware candidate rollback above owns them.
-        // Always excluding them also closes the post-verification window in
-        // which a concurrent writer could otherwise be overwritten while
-        // unrelated managed files are being restored.
-        const skip = new Set([
-          threadLimitConfigPath, declarationConfigPath, ...authoritativeRollbackPaths
-        ]);
-        try { await restoreFilesystem(originals, changed, { skip, written }); }
-        catch (rollbackError) { rollbackErrors.push(rollbackError); }
-        if (rollbackErrors.length) {
-          throw new AggregateError([error, ...rollbackErrors],
-            `${error.message}; ${rollbackErrors.length} rollback operation(s) also failed`, { cause: error });
-        }
-        throw error;
+      } catch (rollbackError) {
+        // Once candidate rollback cannot prove the expected bytes at
+        // this path, the outer snapshot rollback must not overwrite
+        // whatever a concurrent writer left there.
+        ctx.authoritativeRollbackPaths.add(receipt.path);
+        rollbackErrors.push(rollbackError);
       }
-    }, scopeLockOptions);
-  } else {
-    actions = present ? await registerPlugin(executor, distributionRoot, { dryRun: true, runtimeIdentity: identity }) : [];
+    }
+    try { await rollbackPublishedPluginCache(ctx.publishedPluginCache); }
+    catch (rollbackError) { rollbackErrors.push(rollbackError); }
+    ctx.publishedPluginCache = null;
+    if (ctx.pluginStagingHome) {
+      try { await rm(ctx.pluginStagingHome, { recursive: true, force: true }); }
+      catch (rollbackError) { rollbackErrors.push(rollbackError); }
+      ctx.pluginStagingHome = null;
+    }
+    ctx.publishedConfigCandidates.clear();
+    if (rollbackErrors.length) {
+      throw new AggregateError([error, ...rollbackErrors],
+        `${error.message}; ${rollbackErrors.length} config rollback operation(s) also failed`, { cause: error });
+    }
+    throw error;
   }
+}
+
+// The withScopeRegistryTransaction callback body.
+async function installCodexScopeTransactionBody(ctx, registry) {
+  await verifyCodexInstallPreconditions(ctx, registry);
+  try {
+    await writeCodexInstallArtifacts(ctx, registry);
+    if (!ctx.present) ctx.actions = [];
+    await publishCodexConfigTransaction(ctx);
+    // Strict config publication intentionally changes config.toml after the
+    // hook transaction is proven. Start the hooks/list stability window
+    // only once every intentional activation input is at its committed
+    // identity, while still requiring all transaction-managed hook writes
+    // to match their exact receipts.
+    ctx.activationProofStart = await hookActivationSnapshot({ home: ctx.home, cwd: ctx.cwd, inventoryCwd: ctx.inventoryCwd });
+    ctx.activationTransactionStable = activationSnapshotMatchesWrites(ctx.activationProofStart, ctx.written);
+  } catch (error) {
+    const rollbackErrors = [];
+    // Config candidates are never written by the generic transaction:
+    // before publication these live paths remain untouched, and after
+    // publication the identity-aware candidate rollback above owns them.
+    // Always excluding them also closes the post-verification window in
+    // which a concurrent writer could otherwise be overwritten while
+    // unrelated managed files are being restored.
+    const skip = new Set([
+      ctx.threadLimitConfigPath, ctx.declarationConfigPath, ...ctx.authoritativeRollbackPaths
+    ]);
+    try { await restoreFilesystem(ctx.originals, ctx.changed, { skip, written: ctx.written }); }
+    catch (rollbackError) { rollbackErrors.push(rollbackError); }
+    if (rollbackErrors.length) {
+      throw new AggregateError([error, ...rollbackErrors],
+        `${error.message}; ${rollbackErrors.length} rollback operation(s) also failed`, { cause: error });
+    }
+    throw error;
+  }
+}
+
+async function resolveCodexInstallHookTrust(ctx) {
   const trustRemediation = "Open Codex, run /hooks, and trust the exact current Muster hook definitions, then rerun muster install codex to verify them";
-  let hookTrust;
-  if (dryRun) {
-    hookTrust = { ok: false, blocking: false, verified: false, results: [], stale: [], effective: { verified: false, ok: false, results: [], error: "dry-run does not verify effective hook activation" }, remediation: null };
-  } else {
-    if (hooks.skipped) canonicalUserTrust = await inspectEffectiveUserScopeHooks({
-      home, packageVersion, expected: canonicalUserExpected, cwd: inventoryCwd, activationCwd: cwd,
-      runtimeIdentity: identity, hookInventory
-    });
-    const trustTarget = hooks.skipped ? canonicalUserTrust : {
-      configPath: hooks.configPath,
-      config: hooks.config,
-      hookGroups: hooks.manifest.hookGroups,
-      knownKeys: codexHookStateKeys(hooks.config),
-      gaps: musterHookTrustGaps({
-        configTomlText: await readSafe(threadLimitConfigPath),
-        hooksJsonPath: hooks.configPath,
-        config: hooks.config,
-        hookGroups: hooks.manifest.hookGroups
-      })
-    };
-    const gaps = trustTarget?.gaps ?? { results: [], untrusted: ["canonical-scope-invalid"], stale: [] };
-    const inventoryReader = hookInventory || readCodexHookInventory;
-    const activationBefore = activationProofStart;
-    const inventoryArgs = {
-      runtimeIdentity: identity,
-      cwds: [inventoryCwd],
-      env: { ...process.env, CODEX_HOME: codexHome(home) }
-    };
-    const proof = hooks.skipped ? null : await verifiedHookInventory({
-      inventoryReader, inventoryArgs, cwd: inventoryCwd,
-      hooksJsonPath: trustTarget.configPath, activationSnapshot: activationBefore
-    });
-    const activationAfter = await hookActivationSnapshot({ home, cwd, inventoryCwd });
-    const activationStable = activationTransactionStable
-      && sameHookActivationSnapshot(activationBefore, activationAfter);
-    const effective = hooks.skipped
-      ? trustTarget && activationStable
-        ? canonicalUserTrust.effective
-        : { verified: true, ok: false, error: "Codex canonical user hooks changed or became inactive after project fallback removal", results: [] }
-      : proof.alias
-        ? { verified: true, ok: false, error: "Codex hooks/list reported another source invoking the managed Muster runtime", results: [] }
-        : !activationStable || !proof.stable
-        ? { verified: true, ok: false, error: "Codex hook activation state changed during hooks/list verification", results: [] }
-        : effectiveHookTrust(proof.inventory, inventoryCwd, trustTarget.configPath, gaps.results, { knownKeys: trustTarget.knownKeys });
-    const persistedOk = gaps.untrusted.length === 0 && gaps.stale.length === 0;
-    hookTrust = {
-      ok: persistedOk && effective.ok,
-      blocking: !persistedOk || !effective.ok,
-      verified: true,
-      results: gaps.results,
-      stale: gaps.stale,
-      effective,
-      remediation: !persistedOk || !effective.ok ? trustRemediation : null
-    };
+  if (ctx.dryRun) {
+    return { ok: false, blocking: false, verified: false, results: [], stale: [], effective: { verified: false, ok: false, results: [], error: "dry-run does not verify effective hook activation" }, remediation: null };
   }
-  return { ok: dryRun ? true : hookTrust.ok, target: "codex", scope, dryRun, profiles: files.length, hooks: Object.keys(hooks.manifest.hookGroups).length, files: planned,
-    hooksSkipped: hooks.skipped,
-    hookTrust,
-    prunedScopes, prunedHookState, prunedProjectTrust,
-    plugin: present ? { registered: !dryRun, actions } : { registered: false, skipped: "codex-not-found" },
+  if (ctx.hooks.skipped) ctx.canonicalUserTrust = await inspectEffectiveUserScopeHooks({
+    home: ctx.home, packageVersion: ctx.packageVersion, expected: ctx.canonicalUserExpected, cwd: ctx.inventoryCwd, activationCwd: ctx.cwd,
+    runtimeIdentity: ctx.identity, hookInventory: ctx.hookInventory
+  });
+  const trustTarget = ctx.hooks.skipped ? ctx.canonicalUserTrust : {
+    configPath: ctx.hooks.configPath,
+    config: ctx.hooks.config,
+    hookGroups: ctx.hooks.manifest.hookGroups,
+    knownKeys: codexHookStateKeys(ctx.hooks.config),
+    gaps: musterHookTrustGaps({
+      configTomlText: await readSafe(ctx.threadLimitConfigPath),
+      hooksJsonPath: ctx.hooks.configPath,
+      config: ctx.hooks.config,
+      hookGroups: ctx.hooks.manifest.hookGroups
+    })
+  };
+  const gaps = trustTarget?.gaps ?? { results: [], untrusted: ["canonical-scope-invalid"], stale: [] };
+  const inventoryReader = ctx.hookInventory || readCodexHookInventory;
+  const activationBefore = ctx.activationProofStart;
+  const inventoryArgs = {
+    runtimeIdentity: ctx.identity,
+    cwds: [ctx.inventoryCwd],
+    env: { ...process.env, CODEX_HOME: codexHome(ctx.home) }
+  };
+  const proof = ctx.hooks.skipped ? null : await verifiedHookInventory({
+    inventoryReader, inventoryArgs, cwd: ctx.inventoryCwd,
+    hooksJsonPath: trustTarget.configPath, activationSnapshot: activationBefore
+  });
+  const activationAfter = await hookActivationSnapshot({ home: ctx.home, cwd: ctx.cwd, inventoryCwd: ctx.inventoryCwd });
+  const activationStable = ctx.activationTransactionStable
+    && sameHookActivationSnapshot(activationBefore, activationAfter);
+  const effective = ctx.hooks.skipped
+    ? trustTarget && activationStable
+      ? ctx.canonicalUserTrust.effective
+      : { verified: true, ok: false, error: "Codex canonical user hooks changed or became inactive after project fallback removal", results: [] }
+    : proof.alias
+      ? { verified: true, ok: false, error: "Codex hooks/list reported another source invoking the managed Muster runtime", results: [] }
+      : !activationStable || !proof.stable
+      ? { verified: true, ok: false, error: "Codex hook activation state changed during hooks/list verification", results: [] }
+      : effectiveHookTrust(proof.inventory, ctx.inventoryCwd, trustTarget.configPath, gaps.results, { knownKeys: trustTarget.knownKeys });
+  const persistedOk = gaps.untrusted.length === 0 && gaps.stale.length === 0;
+  return {
+    ok: persistedOk && effective.ok,
+    blocking: !persistedOk || !effective.ok,
+    verified: true,
+    results: gaps.results,
+    stale: gaps.stale,
+    effective,
+    remediation: !persistedOk || !effective.ok ? trustRemediation : null
+  };
+}
+
+export async function runCodexInstall(options = {}) {
+  const ctx = await beginCodexInstallContext(options);
+  if (!ctx.dryRun) {
+    ctx.originals = new Map(); ctx.changed = []; ctx.written = new Map();
+    await withScopeRegistryTransaction(ctx.home, registry => installCodexScopeTransactionBody(ctx, registry), ctx.scopeLockOptions);
+  } else {
+    ctx.actions = ctx.present ? await registerPlugin(ctx.executor, ctx.distributionRoot, { dryRun: true, runtimeIdentity: ctx.identity }) : [];
+  }
+  ctx.hookTrust = await resolveCodexInstallHookTrust(ctx);
+  return {
+    ok: ctx.dryRun ? true : ctx.hookTrust.ok, target: "codex", scope: ctx.scope, dryRun: ctx.dryRun, profiles: ctx.files.length,
+    hooks: Object.keys(ctx.hooks.manifest.hookGroups).length, files: ctx.planned,
+    hooksSkipped: ctx.hooks.skipped,
+    hookTrust: ctx.hookTrust,
+    prunedScopes: ctx.prunedScopes, prunedHookState: ctx.prunedHookState, prunedProjectTrust: ctx.prunedProjectTrust,
+    plugin: ctx.present ? { registered: !ctx.dryRun, actions: ctx.actions } : { registered: false, skipped: "codex-not-found" },
     nextSteps: [
-      ...(present ? [] : ["npm install -g @openai/codex", `muster install codex --scope ${scope}`]),
-      ...(hookTrust.remediation ? [hookTrust.remediation] : [])
-    ] };
+      ...(ctx.present ? [] : ["npm install -g @openai/codex", `muster install codex --scope ${ctx.scope}`]),
+      ...(ctx.hookTrust.remediation ? [ctx.hookTrust.remediation] : [])
+    ]
+  };
 }
 
 

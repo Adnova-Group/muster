@@ -1,11 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  mkdtempSync, writeFileSync, utimesSync, rmSync, symlinkSync, statSync,
+  writeFileSync, utimesSync, rmSync, symlinkSync, statSync,
   readFileSync as readFileSyncRaw, mkdirSync, chmodSync,
 } from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { trackedMkdtempSync as mkdtempSync } from "../test-support/helpers.js";
 import {
   DEFAULT_SCALE,
   CROSSING_MAX_AGE_MS,

@@ -12,10 +12,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync } from "node:fs";
+import { mkdirSync, writeFileSync, symlinkSync } from "node:fs";
 import os from "node:os";
 import { cleanDir, editPayload, spawnHook, uniqueSid } from "./test-support/hook-helpers.js";
 import { cumFile, readCum } from "../plugin/hooks/inline-budget.js";
+import { trackedMkdtempSync as mkdtempSync } from "../test-support/helpers.js";
 
 const HOOK = path.join(
   path.dirname(fileURLToPath(import.meta.url)),

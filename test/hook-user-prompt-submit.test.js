@@ -11,13 +11,14 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import os from "node:os";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { spawnHook, cleanDir } from "./test-support/hook-helpers.js";
 import {
   directiveFile, CROSSING_MAX_AGE_MS, cumFile, recordCum,
   DEFAULT_INVITE_COOLDOWN_MS,
 } from "../plugin/hooks/inline-budget.js";
+import { trackedMkdtempSync as mkdtempSync } from "../test-support/helpers.js";
 
 // Scale correlation (see user-prompt-submit.js/inline-budget.js:
 // isScaleCorroborated): the isDirective signal only fires when at least one

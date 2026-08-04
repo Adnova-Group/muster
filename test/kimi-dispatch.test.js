@@ -22,8 +22,11 @@ test("Kimi resumes use parent evidence and cannot dispatch a 101st continuation"
     candidateFingerprint: index.toString(16).padStart(64, "0"),
     errorFingerprint: (index + 100).toString(16).padStart(64, "0"),
   }));
+  // Kimi resumes inherit the dispatch execution budget (progress-aware-execution-budgets):
+  // a bare resume policy exhausts the total-attempts budget and reports it as such, rather
+  // than running to the legacy 100-continuation recovery cap.
   assert.deepEqual(kimiResumeState({ attempts }), {
-    retry: false, reason: "max-continuations", noProgressCount: 1,
+    retry: false, reason: "max-total-attempts", noProgressCount: 1,
   });
   assert.throws(() => kimiResumeState({ attempts: [{
     candidateFingerprint: "agent-selected", errorFingerprint: "also-untrusted",

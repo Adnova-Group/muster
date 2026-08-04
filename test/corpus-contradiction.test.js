@@ -308,6 +308,8 @@ test("review recovery contract stays progress-aware across orchestrator and runn
     assert.match(text, /independent re-review|fresh independent review|independent review/i);
     assert.doesNotMatch(text, /REVIEW_GATE_MAX_ITERATIONS|three fix loops|3 fix iterations/);
   }
+  assert.doesNotMatch(orchestratorMd, /3-iteration\s+fix cap/i,
+    "fast-path cadence must not restore the obsolete fixed review cap");
 });
 
 // ── residue scan: verb-rename leftovers outside the plugin/ prose scan ─────

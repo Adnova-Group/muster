@@ -78,8 +78,8 @@ finding is more useful than a confidently wrong one.
 - (2026-08-04, source: split-codex-install merged receipt, recorded nit "ctx.verifyUnpublishedLive implicit-undefined (add explicit null on next touch)") ctx-object contract check (facade/orchestrator closure cost): for every orchestrator passing a shared ctx object to phase helpers (`runCodexInstall`'s 22-line orchestrator over 10 helpers), diff the union of `ctx.<field>` reads across helpers against the fields the orchestrator explicitly initializes — every implicit-undefined field is a silent contract hole a future helper reorder turns into a bug. — false-positive note: fields documented as optional with an explicit default at the read site are contract, not hole.
 - (2026-08-04, source: 2026-07-29 baseline-correction receipt — stale `.agents/plugins` bundle made main look 7-red because "build-codex.mjs skips regeneration on a version-only key; version is pinned"; fix precedent PR #162 inputDigest) Version-only cache-key sweep: grep every generation/skip key derivation (`grep -rn "cacheKey\|inputDigest\|skip.*version" scripts/*.mjs src/*.js`); a key containing a version string but no content digest, while the version is pinned static, is a never-invalidating cache that will eventually serve stale truth as baseline. — false-positive note: keys over genuinely immutable released artifacts (content-addressed by hash) are correct.
 
-(none yet -- `muster-improver` may append dated, evidenced entries here from run receipts; see
-`plugin/skills/improve/SKILL.md`.)
+(`muster-improver` may append further dated, evidenced entries here from run receipts, gated by
+user approval; see `plugin/skills/improve/SKILL.md`.)
 
 Report findings as a bullet list, one finding per line: severity (P0/P1/P2), location
 (file:line), problem, suggested fix -- matching the audit dispatch's own return contract

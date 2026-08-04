@@ -60,8 +60,8 @@ Hunt-list for the **coverage** audit dimension (`buildAuditManifest`, `src/audit
 - (2026-08-04, source: test-tmpdir-convention merged receipt — guard hardened against 5 import-evasion forms, "residual nits: re-export laundering inherent to textual guards") Re-export laundering check: for every grep-based guard test asserting "no file imports/calls X", grep for `export { X as ` and `export * from` sites that launder X under a new name past the guard; the finding is the missing laundering-form mutant-kill, not the guard's existence. — false-positive note: guards that resolve re-export chains (or forbid re-export syntactically) already close this; confirm before filing.
 - (2026-08-04, source: in-repo precedent PR #175 "deterministic changed-read injection replaced the timing race" + the kimi-probe-flake-containment pattern) Flake-class triage: classify every timing-sensitive/live-probe test by cause class (async wait, concurrency, order dependency, network/quota); async-wait flakes get deterministic injection (the #175 pattern), quota/live-binary flakes get environment-gated skips with attributed baselines (the kimi-probe-flake-containment pattern) — an unattributed intermittent failure in a gate run is itself the finding. — false-positive note: an environment-gated skip with a documented reason is containment, not flake debt.
 
-(none yet -- `muster-improver` may append dated, evidenced entries here from run receipts; see
-`plugin/skills/improve/SKILL.md`.)
+(`muster-improver` may append further dated, evidenced entries here from run receipts, gated by
+user approval; see `plugin/skills/improve/SKILL.md`.)
 
 Report findings as a bullet list, one finding per line: severity (P0/P1/P2), location
 (file:line), problem, suggested fix -- matching the audit dispatch's own return contract

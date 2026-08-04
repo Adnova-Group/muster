@@ -71,8 +71,8 @@ Hunt-list for the **security** audit dimension (`buildAuditManifest`, `src/audit
 - (2026-08-04, source: OWASP Top 10:2021 A08, quoted verbatim: "Software and data integrity failures relate to code and infrastructure that does not protect against integrity violations" — https://owasp.org/Top10/2021/A08_2021-Software_and_Data_Integrity_Failures/) Installed-artifact integrity pairing: for every artifact muster publishes into a user scope (codex install, marketplace, generated runtimes), verify a digest pin exists at install time AND a doctor-side exact-hash re-verify can detect post-install tamper (precedent: the exact-hash hook trust check in `src/codex-doctor.js` that superseded PR 147; `LEGACY_STYLE_DIGESTS`); a write path with no tamper-detecting doctor counterpart is the finding. — false-positive note: dev-mode overlays regenerated from source on every install have no persistence window; downgrade, don't dismiss.
 - (2026-08-04, source: go-backlog-2026-08-03 RUN CLOSED receipt — "broker private keys + tokens destroyed at close so no post-run receipt can be forged") Secret-lifecycle audit: for every generated run secret (broker signing keys, `receiptMac` HMAC secrets), verify a recorded destruction point at run/process close and zero appearances in receipts, STATE, or logs; grep `createHmac\|generateKeyPair\|randomBytes` sites and trace each secret to its disposal. — false-positive note: PUBLIC verification keys are archived deliberately (`.muster/runs/*/`); only private material needs a destruction receipt.
 
-(none yet -- `muster-improver` may append dated, evidenced entries here from run receipts; see
-`plugin/skills/improve/SKILL.md`.)
+(`muster-improver` may append further dated, evidenced entries here from run receipts, gated by
+user approval; see `plugin/skills/improve/SKILL.md`.)
 
 Report findings as a bullet list, one finding per line: severity (P0/P1/P2), location
 (file:line), problem, suggested fix -- matching the audit dispatch's own return contract

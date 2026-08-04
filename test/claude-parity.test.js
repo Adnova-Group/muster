@@ -1463,5 +1463,11 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // "Where to dig" charter prose) each introduced a new GUARD-IDK-001 prompt-lint trigger word
   // ("question"/"fact"); both files gained a one-line "say so" qualifier to stay passing, per
   // the same convention every other pattern skill in this family already uses.
-  assert.equal(hash.digest("hex"), "a09eeb7ee7a8f2902c988cb963b357dc43d0da50d06fa6c0a4aa8cd055c34bb1");
+  // Re-pin 2026-08-04e (audit-pattern-batch2 review polish, content-only, file count unchanged
+  // at 160): the 9 amended canonical pattern skills' stale "(none yet -- muster-improver may
+  // append ...)" placeholder -- self-contradictory once real dated entries sit above it -- is
+  // replaced with a one-liner that survives future appends ("may append further dated,
+  // evidenced entries here from run receipts, gated by user approval"); the new
+  // audit-pattern-documentation skill already omitted the placeholder and needed no change.
+  assert.equal(hash.digest("hex"), "3ab74b1a725a48ed90fe8e06f9b2630733a0d2a3e2ac5ac6c6ff1a0859259ac0");
 });

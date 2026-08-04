@@ -119,8 +119,8 @@ survey briefs seeded as a skill (the other is `audit-pattern-readability`).
 
 - (2026-08-04, source: docs/decisions/codex-fix-loop-reconcile.md — PR 152's binding-object layer was superseded by the receipt layer INSIDE its own branch before merge, leaving `createCodexFixLoopBinding`/`planCodexFixContinuation`/`fingerprintCodexRoleProfile` "orphaned relative to any live entry point" with only their own tests as consumers) Post-supersession orphan sweep: after any documented in-branch supersession, grep the superseded layer's exports for bucket-B status (imported only by their own tests) — supersession-born zombies are the highest-confidence bucket-B class because a decision record already names them non-live; the contract-surface check still applies before deletion. — false-positive note: a superseded layer explicitly retained as design documentation (the reconcile record says retention was a deliberate, separately-scoped call) is filed as a "has the retention decision expired?" question, never a direct delete order.
 
-(none yet -- `muster-improver` may append dated, evidenced entries here from run receipts; see
-`plugin/skills/improve/SKILL.md`.)
+(`muster-improver` may append further dated, evidenced entries here from run receipts, gated by
+user approval; see `plugin/skills/improve/SKILL.md`.)
 
 Report findings as a bullet list, one finding per line: severity (P0/P1/P2), location
 (file:line), problem, suggested fix -- matching the audit dispatch's own return contract

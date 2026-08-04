@@ -64,6 +64,19 @@ coverage (4, incl. the Luo-trimmed flake-class entry), security (3), design-ux (
 failure-surface remediation), prompt-quality (1, brief-only procedure persistence), readability
 (1, nesting-weighted split ranking), tech-debt (2), simplification (1), dead-code-duplication (1).
 
+## Provenance-tag normalization
+
+The ledger's own text carried a trailing bracketed provenance tag on every one of the 24 entries
+(`[in-repo]`, `[gap-fill]`, or `[external]`, marking whether the pattern came from reading this
+repo's own code/history, was hand-authored to fill a gap the shakedown named, or cites an outside
+source). Every landed entry -- both the 19 appended to their original skill and the 5 migrated
+into `audit-pattern-documentation` -- drops that trailing tag uniformly on landing: it matches
+the format already established by the first appended-patterns cycle (`- (YYYY-MM-DD, source:
+<run/receipt>) <pattern> -- false-positive note: <...>`, per `plugin/skills/improve/SKILL.md`
+step 4), which carries no such tag. This is formatting normalization only -- the pattern content,
+the cited source, and the false-positive note are otherwise unchanged from the ledger's text, so
+"appended verbatim" above means verbatim minus that one uniformly-stripped trailing tag.
+
 ## The Luo trim
 
 Original ledger source clause: `Luo et al., "An Empirical Analysis of Flaky Tests", FSE 2014 --

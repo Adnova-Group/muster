@@ -6,7 +6,7 @@ import {
 import { join, parse, relative, resolve, sep } from "node:path";
 import { withCodexFileLock } from "./codex-lock.js";
 import { CODEX_MODEL_POLICY, codexProfileForConfig } from "./codex.js";
-import { isContainedLexical, readNoFollowRegularSync } from "./fs-safe.js";
+import { isContainedLexical, readNoFollowRegularSync, sha256 } from "./fs-safe.js";
 import { normalizeTier } from "./model.js";
 
 // Wave 2 teardown: the Codex plugin used to be published as a committed,
@@ -146,7 +146,6 @@ function readRegular(path, label, maxBytes = 32 * 1024 * 1024) {
   return readRegularNoFollow(path, label, maxBytes);
 }
 const readRegularJson = (path, label, maxBytes = 64 * 1024) => JSON.parse(readRegular(path, label, maxBytes).toString("utf8"));
-const sha256 = value => createHash("sha256").update(value).digest("hex");
 
 // Walks a tree, rejecting any symlink or special file, and returns every
 // regular file's path/size/digest (still needed by the packaged plugin's

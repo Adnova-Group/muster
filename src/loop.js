@@ -2,6 +2,8 @@
 // criteria are GENUINELY met (`done`), or the max-iterations cap is hit (then stop + escalate — never
 // loop forever, never declare done falsely). The "self-reference" is that each iteration sees prior
 // work in files + the run STATE.
+import { SHA256_HEX_RE } from "./fs-safe.js";
+
 export const TASK_MAX_ITERATIONS = 100;
 export function loopState(options = {}) {
   const { iteration = 0, maxIterations = Number.POSITIVE_INFINITY, done = false } = options;
@@ -125,10 +127,10 @@ export function reviewGateState(options = {}) {
 export function specGateRecoveryState({ rounds = [], done: callerDone, ...options } = {}) {
   if (callerDone !== undefined) throw new TypeError("spec gate completion is derived from an explicit independent PASS, not caller input");
   if (!Array.isArray(rounds) || rounds.some(round => !round || typeof round !== "object"
-    || !/^[0-9a-f]{64}$/.test(round.candidateFingerprint ?? "")
+    || !SHA256_HEX_RE.test(round.candidateFingerprint ?? "")
     || !["PASS", "FAIL"].includes(round.verdict)
     || typeof round.reviewer !== "string" || !round.reviewer
-    || !/^[0-9a-f]{64}$/.test(round.evidenceDigest ?? "")
+    || !SHA256_HEX_RE.test(round.evidenceDigest ?? "")
     || !Array.isArray(round.findings)
     || (round.verdict === "PASS" ? round.findings.length !== 0 : round.findings.length === 0))) {
     throw new TypeError("rounds must carry candidate fingerprint, independent reviewer, evidence digest, explicit verdict, and verdict-consistent findings");

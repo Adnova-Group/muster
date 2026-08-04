@@ -1,11 +1,13 @@
 import { constants as fsConstants } from "node:fs";
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { link, lstat, mkdir, open, readFile, readdir, realpath, rename, rmdir, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { exists, readdirSafe, readJson } from "./fs-util.js";
-import { atomicWrite, isContainedLexical, readNoFollowRegular, withFileMutationLock } from "./fs-safe.js";
+import {
+  atomicWrite, isContainedLexical, readNoFollowRegular, sha256, SHA256_HEX_RE, withFileMutationLock,
+} from "./fs-safe.js";
 import { matchFrontmatter } from "./frontmatter.js";
 import { KIMI_LANES, kimiLaneEnv, kimiPreferenceForAgentId } from "./kimi.js";
 
@@ -563,10 +565,6 @@ export function stripPermissionRules(existing, { created }) {
 }
 
 const KIMI_CONFIG_MAX_BYTES = 16 * 1024 * 1024;
-
-function sha256(bytes) {
-  return createHash("sha256").update(bytes).digest("hex");
-}
 
 async function syncDirectory(path) {
   const handle = await open(path, fsConstants.O_RDONLY | fsConstants.O_DIRECTORY | fsConstants.O_NOFOLLOW);
@@ -1211,11 +1209,11 @@ async function reconcileConfigTransactions(dest, configPath, manifestPath, befor
       const deletionReceipt = receipt?.delete === true;
       if (receipt?.format !== 2 || receipt.target !== basename(configPath)
           || (deletionReceipt
-            ? (!receipt.expected || !/^[0-9a-f]{64}$/.test(receipt.expectedSha256))
+            ? (!receipt.expected || !SHA256_HEX_RE.test(receipt.expectedSha256))
             : (!receipt.staged || typeof receipt.staged.name !== "string"
               || !receipt.staged.name.startsWith(".muster-config-tmp-")
               || receipt.staged.name.includes(sep)
-              || !/^[0-9a-f]{64}$/.test(receipt.stagedSha256)))) {
+              || !SHA256_HEX_RE.test(receipt.stagedSha256)))) {
         throw new Error(`Malformed Kimi config.toml transaction receipt: ${join(dest, name)}`);
       }
       const matches = (info, identity) => info && identity

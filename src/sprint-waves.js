@@ -37,6 +37,7 @@ import { createHash } from "node:crypto";
 import { computeWaves } from "./wave.js";
 import { execFileSync } from "node:child_process";
 import { compareStringsForEnvironment } from "./locale-order.js";
+import { sha256, SHA256_HEX_RE } from "./fs-safe.js";
 
 export const SPRINT_PARALLEL_DEFAULT = 5;
 export const SPRINT_PARALLEL_MAX = 10;
@@ -180,8 +181,10 @@ const FAILURE_STATES = new Set(["failed", "cancelled", "blocked"]);
 const SPRINT_DISPOSITIONS = [null, "merge-local", "merge-push", "pr", "keep", "ask"];
 const SPRINT_RECONCILE_PAGE_SIZE = 1_000;
 const SPRINT_RECONCILE_MAX_PAGES = 100;
+// Union with the 40-char git SHA shape -- not an exact match of DIGEST_RE/
+// SHA256_HEX_RE, so it stays as its own declaration.
 const CANDIDATE_SHA_RE = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
-const DIGEST_RE = /^[0-9a-f]{64}$/;
+const DIGEST_RE = SHA256_HEX_RE;
 const SPRINT_RECONCILE_LIMITS = Object.freeze({
   items: SPRINT_RECONCILE_PAGE_SIZE * SPRINT_RECONCILE_MAX_PAGES,
   waves: SPRINT_RECONCILE_PAGE_SIZE * SPRINT_RECONCILE_MAX_PAGES,
@@ -211,10 +214,6 @@ function sprintPlanDigest(plan, orderedIds) {
 
 function isRecord(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function canonicalDigest(kind, fields, value) {

@@ -13,9 +13,36 @@
 
 import { closeSync, constants as fsConstants, fstatSync, openSync, readFileSync } from "node:fs";
 import { lstat, mkdir, open, realpath, rename, rm } from "node:fs/promises";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 import { withCodexFileLock } from "./codex-lock.js";
+
+// --- Content hashing ----------------------------------------------------------
+
+// The canonical hex-digest primitive: collapses the
+// createHash("sha256").update(value).digest("hex") one-liner that used to be
+// independently redefined -- byte-for-byte identical -- as sha256/digest/
+// sprintStateHash across codex-release.js, chatgpt-work-install.js, design.js,
+// init.js, kimi-install.js, sprint-waves.js, install.js, and
+// sprint-broker-state.js. Callers needing a domain-specific alias (e.g.
+// sprintStateHash) re-export this same function under that name rather than
+// redefining the chain. A call site with an explicit second .update() argument
+// (a non-default encoding) or a non-"hex" digest is NOT this shape and stays
+// wherever it lives.
+export function sha256(value) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+// The matching hex-64 predicate: a lowercase 64-character hex string, exactly
+// this module's own sha256() output shape. Collapses the equivalent regex that
+// used to be independently declared or inlined across sprint-broker-state.js,
+// sprint-evidence-broker.js, init.js (as HEX64), sprint-waves.js (as
+// DIGEST_RE), kimi-install.js, and loop.js. The pattern carries no g/y flag,
+// so it has no mutable lastIndex state and sharing this one instance across
+// files and call sites is safe. A pattern that also accepts a 40-character git
+// SHA, carries an algorithm prefix, or uses different flags/length is NOT this
+// shape and stays wherever it lives.
+export const SHA256_HEX_RE = /^[0-9a-f]{64}$/;
 
 // --- Traversal-token guards --------------------------------------------------
 

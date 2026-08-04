@@ -16,14 +16,14 @@ const INJECTED_CODEX_RUNNER = "muster:injected-codex-runner";
 // inventory/build validation; model adapters only translate tiers to models.
 export const CODEX_COUNTS = Object.freeze({
   agents: 27,
-  // improver-fork item: plugin/skills/improve (a new `context: fork` skill, Claude-only
-  // frontmatter key stripped by build-codex.mjs's codexSkill()) is a genuinely new native
-  // skill dir, ported into internal-skills like any other -- 11 -> 12.
-  nativeSkills: 12,
+  // audit-pillar-pattern-library item: 9 new plugin/skills/audit-pattern-<pillar>/ hunt-list
+  // pattern skills (one dir + SKILL.md each), ported into internal-skills like any other
+  // native skill dir -- 12 -> 21.
+  nativeSkills: 21,
   builtinSkills: 51,
   publicSkills: 14,
-  // 62 -> 63: nativeSkills (12) + builtinSkills (51).
-  internalSkills: 63,
+  // 63 -> 72: nativeSkills (21) + builtinSkills (51).
+  internalSkills: 72,
   pipelines: 20,
   mcpTools: 31,
   primaryModes: 10,

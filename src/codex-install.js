@@ -18,11 +18,11 @@ import {
 } from "./codex-thread-limits.js";
 import { runCodexStrictConfigCheck } from "./codex-strict-config.js";
 import {
-  execFileDefault, MANIFEST, codexHome, configDir, scopeRegistryPath, scopeRegistryLockPath,
+  execFileDefault, MANIFEST, codexHome, configDir,
   codexProjectRoot, codexInvocationRoot, codexActivationConfigDirs, ordinaryDirectoryPath,
   regularFileState, safeExists, readSafe, physicalFileSnapshot, samePhysicalFile, readJson,
-  validateScopeRegistry, readScopeRegistry, scopeEntry, sameScopeEntry, registryText,
-  canonicalDiskCasing, reconcileScopeRegistryEntries, atomicWriteSafe, removeSafe, run,
+  readScopeRegistry, scopeEntry, sameScopeEntry, registryText,
+  reconcileScopeRegistryEntries, atomicWriteSafe, removeSafe, run,
   snapshot, restoreFilesystem, exactFileSnapshot, sameExactFileSnapshot
 } from "./codex-install-shared.js";
 import {

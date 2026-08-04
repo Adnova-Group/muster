@@ -437,6 +437,51 @@ test("runCodexWaveContinuation rechecks project configuration and exact thread i
   );
 });
 
+test("runCodexWaveContinuation rejects a worktree whose .git pointer was swapped after the retained turn", async t => {
+  const fixture = await waveFixture(t);
+  const initial = await runCodexWave({
+    members: [member("a", fixture.worktreeA)],
+    codexCommand: fixture.codex,
+    repositoryRoot: fixture.repo,
+    baseSha: fixture.baseSha,
+  });
+  const siblingPointer = await readFile(join(fixture.worktreeB, ".git"), "utf8");
+  await writeFile(join(fixture.worktreeA, ".git"), siblingPointer);
+  await assert.rejects(
+    runCodexWaveContinuation({
+      receiptId: initial.results[0].receiptId,
+      blockers: ["still broken"],
+      codexCommand: fixture.codex,
+      repositoryRoot: fixture.repo,
+    }),
+    /git directory|registry|backpointer/i,
+  );
+});
+
+test("runCodexWaveContinuation rejects a Codex version that changed since the retained turn", async t => {
+  const fixture = await waveFixture(t);
+  const initial = await runCodexWave({
+    members: [member("a", fixture.worktreeA)],
+    codexCommand: fixture.codex,
+    repositoryRoot: fixture.repo,
+    baseSha: fixture.baseSha,
+  });
+  await rm(join(fixture.worktreeA, "result.txt"));
+  const upgradedShim = (await readFile(fixture.codex, "utf8")).replace("codex-cli 0.145.0", "codex-cli 0.145.1");
+  assert.notEqual(upgradedShim.indexOf("0.145.1"), -1, "fixture precondition: shim source must contain the replaced version string");
+  await writeFile(fixture.codex, upgradedShim);
+  await chmod(fixture.codex, 0o755);
+  await assert.rejects(
+    runCodexWaveContinuation({
+      receiptId: initial.results[0].receiptId,
+      blockers: ["still broken"],
+      codexCommand: fixture.codex,
+      repositoryRoot: fixture.repo,
+    }),
+    /Codex version changed/,
+  );
+});
+
 test("runCodexWaveContinuation rejects ignored Codex discovery instructions planted by the first turn", async t => {
   for (const plantedPath of ["AGENTS.override.md", ".agents/skills/attacker/SKILL.md"]) {
     const fixture = await waveFixture(t);

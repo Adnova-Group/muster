@@ -59,6 +59,18 @@ backlog item for each, not treating the closed PR as done:
 - **#166** — the "refactor Codex doctor by concern" split never landed; `src/codex-doctor.js` remains
   a single 1416-line file.
 
+## Addendum: PR 145 correction (2026-08-03, `codex-runtime-identity-reconcile`)
+
+The "genuine gap" classification for PR 145 above is **incorrect** and is superseded by
+[codex-runtime-identity-pr145-supersede.md](codex-runtime-identity-pr145-supersede.md). PR 145's
+promised MCP Node runtime pin was already fully present on `main` at the moment this reconciliation
+ran (landed under commit `375c186`, an ancestor of this document's own `95b3bf9` base, via
+`src/codex-runtime-identity.js` + `test/codex-runtime-identity.test.js` — different names than
+this reconciliation's search terms, which is why the search missed it). No code gap exists; PR 145
+is closed-superseded with no further action. The `open-pr-branch-reconciliation.json` machine
+record is left as originally captured (a faithful record of what that run's search found) with a
+matching `correction` field added rather than rewritten in place.
+
 ## Execution preconditions (unchanged posture)
 
 This reconciliation is read-only evidence, not an action queue. Merges already happened externally

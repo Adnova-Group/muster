@@ -188,6 +188,10 @@ test("go-backlog contract dispatches every ready disposition before the barrier 
   assert.match(waveMode, /cannot dispatch parallel runners.*same build\/review schedule sequentially/i);
   assert.match(waveMode, /failed.*omit.*disposition.*integration/i);
   assert.match(waveMode, /preserv(?:e|ing).*emitted order/i);
-  assert.match(waveMode, /dependent.*escalat(?:e|es).*immediately.*never build/i);
+  // Aligned 2026-08-04 with self-healing-backlog-recovery's reviewed semantics: dependents
+  // wait during recoverable predecessor correction/replan; only a truthful terminal state
+  // blocks them, still without building or forking the partial tip.
+  assert.match(waveMode, /predecessor.*correction\/replan.*dependents remain waiting/is);
+  assert.match(waveMode, /truthful terminal state.*terminally blocked without creating a\s+worktree/is);
   assert.doesNotMatch(text.slice(0, text.indexOf("**Wave mode**")), /full go lifecycle sequentially over every item/i);
 });

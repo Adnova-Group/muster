@@ -73,7 +73,7 @@ run, report it plainly.
 
 Persist that successful result as `plan`. During execution, call **`muster_sprint_reconcile`** with
 `plan`, every receipt currently available (`id`, `itemId`, `phase`, `status`, optional `attempt`, parent-verified `candidateSha` for every status, and parent-authenticated `evidence`; review also carries the exact `implementationAttempt`, and completed integration carries the exact-head `approvalDigest`), and
-the adapter-observed `inFlight` phase list (`itemId`, `phase`, positive `attempt`; review/integration also carry `candidateSha`, review carries `implementationAttempt`, and integration carries `approvalDigest`). The model-callable reconcile tool accepts only already-authenticated receipts and approvals and holds only Ed25519 public verification keys; it cannot sign caller input. A separately privileged local IPC broker (`scripts/sprint-evidence-broker.mjs`) holds the private keys and adapter-owned assignment state outside the Cowork/model process. A host mailbox callback invokes `scripts/sprint-evidence-callback.mjs`; the broker authenticates its actor-specific capability token, derives the worktree path, common repository identity, branch, phase actor, and reviewer independence from trusted state, verifies HEAD, and returns the signed canonical envelope to persist. Destructive dispositions also provide `integrationTargets`; after the emitted approval action, an authenticated-human callback uses the same broker path, which derives the approver from its capability and binds consent to the prior action. A newly issued integration-completion receipt requires a still-fresh exact approval; authenticated completed history remains valid after that live window. If the host cannot supply these callbacks, the authenticated parallel lifecycle is unavailable and the sequential fallback is mandatory. Drive a strict **reconcile → dispatch → wait** loop:
+the adapter-observed `inFlight` phase list (`itemId`, `phase`, positive `attempt`; review/integration also carry `candidateSha`, review carries `implementationAttempt`, and integration carries `approvalDigest`). The model-callable reconcile tool accepts only already-authenticated receipts and approvals and holds only Ed25519 public verification keys; it cannot sign caller input. A separately privileged local IPC broker (`scripts/sprint-evidence-broker.mjs`) holds the private keys and adapter-owned assignment state outside the Cowork/model process. A host mailbox callback invokes `scripts/sprint-evidence-callback.mjs`; for every failed review or implementation outcome, send the complete normalized `findings` collection to that broker callback rather than omitting or locally hashing it. The broker authenticates its actor-specific capability token, derives the worktree path, common repository identity, branch, phase actor, and reviewer independence from trusted state, verifies HEAD, and returns the signed canonical envelope. Persist the returned signed `progressFingerprint` unchanged with the receipt so reconciliation can distinguish material progress from a repeated-identical outcome. Destructive dispositions also provide `integrationTargets`; after the emitted approval action, an authenticated-human callback uses the same broker path, which derives the approver from its capability and binds consent to the prior action. A newly issued integration-completion receipt requires a still-fresh exact approval; authenticated completed history remains valid after that live window. If the host cannot supply these callbacks, the authenticated parallel lifecycle is unavailable and the sequential fallback is mandatory. Drive a strict **reconcile → dispatch → wait** loop:
 drain all completions after every wake, reconcile once, execute every returned action, update
 `inFlight`, then reconcile again before waiting. `next:dispatch` forbids an idle wait;
 `next:terminal|blocked|invalid` ends the loop; only `wait.eligible:true` permits waiting. Duplicate or
@@ -110,9 +110,11 @@ crew waves). An item's OWN crew may still fan out in parallel.
   and ordered-integration surface. This preserves the pre-existing flat-backlog order.
 - **Wave path (`annotated:true`).** For each object in `schedule.waves`, in emitted order:
   1. Record the wave base SHA. For every id in each emitted `buildReview.batches` array, first inspect
-     its emitted `items[id].deps`; when any predecessor was escalated or its build/review failed,
-     escalate the dependent immediately and never create its worktree or build it. Otherwise create a
-     dedicated `.worktrees/<validated-item-id>` worktree from that same wave base and run the runner's
+     its emitted `items[id].deps`. A predecessor whose build/review failed enters correction/replan, and
+     its dependents remain waiting while that recovery can make progress. Only when the predecessor
+     reaches a truthful terminal state does the dependent become terminally blocked without creating a
+     worktree. Otherwise create a dedicated `.worktrees/<validated-item-id>` worktree from that same wave
+     base and run the runner's
      `build-review-only` lifecycle there. The declared disposition is metadata for the later phase;
      this leg must not push, open a PR, merge, or integrate. Cowork's unavailable parallel fan-out changes only dispatch mode:
      execute these legs sequentially in their isolated worktrees (`sequential-isolated`). It does not
@@ -122,8 +124,10 @@ crew waves). An item's OWN crew may still fan out in parallel.
   2. Enforce the emitted `all-build-review-complete` barrier. Do not begin integration until every
      non-escalated build/review leg in this wave has a receipt and every escalation is recorded.
   3. Only after `all-build-review-complete`, traverse `schedule.waves[].integration.itemIds`
-     sequentially, preserving emitted order while omitting every escalated item or failed build/review
-     leg from disposition and integration. Each remaining id must have a reviewed branch receipt from step 1;
+     sequentially, preserving emitted order while omitting every truthfully terminal item from
+     disposition and integration. A recoverable failed build/review leg stays in correction/replan and
+     therefore keeps the barrier open; it is not silently omitted. Each remaining id must have a reviewed
+     branch receipt from step 1;
      apply its declared disposition now: `pr` pushes the item branch and opens its receipts-backed PR,
      `keep` preserves the local reviewed branch without a remote change, `merge-local` merges into the
      main-tree base without pushing, and `merge-push` merges then pushes the base. No other item may
@@ -144,12 +148,16 @@ In either path, use the item text as the outcome and its parsed disposition as `
 - **No mid-sprint interviews.** A per-item `muster_assess` returning `clear:false` resolves with
   best-effort defaults instead of an attended interview, even in an attended session — record the gap
   `signals` in STATE and the batch report, and let the item's PR be where the human closes the gap.
-- **On escalation** (a spec-gate hard abort — a repeated/unresolved round-1 finding recurring in round 2,
-  or any round-3 FAIL regardless of disjointness — fix-loop cap, a dispatch that still fails after its
-  retry) — record it in STATE, leave that item's branch intact, mark it `escalated` in STATE and
-  backlog.md, and continue to the next item. The sprint always continues through an escalated item. A
-  dependent of an escalated or failed predecessor escalates immediately and never builds; apply that
-  check transitively before any worktree creation or dispatch.
+- **Self-healing recovery and terminal escalation.** A failed spec, implementation, dispatch, or review
+  leg enters correction/replan and then re-review. Continue while there is material progress: candidate
+  bytes, test evidence, the findings/progress fingerprint, or dependency state has changed. Do not turn a
+  numbered round or one failed retry into a terminal condition. Escalate only after repeated-identical
+  no-progress at the configured threshold, an explicit cancellation or approval/HUMAN-HOLD, an
+  inaccessible external dependency, or a configured non-waivable runaway backstop. Record the exact
+  terminal condition in STATE, leave that item's branch intact, mark it `escalated` in STATE and
+  backlog.md, and continue independent items. A failed predecessor likewise enters correction/replan;
+  dependents remain waiting and become terminally blocked only if that predecessor reaches a truthful
+  terminal state. Apply that dependency check transitively before worktree creation or dispatch.
 - **Step 8's override, here too** — inside this sprint no AskUserQuestion merge prompt fires per item;
   the declared disposition executes directly, `ask`/absent coerces to `pr`, noted in the batch report.
   In annotated mode, this never overrides the schedule barrier: merge dispositions execute only during

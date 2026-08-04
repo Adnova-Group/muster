@@ -40,7 +40,13 @@ test("Claude orchestration surface remains byte-identical outside release metada
     hash.update(await readFile(join(root, path)));
     hash.update("\0");
   }
-  assert.equal(paths.length, 150); // previous 145-file surface +5: hardened brainstorm runtime and guide overlays
+  assert.equal(paths.length, 159); // previous 150-file surface +9: audit-pillar-pattern-library's 9 new
+  // plugin/skills/audit-pattern-<pillar>/SKILL.md hunt-list pattern skills (architecture,
+  // tech-debt, coverage, simplification, readability, security, design-ux, prompt-quality,
+  // dead-code-duplication), one dir + one file each, following the exact one-dir-per-skill
+  // convention every other plugin/skills/* entry already uses. plugin/skills/improve/SKILL.md
+  // also changed content (a new step 4 letting the improver append a mined pattern to a
+  // pillar's "## Appended patterns" section) but is not a new file, so it doesn't move the count.
   // Pin re-derived at the reconcile/codex-to-main merge (feat/codex-integration -> main):
   // INTENTIONAL shared-surface changes from unifying main's enforcement-model redesign with the
   // Codex + performance-pass work -- main removed plugin/hooks/todo-gate.js entirely (136 -> 135
@@ -1407,5 +1413,29 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // affirmative one-item constraints and carries three worked PASS/BLOCKED
   // terminal receipts. The generated Codex command receives the same examples;
   // no file was added or removed from the shared surface.
-  assert.equal(hash.digest("hex"), "765377f31419eda3122077095edf02a275441feb4e41c447c33855557af19463");
+  // 2026-08-04 re-pin #51 (audit-pillar-pattern-library): file count 150 -> 159. Adds 9
+  // plugin/skills/audit-pattern-<pillar>/SKILL.md hunt-list pattern skills (one dir + one
+  // file per pillar: architecture, tech-debt, coverage, simplification, readability, security,
+  // design-ux, prompt-quality, dead-code-duplication), each carrying concrete grep-shape
+  // hunt lists, repo-specific conventions, known false positives, and an "## Appended
+  // patterns" section the improver may extend -- composed onto the existing 6 core + 2
+  // conditional audit dimensions via `plan[].skills` (src/audit.js's new PATTERN_SKILL map),
+  // the SAME brief-binding mechanism the orchestrator already turns into a "REQUIRED SKILLS"
+  // block for every other skill binding (no new dispatch mechanism). Also edits
+  // plugin/skills/improve/SKILL.md (a new step 4 letting a mined, durable audit-hunt-list
+  // finding be proposed as an append to a pattern skill's "## Appended patterns" section,
+  // still proposal-only/user-gated) -- content change only, not a new file. This is the
+  // reviewed audit-pillar-pattern-library remediation, not accidental drift.
+  // Content-only re-pin (same 9-file addition): each new pattern skill's `docs/*.md` citation
+  // is qualified "if present" so doctor's skill-doc-refs check treats it as create-on-first-use
+  // (those docs are muster-authored, not shipped into every audited target project) -- proven by
+  // test/doctor.test.js's npm-packed-install simulation. File count unchanged at 159.
+  // 2026-08-04 re-pin #52 (review fix: content-fidelity blockers on the seeded hunt lists):
+  // audit-pattern-dead-code-duplication.md gains the three-bucket unused-export procedure,
+  // missing duplication grep shapes, and 3 dated 2026-08-04 false-positive findings;
+  // audit-pattern-readability.md gains the indentation-lies/two-modules-in-one/bare-argument/
+  // error-message/comment-rot hunt elements; audit-pattern-tech-debt.md's stale raw-mkdtempSync
+  // count is reworded to a re-derive-fresh instruction; plugin/skills/improve/SKILL.md's step 4
+  // names its append entry format. File count unchanged at 159.
+  assert.equal(hash.digest("hex"), "4761f85f9af3c99adb41bdc760ebf71afb053d68c23cf66420d04fd67bea474b");
 });

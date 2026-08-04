@@ -9,6 +9,18 @@ import { fileURLToPath } from "node:url";
 import { benchmarkCodexFixLoops } from "../src/codex-fix-loop.js";
 import { runCodexWave, runCodexWaveContinuation } from "../src/codex-wave-runner.js";
 
+// PAID-BENCHMARK FENCE. One execution spawns ~20 live Codex sessions (10 paired fix cases) and
+// consumes real subscription quota; automation re-running this against a HEAD-bound freshness
+// rule burned 60% of a weekly quota in 2026-08-04. The adoption evidence is banked in
+// test/fixtures/codex-fix-loop/benchmark-evidence.json; re-running is a deliberate human act.
+if (process.env.MUSTER_RUN_PAID_BENCHMARK !== "codex-fix-loop") {
+  console.error(
+    "refusing to run: this benchmark spawns ~20 live Codex sessions and consumes paid quota.\n" +
+    "Set MUSTER_RUN_PAID_BENCHMARK=codex-fix-loop to run it intentionally.",
+  );
+  process.exit(2);
+}
+
 const outputIndex = process.argv.indexOf("--output");
 const outputPath = outputIndex >= 0 ? resolve(process.argv[outputIndex + 1]) : null;
 const casesIndex = process.argv.indexOf("--cases");

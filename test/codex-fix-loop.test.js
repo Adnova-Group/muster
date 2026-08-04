@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
@@ -127,4 +128,20 @@ test("10-case production benchmark clears the median uncached-input and time-to-
   assert.ok(result.medianTotalInputTokenReductionPct > 0, JSON.stringify(result));
   assert.ok(result.medianTimeToFixReductionPct >= 20, JSON.stringify(result));
   assert.deepEqual(evidence.summary, result);
+});
+
+// Retirement fence (2026-08-04): each benchmark execution spawns ~20 live Codex sessions and
+// burned real subscription quota when automation re-ran it against a HEAD-bound freshness rule.
+// The adoption evidence above is banked; the script must refuse to run unless a human opts in
+// explicitly for THIS benchmark via its per-gate environment variable.
+test("benchmark script refuses to run without the explicit paid-benchmark opt-in", () => {
+  const script = new URL("../scripts/benchmark-codex-fix-loop.mjs", import.meta.url).pathname;
+  const { MUSTER_RUN_PAID_BENCHMARK: _drop, ...env } = process.env;
+  const result = spawnSync(process.execPath, [script, "--output", "/nonexistent/never-written.json"], {
+    encoding: "utf8", env,
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /MUSTER_RUN_PAID_BENCHMARK=codex-fix-loop/);
+  assert.match(result.stderr, /live Codex sessions|paid/i);
+  assert.doesNotMatch(result.stderr, /--output <path> is required/);
 });

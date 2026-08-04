@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { chmod, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import { codexFixLoopPrompt, posixContainmentCall, runCodexWave as runCodexWaveImpl, runCodexWaveContinuation as runCodexWaveContinuationImpl, terminateProcess } from "../src/codex-wave-runner.js";
 import { buildCodexPlugin } from "../scripts/build-codex.mjs";
 
@@ -26,9 +27,23 @@ async function git(cwd, ...args) {
   return execFile("git", args, { cwd });
 }
 
+async function waitForLaunch(path, pattern) {
+  for (let attempt = 0; attempt < 200; attempt++) {
+    try {
+      if (pattern.test(await readFile(path, "utf8"))) return;
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+    await sleep(10);
+  }
+  throw new Error(`timed out waiting for ${pattern}`);
+}
+
 async function waveFixture(t) {
   const root = await mkdtemp(join(tmpdir(), "muster-codex-wave-"));
   t.after(() => rm(root, { recursive: true, force: true }));
+  const runtimeRoot = await mkdtemp(join("/dev/shm", "muster-codex-wave-runtime-"));
+  t.after(() => rm(runtimeRoot, { recursive: true, force: true }));
   const repo = join(root, "repo");
   const worktreeA = join(root, "member-a");
   const worktreeB = join(root, "member-b");
@@ -43,8 +58,8 @@ async function waveFixture(t) {
   await git(repo, "worktree", "add", "-b", "member-a", worktreeA, "HEAD");
   await git(repo, "worktree", "add", "-b", "member-b", worktreeB, "HEAD");
 
-  const launches = join(root, "launches.log");
-  const codex = join(root, "codex");
+  const launches = join(runtimeRoot, "launches.log");
+  const codex = join(runtimeRoot, "codex");
   await writeFile(codex, `#!/usr/bin/env node
 const fs = require("node:fs");
 fs.appendFileSync(${JSON.stringify(launches)}, process.argv.slice(2).join(" ") + "\\n");
@@ -55,11 +70,18 @@ if (args[0] === "exec" && args[1] === "--help") return process.stdout.write("--j
 const cwd = args.includes("-C") ? args[args.indexOf("-C") + 1] : process.cwd();
 const input = fs.readFileSync(0, "utf8");
 const isResume = args.includes("resume");
-const payload = isResume ? {value:"resumed",delayMs:10} : JSON.parse(input);
+let payload = isResume ? {value:"resumed",delayMs:10} : JSON.parse(input);
+const resumeProbePath = process.env.CODEX_HOME + "/resume-probe.json";
+if (!isResume && payload.installResumeProbe) {
+  fs.writeFileSync(resumeProbePath, JSON.stringify(payload.installResumeProbe), {mode:0o600});
+}
+if (isResume && fs.existsSync(resumeProbePath)) {
+  payload = {...payload, ...JSON.parse(fs.readFileSync(resumeProbePath, "utf8"))};
+}
 if (payload.writeIgnoredConfig) {
   fs.writeFileSync(process.env.CODEX_HOME + "/config.toml", '[projects."/trusted"]\\ntrust_level = "trusted"\\n', {mode:0o600});
 }
-const worker = require("node:path").basename(fs.realpathSync("/proc/self/fd/3"));
+const worker = require("node:path").basename(fs.readlinkSync("/proc/self/fd/3"));
 if (isResume) fs.appendFileSync(${JSON.stringify(launches)}, "resume-stdin:" + (/^The following JSON-encoded reviewer findings/.test(input) && input.includes("<remote-text>")) + "\\n");
 if (payload.escapeProcessGroup) {
   require("node:child_process").spawn("setsid", ["sh", "-c", "sleep 0.3; printf escaped > " + cwd + "/escaped.txt"], {detached:true,stdio:"ignore"}).unref();
@@ -72,6 +94,16 @@ if (payload.probeProtectedPath) {
   let configuredHomeRead = "VISIBLE";
   try { fs.readFileSync(payload.probeConfiguredHome); } catch (error) { configuredHomeRead = error.code; }
   fs.writeFileSync(cwd + "/protected-read.txt", protectedRead + ":" + configuredHomeRead + ":" + process.env.CODEX_HOME);
+}
+if (payload.probeTmpPaths) {
+  const observations = payload.probeTmpPaths.map(path => {
+    let read = "VISIBLE";
+    let write = "MODIFIED";
+    try { fs.readFileSync(path); } catch (error) { read = error.code; }
+    try { fs.writeFileSync(path, "worker-modified\\n"); } catch (error) { write = error.code; }
+    return {path, read, write};
+  });
+  fs.writeFileSync(cwd + "/tmp-isolation.json", JSON.stringify(observations));
 }
 if (payload.outputBytes) process.stdout.write("x".repeat(payload.outputBytes) + "\\n");
 setTimeout(() => {
@@ -89,6 +121,11 @@ setTimeout(() => {
     fs.mkdirSync(path.dirname(cwd + "/" + payload.commitDiscoveryRenameTo), {recursive:true});
     require("node:child_process").execFileSync("git", ["mv", "--", payload.commitDiscoveryRenameFrom, payload.commitDiscoveryRenameTo], {cwd});
     require("node:child_process").execFileSync("git", ["commit", "-m", "rename discovery"], {cwd});
+  }
+  if (isResume && payload.resumeCommitPath) {
+    fs.writeFileSync(cwd + "/" + payload.resumeCommitPath, "resume commit\\n");
+    require("node:child_process").execFileSync("git", ["add", "--", payload.resumeCommitPath], {cwd});
+    require("node:child_process").execFileSync("git", ["commit", "-m", "resume proof"], {cwd});
   }
   fs.writeFileSync(cwd + "/result.txt", payload.value);
   const threadId = isResume && input.includes("wrong-thread")
@@ -129,9 +166,10 @@ test("posix containment pins cwd through fd 3 and creates a non-escapable PID na
   assert.ok(call.argv.includes("/proc/self/fd/3"));
   assert.ok(call.argv.includes("/tmp/muster-worktree"));
   assert.equal(call.argv.includes("/mnt"), false, "the worktree mount must not hide WSL's /mnt/wsl/resolv.conf");
-  assert.deepEqual(call.argv.slice(5, 14), [
-    "--ro-bind", "/", "/", "--dev-bind", "/dev", "/dev", "--bind", "/tmp", "/tmp",
+  assert.deepEqual(call.argv.slice(5, 11), [
+    "--ro-bind", "/", "/", "--dev-bind", "/dev", "/dev",
   ], "the outer container owns filesystem enforcement and exposes the host root read-only");
+  assert.deepEqual(call.argv.slice(11, 13), ["--tmpfs", "/tmp"], "every worker receives a private tmpfs");
   assert.deepEqual(call.argv.slice(call.argv.indexOf("--dir"), call.argv.indexOf("--dir") + 3), [
     "--dir", "/tmp/muster-worktree", "--bind",
   ]);
@@ -246,6 +284,63 @@ test("runCodexWave keeps two concurrent conflicting writers isolated in register
   assert.ok(events.filter(line => line === "env-secret:undefined").length === 2, "ambient secrets must not reach workers");
 });
 
+test("runCodexWave private tmpfs hides host-temp and sibling-worktree paths while preserving the assigned worktree bind", async t => {
+  const fixture = await waveFixture(t);
+  const hostSentinel = join(fixture.root, "host-temp-sentinel");
+  const siblingSentinel = join(fixture.worktreeB, "sibling-sentinel");
+  const siblingAdminSentinel = join((await git(fixture.worktreeB, "rev-parse", "--git-dir")).stdout.trim(), "index");
+  await writeFile(hostSentinel, "host-original\n");
+  await writeFile(siblingSentinel, "sibling-original\n");
+  const probe = member("a", fixture.worktreeA);
+  probe.prompt = JSON.stringify({
+    value: "isolated",
+    delayMs: 0,
+    probeTmpPaths: [hostSentinel, siblingSentinel, siblingAdminSentinel],
+  });
+
+  await runCodexWave({
+    members: [probe],
+    codexCommand: fixture.codex,
+    repositoryRoot: fixture.repo,
+    baseSha: fixture.baseSha,
+  });
+
+  const observations = JSON.parse(await readFile(join(fixture.worktreeA, "tmp-isolation.json"), "utf8"));
+  assert.deepEqual(observations.map(({ read, write }) => ({ read, write })), [
+    // The private tmpfs may accept a new file at the same lexical path, but it
+    // is a sandbox-local shadow: the host sentinel below remains untouched.
+    { read: "ENOENT", write: "MODIFIED" },
+    { read: "ENOENT", write: "ENOENT" },
+    { read: "ENOENT", write: "ENOENT" },
+  ]);
+  assert.equal(await readFile(hostSentinel, "utf8"), "host-original\n");
+  assert.equal(await readFile(siblingSentinel, "utf8"), "sibling-original\n");
+  assert.equal(await readFile(join(fixture.worktreeA, "result.txt"), "utf8"), "isolated");
+});
+
+test("runCodexWave supports packed refs when reflogs are disabled and absent", async t => {
+  const fixture = await waveFixture(t);
+  await git(fixture.repo, "config", "core.logAllRefUpdates", "false");
+  await git(fixture.repo, "pack-refs", "--all", "--prune");
+  await rm(join(fixture.repo, ".git", "logs"), { recursive: true, force: true });
+  const configured = member("a", fixture.worktreeA);
+  configured.prompt = JSON.stringify({
+    value: "packed-refs",
+    delayMs: 0,
+    commitDiscoveryPath: "packed-ref-proof.txt",
+    commitDiscoveryText: "packed ref commit\n",
+  });
+
+  await runCodexWave({
+    members: [configured],
+    codexCommand: fixture.codex,
+    repositoryRoot: fixture.repo,
+    baseSha: fixture.baseSha,
+  });
+
+  assert.equal((await git(fixture.worktreeA, "show", "HEAD:packed-ref-proof.txt")).stdout, "packed ref commit\n");
+});
+
 test("runCodexWave resumes an authenticated persistent thread inside the same hermetic boundary", async t => {
   const fixture = await waveFixture(t);
   const initial = await runCodexWave({
@@ -276,6 +371,48 @@ test("runCodexWave resumes an authenticated persistent thread inside the same he
   assert.match(launches, /MUSTER TRUSTED FORBIDDEN ACTIONS/);
   assert.match(launches, /Never perform, authorize, or facilitate any listed action/);
   assert.doesNotMatch(launches, /exec .*--ephemeral/);
+});
+
+test("runCodexWaveContinuation preserves private tmpfs isolation and writable assigned-worktree Git metadata", async t => {
+  const fixture = await waveFixture(t);
+  const hostSentinel = join(fixture.root, "resume-host-sentinel");
+  const siblingSentinel = join(fixture.worktreeB, "resume-sibling-sentinel");
+  const siblingAdminSentinel = join((await git(fixture.worktreeB, "rev-parse", "--git-dir")).stdout.trim(), "index");
+  await writeFile(hostSentinel, "host-original\n");
+  await writeFile(siblingSentinel, "sibling-original\n");
+  const configured = member("a", fixture.worktreeA);
+  configured.prompt = JSON.stringify({
+    value: "initial",
+    delayMs: 0,
+    installResumeProbe: {
+      probeTmpPaths: [hostSentinel, siblingSentinel, siblingAdminSentinel],
+      resumeCommitPath: "resume-proof.txt",
+    },
+  });
+  const initial = await runCodexWave({
+    members: [configured],
+    codexCommand: fixture.codex,
+    repositoryRoot: fixture.repo,
+    baseSha: fixture.baseSha,
+  });
+  await rm(join(fixture.worktreeA, "result.txt"));
+
+  await runCodexWaveContinuation({
+    receiptId: initial.results[0].receiptId,
+    blockers: ["verify retained containment"],
+    codexCommand: fixture.codex,
+    repositoryRoot: fixture.repo,
+  });
+
+  const observations = JSON.parse(await readFile(join(fixture.worktreeA, "tmp-isolation.json"), "utf8"));
+  assert.deepEqual(observations.map(({ read, write }) => ({ read, write })), [
+    { read: "ENOENT", write: "MODIFIED" },
+    { read: "ENOENT", write: "ENOENT" },
+    { read: "ENOENT", write: "ENOENT" },
+  ]);
+  assert.equal(await readFile(hostSentinel, "utf8"), "host-original\n");
+  assert.equal(await readFile(siblingSentinel, "utf8"), "sibling-original\n");
+  assert.equal((await git(fixture.worktreeA, "show", "HEAD:resume-proof.txt")).stdout, "resume commit\n");
 });
 
 test("runCodexWaveContinuation accepts an unchanged owner-only config created by Codex while user config stays ignored", async t => {
@@ -830,18 +967,20 @@ test("runCodexWave aborts and settles active writers when a queued member fails 
   const slow = member("slow", fixture.worktreeA);
   slow.prompt = JSON.stringify({ value: "slow", delayMs: 5000 });
   const tamper = member("tamper", fixture.worktreeB);
-  tamper.prompt = JSON.stringify({
-    value: "tamper", delayMs: 0,
-    swapGitTarget: join(worktreeC, ".git"),
-    swapGitSource: join(fixture.worktreeB, ".git"),
-  });
+  tamper.prompt = JSON.stringify({ value: "tamper", delayMs: 250 });
   const queued = member("queued", worktreeC);
+  const siblingPointer = await readFile(join(fixture.worktreeB, ".git"), "utf8");
+  const mutateQueued = (async () => {
+    await waitForLaunch(fixture.launches, /worker-start:member-b/);
+    await writeFile(join(worktreeC, ".git"), siblingPointer);
+  })();
   const started = Date.now();
   await assert.rejects(runCodexWave({
     members: [slow, tamper, queued], forceProcess: true, codexCommand: fixture.codex,
     repositoryRoot: fixture.repo, baseSha: fixture.baseSha,
     maxConcurrentThreadsPerSession: 2, configuredThreadCeiling: 2,
   }), /git directory|registry|backpointer|changed/i);
+  await mutateQueued;
   assert.ok(Date.now() - started < 3000, "active slow writer must be cancelled and settled before returning");
   const events = await readFile(fixture.launches, "utf8");
   assert.match(events, /worker-start:member-a/);
@@ -854,9 +993,12 @@ test("runCodexWave repeats pristine-state validation immediately before a queued
   const first = member("first", fixture.worktreeA);
   first.prompt = JSON.stringify({
     value: "first",
-    delayMs: 100,
-    dirtyTarget: join(fixture.worktreeB, "planted-after-admission.txt"),
+    delayMs: 250,
   });
+  const dirtyQueued = (async () => {
+    await waitForLaunch(fixture.launches, /worker-start:member-a/);
+    await writeFile(join(fixture.worktreeB, "planted-after-admission.txt"), "host-planted\n");
+  })();
   await assert.rejects(runCodexWave({
     members: [first, member("second", fixture.worktreeB)],
     codexCommand: fixture.codex,
@@ -864,6 +1006,7 @@ test("runCodexWave repeats pristine-state validation immediately before a queued
     baseSha: fixture.baseSha,
     availableThreadLimit: 1,
   }), /not pristine|tracked or untracked changes/i);
+  await dirtyQueued;
   const events = await readFile(fixture.launches, "utf8");
   assert.match(events, /worker-start:member-a/);
   assert.doesNotMatch(events, /worker-start:member-b/);

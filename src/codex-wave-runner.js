@@ -46,8 +46,9 @@ const CONTAINED_CWD = "/tmp/muster-worktree";
 // own workspace sandbox here nests another Bubblewrap PID/network namespace;
 // on WSL that inner helper can remain alive after trivial commands and hold the
 // resumed turn open until timeout. The Codex flag disables only that redundant
-// inner layer; the outer container exposes the host read-only and binds exactly
-// the assigned worktree read-write.
+// inner layer; the outer container exposes the host read-only, gives each
+// worker a private /tmp, and binds only its assigned worktree plus the shared
+// Git metadata required to create the worker's commits.
 const CONTAINED_CODEX_SANDBOX = "danger-full-access";
 const TRUSTED_GIT_COMMAND = "/usr/bin/git";
 const ACTION_CLASSES = new Set(["send", "sign", "submit", "publish", "purchase", "delete-remote"]);
@@ -81,7 +82,7 @@ export function posixContainmentCall({
     command: bwrapCommand,
     argv: [
       "--die-with-parent", "--unshare-pid", "--new-session", "--proc", "/proc",
-      "--ro-bind", "/", "/", "--dev-bind", "/dev", "/dev", "--bind", "/tmp", "/tmp",
+      "--ro-bind", "/", "/", "--dev-bind", "/dev", "/dev", "--tmpfs", "/tmp",
       ...privateMounts,
       "--dir", CONTAINED_CWD,
       "--bind", `/proc/self/fd/${descriptorFd}`, CONTAINED_CWD,
@@ -637,6 +638,30 @@ function isolatedCodexHomeBinds(home) {
   ];
 }
 
+async function optionalGitMetadataBind(path, { directory = false, readOnly = false } = {}) {
+  let info;
+  try { info = await lstat(path); }
+  catch (error) { if (error.code === "ENOENT") return []; throw error; }
+  if (info.isSymbolicLink() || (directory ? !info.isDirectory() : !info.isFile())) {
+    throw new Error(`runCodexWave: optional Git metadata has an unsafe type at ${JSON.stringify(path)}`);
+  }
+  return [{ source: path, destination: path, ...(readOnly ? { readOnly: true } : {}) }];
+}
+
+async function isolatedWorktreeGitBinds(authority, worktree) {
+  const logs = await optionalGitMetadataBind(join(authority.commonDir, "logs"), { directory: true });
+  const packedRefs = await optionalGitMetadataBind(join(authority.commonDir, "packed-refs"), { readOnly: true });
+  return [
+    { source: worktree.gitDir, destination: worktree.gitDir },
+    { source: join(authority.commonDir, "objects"), destination: join(authority.commonDir, "objects") },
+    { source: join(authority.commonDir, "refs"), destination: join(authority.commonDir, "refs") },
+    ...logs,
+    ...packedRefs,
+    { source: join(authority.commonDir, "config"), destination: join(authority.commonDir, "config"), readOnly: true },
+    { source: join(authority.commonDir, "HEAD"), destination: join(authority.commonDir, "HEAD"), readOnly: true },
+  ];
+}
+
 async function assertNoExecutableSessionConfig(sessionHome) {
   for (const relativePath of ["AGENTS.md", "AGENTS.override.md", "hooks.json", "rules", "agents", "plugins"]) {
     try {
@@ -1139,7 +1164,10 @@ async function runProcessWave({
             signal: controller.signal,
             stdinText: call.stdin,
             maskedPaths: fixLoopStore.maskedRoots,
-            bindPaths: isolatedCodexHomeBinds(isolatedHome),
+            bindPaths: [
+              ...await isolatedWorktreeGitBinds(authority, revalidated),
+              ...isolatedCodexHomeBinds(isolatedHome),
+            ],
           });
         } finally {
           await revalidated.directoryHandle.close();
@@ -1327,7 +1355,10 @@ export async function runCodexWaveContinuation({
       maxOutputBytes: CODEX_WAVE_LIMITS.outputBytes,
       stdinText: call.stdin,
       maskedPaths: store.maskedRoots,
-      bindPaths: isolatedCodexHomeBinds(isolatedHome),
+      bindPaths: [
+        ...await isolatedWorktreeGitBinds(authority, revalidated),
+        ...isolatedCodexHomeBinds(isolatedHome),
+      ],
   });
   const verdict = interpretCodexExecExit(result.code);
   if (!verdict.ok) {

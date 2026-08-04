@@ -4,10 +4,11 @@
 // real-install probe is done by hand, never as an env-coupled committed test.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { readInstalledKimi } from "../src/harness.js";
+import { trackedMkdtempSync as mkdtempSync } from "../test-support/helpers.js";
 
 function tmp() { return mkdtempSync(join(tmpdir(), "muster-kimi-")); }
 function write(p, s) { mkdirSync(join(p, ".."), { recursive: true }); writeFileSync(p, s); }

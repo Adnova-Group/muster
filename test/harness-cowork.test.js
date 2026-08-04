@@ -1,9 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { coworkConfigDirs, readInstalledCowork } from "../src/harness.js";
+import { trackedMkdtempSync as mkdtempSync } from "../test-support/helpers.js";
 
 function fixture(build) {
   const dir = mkdtempSync(path.join(tmpdir(), "cowork-"));

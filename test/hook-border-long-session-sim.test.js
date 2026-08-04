@@ -27,10 +27,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, rmSync } from "node:fs";
 import os from "node:os";
 import { cleanDir, makeRunActive, spawnHook } from "./test-support/hook-helpers.js";
 import { cumFile, cooldownFile, CROSSING_MAX_AGE_MS, DEFAULT_INVITE_COOLDOWN_MS } from "../plugin/hooks/inline-budget.js";
+import { trackedMkdtempSync as mkdtempSync } from "../test-support/helpers.js";
 
 const HOOKDIR = path.join(
   path.dirname(fileURLToPath(import.meta.url)),

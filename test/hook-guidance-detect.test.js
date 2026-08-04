@@ -1,11 +1,12 @@
 // Direct unit tests for guidance.js detect() function.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
+import { writeFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import os from "node:os";
 import { cleanDir } from "./test-support/hook-helpers.js";
+import { trackedMkdtempSync as mkdtempSync } from "../test-support/helpers.js";
 
 // Import guidance.js detect directly.
 const { detect, isDirective, VOICE_NUDGE, ROUTING_POLICY, VERBS } = await import(

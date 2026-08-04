@@ -27,7 +27,8 @@ jobs:
       - name: Verify backlog completion receipts
         run: node scripts/check-backlog-receipts.mjs --release-ref "origin/${GITHUB_BASE_REF:-main}"
       - run: npm ci
-      - run: npm test
+      - name: Run full tests with in-memory repository integrity guard
+        run: node scripts/run-tests-with-worktree-integrity.mjs
       - name: Router eval (deterministic grade on goldens)
         # The full model-driven router eval runs separately (it needs a model); this prints
         # the deterministic grade of the committed golden run for CI-log visibility. The

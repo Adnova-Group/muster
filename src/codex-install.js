@@ -25,7 +25,6 @@ import {
 import { runCodexStrictConfigCheck } from "./codex-strict-config.js";
 
 const execFileDefault = promisify(execFileCb);
-export const CODEX_MARKETPLACE = "Adnova-Group/muster";
 export const CODEX_PLUGIN = "muster@muster";
 const MANIFEST = ".muster-managed.json";
 const PROFILE_FILENAME = /^[a-z0-9]+(?:-[a-z0-9]+)*\.toml$/;
@@ -65,17 +64,6 @@ export async function codexInvocationRoot(cwd) {
   } catch {
     return invocationCwd;
   }
-}
-
-export async function codexInvocationConfigDirs(cwd) {
-  const invocationCwd = resolve(cwd), root = await codexInvocationRoot(invocationCwd);
-  const dirs = [join(root, ".codex")];
-  let current = root;
-  for (const part of relative(root, invocationCwd).split(sep).filter(Boolean)) {
-    current = join(current, part);
-    dirs.push(join(current, ".codex"));
-  }
-  return [...new Set(dirs)];
 }
 
 export async function codexActivationConfigDirs(commonRoot, invocationCwd) {

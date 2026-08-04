@@ -7,7 +7,6 @@ import net from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
-  assertRegularFile,
   assertRegularTree,
   copyStagedPluginTree,
   generateCodexProfiles,
@@ -959,16 +958,13 @@ test("concurrent publishes to the same pluginsRoot serialize and leave one coher
   assert.deepEqual((await readdir(join(root, ".agents", "plugins"))).filter(name => name.startsWith(".muster-retired-")), []);
 });
 
-test("assertRegularTree and assertRegularFile reject symlinks without following them", async t => {
+test("assertRegularTree rejects symlinks without following them", async t => {
   const root = await tempRoot(t);
   await write(join(root, "tree", "a.txt"), "a\n");
   const outside = join(root, "outside.txt");
   await writeFile(outside, "secret");
   await symlink(outside, join(root, "tree", "escape.txt"));
   await assert.rejects(assertRegularTree(join(root, "tree")), /symlink/i);
-  await symlink(outside, join(root, "file-link.txt"));
-  await assert.rejects(assertRegularFile(join(root, "file-link.txt")), /symlink/i);
-  await assert.doesNotReject(assertRegularFile(outside));
 });
 
 // --- Trust-boundary containment: codex/agents.manifest.json is attacker-shaped

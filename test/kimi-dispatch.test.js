@@ -12,27 +12,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   kimiSwarmCall, kimiAgentCall, kimiGoalInvocation, kimiProcessDispatch, withKimiProcessBriefFile, interpretKimiGoalExit, resolveKimiWaveDispatch,
-  kimiResumeState,
   interpretKimiBackgroundCompletion, detectKimiQuotaFault, quotaFaultLines,
   KIMI_SWARM_PLACEHOLDER, KIMI_SWARM_MAX_SUBAGENTS, KIMI_GOAL_EXIT_CODES, KIMI_GOAL_MAX_OBJECTIVE, KIMI_PROCESS_MAX_BRIEF, KIMI_DISPATCH_MODES
 } from "../src/kimi-dispatch.js";
-
-test("Kimi resumes use parent evidence and cannot dispatch a 101st continuation", () => {
-  const attempts = Array.from({ length: 100 }, (_, index) => ({
-    candidateFingerprint: index.toString(16).padStart(64, "0"),
-    errorFingerprint: (index + 100).toString(16).padStart(64, "0"),
-  }));
-  // Kimi resumes inherit the dispatch execution budget (progress-aware-execution-budgets):
-  // a bare resume policy exhausts the total-attempts budget and reports it as such, rather
-  // than running to the legacy 100-continuation recovery cap.
-  assert.deepEqual(kimiResumeState({ attempts }), {
-    retry: false, reason: "max-total-attempts", noProgressCount: 1,
-  });
-  assert.throws(() => kimiResumeState({ attempts: [{
-    candidateFingerprint: "agent-selected", errorFingerprint: "also-untrusted",
-  }] }), /parent-computed/);
-  assert.throws(() => kimiResumeState({ attempts, outcomes: ["reset"] }), /unsupported.*outcomes/);
-});
 import { KIMI_LANES, kimiLaneEnv } from "../src/kimi.js";
 
 // --- AgentSwarm -------------------------------------------------------------

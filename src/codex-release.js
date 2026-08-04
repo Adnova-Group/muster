@@ -245,11 +245,6 @@ export async function computeCodexBuildInputDigest(root) {
   return hash.digest("hex");
 }
 
-export async function assertRegularFile(path) {
-  ordinary(path, "file", "source file");
-  return path;
-}
-
 // TOML basic-string encoder (run-5 audit Med #7). A subagent's Markdown body is
 // attacker-influenceable free text. Emitted raw between multiline `"""`
 // delimiters it could contain its own `"""` to close the string early and have

@@ -24,11 +24,20 @@ survey briefs seeded as a skill (the other is `audit-pattern-readability`).
 
 ## Where to dig
 
-- **Zero-reference export sweep** (the general, repeatable procedure): for every `export (const|
-  function|class|async function) NAME` in `src/*.js`, `grep -rn "\bNAME\b"` across the WHOLE repo
-  (`src/`, `plugin/`, `docs/`, `test/`, `catalog/*.yaml`, `scripts/`, generated runtimes) -- a
-  count of exactly 1 (the declaration line) means dead. Do not stop at `src/*.js`: an id can be
-  referenced only from a `catalog/*.yaml` string or a doc.
+- **Three-bucket unused-export procedure** (the general, repeatable procedure -- supersedes a
+  bare "grep once, count hits" sweep): for every `export (const|function|class|async function)
+  NAME` in `src/*.js`, grep every IMPORTER across the full surface an export can legitimately be
+  called from -- `src/`, `scripts/`, `mcp/`, `cowork/`, `bin/`, `eval/`, and `test/` -- and sort
+  the result into exactly one bucket:
+  - **(A) imported nowhere** -- genuinely dead. Delete-eligible once the contract-surface check
+    below also clears it.
+  - **(B) imported ONLY by its own test file** -- a "test-only zombie": the export exists solely
+    to satisfy its own unit test, with zero production caller. This is the EXPENSIVE kind (the
+    test suite hides it, so a naive "does it have a test" sanity check falsely reads it as
+    covered/live) -- report bucket B exhaustively, not just bucket A.
+  - **(C) imported by a real production/tooling caller** -- live, not a finding.
+  Buckets A and B are this pillar's highest-value output; a sweep that only reports bucket A
+  undercounts by missing every test-only zombie.
 - **Verified 2026-08-04 finding, quoted verbatim from backlog item `cleanup-dead-exports`** (still
   open as of this writing -- re-verify each name is still zero-reference before citing as
   current): "the 5 zero-reference exports (`CODEX_MARKETPLACE`, `codexInvocationConfigDirs`,
@@ -43,6 +52,18 @@ survey briefs seeded as a skill (the other is `audit-pattern-readability`).
   shared export with every prior site importing it; 0 behavior changes proven by the existing
   suites." Grep shape: `grep -rn "createHash(\"sha256\")" src/*.js` for the helpers,
   `grep -rln '\[0-9a-f\]{64}'` for the regex literal.
+- **Missing duplication grep shapes** (beyond the crypto pair above -- same-shaped small helpers
+  born independently on parallel branches, the recurring PATTERN, not a one-time list): grep each
+  of these shapes across `src/*.js` and flag any that recur in 2+ files without a shared import --
+  `execFileSync("git"` (ad hoc git-spawn wrappers), `mkdtemp` (raw temp-dir creation outside
+  `fs-safe.js`/`test-support/helpers.js`), `readNoFollow`-shaped manual no-follow-read reimplementations,
+  `timingSafeEqual` (hand-rolled constant-time comparisons), JSON-line/NDJSON parsers (a
+  `split("\n").map(JSON.parse)`-shaped block), and `AbortController`/retry-with-backoff shapes.
+  Also grep for **duplicated numeric limits or regex constants declared under different local
+  names** (e.g. two files each defining their own `MAX_.*_BYTES`/`MAX_.*_MS` constant at the same
+  value, or the same validation regex re-typed instead of imported) -- same class as the crypto
+  pair, just harder to `grep` for verbatim since the literal differs by name; compare VALUES, not
+  just identifiers.
 - Duplicated-lock/lifecycle reimplementation is the SAME class at a coarser grain -- see
   `audit-pattern-readability`'s `codex-install-lock-unification` citation for a worked example
   (a hand-rolled lock duplicating an existing shared primitive rather than importing it).
@@ -52,6 +73,9 @@ survey briefs seeded as a skill (the other is `audit-pattern-readability`).
 - A deletion's contract-surface proof (0 invocations from plugin skills, generated runtimes, or
   docs -- NOT just `src/*.js`) is the bar every dead-code removal in this repo is held to; a
   finding that only checked `src/` is incomplete.
+- **Mandatory contract-surface check before ANY deletion**: never propose or perform a bucket-A/B
+  deletion straight off one grep pass. Independently re-verify with a SECOND tool/method (see the
+  false positives below) before it enters the ledger as delete-eligible.
 - A shared-export consolidation collapses ALL prior sites to import ONE export, not just the
   majority -- a partial consolidation that leaves even one site with its own copy re-creates the
   drift risk the fix was for.
@@ -67,6 +91,27 @@ survey briefs seeded as a skill (the other is `audit-pattern-readability`).
 - Two functions with an identical SHAPE but different SEMANTIC contracts (see
   `audit-pattern-simplification`'s `isContainedLexical` vs. `resolveContainedRealpath` example)
   are not duplicates.
+- **Dated 2026-08-04, all discovered live during this pillar's own seed run** (each is a reason
+  bucket-A/B evidence from a single pass is never trustworthy on its own -- see the mandatory
+  contract-surface check above):
+  1. **The environment's default `grep` may resolve to `ugrep`, which SILENTLY SKIPS
+     binary-sniffed files.** `test/codex-release.test.js`'s control-byte literals made that file
+     read as binary to `ugrep`, hiding a live consumer of what looked like a dead export from a
+     plain grep sweep. Always use `rg` (ripgrep, text-mode by default) or `grep -a` (force
+     text) for a contract-surface check; a hit-count of 0 from an unverified `grep` alias is not
+     proof of zero-reference.
+  2. **A live consumer can sit outside the expected test-file glob.**
+     `test/prompt-scan-brief-lint.test.js` imported `src/brief-lint.js` -- a module elsewhere
+     flagged "orphaned" because the sweep only checked the file's OWN same-named test file
+     (`test/brief-lint.test.js`), not the full `test/` directory. Always grep the WHOLE `test/`
+     tree, never assume a 1:1 file-to-test-file naming convention.
+  3. **Prose-wiring contract tests can bind exact identifiers into plugin docs, making a
+     textually-uncalled function load-bearing anyway.** The kimi-dispatch
+     `interpretKimiGoalExit`-style interpretation cluster is never called from `src/*.js`
+     directly, but a corpus/contract test asserts the exact identifier is quoted verbatim in a
+     `plugin/` doc -- deleting the function would silently break that doc-fidelity contract even
+     though no JS import ever breaks. Grep `test/*.test.js` for the candidate name as a
+     STRING literal (inside a doc-quoting assertion), not only as an import, before deleting.
 
 ## Appended patterns
 

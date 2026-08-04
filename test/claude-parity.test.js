@@ -1430,5 +1430,12 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // is qualified "if present" so doctor's skill-doc-refs check treats it as create-on-first-use
   // (those docs are muster-authored, not shipped into every audited target project) -- proven by
   // test/doctor.test.js's npm-packed-install simulation. File count unchanged at 159.
-  assert.equal(hash.digest("hex"), "a2a705b829a09d05faaec6117e32aea2c52cca6a382b914c329df37917e143e9");
+  // 2026-08-04 re-pin #52 (review fix: content-fidelity blockers on the seeded hunt lists):
+  // audit-pattern-dead-code-duplication.md gains the three-bucket unused-export procedure,
+  // missing duplication grep shapes, and 3 dated 2026-08-04 false-positive findings;
+  // audit-pattern-readability.md gains the indentation-lies/two-modules-in-one/bare-argument/
+  // error-message/comment-rot hunt elements; audit-pattern-tech-debt.md's stale raw-mkdtempSync
+  // count is reworded to a re-derive-fresh instruction; plugin/skills/improve/SKILL.md's step 4
+  // names its append entry format. File count unchanged at 159.
+  assert.equal(hash.digest("hex"), "4761f85f9af3c99adb41bdc760ebf71afb053d68c23cf66420d04fd67bea474b");
 });

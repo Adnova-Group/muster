@@ -35,7 +35,9 @@ Hunt-list for the **tech-debt** audit dimension (`buildAuditManifest`, `src/audi
   "mkdtempSync" test/ | grep -v test-support` -- a raw `mkdtempSync` call site in a test file
   outside `test-support/` should be `trackedMkdtempSync`/`trackedMkdtemp`
   (`test-support/helpers.js`) instead, so a killed/timed-out run doesn't leak a temp dir.
-  Recorded count as of 2026-08-04: 70 raw call sites across 18 files.
+  Historical baseline 2026-08-04: 70 raw call sites across 18 files -- that migration landed on
+  `main` the same day, so the count is already stale; re-run the grep above and cite whatever it
+  reports fresh rather than this historical number.
 - Outdated-pattern grep: comments citing a retired mechanism ("run.md step 0b", "sprint.md",
   a pre-rename verb) -- if present, `docs/anti-patterns.md` entry #6 documents this exact failure
   class and its guard (`test/corpus-contradiction.test.js`).

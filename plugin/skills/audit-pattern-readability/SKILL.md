@@ -43,6 +43,38 @@ as a skill (the other is `audit-pattern-dead-code-duplication`).
 - Convention-consistency sweep: raw `mkdtempSync` outside `test-support/` (see
   `audit-pattern-tech-debt`'s `test-tmpdir-convention` finding) is also a readability signal --
   every reader has to remember which files follow the tracked-cleanup convention and which don't.
+- **Indentation-lies check**: indentation that misrepresents the code's TRUE brace/try-catch
+  nesting (precedent: `codex-install.js`'s `runCodexInstall`, where two `try {` blocks sit at
+  equal indent but their `catch` clauses are indented shallower than the `try` they belong to --
+  visually implying a shared/flatter control-flow shape than the real one). Never judge nesting
+  by eye alone; verify the TRUE structure by brace-tracing (count `{`/`}` per line to the
+  candidate) or an AST parse before filing -- eyeballed indentation is exactly what this class of
+  bug exploits.
+- **Two-modules-in-one**: for a large file, map its coarse INTERNAL call graph by concern cluster
+  -- do the clusters ever call into each other, or does the file only share one name by history?
+  Precedent: `codex-install.js` bundles 5 largely-independent concerns (install, uninstall, hooks,
+  config transactions, marketplace) that a concern-mapped call graph shows barely calling each
+  other -- the file reads as "5 modules taped together," not one cohesive unit.
+- **Bare boolean/positional arguments** at a call site where an options object or a named local
+  variable is the FILE'S OWN convention elsewhere (an inconsistency finding, not a universal
+  style rule): precedent `codex-lock.js:265`'s
+  `restoreOrRequireReplacement(path, retirement, moved, false)` passes a bare positional `false`
+  where its two sibling call sites in the same file pass a named variable instead -- a reader has
+  to jump to the function signature to learn what the trailing `false` even means, unlike its
+  siblings.
+- **Error messages that name no offending value**: `grep -n 'throw new Error("' src/*.js` for
+  sites with ZERO string interpolation (no `${...}`/concatenated variable) in the message --
+  worst-case precedent, `src/install.js:105-224`'s six uninstall `throw new Error("...")` calls,
+  none of which name the specific path/state that triggered them, so a failure report alone can't
+  tell a reader WHICH of several similar guards fired.
+- **Comment rot**: a comment or prose reference to a renamed/removed symbol, a retired verb name
+  used as if still primary (`run`/`sprint`/`autopilot` instead of `plan`/`go`/`go-backlog` --
+  legitimate only on their documented one-line alias note, never elsewhere), the OLD tier
+  vocabulary used as if it were still the role-tier taxonomy (`haiku`/`sonnet`/`opus`/`fable` as
+  role tiers -- semantic tiers have been `scout`/`core`/`prime`/`apex` since 2026-07-27; the old
+  names are legitimate only inside a documented alias table or as a concrete-model example, e.g.
+  "fable on Claude Code"), or a `"PR #NNN"` reference that reads as describing CURRENT work when
+  that PR has long since merged and moved on.
 
 ## Repo-specific conventions to enforce
 

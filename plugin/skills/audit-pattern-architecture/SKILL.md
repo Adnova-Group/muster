@@ -70,6 +70,9 @@ finding is more useful than a confidently wrong one.
 
 ## Appended patterns
 
+- (2026-08-04, source: scoped-audit-shakedown architecture ledger) Module-header charter as a testable contract: when a src file opens with a charter comment ("depends only on X", "no <domain> meaning"), verify both halves mechanically — `grep -n "^import"` against the declared dependency list, and every export name plus every error-message string against the excluded domains. In split families the header is often the ONLY written boundary spec. — false-positive note: a charter naming an explicit documented exception is not drift; check the exception before filing.
+- (2026-08-04, source: scoped-audit-shakedown architecture ledger) Post-split delta sweep: against the pre-split commit, (a) compare `git show <split>^:<file> | grep -c "^export"` with the family's summed export count and count exports with zero external consumers — a split that multiplies the public surface renamed the problem; (b) check each donor-file comment block still names at least one identifier that remains in that file; (c) grep recipients for "see above"/"this section's header" and confirm each target is same-file. — false-positive note: a deliberate re-export facade keeps the OLD surface; compare against the pre-split count, not zero.
+
 (none yet -- `muster-improver` may append dated, evidenced entries here from run receipts; see
 `plugin/skills/improve/SKILL.md`.)
 

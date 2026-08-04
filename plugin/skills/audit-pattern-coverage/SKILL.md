@@ -53,6 +53,9 @@ Hunt-list for the **coverage** audit dimension (`buildAuditManifest`, `src/audit
 
 ## Appended patterns
 
+- (2026-08-04, source: scoped-audit-shakedown coverage ledger) A split module reusing a sibling's "concurrent state was preserved" defense-in-depth pattern but lacking that sibling's test-only interceptor seam (e.g. scope-lock's `afterValidation`) is a coverage red flag by construction — check whether the facade exposes an equivalent injection point before concluding indirect integration coverage is adequate. — false-positive note: indirect coverage IS adequate when an injection point exists and race branches are exercised through it.
+- (2026-08-04, source: scoped-audit-shakedown coverage ledger) For any regex-based structural/line-count ratchet in test/, inspect its character classes and single-line anchoring for declaration forms it silently fails to match (multi-line arrow signatures, default/destructured params, let/var bindings, class declarations, generators) — an unmatched declaration does not fail the ratchet, it becomes invisible to it. Prove blind spots with a negative-control mutant. — false-positive note: convention-based ratchets are acceptable when the codebase provably follows the convention; the finding is the absent negative-control, not the regex itself.
+
 (none yet -- `muster-improver` may append dated, evidenced entries here from run receipts; see
 `plugin/skills/improve/SKILL.md`.)
 

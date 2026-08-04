@@ -1440,6 +1440,9 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // boundary aligned to the reviewed self-healing semantics (dependents wait during recoverable
   // predecessor correction/replan; terminal blocking only on a truthful terminal state), closing
   // the divergence from the Cowork sprint protocol that runner-build-review-mode.test.js guards.
-  // File count unchanged at 159.
-  assert.equal(hash.digest("hex"), "e362d233306d24872ab904de6024ff95bf84b8def86b6612bee5f8b44663fa91");
+  // File count unchanged at 159. Re-pin 2026-08-04c: first improver append cycle — six
+  // dated, receipt-sourced hunt patterns from the scoped audit shakedown land in the
+  // architecture, coverage, and design-ux pattern skills' Appended-patterns sections
+  // (user-approved; entries follow improve step 4's format).
+  assert.equal(hash.digest("hex"), "f32551e9d4e89db210a91b11e1058d1a0a13c5f8cd79904473ba8e91cda62814");
 });

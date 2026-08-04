@@ -59,6 +59,9 @@ read the cited files directly, they are the canonical source.
 
 ## Appended patterns
 
+- (2026-08-04, source: scoped-audit-shakedown design-ux ledger) Gradient-on-text (`background-clip:text` / `-webkit-text-fill-color`, incl. framework classes like VitePress `.clip`) must be contrast-checked per gradient stop against the actual rendered background — verify via the rendered class list or build output, since a token's "decorative" documentation label does not clear essential copy. — false-positive note: genuinely decorative gradient text (non-essential, with an accessible sibling) passes.
+- (2026-08-04, source: scoped-audit-shakedown design-ux ledger) When DESIGN.md's prose declares a narrower jurisdiction than the repo root (e.g. "governs website/**"), RUN `design status` / `design gate` and diff the resolved scopeRoot against the declared scope — a gate passing repo-wide under a file disclaiming repo-wide authority is its own finding class, distinct from a missing-DESIGN.md finding. — false-positive note: a deliberately repo-wide DESIGN.md with matching prose is compliant.
+
 (none yet -- `muster-improver` may append dated, evidenced entries here from run receipts; see
 `plugin/skills/improve/SKILL.md`.)
 

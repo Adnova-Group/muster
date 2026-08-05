@@ -511,6 +511,47 @@ test("strict config: real staged registration publishes a live installed plugin 
   }
 });
 
+test("strict config: a mocked-execFile install reaches the plugin-cache publish path via the pluginCacheOptions.forceStaging seam", async () => {
+  // Companion to the sandbox-skipped real-runtime test above (2026-08-04
+  // coverage audit): every OTHER runCodexInstall test passes a mocked
+  // execFile, and codex-install.js gated the whole plugin-cache staging path
+  // behind `identity && !execFile` -- unreachable whenever execFile is
+  // injected, real Codex CLI or not. pluginCacheOptions.forceStaging is an
+  // explicit opt-in that reaches the same staged-publish/verify machinery
+  // under a mocked execFile without a real Codex runtime, proving the path is
+  // exercised instead of silently skipped.
+  const tmp = await mkdtemp(join(tmpdir(), "muster-strict-mocked-plugin-cache-seam-"));
+  const cwd = join(tmp, "project"), home = join(tmp, "home");
+  const packageVersion = JSON.parse(await readFile(join(repoRoot, "package.json"), "utf8")).version;
+  const executor = async (_bin, args, options) => {
+    if (args[0] === "--version") return { stdout: "codex-cli test" };
+    if (args.slice(0, 3).join(" ") === "plugin marketplace list") return { stdout: JSON.stringify({ marketplaces: [] }) };
+    if (args.slice(0, 3).join(" ") === "plugin marketplace add") return { stdout: "" };
+    if (args.slice(0, 3).join(" ") === "plugin list --available") return { stdout: JSON.stringify({ installed: [], available: [] }) };
+    if (args.slice(0, 2).join(" ") === "plugin add") {
+      // Stands in for the real Codex CLI's own plugin-cache population: a
+      // minimal private cache (package.json + .codex-plugin/plugin.json) is
+      // all assertPrivatePluginCache's identity check requires when no
+      // trusted source tree is threaded (forceStaging keeps that heavier
+      // projection check tied to a genuinely resolved runtime identity, same
+      // as before this seam).
+      const cacheRoot = join(options.env.CODEX_HOME, "plugins", "cache", "muster", "muster", packageVersion);
+      await mkdir(join(cacheRoot, ".codex-plugin"), { recursive: true });
+      await writeFile(join(cacheRoot, "package.json"), JSON.stringify({ version: packageVersion, inputDigest: "a".repeat(64) }));
+      await writeFile(join(cacheRoot, ".codex-plugin", "plugin.json"), JSON.stringify({ name: "muster", version: packageVersion }));
+      return { stdout: "" };
+    }
+    throw new Error(`unexpected command: ${args.join(" ")}`);
+  };
+
+  const result = await runCodexInstall({ cwd, home, repoRoot, execFile: executor, pluginCacheOptions: { forceStaging: true } });
+  assert.equal(result.plugin.registered, true);
+  const published = JSON.parse(await readFile(
+    join(home, ".codex", "plugins", "cache", "muster", "muster", packageVersion, "package.json"), "utf8"
+  ));
+  assert.deepEqual(published, { version: packageVersion, inputDigest: "a".repeat(64) });
+});
+
 test("strict config: a live writer during staged plugin registration aborts without touching it", async () => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-strict-registration-writer-"));
   const cwd = join(tmp, "project"), home = join(tmp, "home"), projectPath = join(cwd, ".codex", "config.toml");

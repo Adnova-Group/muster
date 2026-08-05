@@ -16,12 +16,12 @@ export function concurrentConfigError(message) {
 }
 
 
-export const retirementReceiptDir = configPath => join(dirname(configPath), "muster", "config-retirements");
+const retirementReceiptDir = configPath => join(dirname(configPath), "muster", "config-retirements");
 
-export const retirementArtifactPrefix = configPath => `.${basename(configPath)}.muster-retired-`;
+const retirementArtifactPrefix = configPath => `.${basename(configPath)}.muster-retired-`;
 
 
-export function retirementArtifactRecord(configPath, artifactPath, snapshot) {
+function retirementArtifactRecord(configPath, artifactPath, snapshot) {
   return {
     configPath,
     artifactPath,
@@ -34,7 +34,7 @@ export function retirementArtifactRecord(configPath, artifactPath, snapshot) {
 }
 
 
-export async function readConfigRetirementState(configPath, pendingArtifacts = new Set()) {
+async function readConfigRetirementState(configPath, pendingArtifacts = new Set()) {
   const path = retirementReceiptDir(configPath);
   const entries = [];
   if (await ordinaryDirectoryPath(path)) {
@@ -102,7 +102,7 @@ export async function retainConfigArtifacts(configPath, artifactPaths) {
 }
 
 
-export async function writePrivateSibling(path, label, bytes) {
+async function writePrivateSibling(path, label, bytes) {
   const privatePath = join(dirname(path), `.${basename(path)}.muster-${label}-${process.pid}-${randomUUID()}`);
   const handle = await open(privatePath, fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY, 0o600);
   try { await handle.writeFile(bytes); await handle.sync(); }
@@ -111,13 +111,13 @@ export async function writePrivateSibling(path, label, bytes) {
 }
 
 
-export async function restoreRetiredName(path, retired) {
+async function restoreRetiredName(path, retired) {
   try { await link(retired, path); }
   catch (error) { if (error.code !== "EEXIST") throw error; }
 }
 
 
-export async function promoteChangedDisplaced(path, displaced, expectedDisplaced, restoredBaseline) {
+async function promoteChangedDisplaced(path, displaced, expectedDisplaced, restoredBaseline) {
   if (!restoredBaseline || sameExactFileSnapshot(expectedDisplaced, await exactFileSnapshot(displaced))) return;
   const live = await exactFileSnapshot(path);
   if (!sameExactFileSnapshot(restoredBaseline, live)) return;

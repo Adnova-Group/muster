@@ -100,13 +100,19 @@ export async function stablePluginCacheSnapshot(root, packageVersion, options = 
 export const samePluginCacheSnapshot = (left, right) => left.dev === right.dev && left.ino === right.ino
   && JSON.stringify(left.tree) === JSON.stringify(right.tree);
 
-export async function copyPluginCacheExclusively(source, target, expectedTree, packageVersion) {
+export async function copyPluginCacheExclusively(source, target, expectedTree, packageVersion, pluginCacheOptions = {}) {
   await mkdir(target, { mode: 0o700 });
   const owner = await lstat(target);
   try {
     for (const name of await readdir(source)) {
       await cp(join(source, name), join(target, name), { recursive: true, force: false, errorOnExist: true });
     }
+    // Test-only injection point (afterExclusiveCopy): fires after this
+    // exclusive copy finishes, before the identity re-verification below --
+    // the exact window a concurrent writer could swap this freshly reserved
+    // target for an identical-content clone under a different dev/ino.
+    // Undefined in production: zero behavior change.
+    await pluginCacheOptions.afterExclusiveCopy?.({ source, target });
     const published = await stablePluginCacheSnapshot(target, packageVersion, { exactTree: expectedTree });
     if (published.dev !== owner.dev || published.ino !== owner.ino
       || JSON.stringify(published.tree) !== JSON.stringify(expectedTree)) {
@@ -121,7 +127,7 @@ export async function copyPluginCacheExclusively(source, target, expectedTree, p
 }
 
 
-export async function publishStagedPluginCache(staged, liveCodexHome, packageVersion, trustedSourceRoot, trustedTree) {
+export async function publishStagedPluginCache(staged, liveCodexHome, packageVersion, trustedSourceRoot, trustedTree, pluginCacheOptions = {}) {
   const stagedTree = await assertPrivatePluginCache(staged, packageVersion, {
     sourceRoot: trustedSourceRoot, sourceTree: trustedTree
   });
@@ -137,42 +143,58 @@ export async function publishStagedPluginCache(staged, liveCodexHome, packageVer
     return { target, retired: null, expected, published: expected, reused: true, packageVersion };
   }
   if (expected) {
+    // Test-only injection point (beforeRetire): fires right before the live
+    // target is renamed aside for retirement -- the exact window a concurrent
+    // writer could mutate it so the post-rename snapshot no longer matches
+    // the pre-rename `expected` read above. Undefined in production: zero
+    // behavior change.
+    await pluginCacheOptions.beforeRetire?.({ target, retired, expected });
     await rename(target, retired);
     const moved = await stablePluginCacheSnapshot(retired, packageVersion);
     if (!samePluginCacheSnapshot(expected, moved)) {
-      try { await copyPluginCacheExclusively(retired, target, moved.tree, packageVersion); }
+      try { await copyPluginCacheExclusively(retired, target, moved.tree, packageVersion, pluginCacheOptions); }
       catch { /* preserve both names/artifacts and fail with the ownership conflict */ }
       throw new Error(`Codex plugin cache changed before retirement: ${target}; concurrent state was preserved`);
     }
   }
   let published;
-  try { published = await copyPluginCacheExclusively(staged, target, stagedTree, packageVersion); }
+  try { published = await copyPluginCacheExclusively(staged, target, stagedTree, packageVersion, pluginCacheOptions); }
   catch (error) {
-    if (expected) try { await copyPluginCacheExclusively(retired, target, expected.tree, packageVersion); } catch { /* preserve artifacts */ }
+    if (expected) try { await copyPluginCacheExclusively(retired, target, expected.tree, packageVersion, pluginCacheOptions); } catch { /* preserve artifacts */ }
     throw error;
   }
   return { target, retired: expected ? retired : null, expected, published, reused: false, packageVersion };
 }
 
 
-export async function rollbackPublishedPluginCache(receipt) {
+export async function rollbackPublishedPluginCache(receipt, pluginCacheOptions = {}) {
   if (!receipt) return;
   if (receipt.reused) return;
+  // Test-only injection point (beforeRollbackVerify): fires before the
+  // published target is re-read for the rollback-owner check below.
+  // Undefined in production: zero behavior change.
+  await pluginCacheOptions.beforeRollbackVerify?.({ receipt });
   const current = await stablePluginCacheSnapshot(receipt.target, receipt.packageVersion);
   if (!samePluginCacheSnapshot(receipt.published, current)) {
     throw new Error(`Codex plugin cache changed before rollback: ${receipt.target}; concurrent state was preserved`);
   }
   const failed = join(dirname(receipt.target), `.muster-rolled-back-${receipt.packageVersion}-${process.pid}-${randomUUID()}`);
+  // Test-only injection point (beforeRollbackRetire): fires right before the
+  // published target is renamed aside as the failed generation -- the exact
+  // window a concurrent writer could mutate it so the post-rename snapshot no
+  // longer matches `receipt.published`. Undefined in production: zero
+  // behavior change.
+  await pluginCacheOptions.beforeRollbackRetire?.({ receipt, failed });
   await rename(receipt.target, failed);
   const moved = await stablePluginCacheSnapshot(failed, receipt.packageVersion);
   if (!samePluginCacheSnapshot(receipt.published, moved)) {
-    try { await copyPluginCacheExclusively(failed, receipt.target, moved.tree, receipt.packageVersion); }
+    try { await copyPluginCacheExclusively(failed, receipt.target, moved.tree, receipt.packageVersion, pluginCacheOptions); }
     catch { /* preserve both names and surface the ownership conflict */ }
     throw new Error(`Codex plugin cache changed during rollback: ${receipt.target}; concurrent state was preserved`);
   }
   if (receipt.retired) {
     await copyPluginCacheExclusively(
-      receipt.retired, receipt.target, receipt.expected.tree, receipt.packageVersion
+      receipt.retired, receipt.target, receipt.expected.tree, receipt.packageVersion, pluginCacheOptions
     );
   }
   // The failed generation and retired predecessor remain path-addressable.
@@ -180,8 +202,12 @@ export async function rollbackPublishedPluginCache(receipt) {
 }
 
 
-export async function verifyPublishedPluginCache(receipt) {
+export async function verifyPublishedPluginCache(receipt, pluginCacheOptions = {}) {
   if (!receipt) return;
+  // Test-only injection point (beforeVerify): fires before the final
+  // pre-commit re-read of the published target. Undefined in production:
+  // zero behavior change.
+  await pluginCacheOptions.beforeVerify?.({ receipt });
   const current = await stablePluginCacheSnapshot(receipt.target, receipt.packageVersion, {
     exactTree: receipt.published.tree
   });

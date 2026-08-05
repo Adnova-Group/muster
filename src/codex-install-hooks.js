@@ -16,12 +16,12 @@ import {
 
 const HOOK_FILES = ["hooks/muster-hook.mjs", "hooks/action-guard.mjs"];
 
-export async function activationFileSnapshot(path) {
+async function activationFileSnapshot(path) {
   try { return await physicalFileSnapshot(path); }
   catch (error) { return { unsafe: true, code: error.code || null, message: error.message }; }
 }
 
-export async function activationDirectorySnapshot(path) {
+async function activationDirectorySnapshot(path) {
   try {
     const metadata = await lstat(path);
     if (!metadata.isDirectory() || metadata.isSymbolicLink()) throw new Error(`Codex activation directory must be an ordinary directory: ${path}`);
@@ -78,7 +78,7 @@ export function activationSnapshotMatchesWrites(activationSnapshot, written) {
 }
 
 
-export async function liveManagedHookScripts(home, extraConfigDirs = []) {
+async function liveManagedHookScripts(home, extraConfigDirs = []) {
   const registry = await readScopeRegistry(home);
   const dirs = new Set([codexHome(home), ...extraConfigDirs, ...registry.entries.map(entry => entry.configDir)]);
   return [...dirs].map(dir => join(dir, "muster", "hooks", "muster-hook.mjs"));
@@ -145,14 +145,14 @@ const HOOK_STATE_HEADER = /^\s*\[hooks\.state\.((?:"(?:[^"\\]|\\.)*")|(?:'[^']*'
 const HOOK_STATE_KEY = /^(.*):([a-z][a-z0-9_]*):(\d+):(\d+)$/;
 
 
-export function basicQuoteEscaped(line, index) {
+function basicQuoteEscaped(line, index) {
   let slashes = 0;
   for (let cursor = index - 1; cursor >= 0 && line[cursor] === "\\"; cursor--) slashes++;
   return slashes % 2 === 1;
 }
 
 
-export function inspectTomlHeader(line) {
+function inspectTomlHeader(line) {
   const start = line.search(/\S/);
   if (start < 0 || line[start] !== "[") return { header: false, safe: true };
   const array = line[start + 1] === "[";
@@ -201,7 +201,7 @@ export function inspectTomlHeader(line) {
 // single-line string is unterminated, mark the document unsafe so trust fails
 // closed and reconciliation returns the original bytes unchanged.
 
-export function scanTomlLine(line, multiline, arrayDepth) {
+function scanTomlLine(line, multiline, arrayDepth) {
   let mode = multiline;
   let depth = arrayDepth;
   for (let index = 0; index < line.length;) {
@@ -254,7 +254,7 @@ export function scanTomlLine(line, multiline, arrayDepth) {
 }
 
 
-export function splitTomlLines(text) {
+function splitTomlLines(text) {
   const lines = [], endings = [];
   let offset = 0;
   while (offset < text.length) {
@@ -269,7 +269,7 @@ export function splitTomlLines(text) {
 }
 
 
-export function parseConfigTomlTrustSections(text) {
+function parseConfigTomlTrustSections(text) {
   const { lines, endings } = splitTomlLines(text);
   const sections = [];
   let current = null;
@@ -297,14 +297,14 @@ export function parseConfigTomlTrustSections(text) {
 }
 
 
-export const renderConfigTomlTrustSections = state => state.lines.map((line, index) => line + state.endings[index]).join("");
+const renderConfigTomlTrustSections = state => state.lines.map((line, index) => line + state.endings[index]).join("");
 
 // Converts a hooks.json event key (PascalCase, e.g. "SessionStart") to the
 // snake_case form Codex records in a [hooks.state] key's <event> segment
 // (e.g. "session_start") -- see docs/research/codex-cli.md section 4.1 and
 // codex/hooks/hooks.json's event keys vs. the real fixture's trust keys.
 
-export const hookStateEventName = pascal => pascal.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
+const hookStateEventName = pascal => pascal.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
 
 // Computes the EXACT `<event>:<groupIndex>:<hookIndex>` compound keys a
 // specific scope's OWN muster-authored hook groups currently occupy inside
@@ -317,7 +317,7 @@ export const hookStateEventName = pascal => pascal.replace(/([a-z0-9])([A-Z])/g,
 // different group/hook index -- is never included here, and so never gets
 // swept up by a path-level prune.
 
-export function ownedHookStateEntries(config, hookGroups) {
+function ownedHookStateEntries(config, hookGroups) {
   const entries = [];
   for (const [event, groups] of Object.entries(hookGroups || {})) {
     if (!Array.isArray(groups)) continue;
@@ -440,7 +440,7 @@ const HOOK_INVENTORY_MAX_BYTES = 4 * 1024 * 1024;
 const HOOK_INVENTORY_TIMEOUT_MS = 10_000;
 
 
-export function canonicalJson(value) {
+function canonicalJson(value) {
   if (Array.isArray(value)) return value.map(canonicalJson);
   if (!value || typeof value !== "object") return value;
   return Object.fromEntries(Object.keys(value).sort().map(key => [key, canonicalJson(value[key])]));
@@ -450,7 +450,7 @@ export function canonicalJson(value) {
 // hash the canonical JSON serialization of a normalized, config-derived hook
 // identity. Trust is deliberately verified, never created or bypassed here.
 
-export function currentCodexHookHash(event, group, hook) {
+function currentCodexHookHash(event, group, hook) {
   const command = process.platform === "win32" ? (hook?.commandWindows ?? hook?.command) : hook?.command;
   const rawTimeout = Number.isSafeInteger(hook?.timeout) ? hook.timeout : null;
   const timeout = event === "SessionEnd"
@@ -478,7 +478,7 @@ export function currentCodexHookHash(event, group, hook) {
 }
 
 
-export function hookTrustSectionState(state, section) {
+function hookTrustSectionState(state, section) {
   let enabled = true;
   let trustedHash = null;
   let malformed = false;
@@ -570,25 +570,25 @@ const HOOK_CONTENT_HASH = /^sha256:[0-9a-f]{64}$/;
 
 const HOOK_RESULT_STATUSES = new Set(["invalid", "disabled", "trusted", "untrusted", "modified"]);
 
-export const validCanonicalHookPath = value => typeof value === "string" && value.length > 0
+const validCanonicalHookPath = value => typeof value === "string" && value.length > 0
   && isAbsolute(value) && !HOOK_INVENTORY_CONTROLS.test(value) && resolve(value) === value;
 
-export const exactObject = (value, keys) => value && typeof value === "object" && !Array.isArray(value)
+const exactObject = (value, keys) => value && typeof value === "object" && !Array.isArray(value)
   && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null)
   && Reflect.ownKeys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
 
-export const denseArray = value => Array.isArray(value) && Reflect.ownKeys(value).every((key, index, keys) => {
+const denseArray = value => Array.isArray(value) && Reflect.ownKeys(value).every((key, index, keys) => {
   if (key === "length") return index === keys.length - 1;
   return typeof key === "string" && key === String(index);
 }) && Reflect.ownKeys(value).length === value.length + 1;
 
-export function validHookPosition(value) {
+function validHookPosition(value) {
   if (typeof value !== "string") return false;
   const match = value.match(/^([a-z][a-z0-9_]*):(0|[1-9]\d*):(0|[1-9]\d*)$/);
   return Boolean(match && Number.isSafeInteger(Number(match[2])) && Number.isSafeInteger(Number(match[3])));
 }
 
-export function parseHookInventoryKey(value, { sourcePath, pluginId } = {}) {
+function parseHookInventoryKey(value, { sourcePath, pluginId } = {}) {
   if (typeof value !== "string" || HOOK_INVENTORY_CONTROLS.test(value)) return null;
   const match = value.match(/^(.+):([a-z][a-z0-9_]*):(0|[1-9]\d*):(0|[1-9]\d*)$/);
   if (!match || !Number.isSafeInteger(Number(match[3])) || !Number.isSafeInteger(Number(match[4]))) return null;
@@ -605,10 +605,10 @@ export function parseHookInventoryKey(value, { sourcePath, pluginId } = {}) {
 }
 
 
-export const parseInventoryHook = hook => parseHookInventoryKey(hook?.key, { sourcePath: hook?.sourcePath, pluginId: hook?.pluginId });
+const parseInventoryHook = hook => parseHookInventoryKey(hook?.key, { sourcePath: hook?.sourcePath, pluginId: hook?.pluginId });
 
 
-export function validHookInventoryRecord(entry) {
+function validHookInventoryRecord(entry) {
   if (!exactObject(entry, ["cwd", "warnings", "errors", "hooks"])
     || !validCanonicalHookPath(entry.cwd)
     || !denseArray(entry.warnings) || !entry.warnings.every(item => typeof item === "string")
@@ -779,7 +779,7 @@ export function validateHookManifest(manifest, dir, manifestPath) {
 }
 
 
-export function clone(value) { return JSON.parse(JSON.stringify(value)); }
+function clone(value) { return JSON.parse(JSON.stringify(value)); }
 
 export const same = (left, right) => JSON.stringify(left) === JSON.stringify(right);
 
@@ -803,7 +803,7 @@ export function isMusterHookCommand(command) {
 }
 
 
-export function shellPathCandidates(command) {
+function shellPathCandidates(command) {
   if (typeof command !== "string") return [];
   const candidates = new Set();
   const addCandidate = value => {
@@ -826,7 +826,7 @@ export function shellPathCandidates(command) {
 }
 
 
-export function hasDynamicInterpreterEval(command) {
+function hasDynamicInterpreterEval(command) {
   for (const tokens of [parsePosixShellTokens(command), parseWindowsShellTokens(command)]) {
     if (!tokens) continue;
     for (let index = 0; index < tokens.length; index++) {
@@ -865,7 +865,7 @@ export function hasDynamicInterpreterEval(command) {
 }
 
 
-export const hasUnresolvedShellExpansion = command => typeof command === "string"
+const hasUnresolvedShellExpansion = command => typeof command === "string"
   && (/[\r\n]/.test(command)
     || /(^|[^\\])(?:\$[({A-Za-z_]|`)/.test(command)
     || /![^!\r\n]+!|%[^%\r\n]+%|%[0-9*~]/.test(command)
@@ -875,7 +875,7 @@ export const hasUnresolvedShellExpansion = command => typeof command === "string
     || hasDynamicInterpreterEval(command));
 
 
-export async function physicalHookIdentity(path) {
+async function physicalHookIdentity(path) {
   const canonical = await realpath(path);
   const metadata = await stat(canonical);
   if (metadata.ino !== 0) return `inode:${metadata.dev}:${metadata.ino}`;
@@ -980,7 +980,7 @@ export async function verifiedHookInventory({ inventoryReader, inventoryArgs, cw
 }
 
 
-export function exactMusterHookGroups(config, expectedHookGroups) {
+function exactMusterHookGroups(config, expectedHookGroups) {
   if (!config?.hooks || typeof config.hooks !== "object" || Array.isArray(config.hooks)) return false;
   const expected = [];
   for (const [event, groups] of Object.entries(expectedHookGroups || {})) {
@@ -1047,9 +1047,9 @@ export function formatCodexWindowsPath(path) {
 }
 
 
-export const posixShellQuote = value => `'${value.replaceAll("'", `'\\''`)}'`;
+const posixShellQuote = value => `'${value.replaceAll("'", `'\\''`)}'`;
 
-export const windowsShellQuote = value => `"${formatCodexWindowsPath(value).replaceAll('"', '\\"')}"`;
+const windowsShellQuote = value => `"${formatCodexWindowsPath(value).replaceAll('"', '\\"')}"`;
 
 // Pin an ABSOLUTE, validated Node interpreter into the generated hook commands
 // instead of a bare `node` (run-5 security audit Med #5, src/codex-install.js):
@@ -1061,7 +1061,7 @@ export const windowsShellQuote = value => `"${formatCodexWindowsPath(value).repl
 // so pinning it stays consistent with the existing per-checkout, machine-baked
 // trust model rather than introducing a new kind of machine dependence.
 
-export function shellCommand(scriptPath, nodePath) {
+function shellCommand(scriptPath, nodePath) {
   for (const value of [nodePath, scriptPath]) {
     if (/[\r\n\0]/.test(value)) throw new Error(`Codex hook path contains unsupported control characters: ${value}`);
   }
@@ -1077,7 +1077,7 @@ export function shellCommand(scriptPath, nodePath) {
 // legitimate interpreter) but rejects a missing path, a directory, or a
 // non-absolute value so a bare/relative token can never be emitted.
 
-export async function validatedHookNode(execPath) {
+async function validatedHookNode(execPath) {
   if (typeof execPath !== "string" || !execPath || !isAbsolute(execPath)) {
     throw new Error(`Cannot pin the Codex hook Node interpreter: ${JSON.stringify(execPath)} is not an absolute path. Rerun muster install codex from a normal Node installation.`);
   }
@@ -1103,7 +1103,7 @@ export function parseHookCommand(command, { windows = false } = {}) {
 }
 
 
-export function parsePosixShellTokens(command) {
+function parsePosixShellTokens(command) {
   const tokens = [];
   let index = 0;
   while (index < command.length) {
@@ -1147,7 +1147,7 @@ export function parsePosixShellTokens(command) {
 }
 
 
-export function parseWindowsShellTokens(command) {
+function parseWindowsShellTokens(command) {
   const tokens = [];
   let index = 0;
   while (index < command.length) {
@@ -1220,7 +1220,7 @@ export async function expectedCodexHookInstall({ dir, hookSourceRoot, nodeExecPa
 }
 
 
-export async function inspectUserScopeHooks({ home, packageVersion, expected, cwd }) {
+async function inspectUserScopeHooks({ home, packageVersion, expected, cwd }) {
   if (!expected?.hookCount || expected.hookCount < 1) return null;
   const dir = codexHome(home);
   const runtimeDir = join(dir, "muster"), manifestPath = join(runtimeDir, MANIFEST), configPath = join(dir, "hooks.json");

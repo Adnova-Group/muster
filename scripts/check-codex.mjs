@@ -7,7 +7,7 @@ import { parse as parseYaml } from "yaml";
 import { CODEX_MODEL_POLICY, codexProfileForConfig } from "../src/codex.js";
 import { CODEX_COUNTS } from "../src/codex-inventory.js";
 import { resolveCodexPlugin } from "../src/codex-release.js";
-import { parseHookCommand } from "../src/codex-install.js";
+import { parseHookCommand } from "../src/shell-command.js";
 
 const execFileP = promisify(execFileCb);
 // Any QUOTED absolute filesystem path (POSIX home/mnt/Users root, or a

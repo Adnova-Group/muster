@@ -27,13 +27,15 @@ import {
 } from "./codex-install-shared.js";
 import {
   hookActivationSnapshot, sameHookActivationSnapshot, activationSnapshotMatchesWrites,
-  validateManagedHookAliasGraph, decodeTomlQuotedKey, ownedHookStateKeys, reconcileConfigTomlHookState,
+  validateManagedHookAliasGraph, ownedHookStateKeys, reconcileConfigTomlHookState,
   readCodexHookInventory, effectiveHookTrust, musterHookTrustGaps, validateHookManifest, same,
   groupCommands, isMusterHookCommand, hasMusterHookCommandAlias, verifiedHookInventory,
-  codexHookStateKeys, removeOwnedHookGroups, formatCodexWindowsPath, parseHookCommand,
+  codexHookStateKeys, removeOwnedHookGroups,
   hasManagedRuntimeInventoryAlias, inventoryAliasCandidateSnapshot, sameAliasCandidateSnapshot,
   expectedCodexHookInstall, inspectEffectiveUserScopeHooks, userScopeHooksHealthy, prepareHooks
 } from "./codex-install-hooks.js";
+import { decodeTomlQuotedKey } from "./toml-lexer.js";
+import { formatCodexWindowsPath, parseHookCommand } from "./shell-command.js";
 import { withScopeRegistryTransaction } from "./codex-install-scope-lock.js";
 import {
   concurrentConfigError, verifyCodexConfigRetirementReceipt, retainConfigArtifacts,

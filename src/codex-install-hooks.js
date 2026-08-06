@@ -13,6 +13,8 @@ import {
   MANIFEST, codexHome, configDir, codexActivationConfigDirs, ordinaryDirectoryPath, safeExists, readSafe,
   physicalFileSnapshot, samePhysicalFile, readJson, validateScopeRegistry, readScopeRegistry, snapshot
 } from "./codex-install-shared.js";
+import { decodeTomlQuotedKey, inspectTomlHeader, scanTomlLine, splitTomlLines } from "./toml-lexer.js";
+import { shellCommand, parseHookCommand, parsePosixShellTokens, parseWindowsShellTokens } from "./shell-command.js";
 
 const HOOK_FILES = ["hooks/muster-hook.mjs", "hooks/action-guard.mjs"];
 
@@ -126,147 +128,10 @@ export async function validateManagedHookAliasGraph({ home, cwd, inventoryCwd = 
 }
 
 
-export function decodeTomlQuotedKey(raw) {
-  if (typeof raw !== "string" || raw.length < 2) return null;
-  const quote = raw[0];
-  if (quote === "'") return raw.at(-1) === "'" && !raw.slice(1, -1).includes("'") ? raw.slice(1, -1) : null;
-  if (quote !== '"' || raw.at(-1) !== '"') return null;
-  const body = raw.slice(1, -1);
-  if (!/^(?:[^"\\]|\\[\\"tnrbf]|\\u[0-9a-fA-F]{4}|\\U[0-9a-fA-F]{8})*$/.test(body)) return null;
-  return body.replace(/\\(u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8}|.)/g, (_, escape) => {
-    if (escape[0] === "u" || escape[0] === "U") return String.fromCodePoint(parseInt(escape.slice(1), 16));
-    return { "\\": "\\", '"': '"', t: "\t", n: "\n", r: "\r", b: "\b", f: "\f" }[escape] ?? escape;
-  });
-}
-
-
 const HOOK_STATE_HEADER = /^\s*\[hooks\.state\.((?:"(?:[^"\\]|\\.)*")|(?:'[^']*'))\]\s*(?:#.*)?$/;
 
 const HOOK_STATE_KEY = /^(.*):([a-z][a-z0-9_]*):(\d+):(\d+)$/;
 
-
-function basicQuoteEscaped(line, index) {
-  let slashes = 0;
-  for (let cursor = index - 1; cursor >= 0 && line[cursor] === "\\"; cursor--) slashes++;
-  return slashes % 2 === 1;
-}
-
-
-function inspectTomlHeader(line) {
-  const start = line.search(/\S/);
-  if (start < 0 || line[start] !== "[") return { header: false, safe: true };
-  const array = line[start + 1] === "[";
-  let index = start + (array ? 2 : 1);
-  const whitespace = () => { while (/\s/.test(line[index] ?? "")) index++; };
-  const component = () => {
-    if (line[index] === '"' || line[index] === "'") {
-      const start = index;
-      const quote = line[index++];
-      while (index < line.length) {
-        if (line[index] === quote && (quote === "'" || !basicQuoteEscaped(line, index))) {
-          index++;
-          let decoded;
-          try { decoded = decodeTomlQuotedKey(line.slice(start, index)); } catch { return false; }
-          return decoded !== null && !/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\uD800-\uDFFF]/u.test(decoded);
-        }
-        index++;
-      }
-      return false;
-    }
-    const match = line.slice(index).match(/^[A-Za-z0-9_-]+/);
-    if (!match) return false;
-    index += match[0].length;
-    return true;
-  };
-  whitespace();
-  if (!component()) return { header: false, safe: false };
-  while (true) {
-    whitespace();
-    const closes = array ? line.startsWith("]]", index) : line[index] === "]";
-    if (closes) {
-      const rest = line.slice(index + (array ? 2 : 1));
-      return /^\s*(?:#.*)?$/.test(rest)
-        ? { header: true, safe: true }
-        : { header: false, safe: false };
-    }
-    if (line[index++] !== ".") return { header: false, safe: false };
-    whitespace();
-    if (!component()) return { header: false, safe: false };
-  }
-}
-
-// TOML table-shaped text is inert while it lives inside a multiline string.
-// Track only the lexical states that can cross line boundaries; ordinary
-// basic/literal strings and comments are consumed within their own line. If a
-// single-line string is unterminated, mark the document unsafe so trust fails
-// closed and reconciliation returns the original bytes unchanged.
-
-function scanTomlLine(line, multiline, arrayDepth) {
-  let mode = multiline;
-  let depth = arrayDepth;
-  for (let index = 0; index < line.length;) {
-    if (mode === "basic") {
-      if (line[index] === '"' && !basicQuoteEscaped(line, index)) {
-        let run = 1;
-        while (line[index + run] === '"') run++;
-        if (run >= 3 && run <= 5) { mode = null; index += run; }
-        else if (run > 5) return { multiline: mode, arrayDepth: depth, safe: false };
-        else index += run;
-      } else index++;
-      continue;
-    }
-    if (mode === "literal") {
-      if (line[index] === "'") {
-        let run = 1;
-        while (line[index + run] === "'") run++;
-        if (run >= 3 && run <= 5) { mode = null; index += run; }
-        else if (run > 5) return { multiline: mode, arrayDepth: depth, safe: false };
-        else index += run;
-      } else index++;
-      continue;
-    }
-    const char = line[index];
-    if (char === "#") break;
-    if (line.startsWith('"""', index)) { mode = "basic"; index += 3; continue; }
-    if (line.startsWith("'''", index)) { mode = "literal"; index += 3; continue; }
-    if (char === '"') {
-      let closed = false;
-      for (index++; index < line.length; index++) if (line[index] === '"' && !basicQuoteEscaped(line, index)) {
-        index++; closed = true; break;
-      }
-      if (!closed) return { multiline: null, arrayDepth: depth, safe: false };
-      continue;
-    }
-    if (char === "'") {
-      const closing = line.indexOf("'", index + 1);
-      if (closing < 0) return { multiline: null, arrayDepth: depth, safe: false };
-      index = closing + 1;
-      continue;
-    }
-    if (char === "[") depth++;
-    else if (char === "]") {
-      if (depth === 0) return { multiline: mode, arrayDepth: depth, safe: false };
-      depth--;
-    }
-    index++;
-  }
-  return { multiline: mode, arrayDepth: depth, safe: true };
-}
-
-
-function splitTomlLines(text) {
-  const lines = [], endings = [];
-  let offset = 0;
-  while (offset < text.length) {
-    const newline = text.indexOf("\n", offset);
-    if (newline < 0) { lines.push(text.slice(offset)); endings.push(""); break; }
-    const crlf = newline > offset && text[newline - 1] === "\r";
-    lines.push(text.slice(offset, crlf ? newline - 1 : newline));
-    endings.push(crlf ? "\r\n" : "\n");
-    offset = newline + 1;
-  }
-  return { lines, endings };
-}
 
 
 function parseConfigTomlTrustSections(text) {
@@ -1038,39 +903,6 @@ export function removeOwnedHookGroups(config, owned, configPath) {
 }
 
 
-export function formatCodexWindowsPath(path) {
-  const normalized = path.replaceAll("\\", "/");
-  const wslDrive = normalized.match(/^\/mnt\/([a-z])(?:\/(.*))?$/i);
-  if (wslDrive) return `${wslDrive[1].toUpperCase()}:/${wslDrive[2] || ""}`.replace(/\/$/, "");
-  const windowsDrive = normalized.match(/^([a-z]):\/(.*)$/i);
-  return windowsDrive ? `${windowsDrive[1].toUpperCase()}:/${windowsDrive[2]}` : normalized;
-}
-
-
-const posixShellQuote = value => `'${value.replaceAll("'", `'\\''`)}'`;
-
-const windowsShellQuote = value => `"${formatCodexWindowsPath(value).replaceAll('"', '\\"')}"`;
-
-// Pin an ABSOLUTE, validated Node interpreter into the generated hook commands
-// instead of a bare `node` (run-5 security audit Med #5, src/codex-install.js):
-// a bare `node` is resolved through PATH on EVERY lifecycle event, so an
-// attacker who prepends a directory to PATH with a malicious `node` hijacks the
-// interpreter on every hook fire. `process.execPath` is machine-specific --
-// exactly like the hook SCRIPT path this same command already bakes (the reason
-// .codex/hooks.json is gitignored, not tracked; see scripts/check-codex.mjs) --
-// so pinning it stays consistent with the existing per-checkout, machine-baked
-// trust model rather than introducing a new kind of machine dependence.
-
-function shellCommand(scriptPath, nodePath) {
-  for (const value of [nodePath, scriptPath]) {
-    if (/[\r\n\0]/.test(value)) throw new Error(`Codex hook path contains unsupported control characters: ${value}`);
-  }
-  return {
-    command: `${posixShellQuote(nodePath)} ${posixShellQuote(scriptPath)}`,
-    commandWindows: `${windowsShellQuote(nodePath)} ${windowsShellQuote(scriptPath)}`
-  };
-}
-
 // Resolve the current Node executable to an absolute path and validate it is an
 // ordinary regular file before it is baked into a hook command's interpreter
 // slot. Follows symlinks (a nvm/homebrew node reached through a symlink is a
@@ -1088,85 +920,6 @@ async function validatedHookNode(execPath) {
   return realpath(execPath);
 }
 
-// Parse a hook command emitted by shellCommand back into its two pinned tokens.
-// POSIX (`command`): single-quoted segments with '\'' escaping. Windows
-// (`commandWindows`): double-quoted segments with \" escaping. Returns
-// { interpreter, script } or null when the string is not the expected
-// two-token shape -- used by `muster doctor --codex` to verify the persisted
-// interpreter still exists, and by scripts/check-codex.mjs to coherence-check a
-// materialized hooks.json against this checkout.
-
-export function parseHookCommand(command, { windows = false } = {}) {
-  if (typeof command !== "string" || /[\0\r\n]/.test(command)) return null;
-  const tokens = typeof command === "string" ? (windows ? parseWindowsShellTokens(command) : parsePosixShellTokens(command)) : null;
-  return tokens && tokens.length === 2 ? { interpreter: tokens[0], script: tokens[1] } : null;
-}
-
-
-function parsePosixShellTokens(command) {
-  const tokens = [];
-  let index = 0;
-  while (index < command.length) {
-    while (index < command.length && (command[index] === " " || command[index] === "\t")) index++;
-    if (index >= command.length) break;
-    let token = "";
-    while (index < command.length && command[index] !== " " && command[index] !== "\t") {
-      const char = command[index];
-      if (";&|<>()`".includes(char) || char === "$") return null;
-      if (char === "'") {
-        index++;
-        while (index < command.length && command[index] !== "'") token += command[index++];
-        if (index >= command.length) return null;
-        index++;
-      } else if (char === '"') {
-        index++;
-        while (index < command.length && command[index] !== '"') {
-          if ("$`".includes(command[index])) return null;
-          if (command[index] === "\\" && index + 1 < command.length) {
-            const escaped = command[index + 1];
-            if ('$`"\\'.includes(escaped)) token += escaped;
-            else token += `\\${escaped}`;
-            index += 2;
-          }
-          else token += command[index++];
-        }
-        if (index >= command.length) return null;
-        index++;
-      } else if (char === "\\") {
-        if (index + 1 >= command.length) return null;
-        token += command[index + 1];
-        index += 2;
-      } else {
-        token += char;
-        index++;
-      }
-    }
-    tokens.push(token);
-  }
-  return tokens;
-}
-
-
-function parseWindowsShellTokens(command) {
-  const tokens = [];
-  let index = 0;
-  while (index < command.length) {
-    while (index < command.length && (command[index] === " " || command[index] === "\t")) index++;
-    if (index >= command.length) break;
-    if (command[index] !== '"') return null;
-    index++;
-    let token = "";
-    while (index < command.length && command[index] !== '"') {
-      if (command[index] === "\\" && command[index + 1] === '"') { token += '"'; index += 2; }
-      else token += command[index++];
-    }
-    if (index >= command.length) return null;
-    index++;
-    tokens.push(token);
-    if (index < command.length && command[index] !== " " && command[index] !== "\t") return null;
-  }
-  return tokens;
-}
 
 // Canonical-scope collapse (2026-07-18 decision, doctor's codex-hooks-overlap
 // check): the user scope is canonical for Codex hooks. A project-scope

@@ -1,9 +1,11 @@
 // codex-install-hooks.js -- hook trust/publication concern, split out of
 // codex-install.js (split-codex-install). Owns Codex hook installation,
 // hooks.json/[hooks.state] reconciliation, hook command parsing/shell-token
-// analysis, and hook trust verification. Depends only on node builtins and
-// codex-install-shared.js -- never on scope-lock/config-transactions/
-// marketplace, and nothing in those depends back on this file.
+// analysis, and hook trust verification. Depends only on node builtins,
+// codex-install-shared.js, and the two generic, hook-free primitive modules
+// hooks-lexer-extraction split out of this file (toml-lexer.js,
+// shell-command.js) -- never on scope-lock/config-transactions/marketplace,
+// and nothing in those depends back on this file.
 import { lstat, realpath, stat } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, parse, posix, relative, resolve, sep, win32 } from "node:path";
 import { fileURLToPath } from "node:url";

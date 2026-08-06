@@ -16,7 +16,7 @@ const SCOPE_LOCK_STALE_MS = 5 * 60_000;
 
 const SCOPE_LOCK_MAX_STALE_MS = 15 * 60_000;
 
-export async function scopeLockText(token) {
+async function scopeLockText(token) {
   return JSON.stringify({
     format: 1,
     owner: "muster",
@@ -28,7 +28,7 @@ export async function scopeLockText(token) {
 }
 
 
-export async function writeExclusiveSafe(path, content) {
+async function writeExclusiveSafe(path, content) {
   await ordinaryDirectoryPath(dirname(path), { create: true });
   await regularFileState(path);
   let handle, created = false;
@@ -46,7 +46,7 @@ export async function writeExclusiveSafe(path, content) {
 }
 
 
-export function parseScopeLock(text, path) {
+function parseScopeLock(text, path) {
   let lock;
   try { lock = JSON.parse(text); } catch { throw new Error(`Codex managed-scope lock is invalid: ${path}`); }
   if (lock?.format !== 1 || lock.owner !== "muster" || !Number.isSafeInteger(lock.pid) || lock.pid < 1
@@ -58,7 +58,7 @@ export function parseScopeLock(text, path) {
 }
 
 
-export async function readScopeLock(path) {
+async function readScopeLock(path) {
   const before = await regularFileState(path);
   if (!before) return null;
   let handle;
@@ -72,7 +72,7 @@ export async function readScopeLock(path) {
 }
 
 
-export async function staleScopeLock(state) {
+async function staleScopeLock(state) {
   const age = Date.now() - Math.max(state.lock.createdAt, state.stat.mtimeMs);
   if (age < SCOPE_LOCK_STALE_MS) return false;
   const alive = processAlive(state.lock.pid);
@@ -84,17 +84,17 @@ export async function staleScopeLock(state) {
 }
 
 
-export const sameScopeLockOwner = (left, right) => left.token === right.token && left.pid === right.pid
+const sameScopeLockOwner = (left, right) => left.token === right.token && left.pid === right.pid
   && left.processIdentity === right.processIdentity && left.createdAt === right.createdAt
   && left.owner === right.owner && left.format === right.format;
 
 
-export function defaultScopeRetirementModeCapability({ stat }) {
+function defaultScopeRetirementModeCapability({ stat }) {
   return (stat.mode & 0o777) !== 0o777;
 }
 
 
-export async function assertPrivateScopeRetirementDirectory(dir, { expectedStat = null, requirePrivateMode = true } = {}) {
+async function assertPrivateScopeRetirementDirectory(dir, { expectedStat = null, requirePrivateMode = true } = {}) {
   const stat = await lstat(dir);
   const uid = typeof process.getuid === "function" ? process.getuid() : null;
   const ownerMismatch = process.platform !== "win32" && typeof uid === "number" && stat.uid !== uid;
@@ -109,7 +109,7 @@ export async function assertPrivateScopeRetirementDirectory(dir, { expectedStat 
 }
 
 
-export async function privateScopeRetirement(path, { modeCapability = defaultScopeRetirementModeCapability } = {}) {
+async function privateScopeRetirement(path, { modeCapability = defaultScopeRetirementModeCapability } = {}) {
   for (let attempt = 0; attempt < 8; attempt++) {
     const dir = join(dirname(path), `.muster-retired-${process.pid}-${randomUUID()}`);
     try { await mkdir(dir, { mode: 0o700 }); }
@@ -124,13 +124,13 @@ export async function privateScopeRetirement(path, { modeCapability = defaultSco
 }
 
 
-export async function removeEmptyScopeRetirementDirectory(retirement) {
+async function removeEmptyScopeRetirementDirectory(retirement) {
   await assertPrivateScopeRetirementDirectory(retirement.dir, retirement);
   await rmdir(retirement.dir);
 }
 
 
-export async function restoreRetiredScopeLock(path, retirement, stat) {
+async function restoreRetiredScopeLock(path, retirement, stat) {
   await assertPrivateScopeRetirementDirectory(retirement.dir, retirement);
   const current = await lstat(retirement.path);
   if (!sameScopeLockInode(current, stat)) return false;
@@ -145,7 +145,7 @@ export async function restoreRetiredScopeLock(path, retirement, stat) {
 }
 
 
-export async function restoreQuarantinedScopeLock(path, quarantine, stat, { modeCapability } = {}) {
+async function restoreQuarantinedScopeLock(path, quarantine, stat, { modeCapability } = {}) {
   const retirement = await privateScopeRetirement(quarantine, { modeCapability });
   try { await rename(quarantine, retirement.path); }
   catch (error) {
@@ -157,7 +157,7 @@ export async function restoreQuarantinedScopeLock(path, quarantine, stat, { mode
 }
 
 
-export async function retireOwnedScopeLock(path, expectedStat, expectedLock, {
+async function retireOwnedScopeLock(path, expectedStat, expectedLock, {
   restorePath = path,
   stale = null,
   afterRetirement = async () => {},
@@ -193,7 +193,7 @@ export async function retireOwnedScopeLock(path, expectedStat, expectedLock, {
 }
 
 
-export async function releaseScopeLock(path, token, {
+async function releaseScopeLock(path, token, {
   beforeRelease = async () => {},
   afterRetirement = async () => {},
   modeCapability = defaultScopeRetirementModeCapability
@@ -207,7 +207,7 @@ export async function releaseScopeLock(path, token, {
 }
 
 
-export async function acquireRecoveryScopeLock(path, token, lockOptions) {
+async function acquireRecoveryScopeLock(path, token, lockOptions) {
   try {
     await writeExclusiveSafe(path, await scopeLockText(token));
     return true;
@@ -231,7 +231,7 @@ export async function acquireRecoveryScopeLock(path, token, lockOptions) {
 }
 
 
-export async function recoverStaleScopeLock(path, {
+async function recoverStaleScopeLock(path, {
   afterQuarantine = async () => {},
   afterValidation = async () => {},
   afterRetirement = async () => {},
@@ -272,7 +272,7 @@ export async function recoverStaleScopeLock(path, {
 }
 
 
-export async function acquireScopeLock(home, {
+async function acquireScopeLock(home, {
   maxAttempts = 1_000,
   afterAcquire = async () => {},
   afterQuarantine = async () => {},

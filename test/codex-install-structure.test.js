@@ -114,7 +114,22 @@ test("codex-install.js stays a facade under a 1400-line ceiling", async () => {
   assert.ok(lines <= 1400, `codex-install.js is ${lines} lines; ceiling is 1400`);
 });
 
-test("codex-install.js re-exports the exact pre-split public API", async () => {
+// Hardened both directions (tighten-install-family-export-surface,
+// 2026-08-04): the prior version only asserted expected ⊆ names, so it
+// stayed green through the split's 24 -> 168-export blowup as long as
+// the original 24 were still present somewhere in the pile ("52 exports
+// pass a test named 'exact'" per the audit). This now also asserts
+// names ⊆ expected, i.e. exact set equality -- codex-install.js's public
+// surface must be precisely the pre-split 24 names, no more, no less.
+//
+// Mutant-kill receipt (2026-08-04): re-add `export` to agentsDir's
+// declaration in src/codex-install.js, then run this file. The guard
+// failed with `codex-install.js exports names outside the pre-split
+// public API: agentsDir` (4 pass, 1 fail). Restoring the file to its
+// prior content produced 5 pass / 0 fail. `sha256sum src/codex-install.js`
+// was byte-identical before and after:
+// 5732169342ec4f26d24726414e0c2444dc0961ba6066e6f79cbfa26dec191ba7.
+test("codex-install.js re-exports exactly the pre-split public API, no more and no less", async () => {
   const source = await readFile(facadeUrl, "utf8");
   const exportRe = /^export\s+(?:const|function|async function)\s+([A-Za-z0-9_]+)|^export\s*\{([^}]+)\}/gm;
   const names = new Set();
@@ -131,5 +146,9 @@ test("codex-install.js re-exports the exact pre-split public API", async () => {
     "codexHookStateKeys", "formatCodexWindowsPath", "parseHookCommand", "expectedCodexHookInstall",
     "verifyCodexConfigRetirementReceipt", "runCodexInstall", "runCodexUninstall"
   ];
+  // Presence: every pre-split name must still be exported.
   for (const name of expected) assert.ok(names.has(name), `codex-install.js must still export ${name}`);
+  // Absence: nothing else may be exported from the facade.
+  const extra = [...names].filter(name => !expected.includes(name)).sort();
+  assert.deepEqual(extra, [], `codex-install.js exports names outside the pre-split public API: ${extra.join(", ")}`);
 });

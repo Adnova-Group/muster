@@ -20,7 +20,7 @@ export const codexHome = home => process.env.CODEX_HOME || join(home, ".codex");
 
 export const configDir = (scope, cwd, home) => scope === "user" ? codexHome(home) : join(cwd, ".codex");
 
-export const scopeRegistryPath = home => join(codexHome(home), "muster", "install-scopes.json");
+const scopeRegistryPath = home => join(codexHome(home), "muster", "install-scopes.json");
 
 export const scopeRegistryLockPath = home => `${scopeRegistryPath(home)}.lock`;
 
@@ -164,7 +164,7 @@ export const registryText = entries => JSON.stringify({ format: 1, owner: "muste
 // correct casing -- see codex-install.js's WSL-path tests -- so this is the
 // only reliable way to learn which casing is canonical.
 
-export async function canonicalDiskCasing(path, { readdirFn = readdir } = {}) {
+async function canonicalDiskCasing(path, { readdirFn = readdir } = {}) {
   const absolute = resolve(path), root = parse(absolute).root;
   let current = root;
   for (const part of relative(root, absolute).split(sep).filter(Boolean)) {

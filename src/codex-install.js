@@ -63,20 +63,20 @@ const AGENT_DECLARATIONS_START = "# >>> muster managed agent declarations >>>";
 const AGENT_DECLARATIONS_END = "# <<< muster managed agent declarations <<<";
 
 
-export const agentsDir = (scope, cwd, home) => scope === "user" ? join(codexHome(home), "agents") : join(cwd, ".codex", "agents");
+const agentsDir = (scope, cwd, home) => scope === "user" ? join(codexHome(home), "agents") : join(cwd, ".codex", "agents");
 
-export async function ownershipFileSnapshot(path) {
+async function ownershipFileSnapshot(path) {
   if (!(await regularFileState(path))) return { exists: false, bytes: null };
   return { exists: true, bytes: await readFile(path) };
 }
 
-export async function physicalFilesSnapshot(paths) {
+async function physicalFilesSnapshot(paths) {
   const snapshot = new Map();
   for (const path of paths) snapshot.set(path, await physicalFileSnapshot(path));
   return snapshot;
 }
 
-export function samePhysicalFilesSnapshot(left, right) {
+function samePhysicalFilesSnapshot(left, right) {
   if (left.size !== right.size) return false;
   for (const [path, expected] of left) {
     const current = right.get(path);
@@ -85,7 +85,7 @@ export function samePhysicalFilesSnapshot(left, right) {
   return true;
 }
 
-export async function declarationOwnershipSnapshot(manifestPath, configPath) {
+async function declarationOwnershipSnapshot(manifestPath, configPath) {
   const [manifest, config] = await Promise.all([
     ownershipFileSnapshot(manifestPath),
     ownershipFileSnapshot(configPath)
@@ -93,31 +93,31 @@ export async function declarationOwnershipSnapshot(manifestPath, configPath) {
   return { manifest, config };
 }
 
-export function ownershipSnapshotText(file) {
+function ownershipSnapshotText(file) {
   if (!file.exists) return "";
   try { return new TextDecoder("utf-8", { fatal: true }).decode(file.bytes); }
   catch { throw new Error("Codex config.toml contains invalid UTF-8"); }
 }
 
 
-export function configSnapshotText(snapshot, path) {
+function configSnapshotText(snapshot, path) {
   if (!snapshot.exists) return "";
   try { return new TextDecoder("utf-8", { fatal: true }).decode(snapshot.bytes); }
   catch { throw new Error(`Codex config.toml contains invalid UTF-8: ${path}`); }
 }
 
-export function ownershipSnapshotManifest(file) {
+function ownershipSnapshotManifest(file) {
   if (!file.exists) return null;
   try { return JSON.parse(file.bytes.toString("utf8")); }
   catch { return null; }
 }
 
-export function sameOwnershipFile(left, right) {
+function sameOwnershipFile(left, right) {
   return left.exists === right.exists
     && (!left.exists || left.bytes.equals(right.bytes));
 }
 
-export async function verifyDeclarationOwnershipSnapshot(expected, manifestPath, configPath) {
+async function verifyDeclarationOwnershipSnapshot(expected, manifestPath, configPath) {
   const current = await declarationOwnershipSnapshot(manifestPath, configPath);
   if (!sameOwnershipFile(expected.manifest, current.manifest)
     || !sameOwnershipFile(expected.config, current.config)) {
@@ -126,7 +126,7 @@ export async function verifyDeclarationOwnershipSnapshot(expected, manifestPath,
   return current;
 }
 
-export const profileFiles = async root => (await readdirSafe(root)).filter(name => name.endsWith(".toml")).sort();
+const profileFiles = async root => (await readdirSafe(root)).filter(name => name.endsWith(".toml")).sort();
 
 export function assertContainedProfiles(files, dir) {
   const base = resolve(dir);
@@ -138,7 +138,7 @@ export function assertContainedProfiles(files, dir) {
 }
 
 
-export function validateManagedFiles(manifest, dir, manifestPath) {
+function validateManagedFiles(manifest, dir, manifestPath) {
   if (manifest?.owner !== "muster" || manifest.format !== 1 || !Array.isArray(manifest.files)) {
     throw new Error(`Codex installation manifest conflict: ${manifestPath}. Move it or remove it, then rerun the command.`);
   }
@@ -162,7 +162,7 @@ export function validateManagedFiles(manifest, dir, manifestPath) {
 }
 
 
-export function agentDescription(profile, file) {
+function agentDescription(profile, file) {
   const match = String(profile).match(/^description\s*=\s*("(?:[^"\\]|\\.)*")\s*(?:#.*)?$/m);
   if (!match) throw new Error(`Codex profile ${file} has no valid description`);
   try {
@@ -175,7 +175,7 @@ export function agentDescription(profile, file) {
 }
 
 
-export function declarationRegion(declarations, newline = "\n") {
+function declarationRegion(declarations, newline = "\n") {
   const lines = [AGENT_DECLARATIONS_START];
   for (const [name, description] of declarations) {
     lines.push(
@@ -190,7 +190,7 @@ export function declarationRegion(declarations, newline = "\n") {
 }
 
 
-export function declarationBounds(text) {
+function declarationBounds(text) {
   const markerLines = marker => [...text.matchAll(new RegExp(`^${escapeRe(marker)}\\r?$`, "gm"))];
   const starts = markerLines(AGENT_DECLARATIONS_START);
   const ends = markerLines(AGENT_DECLARATIONS_END);
@@ -207,7 +207,7 @@ export function declarationBounds(text) {
 }
 
 
-export function declarationRegionReceipt(text) {
+function declarationRegionReceipt(text) {
   const bounds = declarationBounds(text);
   if (!bounds) throw new Error("Cannot receipt a missing Muster agent declaration region");
   return {
@@ -218,7 +218,7 @@ export function declarationRegionReceipt(text) {
 }
 
 
-export function verifiedDeclarationBounds(text, receipt, manifestPath) {
+function verifiedDeclarationBounds(text, receipt, manifestPath) {
   const bounds = declarationBounds(text);
   if (!receipt) {
     if (bounds) {
@@ -237,7 +237,7 @@ export function verifiedDeclarationBounds(text, receipt, manifestPath) {
 }
 
 
-export function removeAgentDeclarations(text, { separatorAdded = false, receipt, manifestPath } = {}) {
+function removeAgentDeclarations(text, { separatorAdded = false, receipt, manifestPath } = {}) {
   const bounds = verifiedDeclarationBounds(text, receipt, manifestPath);
   if (!bounds) return text;
   let start = bounds.start;
@@ -250,7 +250,7 @@ export function removeAgentDeclarations(text, { separatorAdded = false, receipt,
 }
 
 
-export function agentDeclarationHeaderPath(line) {
+function agentDeclarationHeaderPath(line) {
   let cursor = 0;
   const whitespace = () => { while (/\s/.test(line[cursor] ?? "")) cursor++; };
   const component = () => {
@@ -291,7 +291,7 @@ export function agentDeclarationHeaderPath(line) {
 }
 
 
-export function foreignAgentDeclarationNames(text) {
+function foreignAgentDeclarationNames(text) {
   const names = new Set();
   for (const line of text.split(/\r?\n/)) {
     const path = agentDeclarationHeaderPath(line);
@@ -301,7 +301,7 @@ export function foreignAgentDeclarationNames(text) {
 }
 
 
-export function reconcileAgentDeclarations(text, declarations, { separatorAdded = false, receipt, manifestPath } = {}) {
+function reconcileAgentDeclarations(text, declarations, { separatorAdded = false, receipt, manifestPath } = {}) {
   const unrelated = removeAgentDeclarations(text, { separatorAdded, receipt, manifestPath });
   const foreignNames = foreignAgentDeclarationNames(unrelated);
   for (const name of declarations.keys()) {
@@ -320,7 +320,7 @@ export function reconcileAgentDeclarations(text, declarations, { separatorAdded 
 }
 
 
-export function validateThreadLimitManifest(manifest, manifestPath, expectedConfigPath) {
+function validateThreadLimitManifest(manifest, manifestPath, expectedConfigPath) {
   const currentKeys = Object.keys(REQUIRED_CODEX_THREAD_LIMITS);
   const legacyKeys = ["max_threads", "max_depth"];
   const receiptInteger = value => typeof value === "string"
@@ -371,18 +371,18 @@ export function validateThreadLimitManifest(manifest, manifestPath, expectedConf
 }
 
 
-export async function transactionWrite(written, path, content) {
+async function transactionWrite(written, path, content) {
   written.set(path, await atomicWriteSafe(path, content));
 }
 
 
-export async function transactionRemove(written, path) {
+async function transactionRemove(written, path) {
   await removeSafe(path);
   written.set(path, { exists: false, dev: null, ino: null, bytes: null });
 }
 
 
-export async function profileSource(root, isPluginRoot) {
+async function profileSource(root, isPluginRoot) {
   if (isPluginRoot) {
     const dir = join(root, "agents");
     const files = await profileFiles(dir);
@@ -403,7 +403,7 @@ export async function profileSource(root, isPluginRoot) {
 // transaction. The only side effects are the pre-existing esbuild staging build
 // and ordinaryDirectoryPath probes (create:false) -- neither is rollback-owned.
 
-export async function prepareCodexInstall({ scope, dryRun, cwd, inventoryCwd, home, repoRoot, execFile, runtimeIdentity, hookInventory, allowInjected, nodeExecPath }) {
+async function prepareCodexInstall({ scope, dryRun, cwd, inventoryCwd, home, repoRoot, execFile, runtimeIdentity, hookInventory, allowInjected, nodeExecPath }) {
   if (!["project", "user"].includes(scope)) throw new Error("codex install scope must be project or user");
   const root = repoRoot || fileURLToPath(new URL("../", import.meta.url));
   const pluginRoot = await exists(join(root, ".codex-plugin", "plugin.json"));
@@ -1073,7 +1073,7 @@ export async function runCodexInstall(options = {}) {
 }
 
 
-export async function remainingManagedScopes(registry, currentScope) {
+async function remainingManagedScopes(registry, currentScope) {
   const liveScopes = [];
   for (const entry of registry.entries) {
     if (sameScopeEntry(entry, currentScope)) continue;
@@ -1094,7 +1094,7 @@ export async function remainingManagedScopes(registry, currentScope) {
 // steps are preserved exactly: departingScopeOwnedHookStateKeys is captured from
 // the raw hooks.json BEFORE removeOwnedHookGroups strips muster's own groups.
 
-export async function prepareCodexUninstall({ scope, cwd, activationCwds = [], home, execFile, runtimeIdentity, allowInjected }) {
+async function prepareCodexUninstall({ scope, cwd, activationCwds = [], home, execFile, runtimeIdentity, allowInjected }) {
   if (!["project", "user"].includes(scope)) throw new Error("codex uninstall scope must be project or user");
   const dir = agentsDir(scope, cwd, home), manifestPath = join(dir, MANIFEST);
   const declarationConfigPath = join(configDir(scope, cwd, home), "config.toml");

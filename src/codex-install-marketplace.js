@@ -15,7 +15,7 @@ const MIGRATED_COMMAND_PREFIX = ".codex-plugin/migrated-command-skills";
 const MAX_MIGRATED_COMMAND_SKILL_BYTES = 4_000;
 
 
-export async function expectedMigratedCommandSkill(sourceRoot, commandName) {
+async function expectedMigratedCommandSkill(sourceRoot, commandName) {
   const source = await readFile(join(sourceRoot, "commands", `${commandName}.md`));
   const text = new TextDecoder("utf-8", { fatal: true }).decode(source);
   const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/.exec(text);
@@ -38,7 +38,7 @@ export async function expectedMigratedCommandSkill(sourceRoot, commandName) {
 }
 
 
-export async function assertTrustedPluginCacheProjection(root, tree, sourceRoot, sourceTree) {
+async function assertTrustedPluginCacheProjection(root, tree, sourceRoot, sourceTree) {
   const projected = {
     dirs: tree.dirs.filter(path => path !== MIGRATED_COMMAND_PREFIX && !path.startsWith(`${MIGRATED_COMMAND_PREFIX}/`)),
     files: tree.files.filter(file => !file.path.startsWith(`${MIGRATED_COMMAND_PREFIX}/`))
@@ -84,7 +84,7 @@ export async function assertPrivatePluginCache(root, packageVersion, { sourceRoo
 }
 
 
-export async function stablePluginCacheSnapshot(root, packageVersion, options = {}) {
+async function stablePluginCacheSnapshot(root, packageVersion, options = {}) {
   const before = await lstat(root);
   if (before.isSymbolicLink() || !before.isDirectory()) throw new Error(`Codex plugin cache target must be an ordinary directory: ${root}`);
   const first = await assertPrivatePluginCache(root, packageVersion, options);
@@ -97,7 +97,7 @@ export async function stablePluginCacheSnapshot(root, packageVersion, options = 
 }
 
 
-export const samePluginCacheSnapshot = (left, right) => left.dev === right.dev && left.ino === right.ino
+const samePluginCacheSnapshot = (left, right) => left.dev === right.dev && left.ino === right.ino
   && JSON.stringify(left.tree) === JSON.stringify(right.tree);
 
 export async function copyPluginCacheExclusively(source, target, expectedTree, packageVersion, pluginCacheOptions = {}) {
@@ -217,7 +217,7 @@ export async function verifyPublishedPluginCache(receipt, pluginCacheOptions = {
 }
 
 
-export function normalizedLocalRoot(value) {
+function normalizedLocalRoot(value) {
   if (typeof value !== "string" || !value.trim()) return null;
   const input = value.trim().replaceAll("\\", "/");
   const drive = input.match(/^([a-z]):\/(.*)$/i);
@@ -225,7 +225,7 @@ export function normalizedLocalRoot(value) {
 }
 
 
-export async function sameLocalRoot(left, right) {
+async function sameLocalRoot(left, right) {
   const actual = normalizedLocalRoot(left), expected = normalizedLocalRoot(right);
   if (!actual || !expected) return false;
   try {
@@ -244,7 +244,7 @@ export async function sameLocalRoot(left, right) {
 }
 
 
-export async function trustedMusterMarketplace(item, repoRoot) {
+async function trustedMusterMarketplace(item, repoRoot) {
   const source = item?.marketplaceSource;
   return source?.sourceType === "local"
     && await sameLocalRoot(item.root, repoRoot)

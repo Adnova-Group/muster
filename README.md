@@ -75,90 +75,16 @@ Kimi installs the same ten primary modes as namespaced `/muster-*` skills. In-se
 
 ### ChatGPT Work (private/local plugin lane)
 
-Muster's MCP surface has one neutral implementation in `mcp/server.mjs` with explicit host adapters in `mcp/codex-server.mjs`, `mcp/chatgpt-work-server.mjs`, and `cowork/mcp-server.mjs`. The legacy `cowork/chatgpt-work-server.mjs` path remains a compatibility shim for existing Work configurations. Codex and Work bundles build their explicit adapters directly; they do not string-rewrite Cowork source. The public Work runtime command remains `node runtime/chatgpt-work-server.mjs`.
-
-ChatGPT Work supports plugins on the web and in the ChatGPT desktop app (select ChatGPT → Work). Codex Desktop is a separate surface: Work does not inherit Codex `AGENTS.md`, skills, hooks, MCP, or `config.toml` configuration. Muster's Work lane is a private/local development path through the universal Plugins Directory format and a registered MCP connection; it is not a public plugin submission. Secure MCP Tunnel is explicitly a private transport and cannot make a tunnel-backed plugin eligible for public distribution. The local/repo Plugins Directory source is the documented desktop proof lane: restart or refresh ChatGPT Desktop, select the local/repo marketplace source, and install the plugin there. Do not generalize that local source to Work web; use Work web only when an independently supported source is available. A connection, tool scan, tunnel-health result, or assistant claim is not a native invocation receipt. Support for a particular Work build is demonstrated only when that host renders the completed Muster tool card and the nonce-bound server evidence passes the proof contract below.
-
-Install the connection mapping into the project or user scope with the exact command below. The technical ID copied from ChatGPT may begin with `plugin_`; Muster strips only that initial prefix and persists the canonical, non-secret `asdk_app_...` ID. The dry run writes nothing:
-
-```sh
-muster install chatgpt-work --connection-id plugin_asdk_app_... --profile pro-safe --scope project --dry-run
-muster install chatgpt-work --connection-id plugin_asdk_app_... --profile pro-safe --scope project
-# user scope: --scope user
-# full deterministic surface: --profile full --allow-full-actions
-```
-
-`--profile` is mandatory; `pro-safe` is the recommended Pro-compatible profile. The installer returns `pluginPath`: `<cwd>/.agents/plugins/muster-chatgpt-work` for project scope or `<home>/.agents/plugins/muster-chatgpt-work` for user scope. It atomically merges a distinct `muster-chatgpt-work` entry into the scope's `.agents/plugins/marketplace.json`, preserving the Codex `muster` entry. Its receipt is `.git/muster/chatgpt-work.json` for project scope or `<home>/.muster/chatgpt-work.json` for user scope. Inspect those returned/receipt paths rather than assuming a different plugin copy.
-
-The generated Work plugin contains minimal `.mcp.json` wiring and this `.app.json` mapping; it does not inherit Codex configuration. The plugin manifest points `apps` at `./.app.json`:
-
-```json
-{"apps":{"muster":{"id":"asdk_app_<normalized-id>"}}}
-```
-
-In the generated plugin root, run the local STDIO server through OpenAI Secure MCP Tunnel (outbound-only; no inbound listener):
-
-```sh
-export CONTROL_PLANE_API_KEY="sk-..." # OpenAI Platform runtime key; keep it secret
-tunnel-client init --sample sample_mcp_stdio_local --profile muster-chatgpt-work \
-  --tunnel-id tunnel_... --mcp-command "node runtime/chatgpt-work-server.mjs"
-tunnel-client doctor --profile muster-chatgpt-work --explain
-tunnel-client run --profile muster-chatgpt-work
-```
-
-For the nonce-bound proof server, use an existing private probe directory and a new `server-attestation.json` path. Export the probe variables before `tunnel-client init` so they are inherited by the `--mcp-command` child. The generated runtime accepts only this explicit probe configuration (it strips unrelated environment credentials, allows exactly one exact call, and writes the attestation):
-
-```sh
-export MUSTER_CHATGPT_WORK_PROFILE=pro-safe
-export MUSTER_CHATGPT_WORK_PROBE_NONCE=<32-lowercase-hex-nonce>
-export MUSTER_CHATGPT_WORK_PROBE_ATTESTATION_PATH=/absolute/private/probe-dir/server-attestation.json
-export MUSTER_CHATGPT_WORK_CONNECTION_ID=asdk_app_...
-export MUSTER_CHATGPT_WORK_APP_JSON_PATH=/absolute/path/to/installed/.app.json
-export MUSTER_CHATGPT_WORK_PLUGIN_VERSION=0.6.0
-export MUSTER_CHATGPT_WORK_CONNECTION_LABEL="Muster ChatGPT Work"
-tunnel-client init --sample sample_mcp_stdio_local --profile muster-chatgpt-work \
-  --tunnel-id tunnel_... --mcp-command "node runtime/chatgpt-work-server.mjs"
-tunnel-client run --profile muster-chatgpt-work
-```
-
-On POSIX, the probe directory must already exist, be owned by the current user, and have no group/world permissions (for example `0700`); the attestation file must be a new `0600` file. Windows native proof is always `HUMAN-HOLD`: there is no usable Windows attestation claim. On every platform, an attestation collision is `HUMAN-HOLD`, never an overwrite.
-
-For `pro-safe`, set `MUSTER_CHATGPT_WORK_PROFILE=pro-safe`; exactly one tool (`muster_prioritize`) is exposed with title **Prioritize backlog items**, `readOnlyHint=true`, `destructiveHint=false`, and `openWorldHint=false`. Pro's custom MCP path is read/fetch; claim Pro support only after a successful native **Scan Tools** gate in Work. Full MCP (including write/modify actions) is a Business/Enterprise/Edu rollout, not a Pro entitlement. Muster's `full` profile is the existing 31-tool deterministic surface, not a write-action surface: it requires both `--profile full --allow-full-actions` at install and `MUSTER_CHATGPT_WORK_SERVER_ALLOW_FULL_ACTIONS=1` at server startup, plus the ChatGPT workspace's full-MCP entitlement. Treat those as a deliberate double opt-in.
-
-The tunnel's `CONTROL_PLANE_API_KEY` is an OpenAI Platform runtime credential and is billed under Platform API usage; it is not supplied by, or interchangeable with, a ChatGPT Pro subscription. Associate the tunnel with the personal Platform organization for a personal test, or with both the Platform organization and target ChatGPT workspace for workspace use. A connection ID is an identifier, not a secret; never record the runtime key, tunnel ID, screenshots, or raw app contents in a receipt.
-
-ChatGPT can cache a frozen tool snapshot. After changing tool titles, annotations, schemas, or profile metadata, use **Refresh** where the workspace UI offers it; otherwise recreate the developer connection/app and install a fresh local plugin copy, then start a new Work chat. The nonce-bound native proof in [`scripts/chatgpt-work-native-probe.mjs`](scripts/chatgpt-work-native-probe.mjs) requires the operator-observed completed Work `muster_prioritize` card *and* a separate server attestation with the exact nonce request/result, identity, `serverInstanceId`, and `invocationCount=1`; UI evidence alone is not cryptographic provenance. Windows native proof is always `HUMAN-HOLD` because the probe issues no usable Windows attestation claim. Stop the tunnel and verify before/during/after inventories before grading, and remove only provably probe-owned artifacts.
-
-For the identity-bound native proof, supply the normalized connection and exact installed `.app.json` bytes so the run sheet and grader can recompute both identity hashes (the plugin version and connection label are non-secret metadata):
-
-```sh
-node scripts/chatgpt-work-native-probe.mjs \
-  --connection-id asdk_app_... --app-json /path/to/installed/.app.json \
-  --plugin-version 0.6.0 --connection-label "Muster ChatGPT Work"
-node scripts/chatgpt-work-native-probe.mjs --grade receipt.json --nonce <nonce> \
-  --server-attestation attestation.json --connection-id asdk_app_... \
-  --app-json /path/to/installed/.app.json --plugin-version 0.6.0 \
-  --connection-label "Muster ChatGPT Work" \
-  --snapshot-out /private/retained/grade-snapshot.json \
-  --owned-plugin-path /exact/owned/plugin-path \
-  --owned-temp-path /exact/owned/probe-temp-path
-```
-
-Grading is two-phase. Phase 1 keeps the attestation and probe inventory present, writes a private retained grade snapshot outside the owned plugin and probe trees, and returns `evidence-graded`; do not delete the attestation before this command. Both owned directories must be placed beneath current-user-owned parent directories with no group/world write bits. After grading, stop the tunnel, remove the connection/marketplace/cache/UI entries, and leave the two exact snapshot-bound plugin and probe directories in place. There is no invented uninstall command: if ownership or a path collides, stop and record `HUMAN-HOLD`. Write the cleanup record with the returned `gradeDigest` and identical `ownedPaths`; phase 2 rechecks the parent boundary, atomically renames each identity-checked directory to a random direct-sibling quarantine path, rechecks the retained identity, deletes each quarantined directory, and verifies all paths are absent. Direct siblings avoid an intermediate symlink target and support different filesystems:
-
-```sh
-node scripts/chatgpt-work-native-probe.mjs --finalize-cleanup cleanup.json \
-  --grade-snapshot /private/retained/grade-snapshot.json
-```
+ChatGPT Work is a private/local, proof-gated plugin lane: it does not inherit Codex Desktop's `AGENTS.md`, skills, hooks, MCP, or `config.toml`. Muster's MCP surface has one neutral core in `mcp/server.mjs` with an explicit Work host adapter; `cowork/chatgpt-work-server.mjs` remains a compatibility shim, and the public Work runtime command stays `runtime/chatgpt-work-server.mjs`. Installing the connection, running Secure MCP Tunnel, choosing a profile (`pro-safe` or `full`), and the native-proof contract are covered in the [ChatGPT Work guide](https://adnova-group.github.io/muster/guides/chatgpt-work).
 
 ## The ten modes
 
 | Mode | Command | What it does |
 | --- | --- | --- |
-| Plan | `/muster:plan <outcome \| backlog text>` | Approve-first entry point. Detects whether the invocation is one outcome or a backlog and confirms via AskUserQuestion whenever the signals are anything but a clear single item -- scope is never inferred silently -- then announces the artifact it's about to produce. For a single outcome: assembles the crew and shows the glass-box Crew Manifest for approval (tasks may carry `owns`/`frozen`/`forbiddenActions` fences and the manifest an overall `mergeDisposition`); Approve & run chains into `/muster:go` in-session, Adjust loops the router, Cancel stops. A confirmed backlog scope delegates to `/muster:plan-backlog` for the batch form. |
-| Go | `/muster:go <outcome \| backlog text>` | Hands-off entry point: the same scope detection and confirm as Plan, then -- for a single outcome -- plans and runs end to end: branch, route, run waves, commit per wave, present the merge. Stops only for the scope confirmation, the merge decision, or an escalation. A confirmed backlog scope delegates to `/muster:go-backlog`. |
-| Plan-backlog | `/muster:plan-backlog <backlog ref \| raw intent>` | The declared-scope batch planner: routes every item in a backlog up front and renders ONE batch plan (per-item crew summaries, run order, cross-item conflict flags), stopping for approval before anything runs. Given a raw intent instead of an existing backlog ref, it decomposes the intent into backlog items behind a capture-style approval gate first. Approve & clear chains into `/muster:go-backlog`. |
-| Go-backlog | `/muster:go-backlog <backlog ref>` | The batch clearer. Plain backlogs run sequentially. An annotated `{id}`/`{deps}` backlog builds and reviews every ready item in dependency waves, concurrently when the runtime can dispatch safely, then performs disposition/integration in emitted order after the wave barrier. It has one attended stop at the end; an escalated item never aborts the batch. |
+| Plan | `/muster:plan <outcome \| backlog text>` | Approve-first entry point: confirms outcome-vs-backlog scope, shows the glass-box crew manifest, then stops for Approve & run / Adjust / Cancel. A confirmed backlog scope hands off to Plan-backlog. |
+| Go | `/muster:go <outcome \| backlog text>` | Hands-off entry point: the same scope confirm as Plan, then runs the full lifecycle unattended (branch, route, waves, merge) and stops only for the merge decision or an escalation. |
+| Plan-backlog | `/muster:plan-backlog <backlog ref \| raw intent>` | Approve-first batch planner: routes every backlog item up front into one batch plan and stops for approval; Approve & clear hands off to Go-backlog. |
+| Go-backlog | `/muster:go-backlog <backlog ref>` | The batch clearer: runs every ready item to disposition, sequentially or in dependency waves when annotated, with one attended stop at the end. |
 | Diagnose | `/muster:diagnose <symptom>` | Failure-first bug fix: reproduce, find root cause, fix, add a regression test, verify. No symptom-patching. |
 | Audit | `/muster:audit [path]` | Breadth-first whole-codebase review and fix across six dimensions (seven when the project builds prompts or agents), then fixes everything with tests and verifies. |
 | Design | `/muster:design <action>` | Resolve canonical `DESIGN.md` context and digest receipts, initialize it with an attended hold, inspect bounded design evidence/provider state, or run one of 23 pinned design workflows. |
@@ -167,6 +93,8 @@ node scripts/chatgpt-work-native-probe.mjs --finalize-cleanup cleanup.json \
 | Init | `/muster:init [dir]` | Prepare a repository profile and receipt, hand native instruction work to the active runtime, and finalize only after positive evidence or an acknowledged unavailable handoff. |
 
 `/muster:run`, `/muster:autopilot`, and `/muster:sprint` still work: each prints a one-line heads-up, then runs its replacement (`plan`, `go`, and `go-backlog`, respectively) unchanged. Deprecated as of 2026-07-17 and retiring in muster 0.7.0 -- migrate to the replacement verb before then; behavior stays unchanged for the rest of the window.
+
+The mechanics behind this table, including the approval-gate details, task fences (`owns`/`frozen`/`forbiddenActions`), the manifest's `mergeDisposition`, and the wave-mode schedule, are documented in the [mode reference](https://adnova-group.github.io/muster/reference/modes).
 
 Design mode's context resolution, attended initialization, bounded detector, provider contract, and complete workflow list are documented in the [Design reference](https://github.com/Adnova-Group/muster/blob/main/docs/design.md).
 

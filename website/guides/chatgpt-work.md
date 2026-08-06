@@ -2,7 +2,7 @@
 
 This is Muster's **private/local, proof-gated** ChatGPT Work integration lane. Plugins are available in ChatGPT Work on the web and in the ChatGPT desktop app when ChatGPT → Work is selected. Codex Desktop is a separate product surface; Work does not inherit Codex configuration, skills, hooks, MCP servers, or `config.toml`. A configured connection, successful tool scan, or assistant claim is not support proof; the native invocation contract below must pass in the active Work host.
 
-The MCP implementation is neutral and adapter-based: `mcp/server.mjs` is the shared core, `mcp/chatgpt-work-server.mjs` is the Work adapter, and `cowork/chatgpt-work-server.mjs` is only a compatibility shim for source-checkout callers. Generated Work plugins still expose the public `runtime/chatgpt-work-server.mjs` command.
+The MCP implementation is neutral and adapter-based: `mcp/server.mjs` is the shared core, `mcp/chatgpt-work-server.mjs` is the Work adapter, and `cowork/chatgpt-work-server.mjs` is only a compatibility shim for source-checkout callers. Generated Work plugins still expose the public `runtime/chatgpt-work-server.mjs` command. Codex and Work bundles build their explicit adapters directly; they do not string-rewrite Cowork source.
 
 ## Support boundary
 

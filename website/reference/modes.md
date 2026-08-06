@@ -47,6 +47,8 @@ Then it detects, routes, and shows the glass-box crew manifest plus the plan, an
 /muster:plan Add rate limiting to the public API with tests
 ```
 
+A task in the manifest may declare `owns`/`frozen` scope fences and a fixed-vocabulary `forbiddenActions` list; the manifest itself may declare an overall `mergeDisposition` (`merge-local`/`merge-push`/`pr`/`keep`) that Go later executes without asking. See the [architecture reference](/reference/architecture) for the fence and disposition mechanics.
+
 Plan and Go both accept a GitHub issue reference (a bare number, `#123`, or an issues URL) as the outcome.
 
 ### Backlog scope

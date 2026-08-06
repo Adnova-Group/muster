@@ -31,15 +31,18 @@ The shipped source of truth is `website/.vitepress/theme/custom.css`.
 
 | Token | Light | Dark | Purpose |
 | --- | --- | --- | --- |
-| Brand primary | `#5b4bd6` | `#9b8cff` | Links, focus accents, primary actions |
+| Brand primary | `#5b4bd6` | `#9b8cff` | Links, focus accents, primary actions, hero name text |
 | Brand active | `#6d5ce7` | `#8978ff` | Hover and selected states |
 | Brand deep | `#4f3fc4` | `#7565f0` | Pressed states and strong borders |
-| Gradient partner | `#41b3ff` | `#41b3ff` | Mark and hero-name gradient |
+| Gradient partner | `#41b3ff` | `#41b3ff` | Mark asset and hero-image glow (decorative only) |
 | Soft surface | `rgba(109, 92, 231, 0.14)` | `rgba(155, 140, 255, 0.16)` | Tinted panels and icon fields |
 
 All foreground/background pairs must meet WCAG 2.2 AA contrast. Gradients are decorative accents,
-not text backgrounds for essential copy. Focus indicators use the primary color plus sufficient
-offset to remain visible in both themes.
+not text backgrounds for essential copy: the hero name renders in the solid, theme-aware brand
+primary color (6.14:1 light, 6.20:1 dark against the page background) rather than the brand
+active/gradient-partner gradient, which stays confined to the decorative mark asset and the
+blurred hero-image glow. Focus indicators use the primary color plus sufficient offset to remain
+visible in both themes.
 
 ## Layout and responsive behavior
 

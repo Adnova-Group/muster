@@ -5,8 +5,13 @@
   --vp-c-brand-3: #4f3fc4;
   --vp-c-brand-soft: rgba(109, 92, 231, 0.14);
 
-  --vp-home-hero-name-color: transparent;
-  --vp-home-hero-name-background: linear-gradient(120deg, #6d5ce7 30%, #41b3ff);
+  /* WCAG 2.2 AA: the hero name is essential copy, so it takes a solid, theme-aware
+     brand color instead of the decorative gradient (DESIGN.md's own rule: gradients
+     are accents, not text backgrounds for essential copy). --vp-c-brand-1 already
+     resolves per theme (light #5b4bd6, dark #9b8cff), each clearing 4.5:1 against
+     its page background -- see test/hero-name-contrast.test.js. */
+  --vp-home-hero-name-color: var(--vp-c-brand-1);
+  --vp-home-hero-name-background: transparent;
 
   --vp-home-hero-image-background-image: linear-gradient(
     120deg,

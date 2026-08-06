@@ -135,7 +135,6 @@ const HOOK_STATE_HEADER = /^\s*\[hooks\.state\.((?:"(?:[^"\\]|\\.)*")|(?:'[^']*'
 const HOOK_STATE_KEY = /^(.*):([a-z][a-z0-9_]*):(\d+):(\d+)$/;
 
 
-
 function parseConfigTomlTrustSections(text) {
   const { lines, endings } = splitTomlLines(text);
   const sections = [];

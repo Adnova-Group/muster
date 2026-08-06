@@ -1,4 +1,4 @@
-# codex-install.js's managed-scope lock vs codex-lock.js's withCodexFileLock: divergence record
+# codex-install-scope-lock.js's managed-scope lock vs codex-lock.js's withCodexFileLock: divergence record
 
 - **Status:** Accepted — partial unification, full unification deferred pending a semantics decision
 - **Date:** 2026-08-04
@@ -7,6 +7,19 @@
   criteria: at least 250 duplicated lines deleted, 0 behavior changes across lock acquisition, stale
   recovery, quarantine, and rollback fixtures; install and uninstall suites green."
 - **Driven by:** `codex-install-lock-unification`
+
+> **Coordinate refresh (2026-08-06):** `codex-install.js` has been split further since this record
+> was written on 2026-08-04. The scope-registry lock's own coordination functions discussed below
+> (`parseScopeLock`, `staleScopeLock`, `assertPrivateScopeRetirementDirectory`, `acquireScopeLock`,
+> `recoverStaleScopeLock`, `retireOwnedScopeLock`, `withScopeRegistryTransaction`, and the
+> `pause`/`sameInode` import this item's own dedup added) now live in
+> `src/codex-install-scope-lock.js`, not `codex-install.js` -- the title above and every attribution
+> below have been updated to match. Every code coordinate has been re-derived at current HEAD by
+> symbol lookup (`rg`) and, where practical, switched from a raw line number to a file + symbol-name
+> citation so it survives the next move; the original `3592 → 3590` net-line-count claim is kept
+> below as a historical fact about the 2026-08-04 landing rather than restated as a live coordinate,
+> since the code it measured no longer lives in that file at all. The divergence analysis and the
+> decision itself are unchanged by this refresh.
 
 ## Conclusion
 
@@ -17,9 +30,10 @@ implementations are deliberately, not accidentally, different protocols — each
 test suite pinning the exact points where they diverge. The safe subset actually landed in this item
 is a 2-line, zero-risk dedup: `sameInode` (byte-identical) and `pause` (functionally identical,
 differing only in its parameter name) are now exported from `codex-lock.js` and imported by
-`codex-install.js` instead of being duplicated
-(`src/codex-install.js` net -2 lines: 3592 → 3590). Verbatim counts confirming zero behavior change
-are in **Verification** below.
+`codex-install.js`'s scope lock instead of being duplicated (`src/codex-install.js` net -2 lines:
+3592 → 3590, as measured at this item's 2026-08-04 landing -- see the coordinate-refresh note above:
+that import has since relocated, unchanged, to `src/codex-install-scope-lock.js`). Verbatim counts
+confirming zero behavior change are in **Verification** below.
 
 ## The six divergence points
 
@@ -28,7 +42,7 @@ change. Each point below is load-bearing: swapping it out for `withCodexFileLock
 turn a currently-passing, currently-green test red.
 
 **1. Corruption handling is fail-closed vs fail-open.**
-`codex-install.js`'s `parseScopeLock` throws immediately (`Codex managed-scope lock is invalid`) on
+`codex-install-scope-lock.js`'s `parseScopeLock` throws immediately (`Codex managed-scope lock is invalid`) on
 malformed JSON or a malformed record, aborting the whole install with nothing written. Asserted by
 `test/codex-install-scopes.test.js:250-253` (the `"not-json\n"` fixture: install rejects with
 `/lock.*invalid|invalid.*lock/i`, and no `.codex` directory or manifest is ever created).
@@ -37,7 +51,7 @@ logic decide later — fail-open, eventually reclaimed once the age threshold pa
 convert an immediate, loud abort into a silent, delayed reclaim.
 
 **2. Live-owner hard expiry is the opposite design choice.**
-`codex-install.js`'s `staleScopeLock` enforces a hard cutoff (`age >= SCOPE_LOCK_MAX_STALE_MS`,
+`codex-install-scope-lock.js`'s `staleScopeLock` enforces a hard cutoff (`age >= SCOPE_LOCK_MAX_STALE_MS`,
 15 minutes) that reclaims even a live, correctly-identified owner once the lock is old enough.
 Exercised by `test/codex-install-scopes.test.js:341-361`, the `"hard-expiry"` case in `"Codex
 reclaims forged and long-lived live-PID recovery sentinels"`: a 20-minute-old `.recover` sentinel
@@ -46,14 +60,16 @@ owned by the test's own live `process.pid` with no recorded `processIdentity` is
 `test/codex-lock.test.js:67`, `"withCodexFileLock never reclaims an exact live owner solely because
 maxStaleMs elapsed"`. (`maxStaleMs` is accepted as an option but is not read inside `lockIsStale`,
 which only branches on `staleMs`, liveness, and identity match.) `withCodexFileLock`'s direct
-importers are `src/chatgpt-work-install.js`, `src/codex-release.js`, and `src/fs-safe.js`; Kimi
+importers are still exactly `src/chatgpt-work-install.js`, `src/codex-release.js`, and
+`src/fs-safe.js` (`codex-install-scope-lock.js` imports only `pause`/`processAlive`/
+`processStartIdentity`/`sameInode` from `codex-lock.js`, never `withCodexFileLock` itself); Kimi
 install consumes it transitively through `src/fs-safe.js`'s `withFileMutationLock` (`src/kimi-install.js`
-imports `withFileMutationLock` from `./fs-safe.js`, which itself calls `withCodexFileLock` at
-`src/fs-safe.js:434`). Changing `withCodexFileLock`'s core staleness rule to accommodate the scope
-lock's hard cap would regress all of those callers, not just codex-install.js.
+imports `withFileMutationLock` from `./fs-safe.js`, which itself calls `withCodexFileLock` from
+inside its own body). Changing `withCodexFileLock`'s core staleness rule to accommodate the scope
+lock's hard cap would regress all of those callers, not just codex-install-scope-lock.js.
 
 **3. The retirement-directory mode check has an escape hatch the shared primitive lacks.**
-`codex-install.js`'s `assertPrivateScopeRetirementDirectory` accepts an optional `modeCapability`
+`codex-install-scope-lock.js`'s `assertPrivateScopeRetirementDirectory` accepts an optional `modeCapability`
 callback (default `defaultScopeRetirementModeCapability`) that lets the strict-0700 requirement be
 skipped on filesystems that cannot enforce POSIX mode bits, plus an `expectedStat` /
 `ownerChanged` / `directoryChanged` re-pin check absent from `codex-lock.js`'s
@@ -86,29 +102,36 @@ and still satisfy these five tests' exact checkpoint assertions, because the che
 do not exist in `withCodexFileLock`'s protocol.
 
 **6. Uninstall does not have a separate duplicated retirement path.**
-The survey evidence for this item flagged `runCodexUninstall` (`src/codex-install.js:3445-3590`) as
-hand-rolling "its own scope-retirement calls." On inspection this is not a second, duplicated
-implementation: `runCodexUninstall` calls the same shared `withScopeRegistryTransaction(home,
-uninstallScope)` that `runCodexInstall` calls (`src/codex-install.js:3578`, mirroring
-`src/codex-install.js:2870`). There is no additional mechanical swap available on the uninstall side
-independent of the install-side unification question above.
+The survey evidence for this item flagged `runCodexUninstall` (then `src/codex-install.js:3445-3590`;
+`runCodexUninstall` is still exported from `src/codex-install.js` today, running from its
+`export async function runCodexUninstall` declaration to the file's end) as hand-rolling "its own
+scope-retirement calls." On inspection this is not a second, duplicated implementation:
+`runCodexUninstall` calls the same shared `withScopeRegistryTransaction` (now exported by
+`src/codex-install-scope-lock.js`) that `runCodexInstall` calls — both call sites still live directly
+inside their own function bodies in `src/codex-install.js`, mirroring each other. There is no
+additional mechanical swap available on the uninstall side independent of the install-side
+unification question above.
 
 ## Landed change (this item)
 
 `sameInode` (`src/codex-lock.js:61`) is byte-identical to codex-install.js's private
-`sameScopeLockInode`. `pause` (`src/codex-lock.js:6`) is functionally identical to codex-install.js's
-private `pause` but not byte-identical: codex-lock.js's parameter is named `ms`, codex-install.js's
-was named `milliseconds` — same body (`new Promise(resolve => setTimeout(resolve, <param>))`), same
-behavior, different parameter name. Both are now `export`ed from `codex-lock.js` and imported into
-`codex-install.js` (`sameInode` aliased to `sameScopeLockInode` at the import so all eight existing
-call sites are untouched):
+`sameScopeLockInode` as it stood at this item's 2026-08-04 landing. `pause` (`src/codex-lock.js:6`)
+is functionally identical to codex-install.js's private `pause` but not byte-identical:
+codex-lock.js's parameter is named `ms`, codex-install.js's was named `milliseconds` — same body
+(`new Promise(resolve => setTimeout(resolve, <param>))`), same behavior, different parameter name.
+Both were `export`ed from `codex-lock.js` and imported at that landing (`sameInode` aliased to
+`sameScopeLockInode` at the import so all eight existing call sites were untouched):
 
 ```js
 import { pause, processAlive, processStartIdentity, sameInode as sameScopeLockInode } from "./codex-lock.js";
 ```
 
-This is the only change applied. It is a pure name/import change over two identical function
-bodies — no protocol behavior moves.
+That import line is unchanged today, but its file is not: a later split carved the scope lock's
+entire coordination implementation out of `codex-install.js` into `src/codex-install-scope-lock.js`,
+and this is the only import from `codex-lock.js` that file now makes -- `sameScopeLockInode`'s 8
+call sites and `pause`'s 1 call site moved with it, counts unchanged. This dedup was the only change
+applied at the time. It is a pure name/import change over two identical function bodies — no
+protocol behavior moves.
 
 ## Two paths to revisit full unification
 
@@ -119,12 +142,15 @@ not a mechanical refactor:
 Generalize `codex-lock.js`'s low-level, protocol-agnostic helpers — `assertPrivateRetirementDirectory`
 (add an optional `modeCapability` / `expectedStat` parameter, defaulting to today's unconditional
 strict-0700 behavior so `withCodexFileLock`'s own callers are unaffected), `privateRetirement`,
-`removeRetirement` — and export them for `codex-install.js`'s scope lock to call directly, while
-`codex-install.js` keeps owning its own coordination-level functions (`acquireScopeLock`,
-`recoverStaleScopeLock`, `retireOwnedScopeLock`, the `.recover` sentinel, the public hook seams).
-This does not touch `withCodexFileLock`'s staleness or corruption semantics at all, so divergence
-points 1, 2, and 5 above are preserved unchanged. Realistic yield: on the order of 60-120 more lines
-removed from `codex-install.js`, still short of 250.
+`removeRetirement` — and export them for `codex-install-scope-lock.js`'s scope lock to call
+directly, while that module (split out of `codex-install.js` since this ADR was written; see the
+coordinate-refresh note above) keeps owning its own coordination-level functions
+(`acquireScopeLock`, `recoverStaleScopeLock`, `retireOwnedScopeLock`, the `.recover` sentinel, the
+public hook seams). This does not touch `withCodexFileLock`'s staleness or corruption semantics at
+all, so divergence points 1, 2, and 5 above are preserved unchanged. Realistic yield: on the order
+of 60-120 more lines removed from `codex-install-scope-lock.js` (the ≥250-line target below was
+originally scoped against `codex-install.js`'s total size at this ADR's 2026-08-04 landing, before
+the code it targeted moved to its own file).
 
 **B. An explicit protocol-semantics change item.**
 Pick one behavior and change it deliberately, with its own dispatch and sign-off — e.g. drop the
@@ -181,7 +207,8 @@ authorized by this item's "0 behavior changes" success criterion.
 
 ## Consequences
 
-- `src/codex-install.js`'s managed-scope lock remains its own, still-owned implementation (as
+- `src/codex-install-scope-lock.js`'s managed-scope lock (split out of `codex-install.js` since this
+  ADR was written) remains its own, still-owned implementation (as
   `test/codex-install-scopes.test.js:281-284` already documented before this item started), not a
   thin wrapper over `withCodexFileLock`.
 - No functional/behavioral code changes beyond the export rename; both touched suites and the

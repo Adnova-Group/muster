@@ -130,6 +130,15 @@ async function verifyDeclarationOwnershipSnapshot(expected, manifestPath, config
 
 const profileFiles = async root => (await readdirSafe(root)).filter(name => name.endsWith(".toml")).sort();
 
+// Defense in depth (arbitrary-write containment) behind generateCodexProfiles'
+// manifest-id guard: every profile filename here is one join() away from
+// becoming a write destination under `dir`. generateCodexProfiles already
+// rejects unsafe manifest ids at the trust boundary and profileFiles only
+// yields readdir basenames, but re-assert -- BEFORE any safeExists probe or
+// atomicWriteSafe touches it -- that each name is a bare `<id>.toml` resolving
+// back inside `dir`. A traversing name must never read or write outside
+// agentsDir. Mirrors validateManagedFiles' basename/containment shape.
+
 export function assertContainedProfiles(files, dir) {
   const base = resolve(dir);
   for (const file of files) {

@@ -134,6 +134,46 @@ const HOOK_STATE_HEADER = /^\s*\[hooks\.state\.((?:"(?:[^"\\]|\\.)*")|(?:'[^']*'
 
 const HOOK_STATE_KEY = /^(.*):([a-z][a-z0-9_]*):(\d+):(\d+)$/;
 
+// -- config.toml [hooks.state] trust-cache reconciliation --------------------
+//
+// Codex records a permanent trust decision per hook definition in the
+// shared config.toml under `[hooks.state."<hooksJsonPath>:<event>:<matcher
+// index>:<hook index>"]` (see docs/research/codex-cli.md section 4.1 and the
+// real fixture inspected while diagnosing codex-hook-bombardment). Nothing
+// prunes it as scopes are deleted or case-duplicated -- mirroring
+// reconcileScopeRegistryEntries' own justification (codex-install-shared.js),
+// a dead or duplicate scope keeps a LIVE trust-cache entry (and, per that
+// research doc, a live hook-firing source) forever. parseConfigTomlTrustSections
+// below (with reconcileConfigTomlHookState as its pruning counterpart further
+// down this file) is a scoped, hand-rolled editor in codex-thread-limits.js's
+// spirit: it recognizes exactly the one table shape above and passes every
+// other line through byte-for-byte; it never needs a general TOML parser
+// because it only ever PRUNES whole sections Codex itself already wrote,
+// never creates new ones. Two invariants here are PoC-proven, not just
+// asserted:
+//
+// -- A `[[...]]` array-of-tables header (e.g. an
+//    `[[mcp_servers.*.env_http_headers]]` block) ends a section's span
+//    exactly like a `[...]` table header does -- both set `header.header`
+//    below, and either one closes whatever section is currently open --
+//    codex-hook-bombardment review iteration 1 PoC-proved that omitting this
+//    let a pruned section's span swallow (and delete) an adjacent array-of-
+//    tables block it never owned.
+//
+// -- `[projects."<projectRoot>"]` is Codex's own trusted-directory record
+//    (see docs/research/codex-cli.md section 4.1) gating the whole .codex
+//    layer for that project -- muster never created it and cannot reliably
+//    attribute it as muster-owned, so this editor never touches it at all.
+//    Only a `HOOK_STATE_HEADER` match below ever assigns `current`, so a
+//    `[projects...]` header closes whatever section preceded it (per the
+//    invariant above) but is never itself tracked as a section -- it can
+//    never end up in `state.sections` and so can never be pruned. (Fix
+//    iteration 1: a prior revision pruned the paired project-trust entry
+//    alongside a pruned project scope and was PoC-proven to revoke a user's
+//    deliberate trust, plus any of that entry's non-muster keys, on an
+//    ordinary uninstall of a still-existing project.) A leftover trust
+//    record is harmless; revoking a user's trust decision muster never made
+//    is not.
 
 function parseConfigTomlTrustSections(text) {
   const { lines, endings } = splitTomlLines(text);
@@ -234,8 +274,9 @@ export function ownedHookStateKeys(config, hookGroups) {
 // file left for any other tool to still depend on), or it is the exact same
 // physical hooks.json as its kept survivor under a different on-disk casing
 // -- so it keeps the original whole-path prune, unchanged from before this
-// fix. `[projects."<root>"]` is never inspected or touched at all (see this
-// section's header comment).
+// fix. `[projects."<root>"]` is never inspected or touched at all --
+// parseConfigTomlTrustSections above never tracks a `[projects...]` header
+// as a section in the first place (see its comment for why).
 //
 // A KEPT entry (present in `keptEntries`) with `ownedHookStateKeys` set is a
 // second, narrower case (codex-hook-scope-collapse): `muster install codex`
@@ -278,8 +319,10 @@ export function reconcileConfigTomlHookState(text, registeredEntries, keptEntrie
   }
   state.endings = state.endings.filter((_, index) => !remove[index]);
   state.lines = state.lines.filter((_, index) => !remove[index]);
-  // prunedProjects is always empty: [projects] is never touched (see above).
-  // Kept in the return shape for API stability with existing callers.
+  // prunedProjects is always empty: parseConfigTomlTrustSections never treats
+  // a `[projects...]` header as a trackable section (see its comment above),
+  // so there is nothing here to prune. Kept in the return shape for API
+  // stability with existing callers.
   return { text: renderConfigTomlTrustSections(state), prunedHookState, prunedProjects: [], parseOk: true };
 }
 

@@ -521,7 +521,7 @@ export async function prepareCodexInstall({ scope, dryRun, cwd, inventoryCwd, ho
 // etc.). Reading/writing `ctx.x` instead of a bare `x` is the only mechanical
 // change inside each moved block; no logic, branch, or ordering changed.
 
-async function beginCodexInstallContext({ scope = "project", dryRun = false, cwd = process.cwd(), home = homedir(), repoRoot, execFile, strictConfigRunner, runtimeIdentity, hookInventory, scopeLockOptions, nodeExecPath = process.execPath } = {}) {
+async function beginCodexInstallContext({ scope = "project", dryRun = false, cwd = process.cwd(), home = homedir(), repoRoot, execFile, strictConfigRunner, runtimeIdentity, hookInventory, scopeLockOptions, pluginCacheOptions, nodeExecPath = process.execPath } = {}) {
   const inventoryCwd = resolve(cwd);
   cwd = await codexProjectRoot(cwd);
   const executor = execFile || execFileDefault;
@@ -535,14 +535,25 @@ async function beginCodexInstallContext({ scope = "project", dryRun = false, cwd
   }
   const prepared = await prepareCodexInstall({ scope, dryRun, cwd, inventoryCwd, home, repoRoot, execFile: executor, runtimeIdentity: identity, hookInventory, allowInjected: Boolean(execFile), nodeExecPath });
   const { files, profileContents, declarations, distributionRoot, pluginCacheSourceRoot, dir, manifestPath, declarationConfigPath, declarationOwnership, threadLimitConfigPath, threadLimitManifestPath, packageVersion, canonicalUserExpected, hooks, staleFiles, present, planned } = prepared;
+  // pluginCacheOptions.forceStaging is a test-only reachability opt-in
+  // (2026-08-04 coverage audit): every runCodexInstall caller with an
+  // injected execFile -- mocked test or not -- otherwise skips the entire
+  // plugin-cache publish/rollback/verify lifecycle below, since that path was
+  // gated on a genuinely PATH-resolved identity. forceStaging only widens
+  // `pluginCacheReachable` (whether stagedPluginCachePath gets populated at
+  // all); trustedPluginCacheTree's heavier trusted-source projection check
+  // stays tied to a real resolved identity exactly as before, so forceStaging
+  // cannot make a mocked execFile's claimed plugin source trusted. Undefined
+  // (the default): zero behavior change.
+  const pluginCacheReachable = Boolean(identity && !execFile) || Boolean(pluginCacheOptions?.forceStaging);
   const trustedPluginCacheTree = present && identity && !execFile
     ? await assertRegularTree(pluginCacheSourceRoot)
     : null;
   return {
-    scope, dryRun, cwd, home, execFile, strictConfigRunner, hookInventory, scopeLockOptions, inventoryCwd, executor, identity,
+    scope, dryRun, cwd, home, execFile, strictConfigRunner, hookInventory, scopeLockOptions, pluginCacheOptions, inventoryCwd, executor, identity,
     files, profileContents, declarations, distributionRoot, pluginCacheSourceRoot, dir, manifestPath, declarationConfigPath,
     declarationOwnership, threadLimitConfigPath, threadLimitManifestPath, packageVersion, canonicalUserExpected, hooks,
-    staleFiles, present, planned, trustedPluginCacheTree,
+    staleFiles, present, planned, trustedPluginCacheTree, pluginCacheReachable,
     originals: undefined, changed: undefined, written: undefined,
     activationProofStart: undefined, activationTransactionStable: true,
     publishedConfigCandidates: new Map(), configCandidates: new Map(), configCandidateSources: new Map(),
@@ -838,7 +849,7 @@ async function validateAndPublishStrictCodexConfig(ctx) {
       const finalShared = { exists: true, bytes: registered.bytes, dev: null, ino: null };
       candidateSnapshots.set(ctx.threadLimitConfigPath, finalShared);
       ctx.configCandidates.set(ctx.threadLimitConfigPath, registered.bytes);
-      if (ctx.identity && !ctx.execFile) {
+      if (ctx.pluginCacheReachable) {
         ctx.stagedPluginCachePath = join(ctx.pluginStagingHome, "plugins", "cache", "muster", "muster", ctx.packageVersion);
         await assertPrivatePluginCache(ctx.stagedPluginCachePath, ctx.packageVersion, {
           sourceRoot: ctx.pluginCacheSourceRoot, sourceTree: ctx.trustedPluginCacheTree
@@ -856,7 +867,7 @@ async function validateAndPublishStrictCodexConfig(ctx) {
   if (ctx.stagedPluginCachePath) {
     ctx.publishedPluginCache = await publishStagedPluginCache(
       ctx.stagedPluginCachePath, codexHome(ctx.home), ctx.packageVersion,
-      ctx.pluginCacheSourceRoot, ctx.trustedPluginCacheTree
+      ctx.pluginCacheSourceRoot, ctx.trustedPluginCacheTree, ctx.pluginCacheOptions
     );
     ctx.stagedPluginCachePath = null;
   }
@@ -886,7 +897,7 @@ async function validateAndPublishStrictCodexConfig(ctx) {
       throw concurrentConfigError(`Codex config writer changed the retired baseline before the commit point: ${path}; concurrent bytes will be restored`);
     }
   }
-  await verifyPublishedPluginCache(ctx.publishedPluginCache);
+  await verifyPublishedPluginCache(ctx.publishedPluginCache, ctx.pluginCacheOptions);
   for (const [path, receipt] of ctx.publishedConfigCandidates) {
     if (!receipt.retired) continue;
     await retainConfigArtifacts(path, [receipt.retired]);
@@ -895,7 +906,7 @@ async function validateAndPublishStrictCodexConfig(ctx) {
     await rm(ctx.pluginStagingHome, { recursive: true, force: true });
     ctx.pluginStagingHome = null;
   }
-  await verifyPublishedPluginCache(ctx.publishedPluginCache);
+  await verifyPublishedPluginCache(ctx.publishedPluginCache, ctx.pluginCacheOptions);
   for (const configPath of new Set([ctx.threadLimitConfigPath, ctx.declarationConfigPath])) {
     await verifyCodexConfigRetirementReceipt(configPath);
   }
@@ -929,7 +940,7 @@ async function publishCodexConfigTransaction(ctx) {
         rollbackErrors.push(rollbackError);
       }
     }
-    try { await rollbackPublishedPluginCache(ctx.publishedPluginCache); }
+    try { await rollbackPublishedPluginCache(ctx.publishedPluginCache, ctx.pluginCacheOptions); }
     catch (rollbackError) { rollbackErrors.push(rollbackError); }
     ctx.publishedPluginCache = null;
     if (ctx.pluginStagingHome) {

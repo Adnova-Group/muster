@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { decodeTomlQuotedKey } from "./toml-lexer.js";
 
 export const DEFAULT_CODEX_THREAD_LIMITS = Object.freeze({
   max_concurrent_threads_per_session: 12,
@@ -24,16 +25,15 @@ const TOML_KEY_TOKEN = `(?:${TOML_BASIC_KEY}|${TOML_LITERAL_KEY}|${TOML_BARE_KEY
 const INTEGER_TOKEN = "(?:\\+?\\d(?:_?\\d)*|0x[0-9A-Fa-f](?:_?[0-9A-Fa-f])*|0o[0-7](?:_?[0-7])*|0b[01](?:_?[01])*)";
 const MAX_SAFE_BIGINT = BigInt(Number.MAX_SAFE_INTEGER);
 
+// Every `raw` reaching this function was already captured by a regex built
+// from TOML_KEY_TOKEN above (TOML_BASIC_KEY | TOML_LITERAL_KEY | TOML_BARE_KEY),
+// so a quoted raw always satisfies decodeTomlQuotedKey's own (general-purpose,
+// stricter-on-malformed-input) validation too -- there is no live case here
+// where the two decoders' tolerance for a malformed quoted key would diverge.
+// Only the bare-key passthrough stays local to this file: decodeTomlQuotedKey
+// only decodes quoted keys and returns null for a bare identifier.
 function decodeTomlKey(raw) {
-  if (raw.startsWith("'")) return raw.slice(1, -1);
-  if (!raw.startsWith('"')) return raw;
-  return raw.slice(1, -1).replace(
-    /\\(u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8}|.)/g,
-    (_, escape) => {
-      if (escape[0] === "u" || escape[0] === "U") return String.fromCodePoint(Number.parseInt(escape.slice(1), 16));
-      return { '"': '"', "\\": "\\", b: "\b", t: "\t", n: "\n", f: "\f", r: "\r" }[escape];
-    },
-  );
+  return raw.startsWith("'") || raw.startsWith('"') ? decodeTomlQuotedKey(raw) : raw;
 }
 
 const integerValue = raw => {

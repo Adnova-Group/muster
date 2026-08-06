@@ -217,36 +217,6 @@ export async function reconcileScopeRegistryEntries(entries, { lstatFn = lstat, 
   return [...survivors.values()];
 }
 
-// -- config.toml [hooks.state] trust-cache reconciliation --------------------
-//
-// Codex records a permanent trust decision per hook definition in the
-// shared config.toml under `[hooks.state."<hooksJsonPath>:<event>:<matcher
-// index>:<hook index>"]` (see docs/research/codex-cli.md section 4.1 and the
-// real fixture inspected while diagnosing codex-hook-bombardment). Nothing
-// prunes it as scopes are deleted or case-duplicated -- mirroring
-// reconcileScopeRegistryEntries' own justification above, a dead or
-// duplicate scope keeps a LIVE trust-cache entry (and, per that research
-// doc, a live hook-firing source) forever. This is a scoped, hand-rolled
-// editor in codex-thread-limits.js's spirit: it recognizes exactly the one
-// table shape above and passes every other line through byte-for-byte; it
-// never needs a general TOML parser because it only ever PRUNES whole
-// sections Codex itself already wrote, never creates new ones. A `[[...]]`
-// array-of-tables header (e.g. an `[[mcp_servers.*.env_http_headers]]`
-// block) ends a section's span exactly like a `[...]` table header does --
-// codex-hook-bombardment review iteration 1 PoC-proved that omitting this
-// let a pruned section's span swallow (and delete) an adjacent array-of-
-// tables block it never owned.
-//
-// `[projects."<projectRoot>"]` is Codex's own trusted-directory record (see
-// docs/research/codex-cli.md section 4.1) gating the whole .codex layer for
-// that project -- muster never created it and cannot reliably attribute it
-// as muster-owned, so this editor never touches it at all (fix iteration 1:
-// a prior revision pruned the paired project-trust entry alongside a pruned
-// project scope and was PoC-proven to revoke a user's deliberate trust,
-// plus any of that entry's non-muster keys, on an ordinary uninstall of a
-// still-existing project). A leftover trust record is harmless; revoking a
-// user's trust decision muster never made is not.
-
 export async function atomicWriteSafe(path, content) {
   const parent = dirname(path);
   let stagedIdentity = null;
@@ -279,15 +249,6 @@ export const run = (execFile, args, runtimeIdentity, commandOptions = {}) => run
   : execFile("muster:injected-codex-runner", args, { timeout: 30_000, maxBuffer: 4 * 1024 * 1024, ...commandOptions });
 
 export async function runJson(execFile, args, runtimeIdentity, commandOptions) { return JSON.parse((await run(execFile, args, runtimeIdentity, commandOptions)).stdout); }
-
-// Defense in depth (arbitrary-write containment) behind generateCodexProfiles'
-// manifest-id guard: every profile filename here is one join() away from
-// becoming a write destination under `dir`. generateCodexProfiles already
-// rejects unsafe manifest ids at the trust boundary and profileFiles only
-// yields readdir basenames, but re-assert -- BEFORE any safeExists probe or
-// atomicWriteSafe touches it -- that each name is a bare `<id>.toml` resolving
-// back inside `dir`. A traversing name must never read or write outside
-// agentsDir. Mirrors validateManagedFiles' basename/containment shape.
 
 export async function snapshot(originals, changed, path) {
   if (originals.has(path)) return;

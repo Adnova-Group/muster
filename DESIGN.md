@@ -1,9 +1,17 @@
 # Muster design system
 
-This file is the canonical design context for Muster's public documentation website. It governs
-`website/**` and should be consulted before changing any public-facing layout, copy hierarchy,
-visual asset, interaction, or responsive behavior. Product behavior remains authoritative in the
-source and reference documentation; this file defines how that truth is presented.
+This file is Muster's canonical design context for the repository's entire human-facing surface,
+not the documentation website alone. `design status`/`design gate` resolve it at the repository
+root: this project has no monorepo workspaces, so (per `docs/design.md`) "the repository root file
+is inherited" repo-wide rather than scoped to one subtree. It governs the public documentation
+website (`website/**`, the concrete implementation home for the color tokens, layout rules, and
+provenance below), the CLI/TUI output voice, and any other user-visible product text or behavior.
+Consult it before changing public-facing layout, copy hierarchy, visual assets, interaction,
+responsive behavior, or user-facing wording anywhere in the repository. Product behavior remains
+authoritative in the source and reference documentation; this file defines how that truth is
+presented. The CLI's glass-box output voice (`plugin/output-styles/muster.md`: terse, decision-first,
+evidence-backed) already draws on this file's Direction section below rather than inventing
+separate design context, and a future non-website human-facing surface should do the same.
 
 ## Direction
 

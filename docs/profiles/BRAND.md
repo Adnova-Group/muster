@@ -29,8 +29,10 @@ brand rules into the skills themselves.
 - **Primary, deep**: `#4f3fc4`
 - **Soft tint (backgrounds)**: `rgba(109, 92, 231, 0.14)`
 - **Gradient partner (sky)**: `#41b3ff` — the brand gradient runs indigo → sky
-  (`linear-gradient(120deg, #6d5ce7 30%, #41b3ff)`), used for the hero name and a blurred
-  (56px) glass backdrop behind hero art.
+  (`linear-gradient(120deg, #6d5ce7 30%, #41b3ff)`), used for the mark asset and a blurred
+  (56px) glass backdrop behind hero art. Not used on the hero name text: that renders in the solid
+  brand-primary color (WCAG 2.2 AA requires it — a two-stop gradient can't clear 4.5:1 against both
+  the light and dark page background at once).
 - **Dark-mode primary**: `#9b8cff`
 - **Dark-mode accent**: `#8978ff`
 - **Dark-mode deep**: `#7565f0`

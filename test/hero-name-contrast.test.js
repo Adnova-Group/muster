@@ -11,8 +11,12 @@
  * that rule: the hero name now renders in a solid, theme-aware brand color
  * (`--vp-c-brand-1`) instead of the gradient. It recomputes the WCAG 2.2 relative
  * luminance / contrast ratio directly from the shipped CSS custom-property values
- * -- no browser, no build step -- so a future regression (re-attaching a gradient,
- * or drifting the brand-1 hex toward the page background) fails loudly here.
+ * -- no browser, no build step -- so a future regression fails loudly here. Two
+ * regression paths were proven by mutation during review and are guarded explicitly
+ * below rather than left to the happy-path :root read alone: (a) a hardcoded
+ * `background-clip`/`-webkit-text-fill-color` rule added elsewhere in the file,
+ * bypassing the custom properties entirely, and (b) the gradient being reintroduced
+ * only inside the `.dark` block, which a :root-only read would miss.
  */
 
 import { test } from "node:test";
@@ -58,14 +62,29 @@ function contrastRatio(hexA, hexB) {
 
 // --- minimal, targeted CSS custom-property extraction ------------------------------
 
-// Pulls `--name: value;` out of a single `{ ... }` block (either `:root { ... }` or
-// `.dark { ... }`), stopping at the block's own closing brace so declarations from
-// later blocks in the same file never leak in.
+// Pulls the body out of a single `<selector> { ... }` block (e.g. `:root` or `.dark`),
+// walking brace depth from the block's own opening brace so a `}` from a later block
+// -- or a nested rule, should one ever appear here -- can never truncate the match.
+// The lookaround around the selector keeps a bare ".dark" from matching inside some
+// future ".dark-mode"-style selector.
 function extractBlock(css, selector) {
-  const re = new RegExp(`${selector.replace(/\./g, "\\.")}\\s*\\{([\\s\\S]*?)\\}`);
-  const m = css.match(re);
-  if (!m) throw new Error(`Could not find ${selector} block in custom.css`);
-  return m[1];
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const headerRe = new RegExp(`(?<![\\w-])${escaped}(?![\\w-])\\s*\\{`);
+  const header = headerRe.exec(css);
+  if (!header) throw new Error(`Could not find ${selector} block in custom.css`);
+
+  const openBraceIndex = header.index + header[0].length - 1;
+  let depth = 0;
+  let i = openBraceIndex;
+  for (; i < css.length; i++) {
+    if (css[i] === "{") depth++;
+    else if (css[i] === "}") {
+      depth--;
+      if (depth === 0) break;
+    }
+  }
+  if (depth !== 0) throw new Error(`Unbalanced braces reading ${selector} block in custom.css`);
+  return css.slice(openBraceIndex + 1, i);
 }
 
 function extractProp(block, name) {
@@ -74,18 +93,57 @@ function extractProp(block, name) {
   return m ? m[1].trim() : null;
 }
 
-test("hero name is solid text: --vp-home-hero-name-background carries no gradient", async () => {
-  const css = await read("website/.vitepress/theme/custom.css");
-  const rootBlock = extractBlock(css, ":root");
-  const heroNameBackground = extractProp(rootBlock, "vp-home-hero-name-background");
+// Fails if `block` (":root", ".dark", ...) overrides the hero-name tokens with
+// anything that could reintroduce the gradient -- a literal background other than
+// "transparent", or a color that isn't a var() reference to a theme-aware token.
+function assertNoGradientOverride(block, blockLabel) {
+  const bg = extractProp(block, "vp-home-hero-name-background");
+  if (bg !== null) {
+    assert.equal(
+      bg,
+      "transparent",
+      `${blockLabel} overrides --vp-home-hero-name-background with a non-transparent value ` +
+        `(possible reintroduced gradient): ${JSON.stringify(bg)}`,
+    );
+  }
 
-  assert.ok(heroNameBackground, "--vp-home-hero-name-background must be set in :root");
+  const color = extractProp(block, "vp-home-hero-name-color");
+  if (color !== null) {
+    assert.ok(
+      /^var\(--[\w-]+\)$/.test(color),
+      `${blockLabel} overrides --vp-home-hero-name-color with a literal value instead of a ` +
+        `theme-aware var() reference: ${JSON.stringify(color)}`,
+    );
+  }
+}
+
+test("hero name is solid text: no gradient anywhere it could paint the hero name", async () => {
+  const css = await read("website/.vitepress/theme/custom.css");
+
+  // Whole-file guard: the fix relies on VitePress's built-in `.clip` rule reading our
+  // (now transparent) custom properties, never on a hand-rolled clip-text rule in this
+  // file. If one ever gets added here it bypasses every token-level check below, so
+  // rule it out directly.
+  assert.ok(
+    !/background-clip\s*:/i.test(css),
+    "custom.css must not define its own background-clip rule -- the hero name must stay " +
+      "solid text painted through VitePress's default --vp-home-hero-name-* tokens",
+  );
+  assert.ok(
+    !/-webkit-text-fill-color\s*:\s*transparent/i.test(css),
+    "custom.css must not force -webkit-text-fill-color: transparent anywhere -- that is the " +
+      "clip-text mechanism the original gradient-on-hero-name bug depended on",
+  );
+
+  const rootBlock = extractBlock(css, ":root");
+  const darkBlock = extractBlock(css, ".dark");
+  assertNoGradientOverride(rootBlock, ":root");
+  assertNoGradientOverride(darkBlock, ".dark");
+
   assert.equal(
-    heroNameBackground,
+    extractProp(rootBlock, "vp-home-hero-name-background"),
     "transparent",
-    "the hero name is essential copy per DESIGN.md's own rule (gradients are decorative " +
-      "accents, not text backgrounds for essential copy) -- it must not carry a gradient " +
-      `background-clip fill; got ${JSON.stringify(heroNameBackground)}`,
+    "--vp-home-hero-name-background must be explicitly set to transparent in :root",
   );
 });
 
@@ -123,6 +181,22 @@ test("hero name text color clears WCAG AA (4.5:1) against the page background in
     darkRatio >= AA_NORMAL_TEXT_RATIO,
     `dark theme hero name (${darkHex} on ${DARK_PAGE_BG}) measures ${darkRatio.toFixed(2)}:1, ` +
       `below the ${AA_NORMAL_TEXT_RATIO}:1 AA floor`,
+  );
+
+  // DESIGN.md cites these exact numbers in its Color-section prose; keep the doc's
+  // claim from silently drifting away from what the shipped tokens actually compute to.
+  const design = await read("DESIGN.md");
+  const cited = /(\d\.\d{2}):1 light, (\d\.\d{2}):1 dark/.exec(design);
+  assert.ok(cited, "DESIGN.md must cite the hero-name contrast ratios as 'X.XX:1 light, Y.YY:1 dark'");
+  assert.equal(
+    cited[1],
+    lightRatio.toFixed(2),
+    `DESIGN.md cites ${cited[1]}:1 for light theme but the shipped tokens compute to ${lightRatio.toFixed(2)}:1`,
+  );
+  assert.equal(
+    cited[2],
+    darkRatio.toFixed(2),
+    `DESIGN.md cites ${cited[2]}:1 for dark theme but the shipped tokens compute to ${darkRatio.toFixed(2)}:1`,
   );
 });
 

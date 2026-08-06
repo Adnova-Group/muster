@@ -242,6 +242,16 @@ test("detectKimiQuotaFault: matches exactly the signature the 0.30.0 binary clas
   assert.equal(detectKimiQuotaFault("Please recharge to continue."), "recharge your account|please recharge");
   assert.equal(detectKimiQuotaFault("account is in arrears"), "account (?:is )?in arrears");
   assert.equal(detectKimiQuotaFault("your account in arrears"), "account (?:is )?in arrears");
+  // A live 403 `provider.api_error` captured in this session (2026-08-04, kimi
+  // v0.30.0's actual response text): NOT present in the installed binary's own
+  // string table (confirmed via `strings ~/.kimi-code/bin/kimi`) -- this
+  // wording is the upstream provider's raw message, passed through
+  // unclassified rather than mapped onto APIProviderQuotaExhaustedError. Still
+  // an unambiguous quota/balance fault, so muster classifies it the same way.
+  assert.equal(
+    detectKimiQuotaFault("403 You've reached your usage limit for this billing cycle. Your quota will be refreshed in the next cycle."),
+    "reached your usage limit for this billing cycle"
+  );
   // Negative: an ordinary rate-limit 429 is NOT a billing fault -- the binary
   // keeps it on the retryable rate_limit path, and so does muster.
   assert.equal(detectKimiQuotaFault('{"type":"error","code":"rate_limit","message":"429 too many requests"}'), null);

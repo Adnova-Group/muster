@@ -5,7 +5,7 @@
 // text was cut. See docs/research/kimi-code-cli.md sec 8's dated probe note.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFile, mkdir, rm, writeFile, symlink } from "node:fs/promises";
+import { readFile, mkdir, rm, writeFile, symlink, access, constants as fsConstants } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -15,6 +15,7 @@ import {
   captureSessionId, resolveSessionForCwd, formatUsageLine, summarizeItemReceipts,
   UNKNOWN_REASONS
 } from "../src/kimi-receipts.js";
+import { detectKimiQuotaFault, quotaFaultLines } from "../src/kimi-dispatch.js";
 import { trackedMkdtemp as mkdtemp } from "../test-support/helpers.js";
 
 const FIXTURE_SESSION = fileURLToPath(new URL("./fixtures/kimi-session-usage", import.meta.url));
@@ -449,28 +450,198 @@ test("summarizeItemReceipts: a multi-leg item sums its legs, labeled per-leg wit
   assert.match(lines[0], /source=index-newest/);
 });
 
+// --- Live probe classification (fixture-level, hermetic) --------------------
+// Containment for the live probe below: it must distinguish environmental
+// flakiness -- binary absent, a quota/balance fault, a hung process -- from a
+// genuine parse regression, with an explicit skip-with-reason for the former
+// and a real failure for the latter. `hasKimiBinaryOnPath` gates the spawn
+// itself (binary absent -> skip with NO exec call at all: 0 live probes run).
+// `classifyKimiLiveProbeFailure` reuses kimi-dispatch.js's quota-fault
+// machinery (detectKimiQuotaFault/quotaFaultLines) so the /goal exit path and
+// this probe recognize the identical signature. `runKimiLiveSessionIdProbe`
+// wires the two together with injectable exec/hasBinary so both arms are
+// hermetically fixture-tested without ever touching the real PATH or spawning
+// a real process.
+
+// Scan PATH for an executable named `kimi` (POSIX) or `kimi.cmd` (Windows
+// shim) -- mirrors src/cli-resolve.js's injectable PATH-scan convention. Pure
+// read-only existence/executability checks; never spawns anything.
+async function hasKimiBinaryOnPath(env = process.env) {
+  const dirs = (env.PATH || env.Path || "").split(path.delimiter).filter(Boolean);
+  for (const dir of dirs) {
+    try { await access(path.join(dir, "kimi"), fsConstants.X_OK); return true; } catch { /* keep scanning */ }
+    try { await access(path.join(dir, "kimi.cmd")); return true; } catch { /* keep scanning */ } // Windows shim
+  }
+  return false;
+}
+
+// Classify a rejected exec() call from a live `kimi -p` run. Returns a
+// human-readable skip reason for environmental flakiness (binary absent --
+// defense in depth for a TOCTOU race after hasKimiBinaryOnPath already
+// passed; a quota/balance fault; a timed-out/killed child), or null when the
+// failure is NOT environmental -- callers must propagate null as a real
+// failure, never a silent skip.
+function classifyKimiLiveProbeFailure(error) {
+  if (error?.code === "ENOENT") return "kimi binary not on PATH";
+  if (error?.killed) return `kimi -p timed out (killed with ${error.signal ?? "a signal"})`;
+  const quotaSignal = detectKimiQuotaFault(quotaFaultLines(`${error?.stdout ?? ""}\n${error?.stderr ?? ""}`));
+  if (quotaSignal) return `kimi -p failed on a quota/balance fault (matched ${JSON.stringify(quotaSignal)})`;
+  return null;
+}
+
+// Run the live probe through injectable exec/hasBinary so the gating and
+// classification are testable without a real kimi binary or a real spawn.
+// Returns { skip: true, reason } for environmental flakiness, or
+// { skip: false, stdout } when the process produced output to parse -- a
+// malformed stdout from a genuinely responding binary is NOT classified here;
+// it flows back to the caller's own parse assertion, which fails for real.
+async function runKimiLiveSessionIdProbe({ exec, hasBinary, args }) {
+  if (!(await hasBinary())) {
+    return { skip: true, reason: "kimi binary not on PATH" };
+  }
+  let stdout;
+  try {
+    ({ stdout } = await exec("kimi", args));
+  } catch (error) {
+    const reason = classifyKimiLiveProbeFailure(error);
+    if (reason) return { skip: true, reason };
+    throw error; // the binary ran and failed for an unclassified reason -- real
+  }
+  return { skip: false, stdout };
+}
+
+test("hasKimiBinaryOnPath: no PATH entry has kimi -> absent (would gate the spawn)", async () => {
+  assert.equal(await hasKimiBinaryOnPath({ PATH: "/nonexistent/dir-1" + path.delimiter + "/nonexistent/dir-2" }), false);
+});
+
+test("hasKimiBinaryOnPath: an executable named kimi on PATH is present", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "kimi-onpath-"));
+  await writeFile(path.join(dir, "kimi"), "#!/bin/sh\necho ok\n", { mode: 0o755 });
+  assert.equal(await hasKimiBinaryOnPath({ PATH: dir }), true);
+});
+
+test("hasKimiBinaryOnPath: a non-executable file named kimi does not count as present", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "kimi-onpath-noexec-"));
+  await writeFile(path.join(dir, "kimi"), "not executable\n", { mode: 0o644 });
+  assert.equal(await hasKimiBinaryOnPath({ PATH: dir }), false);
+});
+
+test("classifyKimiLiveProbeFailure: ENOENT is a binary-absent skip", () => {
+  assert.equal(classifyKimiLiveProbeFailure({ code: "ENOENT" }), "kimi binary not on PATH");
+});
+
+test("classifyKimiLiveProbeFailure: a killed/timed-out child is a timeout skip", () => {
+  assert.match(classifyKimiLiveProbeFailure({ killed: true, signal: "SIGTERM" }), /timed out \(killed with SIGTERM\)/);
+});
+
+test("classifyKimiLiveProbeFailure: a captured quota/balance fault is a quota skip", () => {
+  // Verbatim shape of the real 403 captured in this session.
+  const error = {
+    code: 1, stdout: "",
+    stderr: "error: failed to run prompt: provider.api_error: 403 You've reached your usage limit for this billing cycle. " +
+      "Your quota will be refreshed in the next cycle. To continue now, purchase extra usage or upgrade your plan.\n"
+  };
+  assert.match(classifyKimiLiveProbeFailure(error), /quota\/balance fault/);
+  assert.match(classifyKimiLiveProbeFailure(error), /reached your usage limit for this billing cycle/);
+});
+
+test("classifyKimiLiveProbeFailure: quota wording ONLY outside the error surface does not count (scoped, as quotaFaultLines rules)", () => {
+  const error = { code: 1, stdout: '{"role":"assistant","content":"please check your account balance"}\n', stderr: "" };
+  assert.equal(classifyKimiLiveProbeFailure(error), null);
+});
+
+test("classifyKimiLiveProbeFailure: an unrelated crash is NOT environmental -- a real failure", () => {
+  assert.equal(classifyKimiLiveProbeFailure({ code: 2, stdout: "", stderr: "TypeError: something genuinely broke\n" }), null);
+});
+
+test("runKimiLiveSessionIdProbe: binary absent skips WITHOUT calling exec (0 live probes run)", async () => {
+  let execCalls = 0;
+  const result = await runKimiLiveSessionIdProbe({
+    exec: async () => { execCalls++; return { stdout: "" }; },
+    hasBinary: async () => false,
+    args: ["-p", "Reply with the single word: ok", "--output-format", "stream-json"]
+  });
+  assert.deepEqual(result, { skip: true, reason: "kimi binary not on PATH" });
+  assert.equal(execCalls, 0);
+});
+
+test("runKimiLiveSessionIdProbe: a quota-fault exec rejection skips with the classified reason", async () => {
+  const quotaError = Object.assign(new Error("Command failed"), {
+    code: 1, stdout: "",
+    stderr: "error: failed to run prompt: provider.api_error: 403 You've reached your usage limit for this billing cycle.\n"
+  });
+  const result = await runKimiLiveSessionIdProbe({
+    exec: async () => { throw quotaError; },
+    hasBinary: async () => true,
+    args: []
+  });
+  assert.equal(result.skip, true);
+  assert.match(result.reason, /quota\/balance fault/);
+});
+
+test("runKimiLiveSessionIdProbe: a timed-out exec rejection skips with the classified reason", async () => {
+  const timeoutError = Object.assign(new Error("Command failed"), { killed: true, signal: "SIGTERM", stdout: "", stderr: "" });
+  const result = await runKimiLiveSessionIdProbe({
+    exec: async () => { throw timeoutError; },
+    hasBinary: async () => true,
+    args: []
+  });
+  assert.equal(result.skip, true);
+  assert.match(result.reason, /timed out/);
+});
+
+test("runKimiLiveSessionIdProbe: a genuine ENOENT race after hasBinary passed still skips (defense in depth)", async () => {
+  const enoent = Object.assign(new Error("spawn kimi ENOENT"), { code: "ENOENT" });
+  const result = await runKimiLiveSessionIdProbe({
+    exec: async () => { throw enoent; },
+    hasBinary: async () => true, // passed, but the binary vanished before spawn
+    args: []
+  });
+  assert.deepEqual(result, { skip: true, reason: "kimi binary not on PATH" });
+});
+
+test("runKimiLiveSessionIdProbe: an unclassified exec rejection propagates as a REAL failure", async () => {
+  const crash = Object.assign(new Error("boom"), { code: 2, stdout: "", stderr: "TypeError: boom\n" });
+  await assert.rejects(
+    () => runKimiLiveSessionIdProbe({ exec: async () => { throw crash; }, hasBinary: async () => true, args: [] }),
+    /boom/
+  );
+});
+
+test("runKimiLiveSessionIdProbe: a responding binary's stdout passes straight through for parsing", async () => {
+  const result = await runKimiLiveSessionIdProbe({
+    exec: async () => ({ stdout: "not json at all\n" }),
+    hasBinary: async () => true,
+    args: []
+  });
+  assert.deepEqual(result, { skip: false, stdout: "not json at all\n" });
+  // Malformed stream-json from a genuinely responding binary is a REAL parse
+  // regression -- captureSessionId returns null here, and the live test below
+  // asserts against /^session_/ on exactly this shape, so it fails for real.
+  assert.equal(captureSessionId(result.stdout), null);
+});
+
 // --- Live probe: the resume_hint shape, pinned against the installed binary --
 // Same opt-in pattern as test/kimi-install.test.js's `kimi doctor config`
 // probe: skipped when no kimi binary is on PATH; everything else in this file
 // stays hermetic. A tiny `kimi -p --output-format stream-json` run must end
 // with a session.resume_hint captureSessionId can parse -- this is the shape
 // the process-lane accounting chain (go.md step 8 / go-backlog.md step 4)
-// depends on.
+// depends on. Environmental flakiness (binary absent, a quota/balance fault,
+// a timeout) is contained above and skips with its classified reason; a
+// genuine parse regression from a responding binary still fails this test.
 test("live probe: captureSessionId parses a session id from a real `kimi -p` stream-json stdout", async (t) => {
   const { execFile: execFileCb } = await import("node:child_process");
   const { promisify } = await import("node:util");
   const execFile = promisify(execFileCb);
-  let stdout;
-  try {
-    ({ stdout } = await execFile(
-      "kimi",
-      ["-p", "Reply with the single word: ok", "--output-format", "stream-json"],
-      { timeout: 180_000, maxBuffer: 16 * 1024 * 1024 }
-    ));
-  } catch (error) {
-    if (error.code === "ENOENT") { t.skip("kimi binary not on PATH"); return; }
-    throw error; // the binary ran and failed -- a real failure
-  }
+
+  const result = await runKimiLiveSessionIdProbe({
+    exec: (cmd, args) => execFile(cmd, args, { timeout: 180_000, maxBuffer: 16 * 1024 * 1024 }),
+    hasBinary: () => hasKimiBinaryOnPath(),
+    args: ["-p", "Reply with the single word: ok", "--output-format", "stream-json"]
+  });
+  if (result.skip) { t.skip(result.reason); return; }
+  const { stdout } = result;
   assert.match(
     captureSessionId(stdout) ?? "",
     /^session_/,

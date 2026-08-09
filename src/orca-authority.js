@@ -17,6 +17,12 @@ const CONCERN_IDS = Object.freeze([
   "commits",
   "remote-execution",
 ]);
+const CONTRACT_KEYS = Object.freeze(["schemaVersion", "contract", "systems", "concerns", "correlation"]);
+const CORRELATION_KEYS = Object.freeze(["policy", "fields", "fixtures"]);
+const CONCERN_KEYS = Object.freeze(["id", "boundary", "correlationFields", "authorities"]);
+const AUTHORITY_KEYS = Object.freeze(["state", "owner", "mutators", "observers", "note"]);
+const FIXTURE_KEYS = Object.freeze(["name", "record"]);
+const CORRELATION_POLICY = "Correlation is observational metadata, never a cross-system mutation grant.";
 
 const field = (name, type, owner, description) => ({
   name,
@@ -148,8 +154,13 @@ const CONCERNS = [
 const CANONICAL_FIELD_DEFINITIONS = CORRELATION_FIELDS.map((entry) => ({ ...entry }));
 const CANONICAL_CONCERN_SHAPE = CONCERNS.map((entry) => ({
   id: entry.id,
+  boundary: entry.boundary,
   correlationFields: [...entry.correlationFields],
-  authorities: entry.authorities.map(({ state, owner }) => ({ state, owner })),
+  authorities: entry.authorities.map((authorityEntry) => ({
+    ...authorityEntry,
+    mutators: [...authorityEntry.mutators],
+    observers: [...authorityEntry.observers],
+  })),
 }));
 
 function deepFreeze(value) {
@@ -166,7 +177,7 @@ export const ORCA_AUTHORITY_CONTRACT = deepFreeze({
   systems: [...SYSTEMS],
   concerns: CONCERNS,
   correlation: {
-    policy: "Correlation is observational metadata, never a cross-system mutation grant.",
+    policy: CORRELATION_POLICY,
     fields: CORRELATION_FIELDS,
     fixtures: [
       { name: "local", record: localRecord },
@@ -192,6 +203,16 @@ function matchesCanonicalField(actual, expected) {
   return isPlainRecord(actual)
     && sameScalarArray(Object.keys(actual).sort(), Object.keys(expected).sort())
     && Object.keys(expected).every((key) => actual[key] === expected[key]);
+}
+
+function validateExactKeys(value, expectedKeys, label, errors) {
+  if (!isPlainRecord(value)) return;
+  for (const key of Object.keys(value)) {
+    if (!expectedKeys.includes(key)) errors.push(`${label}: unknown key ${key}`);
+  }
+  for (const key of expectedKeys) {
+    if (!Object.hasOwn(value, key)) errors.push(`${label}: missing required key ${key}`);
+  }
 }
 
 function validateRecord(record, fields) {
@@ -231,6 +252,9 @@ function validateRecord(record, fields) {
     && (!posix.isAbsolute(record.worktree_path) || posix.normalize(record.worktree_path) !== record.worktree_path)) {
     errors.push("worktree_path must be an absolute normalized worktree_path in the executing runtime");
   }
+  if (typeof record.worktree_path === "string" && /[\u0000-\u001f\u007f]/.test(record.worktree_path)) {
+    errors.push("worktree_path must not contain control characters");
+  }
   if (record.host === "local") {
     if (record.environment_id !== "local") errors.push("local host requires environment_id local");
     if (record.remote_selector !== `path:${record.worktree_path}`) {
@@ -266,6 +290,7 @@ export function validateOrcaAuthorityContract(contract) {
   if (!isPlainRecord(contract)) {
     return { ok: false, errors: ["contract must be a plain object with no inherited metadata"] };
   }
+  validateExactKeys(contract, CONTRACT_KEYS, "contract", errors);
   if (contract.schemaVersion !== 1) errors.push("schemaVersion must be 1");
   if (contract.contract !== "orca-muster-authority-and-correlation") errors.push("contract name is not canonical");
   if (!sameScalarArray(contract.systems, SYSTEMS)) errors.push("systems must be exactly orca and muster");
@@ -278,6 +303,10 @@ export function validateOrcaAuthorityContract(contract) {
   }
   if (!isPlainRecord(contract.correlation)) errors.push("correlation must be a plain object");
   const correlation = isPlainRecord(contract.correlation) ? contract.correlation : {};
+  validateExactKeys(correlation, CORRELATION_KEYS, "correlation", errors);
+  if (correlation.policy !== CORRELATION_POLICY) {
+    errors.push("correlation policy must match the canonical schema-v1 policy");
+  }
   if (!Array.isArray(correlation.fields)) errors.push("correlation fields must be an array");
   if (!Array.isArray(correlation.fixtures)) errors.push("correlation fixtures must be an array");
   const fields = Array.isArray(correlation.fields) ? correlation.fields : [];
@@ -291,7 +320,13 @@ export function validateOrcaAuthorityContract(contract) {
       errors.push(`concern at index ${concernIndex} must be a plain object`);
       continue;
     }
-    if (!concernEntry.boundary) errors.push(`${concernEntry.id}: boundary is required`);
+    validateExactKeys(concernEntry, CONCERN_KEYS, `concern ${concernEntry.id || concernIndex}`, errors);
+    if (concernEntry.id !== canonicalConcern?.id) {
+      errors.push(`concern at index ${concernIndex}: id must remain ${canonicalConcern?.id}`);
+    }
+    if (concernEntry.boundary !== canonicalConcern?.boundary) {
+      errors.push(`${concernEntry.id}: boundary must match the canonical schema-v1 boundary`);
+    }
     if (!sameScalarArray(concernEntry.correlationFields, canonicalConcern?.correlationFields || [])) {
       errors.push(`${concernEntry.id}: correlationFields must match the canonical schema-v1 concern mapping`);
     }
@@ -311,6 +346,12 @@ export function validateOrcaAuthorityContract(contract) {
         errors.push(`${concernEntry.id}: authority at index ${authorityIndex} must be a plain object`);
         continue;
       }
+      validateExactKeys(
+        state,
+        AUTHORITY_KEYS,
+        `${concernEntry.id}/${state.state || authorityIndex}`,
+        errors,
+      );
       if (state.state !== canonicalAuthority?.state) {
         errors.push(`${concernEntry.id}/${state.state}: authority state must remain ${canonicalAuthority?.state}`);
       }
@@ -318,12 +359,14 @@ export function validateOrcaAuthorityContract(contract) {
         errors.push(`${concernEntry.id}/${state.state}: owner must remain ${canonicalAuthority?.owner}`);
       }
       if (!SYSTEMS.includes(state.owner)) errors.push(`${concernEntry.id}/${state.state}: owner must be orca or muster`);
-      if (state.mutators?.length !== 1 || state.mutators[0] !== state.owner) {
-        errors.push(`${concernEntry.id}/${state.state}: only its owner may mutate authoritative state`);
+      if (!sameScalarArray(state.mutators, canonicalAuthority?.mutators || [])) {
+        errors.push(`${concernEntry.id}/${state.state}: mutators array must be exactly canonical; only its owner may mutate authoritative state`);
       }
-      const observer = state.owner === "orca" ? "muster" : "orca";
-      if (!state.observers?.includes(observer)) {
-        errors.push(`${concernEntry.id}/${state.state}: ${observer} must be recorded as an observer`);
+      if (!sameScalarArray(state.observers, canonicalAuthority?.observers || [])) {
+        errors.push(`${concernEntry.id}/${state.state}: observers must be exactly the canonical schema-v1 observers`);
+      }
+      if (state.note !== canonicalAuthority?.note) {
+        errors.push(`${concernEntry.id}/${state.state}: note must match the canonical schema-v1 authority note`);
       }
     }
   }
@@ -339,7 +382,8 @@ export function validateOrcaAuthorityContract(contract) {
       errors.push(`correlation fixture at index ${fixtureIndex} must be a plain object`);
       continue;
     }
-    const result = validateRecord(fixture.record, validFields);
+    validateExactKeys(fixture, FIXTURE_KEYS, `correlation fixture ${fixture.name || fixtureIndex}`, errors);
+    const result = validateRecord(fixture.record, CANONICAL_FIELD_DEFINITIONS);
     for (const error of result.errors) errors.push(`${fixture.name || "unnamed"} fixture: ${error}`);
   }
   const fixtureNames = fixtures.map((fixture) => isPlainRecord(fixture) ? fixture.name : undefined);

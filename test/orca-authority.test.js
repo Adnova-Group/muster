@@ -229,3 +229,82 @@ test("authority validation fails closed for malformed nested schema shapes", () 
     assert.equal(validateOrcaAuthorityContract(contract).ok, false);
   }
 });
+
+test("malformed observer collections fail closed without throwing", () => {
+  for (const observers of [null, {}, "muster", ["muster", "orca"], ["muster", 7]]) {
+    const malformed = clone(ORCA_AUTHORITY_CONTRACT);
+    malformed.concerns[0].authorities[0].observers = observers;
+    assert.doesNotThrow(() => validateOrcaAuthorityContract(malformed));
+    const result = validateOrcaAuthorityContract(malformed);
+    assert.equal(result.ok, false);
+    assert.match(result.errors.join("\n"), /observers.*exactly/i);
+  }
+});
+
+test("schema-v1 policy, boundaries, authority notes, and nested shapes are canonical", () => {
+  const mutations = [
+    ["correlation policy", (value) => { value.correlation.policy = "Metadata grants mutation."; }],
+    ["concern boundary", (value) => { value.concerns[0].boundary = "Either system may remove it."; }],
+    ["authority note", (value) => { value.concerns[0].authorities[0].note = "May mutate after observation."; }],
+    ["authority state", (value) => { value.concerns[0].authorities[0].state = "renamed-state"; }],
+    ["concern id", (value) => { value.concerns[0].id = "renamed-concern"; }],
+    ["mutators array", (value) => { value.concerns[0].authorities[0].mutators = "orca"; }],
+    ["observers array", (value) => { value.concerns[0].authorities[0].observers = "muster"; }],
+    ["correlationFields array", (value) => { value.concerns[0].correlationFields = "worktree_path"; }],
+  ];
+
+  for (const [label, mutate] of mutations) {
+    const value = clone(ORCA_AUTHORITY_CONTRACT);
+    mutate(value);
+    const result = validateOrcaAuthorityContract(value);
+    assert.equal(result.ok, false, label);
+    assert.match(result.errors.join("\n"), /canonical|exactly|array|remain/i, label);
+  }
+});
+
+test("unknown and secret-bearing metadata is rejected at every contract layer", () => {
+  const mutations = [
+    ["contract", (value) => { value.auth_token = "secret"; }],
+    ["correlation", (value) => { value.correlation.private_key = "secret"; }],
+    ["concern", (value) => { value.concerns[0].password = "secret"; }],
+    ["authority state", (value) => { value.concerns[0].authorities[0].credential = "secret"; }],
+    ["fixture wrapper", (value) => { value.correlation.fixtures[0].access_token = "secret"; }],
+    ["fixture record", (value) => { value.correlation.fixtures[0].record.api_key = "secret"; }],
+  ];
+
+  for (const [label, mutate] of mutations) {
+    const value = clone(ORCA_AUTHORITY_CONTRACT);
+    mutate(value);
+    const result = validateOrcaAuthorityContract(value);
+    assert.equal(result.ok, false, label);
+    assert.match(result.errors.join("\n"), /unknown (?:field|key)/i, label);
+  }
+});
+
+test("fixture wrappers and records require their exact plain-object shapes", () => {
+  const missingRecord = clone(ORCA_AUTHORITY_CONTRACT);
+  delete missingRecord.correlation.fixtures[0].record;
+  assert.match(validateOrcaAuthorityContract(missingRecord).errors.join("\n"), /fixture.*record/i);
+
+  const inheritedWrapper = clone(ORCA_AUTHORITY_CONTRACT);
+  inheritedWrapper.correlation.fixtures[0] = Object.assign(
+    Object.create({ auth_token: "secret" }),
+    inheritedWrapper.correlation.fixtures[0],
+  );
+  assert.match(validateOrcaAuthorityContract(inheritedWrapper).errors.join("\n"), /plain object/i);
+
+  const arrayRecord = clone(ORCA_AUTHORITY_CONTRACT);
+  arrayRecord.correlation.fixtures[0].record = [];
+  assert.match(validateOrcaAuthorityContract(arrayRecord).errors.join("\n"), /record must be an object/i);
+});
+
+test("normalized absolute worktree paths reject control characters", () => {
+  for (const control of ["\0", "\n", "\r", "\t", "\u001f", "\u007f"]) {
+    const record = clone(ORCA_AUTHORITY_CONTRACT.correlation.fixtures[1].record);
+    record.worktree_path = `/srv/worktrees/valid${control}suffix`;
+    record.remote_selector = `id:${record.orca_repo_id}::${record.worktree_path}`;
+    const result = validateOrcaCorrelationRecord(record);
+    assert.equal(result.ok, false);
+    assert.match(result.errors.join("\n"), /control characters/i);
+  }
+});

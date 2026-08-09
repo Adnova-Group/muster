@@ -24,6 +24,7 @@ const CONCERN_KEYS = Object.freeze(["id", "boundary", "correlationFields", "auth
 const AUTHORITY_KEYS = Object.freeze(["state", "owner", "mutators", "observers", "note"]);
 const FIXTURE_KEYS = Object.freeze(["name", "record"]);
 const CORRELATION_POLICY = "Correlation is observational metadata, never a cross-system mutation grant.";
+const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f-\u009f]/;
 
 const field = (name, type, owner, description) => ({
   name,
@@ -261,6 +262,17 @@ function validateExactKeys(value, expectedKeys, label, errors) {
   return safeToRead;
 }
 
+function ownEnumerableDataValue(value, key) {
+  try {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    return descriptor && "value" in descriptor && descriptor.enumerable === true
+      ? descriptor.value
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function validateRecord(record, fields) {
   const errors = [];
   if (!record || typeof record !== "object" || Array.isArray(record)) {
@@ -297,14 +309,15 @@ function validateRecord(record, fields) {
     const value = descriptor.value;
     if (entry.type === "array" && !Array.isArray(value)) {
       errors.push(`${name} must be an array`);
-    } else if (entry.type === "array"
-      && (() => {
-        const values = exactArrayValues(value, value.length);
-        return !values?.length || !values.every((item) => typeof item === "string" && item.length > 0);
-      })()) {
-      errors.push(`${name} must contain only non-empty strings`);
+    } else if (entry.type === "array") {
+      const values = types.isProxy(value) ? null : exactArrayValues(value, value.length);
+      if (!values?.length || !values.every((item) => typeof item === "string" && item.length > 0)) {
+        errors.push(`${name} must contain only non-empty strings`);
+      }
     } else if (entry.type === "string" && (typeof value !== "string" || value.length === 0)) {
       errors.push(`${name} must be a non-empty string`);
+    } else if (entry.type === "string" && CONTROL_CHARACTERS.test(value)) {
+      errors.push(`${name} must not contain control characters`);
     }
   }
   if (!safeToRead) return { ok: false, errors };
@@ -315,9 +328,6 @@ function validateRecord(record, fields) {
   if (typeof record.worktree_path === "string"
     && (!posix.isAbsolute(record.worktree_path) || posix.normalize(record.worktree_path) !== record.worktree_path)) {
     errors.push("worktree_path must be an absolute normalized worktree_path in the executing runtime");
-  }
-  if (typeof record.worktree_path === "string" && /[\u0000-\u001f\u007f-\u009f]/.test(record.worktree_path)) {
-    errors.push("worktree_path must not contain control characters");
   }
   if (record.host === "local") {
     if (record.environment_id !== "local") errors.push("local host requires environment_id local");
@@ -480,7 +490,9 @@ function validateAuthorityContract(contract) {
     const result = validateRecord(fixture.record, CANONICAL_FIELD_DEFINITIONS);
     for (const error of result.errors) errors.push(`${fixture.name || "unnamed"} fixture: ${error}`);
   }
-  const fixtureNames = fixtures.map((fixture) => isPlainRecord(fixture) ? fixture.name : undefined);
+  const fixtureNames = fixtures.map((fixture) => isPlainRecord(fixture)
+    ? ownEnumerableDataValue(fixture, "name")
+    : undefined);
   if (!sameScalarArray(fixtureNames, ["local", "remote"])) {
     errors.push("correlation fixtures must be exactly local and remote");
   }

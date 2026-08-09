@@ -383,6 +383,18 @@ test("active proxies fail closed without executing traps", () => {
   );
   assert.equal(validateOrcaAuthorityContract(nested).ok, false);
   assert.equal(trapCalls, 0);
+
+  for (const key of ["changed_files", "verification"]) {
+    const directRecord = clone(ORCA_AUTHORITY_CONTRACT.correlation.fixtures[0].record);
+    directRecord[key] = new Proxy(directRecord[key], handler);
+    assert.equal(validateOrcaCorrelationRecord(directRecord).ok, false);
+
+    const embeddedContract = clone(ORCA_AUTHORITY_CONTRACT);
+    const embeddedRecord = embeddedContract.correlation.fixtures[0].record;
+    embeddedRecord[key] = new Proxy(embeddedRecord[key], handler);
+    assert.equal(validateOrcaAuthorityContract(embeddedContract).ok, false);
+  }
+  assert.equal(trapCalls, 0);
 });
 
 test("canonical arrays reject inherited metadata", () => {
@@ -396,4 +408,29 @@ test("canonical arrays reject inherited metadata", () => {
     { private_key: "secret" },
   );
   assert.equal(validateOrcaAuthorityContract(inheritedObservers).ok, false);
+});
+
+test("fixture accessors fail closed without executing getters", () => {
+  const contract = clone(ORCA_AUTHORITY_CONTRACT);
+  let getterCalls = 0;
+  Object.defineProperty(contract.correlation.fixtures[0], "name", {
+    enumerable: true,
+    get() {
+      getterCalls += 1;
+      return "local";
+    },
+  });
+  assert.equal(validateOrcaAuthorityContract(contract).ok, false);
+  assert.equal(getterCalls, 0);
+});
+
+test("correlation selector fields reject control characters", () => {
+  for (const control of ["\0", "\n", "\r", "\u007f", "\u0085"]) {
+    const record = clone(ORCA_AUTHORITY_CONTRACT.correlation.fixtures[1].record);
+    record.orca_repo_id = `repo${control}forged`;
+    record.remote_selector = `id:${record.orca_repo_id}::${record.worktree_path}`;
+    const result = validateOrcaCorrelationRecord(record);
+    assert.equal(result.ok, false);
+    assert.match(result.errors.join("\n"), /orca_repo_id.*control characters/i);
+  }
 });

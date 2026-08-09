@@ -1,4 +1,5 @@
 import { posix } from "node:path";
+import { types } from "node:util";
 
 // Versioned, executable metadata for Orca–Muster coexistence. This module is
 // deliberately pure: it describes and validates authority; it never calls Orca,
@@ -190,13 +191,14 @@ deepFreeze(CANONICAL_FIELD_DEFINITIONS);
 deepFreeze(CANONICAL_CONCERN_SHAPE);
 
 function isPlainRecord(value) {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value)
+  return Boolean(value && typeof value === "object" && !types.isProxy(value) && !Array.isArray(value)
     && Object.getPrototypeOf(value) === Object.prototype);
 }
 
 function exactArrayValues(actual, expectedLength) {
   try {
-    if (!Array.isArray(actual) || actual.length !== expectedLength) return null;
+    if (!Array.isArray(actual) || types.isProxy(actual)
+      || Object.getPrototypeOf(actual) !== Array.prototype || actual.length !== expectedLength) return null;
     const expectedKeys = [...Array.from({ length: expectedLength }, (_, index) => String(index)), "length"];
     const keys = Reflect.ownKeys(actual);
     if (keys.length !== expectedKeys.length || !keys.every((key) => expectedKeys.includes(key))) return null;

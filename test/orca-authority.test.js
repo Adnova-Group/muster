@@ -358,3 +358,42 @@ test("accessor-backed and proxy observer shapes fail closed without executing ac
   assert.doesNotThrow(() => validateOrcaAuthorityContract(proxyContract));
   assert.equal(validateOrcaAuthorityContract(proxyContract).ok, false);
 });
+
+test("active proxies fail closed without executing traps", () => {
+  let trapCalls = 0;
+  const handler = {
+    get() { trapCalls += 1; },
+    getOwnPropertyDescriptor() { trapCalls += 1; },
+    getPrototypeOf() { trapCalls += 1; },
+    ownKeys() { trapCalls += 1; },
+  };
+
+  const contract = clone(ORCA_AUTHORITY_CONTRACT);
+  const proxyContract = new Proxy(contract, handler);
+  assert.equal(validateOrcaAuthorityContract(proxyContract).ok, false);
+
+  const record = clone(ORCA_AUTHORITY_CONTRACT.correlation.fixtures[0].record);
+  const proxyRecord = new Proxy(record, handler);
+  assert.equal(validateOrcaCorrelationRecord(proxyRecord).ok, false);
+
+  const nested = clone(ORCA_AUTHORITY_CONTRACT);
+  nested.concerns[0].authorities[0].observers = new Proxy(
+    nested.concerns[0].authorities[0].observers,
+    handler,
+  );
+  assert.equal(validateOrcaAuthorityContract(nested).ok, false);
+  assert.equal(trapCalls, 0);
+});
+
+test("canonical arrays reject inherited metadata", () => {
+  const inheritedSystems = clone(ORCA_AUTHORITY_CONTRACT);
+  Object.setPrototypeOf(inheritedSystems.systems, { auth_token: "secret" });
+  assert.equal(validateOrcaAuthorityContract(inheritedSystems).ok, false);
+
+  const inheritedObservers = clone(ORCA_AUTHORITY_CONTRACT);
+  Object.setPrototypeOf(
+    inheritedObservers.concerns[0].authorities[0].observers,
+    { private_key: "secret" },
+  );
+  assert.equal(validateOrcaAuthorityContract(inheritedObservers).ok, false);
+});

@@ -299,7 +299,7 @@ test("fixture wrappers and records require their exact plain-object shapes", () 
 });
 
 test("normalized absolute worktree paths reject control characters", () => {
-  for (const control of ["\0", "\n", "\r", "\t", "\u001f", "\u007f"]) {
+  for (const control of ["\0", "\n", "\r", "\t", "\u001f", "\u007f", "\u0080", "\u0085", "\u009f"]) {
     const record = clone(ORCA_AUTHORITY_CONTRACT.correlation.fixtures[1].record);
     record.worktree_path = `/srv/worktrees/valid${control}suffix`;
     record.remote_selector = `id:${record.orca_repo_id}::${record.worktree_path}`;
@@ -307,4 +307,54 @@ test("normalized absolute worktree paths reject control characters", () => {
     assert.equal(result.ok, false);
     assert.match(result.errors.join("\n"), /control characters/i);
   }
+});
+
+test("hidden, symbol-keyed, and array-attached metadata cannot cross the contract boundary", () => {
+  const hiddenContract = clone(ORCA_AUTHORITY_CONTRACT);
+  Object.defineProperty(hiddenContract, "auth_token", { value: "secret" });
+  assert.match(validateOrcaAuthorityContract(hiddenContract).errors.join("\n"), /unknown key auth_token/i);
+
+  const symbolRecord = clone(ORCA_AUTHORITY_CONTRACT);
+  symbolRecord.correlation.fixtures[0].record[Symbol("private_key")] = "secret";
+  assert.match(validateOrcaAuthorityContract(symbolRecord).errors.join("\n"), /unknown field Symbol\(private_key\)/i);
+
+  const arrayMetadata = clone(ORCA_AUTHORITY_CONTRACT);
+  arrayMetadata.concerns[0].authorities[0].observers.auth_token = "secret";
+  assert.match(validateOrcaAuthorityContract(arrayMetadata).errors.join("\n"), /observers.*exactly/i);
+});
+
+test("sparse canonical arrays fail closed", () => {
+  const sparseSystems = clone(ORCA_AUTHORITY_CONTRACT);
+  delete sparseSystems.systems[0];
+  assert.match(validateOrcaAuthorityContract(sparseSystems).errors.join("\n"), /systems.*exactly/i);
+
+  for (const key of ["mutators", "observers"]) {
+    const sparseAuthority = clone(ORCA_AUTHORITY_CONTRACT);
+    delete sparseAuthority.concerns[0].authorities[0][key][0];
+    const result = validateOrcaAuthorityContract(sparseAuthority);
+    assert.equal(result.ok, false);
+    assert.match(result.errors.join("\n"), new RegExp(`${key}.*exactly`, "i"));
+  }
+});
+
+test("accessor-backed and proxy observer shapes fail closed without executing accessors", () => {
+  const accessorContract = clone(ORCA_AUTHORITY_CONTRACT);
+  let getterCalls = 0;
+  Object.defineProperty(accessorContract.concerns[0].authorities[0], "observers", {
+    enumerable: true,
+    get() {
+      getterCalls += 1;
+      throw new Error("observer getter executed");
+    },
+  });
+  assert.doesNotThrow(() => validateOrcaAuthorityContract(accessorContract));
+  assert.equal(validateOrcaAuthorityContract(accessorContract).ok, false);
+  assert.equal(getterCalls, 0);
+
+  const proxyContract = clone(ORCA_AUTHORITY_CONTRACT);
+  const { proxy, revoke } = Proxy.revocable(proxyContract.concerns[0].authorities[0].observers, {});
+  proxyContract.concerns[0].authorities[0].observers = proxy;
+  revoke();
+  assert.doesNotThrow(() => validateOrcaAuthorityContract(proxyContract));
+  assert.equal(validateOrcaAuthorityContract(proxyContract).ok, false);
 });

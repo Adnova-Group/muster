@@ -194,25 +194,69 @@ function isPlainRecord(value) {
     && Object.getPrototypeOf(value) === Object.prototype);
 }
 
+function exactArrayValues(actual, expectedLength) {
+  try {
+    if (!Array.isArray(actual) || actual.length !== expectedLength) return null;
+    const expectedKeys = [...Array.from({ length: expectedLength }, (_, index) => String(index)), "length"];
+    const keys = Reflect.ownKeys(actual);
+    if (keys.length !== expectedKeys.length || !keys.every((key) => expectedKeys.includes(key))) return null;
+    const values = [];
+    for (let index = 0; index < expectedLength; index += 1) {
+      const descriptor = Object.getOwnPropertyDescriptor(actual, String(index));
+      if (!descriptor || !("value" in descriptor) || descriptor.enumerable !== true) return null;
+      values.push(descriptor.value);
+    }
+    return values;
+  } catch {
+    return null;
+  }
+}
+
 function sameScalarArray(actual, expected) {
-  return Array.isArray(actual) && actual.length === expected.length
-    && actual.every((value, index) => value === expected[index]);
+  const values = exactArrayValues(actual, expected.length);
+  return values !== null && values.every((value, index) => value === expected[index]);
 }
 
 function matchesCanonicalField(actual, expected) {
-  return isPlainRecord(actual)
-    && sameScalarArray(Object.keys(actual).sort(), Object.keys(expected).sort())
-    && Object.keys(expected).every((key) => actual[key] === expected[key]);
+  try {
+    if (!isPlainRecord(actual)) return false;
+    const expectedKeys = Object.keys(expected);
+    const keys = Reflect.ownKeys(actual);
+    if (keys.length !== expectedKeys.length || !keys.every((key) => expectedKeys.includes(key))) return false;
+    return expectedKeys.every((key) => {
+      const descriptor = Object.getOwnPropertyDescriptor(actual, key);
+      return descriptor && "value" in descriptor && descriptor.enumerable === true
+        && descriptor.value === expected[key];
+    });
+  } catch {
+    return false;
+  }
 }
 
 function validateExactKeys(value, expectedKeys, label, errors) {
-  if (!isPlainRecord(value)) return;
-  for (const key of Object.keys(value)) {
-    if (!expectedKeys.includes(key)) errors.push(`${label}: unknown key ${key}`);
+  let safeToRead = true;
+  let keys;
+  try {
+    keys = Reflect.ownKeys(value);
+  } catch {
+    errors.push(`${label}: own keys could not be inspected`);
+    return false;
+  }
+  for (const key of keys) {
+    if (typeof key !== "string" || !expectedKeys.includes(key)) {
+      errors.push(`${label}: unknown key ${String(key)}`);
+      continue;
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (!descriptor || !("value" in descriptor) || descriptor.enumerable !== true) {
+      errors.push(`${label}: key ${key} must be an enumerable data property`);
+      safeToRead = false;
+    }
   }
   for (const key of expectedKeys) {
-    if (!Object.hasOwn(value, key)) errors.push(`${label}: missing required key ${key}`);
+    if (!keys.includes(key)) errors.push(`${label}: missing required key ${key}`);
   }
+  return safeToRead;
 }
 
 function validateRecord(record, fields) {
@@ -224,26 +268,44 @@ function validateRecord(record, fields) {
     return { ok: false, errors: ["correlation record must be a plain object with no inherited metadata"] };
   }
   const known = new Map(fields.map((entry) => [entry.name, entry]));
+  let safeToRead = true;
+  let keys;
+  try {
+    keys = Reflect.ownKeys(record);
+  } catch {
+    return { ok: false, errors: ["correlation record own fields could not be inspected"] };
+  }
   for (const entry of fields) {
-    if (entry.required && !Object.hasOwn(record, entry.name)) {
+    if (entry.required && !keys.includes(entry.name)) {
       errors.push(`missing required field ${entry.name}`);
     }
   }
-  for (const [name, value] of Object.entries(record)) {
+  for (const name of keys) {
     const entry = known.get(name);
     if (!entry) {
-      errors.push(`unknown field ${name}`);
+      errors.push(`unknown field ${String(name)}`);
       continue;
     }
+    const descriptor = Object.getOwnPropertyDescriptor(record, name);
+    if (!descriptor || !("value" in descriptor) || descriptor.enumerable !== true) {
+      errors.push(`${name} must be an enumerable data property`);
+      safeToRead = false;
+      continue;
+    }
+    const value = descriptor.value;
     if (entry.type === "array" && !Array.isArray(value)) {
       errors.push(`${name} must be an array`);
     } else if (entry.type === "array"
-      && (!value.length || !value.every((item) => typeof item === "string" && item.length > 0))) {
+      && (() => {
+        const values = exactArrayValues(value, value.length);
+        return !values?.length || !values.every((item) => typeof item === "string" && item.length > 0);
+      })()) {
       errors.push(`${name} must contain only non-empty strings`);
     } else if (entry.type === "string" && (typeof value !== "string" || value.length === 0)) {
       errors.push(`${name} must be a non-empty string`);
     }
   }
+  if (!safeToRead) return { ok: false, errors };
 
   if (typeof record.base_sha === "string" && !/^[0-9a-f]{40}$/.test(record.base_sha)) {
     errors.push("base_sha must be a 40-character lowercase hexadecimal commit id");
@@ -252,7 +314,7 @@ function validateRecord(record, fields) {
     && (!posix.isAbsolute(record.worktree_path) || posix.normalize(record.worktree_path) !== record.worktree_path)) {
     errors.push("worktree_path must be an absolute normalized worktree_path in the executing runtime");
   }
-  if (typeof record.worktree_path === "string" && /[\u0000-\u001f\u007f]/.test(record.worktree_path)) {
+  if (typeof record.worktree_path === "string" && /[\u0000-\u001f\u007f-\u009f]/.test(record.worktree_path)) {
     errors.push("worktree_path must not contain control characters");
   }
   if (record.host === "local") {
@@ -274,7 +336,11 @@ function validateRecord(record, fields) {
 }
 
 export function validateOrcaCorrelationRecord(record) {
-  return validateRecord(record, ORCA_AUTHORITY_CONTRACT.correlation.fields);
+  try {
+    return validateRecord(record, ORCA_AUTHORITY_CONTRACT.correlation.fields);
+  } catch {
+    return { ok: false, errors: ["correlation record validation failed closed on malformed input"] };
+  }
 }
 
 export function canMutateAuthorityState(concernId, state, system) {
@@ -285,42 +351,59 @@ export function canMutateAuthorityState(concernId, state, system) {
     && authorityState.mutators[0] === system);
 }
 
-export function validateOrcaAuthorityContract(contract) {
+function validateAuthorityContract(contract) {
   const errors = [];
   if (!isPlainRecord(contract)) {
     return { ok: false, errors: ["contract must be a plain object with no inherited metadata"] };
   }
-  validateExactKeys(contract, CONTRACT_KEYS, "contract", errors);
+  if (!validateExactKeys(contract, CONTRACT_KEYS, "contract", errors)) {
+    return { ok: false, errors };
+  }
   if (contract.schemaVersion !== 1) errors.push("schemaVersion must be 1");
   if (contract.contract !== "orca-muster-authority-and-correlation") errors.push("contract name is not canonical");
   if (!sameScalarArray(contract.systems, SYSTEMS)) errors.push("systems must be exactly orca and muster");
 
   if (!Array.isArray(contract.concerns)) errors.push("concerns must be an array");
-  const concerns = Array.isArray(contract.concerns) ? contract.concerns : [];
-  const ids = concerns.map((entry) => isPlainRecord(entry) ? entry.id : undefined);
+  const concerns = exactArrayValues(contract.concerns, CONCERN_IDS.length) || [];
+  if (Array.isArray(contract.concerns) && concerns.length === 0) {
+    errors.push("concerns must be a dense canonical array with no attached metadata");
+  }
+  const ids = concerns.map((entry) => {
+    if (!isPlainRecord(entry)) return undefined;
+    const descriptor = Object.getOwnPropertyDescriptor(entry, "id");
+    return descriptor && "value" in descriptor ? descriptor.value : undefined;
+  });
   if (!sameScalarArray(ids, CONCERN_IDS)) {
     errors.push(`concerns must be exactly: ${CONCERN_IDS.join(", ")}`);
   }
   if (!isPlainRecord(contract.correlation)) errors.push("correlation must be a plain object");
   const correlation = isPlainRecord(contract.correlation) ? contract.correlation : {};
-  validateExactKeys(correlation, CORRELATION_KEYS, "correlation", errors);
+  if (!validateExactKeys(correlation, CORRELATION_KEYS, "correlation", errors)) {
+    return { ok: false, errors };
+  }
   if (correlation.policy !== CORRELATION_POLICY) {
     errors.push("correlation policy must match the canonical schema-v1 policy");
   }
   if (!Array.isArray(correlation.fields)) errors.push("correlation fields must be an array");
   if (!Array.isArray(correlation.fixtures)) errors.push("correlation fixtures must be an array");
-  const fields = Array.isArray(correlation.fields) ? correlation.fields : [];
-  const fixtures = Array.isArray(correlation.fixtures) ? correlation.fixtures : [];
+  const fields = exactArrayValues(correlation.fields, CANONICAL_FIELD_DEFINITIONS.length) || [];
+  const fixtures = exactArrayValues(correlation.fixtures, 2) || [];
+  if (Array.isArray(correlation.fields) && fields.length === 0) {
+    errors.push("correlation fields must be a dense canonical array with no attached metadata");
+  }
+  if (Array.isArray(correlation.fixtures) && fixtures.length === 0) {
+    errors.push("correlation fixtures must be a dense canonical array with no attached metadata");
+  }
   const validFields = fields.filter(isPlainRecord);
   if (validFields.length !== fields.length) errors.push("correlation field definitions must be plain objects");
-  const fieldNames = new Set(validFields.map((entry) => entry.name));
+  const fieldNames = new Set(CANONICAL_FIELD_DEFINITIONS.map((entry) => entry.name));
   for (const [concernIndex, concernEntry] of concerns.entries()) {
     const canonicalConcern = CANONICAL_CONCERN_SHAPE[concernIndex];
     if (!isPlainRecord(concernEntry)) {
       errors.push(`concern at index ${concernIndex} must be a plain object`);
       continue;
     }
-    validateExactKeys(concernEntry, CONCERN_KEYS, `concern ${concernEntry.id || concernIndex}`, errors);
+    if (!validateExactKeys(concernEntry, CONCERN_KEYS, `concern ${concernIndex}`, errors)) continue;
     if (concernEntry.id !== canonicalConcern?.id) {
       errors.push(`concern at index ${concernIndex}: id must remain ${canonicalConcern?.id}`);
     }
@@ -334,24 +417,33 @@ export function validateOrcaAuthorityContract(contract) {
       errors.push(`${concernEntry.id}: at least one authority fixture is required`);
       continue;
     }
-    if (concernEntry.authorities.length !== canonicalConcern?.authorities.length) {
+    const authorities = exactArrayValues(
+      concernEntry.authorities,
+      canonicalConcern?.authorities.length || 0,
+    );
+    if (!authorities) {
       errors.push(`${concernEntry.id}: authority states must match the complete canonical schema-v1 set`);
+      continue;
     }
-    for (const name of Array.isArray(concernEntry.correlationFields) ? concernEntry.correlationFields : []) {
+    const concernFieldValues = exactArrayValues(
+      concernEntry.correlationFields,
+      canonicalConcern?.correlationFields.length || 0,
+    ) || [];
+    for (const name of concernFieldValues) {
       if (!fieldNames.has(name)) errors.push(`${concernEntry.id}: unknown correlation field ${name}`);
     }
-    for (const [authorityIndex, state] of concernEntry.authorities.entries()) {
+    for (const [authorityIndex, state] of authorities.entries()) {
       const canonicalAuthority = canonicalConcern?.authorities[authorityIndex];
       if (!isPlainRecord(state)) {
         errors.push(`${concernEntry.id}: authority at index ${authorityIndex} must be a plain object`);
         continue;
       }
-      validateExactKeys(
+      if (!validateExactKeys(
         state,
         AUTHORITY_KEYS,
-        `${concernEntry.id}/${state.state || authorityIndex}`,
+        `${concernEntry.id}/authority-${authorityIndex}`,
         errors,
-      );
+      )) continue;
       if (state.state !== canonicalAuthority?.state) {
         errors.push(`${concernEntry.id}/${state.state}: authority state must remain ${canonicalAuthority?.state}`);
       }
@@ -375,14 +467,14 @@ export function validateOrcaAuthorityContract(contract) {
     || !fields.every((entry, index) => matchesCanonicalField(entry, CANONICAL_FIELD_DEFINITIONS[index]))) {
     errors.push("correlation fields must match the canonical schema-v1 field definitions");
   }
-  const requiredNames = validFields.filter((entry) => entry.required).map((entry) => entry.name);
+  const requiredNames = CANONICAL_FIELD_DEFINITIONS.filter((entry) => entry.required).map((entry) => entry.name);
   if (new Set(requiredNames).size !== requiredNames.length) errors.push("required correlation field names must be unique");
   for (const [fixtureIndex, fixture] of fixtures.entries()) {
     if (!isPlainRecord(fixture)) {
       errors.push(`correlation fixture at index ${fixtureIndex} must be a plain object`);
       continue;
     }
-    validateExactKeys(fixture, FIXTURE_KEYS, `correlation fixture ${fixture.name || fixtureIndex}`, errors);
+    if (!validateExactKeys(fixture, FIXTURE_KEYS, `correlation fixture ${fixtureIndex}`, errors)) continue;
     const result = validateRecord(fixture.record, CANONICAL_FIELD_DEFINITIONS);
     for (const error of result.errors) errors.push(`${fixture.name || "unnamed"} fixture: ${error}`);
   }
@@ -392,4 +484,12 @@ export function validateOrcaAuthorityContract(contract) {
   }
 
   return { ok: errors.length === 0, errors };
+}
+
+export function validateOrcaAuthorityContract(contract) {
+  try {
+    return validateAuthorityContract(contract);
+  } catch {
+    return { ok: false, errors: ["contract validation failed closed on malformed input"] };
+  }
 }

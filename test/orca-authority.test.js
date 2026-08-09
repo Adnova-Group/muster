@@ -434,3 +434,47 @@ test("correlation selector fields reject control characters", () => {
     assert.match(result.errors.join("\n"), /orca_repo_id.*control characters/i);
   }
 });
+
+test("proxied authority collections fail closed without executing traps", () => {
+  let trapCalls = 0;
+  const contract = clone(ORCA_AUTHORITY_CONTRACT);
+  contract.concerns[0].authorities = new Proxy(contract.concerns[0].authorities, {
+    get() { trapCalls += 1; },
+    getOwnPropertyDescriptor() { trapCalls += 1; },
+    getPrototypeOf() { trapCalls += 1; },
+    ownKeys() { trapCalls += 1; },
+  });
+
+  assert.doesNotThrow(() => validateOrcaAuthorityContract(contract));
+  assert.equal(validateOrcaAuthorityContract(contract).ok, false);
+  assert.equal(trapCalls, 0);
+});
+
+test("correlation string arrays reject control characters", () => {
+  for (const key of ["changed_files", "verification"]) {
+    for (const control of ["\0", "\n", "\r", "\t", "\u001f", "\u007f", "\u0085", "\u009f"]) {
+      const record = clone(ORCA_AUTHORITY_CONTRACT.correlation.fixtures[0].record);
+      record[key] = [`valid${control}forged`];
+      const result = validateOrcaCorrelationRecord(record);
+      assert.equal(result.ok, false, `${key} accepted ${JSON.stringify(control)}`);
+      assert.match(result.errors.join("\n"), new RegExp(`${key}.*control characters`, "i"));
+    }
+  }
+});
+
+test("correlation string arrays fail closed when oversized or sparse", () => {
+  for (const key of ["changed_files", "verification"]) {
+    const oversized = clone(ORCA_AUTHORITY_CONTRACT.correlation.fixtures[0].record);
+    oversized[key] = Array.from({ length: 1025 }, (_, index) => `entry-${index}`);
+    const oversizedResult = validateOrcaCorrelationRecord(oversized);
+    assert.equal(oversizedResult.ok, false, `${key} accepted an oversized array`);
+    assert.match(oversizedResult.errors.join("\n"), new RegExp(`${key}.*at most`, "i"));
+
+    const sparse = clone(ORCA_AUTHORITY_CONTRACT.correlation.fixtures[0].record);
+    sparse[key] = new Array(1025);
+    sparse[key][0] = "entry-0";
+    const sparseResult = validateOrcaCorrelationRecord(sparse);
+    assert.equal(sparseResult.ok, false, `${key} accepted a sparse array`);
+    assert.match(sparseResult.errors.join("\n"), new RegExp(`${key}.*(?:dense|at most)`, "i"));
+  }
+});

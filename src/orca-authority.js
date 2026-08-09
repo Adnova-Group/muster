@@ -25,6 +25,7 @@ const AUTHORITY_KEYS = Object.freeze(["state", "owner", "mutators", "observers",
 const FIXTURE_KEYS = Object.freeze(["name", "record"]);
 const CORRELATION_POLICY = "Correlation is observational metadata, never a cross-system mutation grant.";
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f-\u009f]/;
+const MAX_CORRELATION_ARRAY_LENGTH = 1024;
 
 const field = (name, type, owner, description) => ({
   name,
@@ -309,10 +310,25 @@ function validateRecord(record, fields) {
     const value = descriptor.value;
     if (entry.type === "array" && !Array.isArray(value)) {
       errors.push(`${name} must be an array`);
+    } else if (entry.type === "array" && types.isProxy(value)) {
+      errors.push(`${name} must contain only non-empty strings`);
     } else if (entry.type === "array") {
-      const values = types.isProxy(value) ? null : exactArrayValues(value, value.length);
-      if (!values?.length || !values.every((item) => typeof item === "string" && item.length > 0)) {
+      const lengthDescriptor = Object.getOwnPropertyDescriptor(value, "length");
+      const length = lengthDescriptor && "value" in lengthDescriptor
+        ? lengthDescriptor.value
+        : undefined;
+      if (length > MAX_CORRELATION_ARRAY_LENGTH) {
+        errors.push(`${name} must contain at most ${MAX_CORRELATION_ARRAY_LENGTH} entries`);
+        continue;
+      }
+      const values = exactArrayValues(value, length);
+      if (values === null) {
+        errors.push(`${name} must be a dense array with no attached metadata`);
+      } else if (!values.length
+        || !values.every((item) => typeof item === "string" && item.length > 0)) {
         errors.push(`${name} must contain only non-empty strings`);
+      } else if (values.some((item) => CONTROL_CHARACTERS.test(item))) {
+        errors.push(`${name} must not contain control characters`);
       }
     } else if (entry.type === "string" && (typeof value !== "string" || value.length === 0)) {
       errors.push(`${name} must be a non-empty string`);
@@ -425,7 +441,7 @@ function validateAuthorityContract(contract) {
     if (!sameScalarArray(concernEntry.correlationFields, canonicalConcern?.correlationFields || [])) {
       errors.push(`${concernEntry.id}: correlationFields must match the canonical schema-v1 concern mapping`);
     }
-    if (!Array.isArray(concernEntry.authorities) || concernEntry.authorities.length === 0) {
+    if (!Array.isArray(concernEntry.authorities) || types.isProxy(concernEntry.authorities)) {
       errors.push(`${concernEntry.id}: at least one authority fixture is required`);
       continue;
     }

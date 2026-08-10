@@ -172,6 +172,8 @@ function normalizeTopology(context) {
     base_sha: baseSha,
     base_revision: { ref: baseRef, sha: baseSha },
     head_sha: headSha,
+    is_main_worktree: rawField(context, "is_main_worktree", "isMainWorktree") === true
+      || rawField(worktree, "is_main_worktree", "isMainWorktree") === true,
     host: hostId,
     environment_id: environmentId,
     environment_kind: environmentKind,

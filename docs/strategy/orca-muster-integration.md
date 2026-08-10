@@ -303,12 +303,15 @@ post-merge disposition:
 orca worktree rm --worktree <exact-public-selector> --force --json
 ```
 
-That is the whole disposition: exactly one command. Orca documents worktree
-deletion as removing "both the directory and the branch (with confirmation)", so
-the branch is Orca's to delete and Muster must not follow with its own
-`git branch -d` — that second command would run against a branch Orca has
-already removed, and gating it behind a separate approval would advertise a
-protection that does not exist. Branch removal is therefore an acknowledged
+That is the whole disposition: exactly one command. This is **verified against a
+live Orca 1.4.177 runtime**, not inferred: creating a throwaway worktree and
+running `orca worktree rm --worktree id:<id> --force --json` returned
+`{"ok":true,"result":{"removed":true}}` and removed the directory, the git
+worktree entry, **and the branch**, with no prompt. The branch is therefore
+Orca's to delete and Muster must not follow with its own `git branch -d` — that
+second command would run against a branch Orca has already removed and would
+fail every time, after the worktree was gone. Gating it behind a separate
+approval advertised a protection that never existed. Branch removal is therefore an acknowledged
 effect of the disposition, not an opt-in: the evaluator requires explicit
 branch-deletion approval before emitting anything, refuses a branch-preservation
 request outright rather than silently ignoring it, and still declines to touch a
@@ -321,11 +324,24 @@ public Orca CLI boundary and performs an exact state recheck against the
 disposition fingerprint before invoking any command.
 
 The exact worktree selector is `id:<worktree-id>` for every host, with
-`path:<absolute-path>` accepted only for a local worktree. One canonical
-identity contract (`src/orca-contract.js`) owns that rule, the absolute-runtime-
-path predicate, and the shared-path classification vocabulary, so the adapter,
-the receipt normalizer, and this evaluator cannot drift into mutually
-incompatible shapes.
+`path:<absolute-path>` accepted only for a local worktree. Orca's own
+`worktree create` help states this contract directly: "Worktree ids are the full
+`<repo-id>::<path>` values returned by `orca worktree list --json`." One
+canonical identity contract (`src/orca-contract.js`) owns that rule, the
+absolute-runtime-path predicate, the branch-ref normalization, and the
+shared-path classification vocabulary, so the adapter, the receipt normalizer,
+and this evaluator cannot drift into mutually incompatible shapes.
+
+Two properties of real Orca records are load-bearing and were absent from every
+hand-written fixture:
+
+- **Branches are fully-qualified refs.** A live record reports
+  `refs/heads/main`, not `main`. A protection guard that compares against short
+  names fails open on exactly the branches it exists to protect, so every branch
+  comparison goes through `shortBranchName` first.
+- **The primary checkout is a cleanup target unless explicitly barred.** Orca
+  marks it `isMainWorktree`; the evaluator denies `primary-worktree` before any
+  other check, independently of the branch.
 
 Success criterion: a passing merge gate produces deterministic cleanup
 operations, while every unsafe or incomplete precondition fails closed without

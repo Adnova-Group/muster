@@ -97,6 +97,34 @@ export function isAcceptedOrcaSelector(selector, identity) {
 }
 
 /**
+ * Orca reports a worktree's branch as a fully-qualified ref: a live
+ * `orca worktree list --json` returns `"refs/heads/main"`, not `"main"`. Any
+ * guard that compares a branch against a short name must go through this first,
+ * or it silently fails open on exactly the branches it exists to protect.
+ */
+export function shortBranchName(branch) {
+  if (typeof branch !== "string") return null;
+  const trimmed = branch.trim();
+  if (!trimmed) return null;
+  return trimmed.startsWith("refs/heads/") ? trimmed.slice("refs/heads/".length) : trimmed;
+}
+
+const PROTECTED_BRANCH_NAMES = Object.freeze([
+  "main", "master", "develop", "development", "trunk", "production", "staging",
+]);
+
+export const ORCA_PROTECTED_BRANCH_NAMES = PROTECTED_BRANCH_NAMES;
+
+/** Checks the short name, so `refs/heads/main` is as protected as `main`. */
+export function isProtectedBranchName(branch, extra = []) {
+  const short = shortBranchName(branch);
+  if (short === null) return false;
+  const candidates = new Set([short, branch]);
+  if (extra.some((name) => candidates.has(name) || shortBranchName(name) === short)) return true;
+  return PROTECTED_BRANCH_NAMES.includes(short) || short.startsWith("release/");
+}
+
+/**
  * Shared-path classification vocabulary.
  *
  * Orca documents exactly three mechanisms by which a gitignored path reaches a

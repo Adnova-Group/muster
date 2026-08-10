@@ -237,17 +237,42 @@ serializes the runtime response rather than a best-effort human string
 boundary, with explicit schema/version checks and preserved raw receipts
 [INFERRED].
 
-The **field-level response shape of `orca status --json` is not published**. The
-CLI reference lists the command without an example payload, and nothing here
-establishes a `runtime`, `graph`, or readiness-state vocabulary as a stable
-contract [UNRESOLVED]. An adapter may require the fields it actually reads and
-must treat every other field as optional evidence; requiring an unpublished
-field is indistinguishable from requiring a field Orca never emits.
+The **field-level response shape of `orca status --json` is not published**, but
+it has now been observed. A live 1.4.177 runtime returns
+`{ok, id, _meta:{runtimeId}, result:{app, runtime, graph}}`, where `runtime`
+carries `state:"ready"`, `reachable:true`, `runtimeId`, `appVersion`, and a
+capability list, and `graph` carries `state:"ready"` [OBSERVED: live capture,
+`test/fixtures/orca-live/local-wsl-unc.json`]. This is a captured observation of
+one release, not a published contract: an adapter should require only the fields
+it actually reads and treat the rest as optional evidence.
 
-Likewise, **no `ORCA_*` environment variable is documented**. Neither the CLI
-overview nor the CLI reference lists one, and the pinned source was not searched
-for the set an agent terminal actually inherits [UNRESOLVED]. Treat any such
-variable as an observational correlation hint whose absence is normal.
+`orca agent-context --json` returns its payload **unwrapped** — a bare
+`{schemaVersion, commandCount, commands}` rather than the `{ok, result}`
+envelope used by other commands — with `schemaVersion: 1` and 223 commands
+[OBSERVED]. Its `worktree create` help states the identity contract verbatim:
+"Worktree ids are the full `<repo-id>::<path>` values returned by
+`orca worktree list --json`."
+
+A live worktree record carries `id`, `instanceId`, `repoId`, `projectId`,
+`hostId`, `path`, `head`, `branch`, `isBare`, `isMainWorktree`, `lineage`,
+`parentWorktreeId`, and link/UI fields — and **no base ref or base SHA of any
+kind** [OBSERVED]. Two shapes matter for any guard built on this record:
+
+- `branch` is a fully-qualified ref (`refs/heads/main`), never a short name.
+- `path` follows the host runtime, so a Windows Orca managing a WSL checkout
+  reports a UNC path (`\\wsl.localhost\Ubuntu\home\...`).
+
+`orca worktree rm --worktree id:<id> --force --json` returns
+`{"ok":true,"result":{"removed":true}}` and removes the directory, the git
+worktree registration, **and the branch**, without prompting [OBSERVED: live
+throwaway worktree, 2026-08-10]. Its help summarises it as "Remove a worktree
+from Orca and git" and notes only that `orca.yaml` archive hooks are skipped
+unless `--run-hooks` is passed.
+
+**No `ORCA_*` environment variable is documented.** Neither the CLI overview nor
+the CLI reference lists one, and the pinned source was not searched for the set
+an agent terminal actually inherits [UNRESOLVED]. Treat any such variable as an
+observational correlation hint whose absence is normal.
 
 Useful documented examples include:
 

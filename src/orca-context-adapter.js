@@ -400,6 +400,9 @@ function normalizeContext({ status, worktreeInfo, terminal, env, agentContext })
     base_ref: baseRef,
     base_sha: baseSha,
     head_sha: headSha,
+    // Orca marks the repository's primary checkout; downstream guards need it,
+    // because a primary checkout is never a disposable worker worktree.
+    is_main_worktree: worktree.isMainWorktree === true || worktree.git?.isMainWorktree === true,
     shared_paths: sharedPaths,
     setup_provenance: setupProvenance,
     worktree_lineage: lineage,

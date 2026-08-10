@@ -1,7 +1,7 @@
 import {
-  canonicalOrcaSelector,
   isAcceptedOrcaSelector,
   isCanonicalRuntimePath,
+  isProtectedBranchName,
   worktreeIdBelongsToRepository,
 } from "./orca-contract.js";
 
@@ -42,6 +42,7 @@ export const ORCA_CLEANUP_REASONS = Object.freeze([
   "remote-selector-invalid",
   "race-detected",
   "protected-branch",
+  "primary-worktree",
   "branch-deletion-not-approved",
   "branch-preservation-unsupported",
   "remote-branch-deletion-unsupported",
@@ -53,7 +54,6 @@ const MAX_PATH = 4096;
 const RELEASED_STATES = new Set(["released", "closed", "terminated", "detached"]);
 const COMPLETED_STATES = new Set(["completed", "complete", "passed", "success", "succeeded"]);
 const SHIPPED_STATES = new Set(["approved", "merged", "shipped", "complete", "completed", "passed"]);
-const PROTECTED_BRANCHES = new Set(["main", "master", "develop", "development", "trunk", "production", "staging"]);
 
 function isObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -120,6 +120,10 @@ function normalizeIdentity(value, label = "identity") {
   const baseRef = optionalText(first(value, "baseRef", "base_ref", "baseBranch", "base_branch"), `${label}.baseRef`);
   const host = text(first(value, "host", "hostId", "host_id") ?? "local", `${label}.host`);
   const environmentId = text(first(value, "environmentId", "environment_id") ?? (host === "local" ? "local" : null), `${label}.environmentId`);
+  // Orca marks the repository's primary checkout with `isMainWorktree`. It is
+  // not a worker worktree and must never be a cleanup target, independently of
+  // what branch it happens to be on.
+  const isPrimary = first(value, "isMainWorktree", "is_main_worktree", "isPrimaryWorktree") === true;
   const remoteSelector = text(first(value, "remoteSelector", "remote_selector", "selector"), `${label}.remoteSelector`);
   if (!worktreeIdBelongsToRepository(worktreeId, repositoryId)) {
     throw new TypeError(`${label}.worktreeId does not contain its repository id`);
@@ -138,6 +142,7 @@ function normalizeIdentity(value, label = "identity") {
     host,
     environmentId,
     remoteSelector,
+    isPrimaryWorktree: isPrimary,
   });
 }
 
@@ -230,10 +235,13 @@ function mergeEvidence(input) {
   };
 }
 
+// Orca reports `refs/heads/main`, so this must compare short names. A live
+// worktree record proved the previous exact-string check failed open on the
+// primary branch of the repository it was asked to clean up.
 function protectedBranch(input, branch) {
   if (input.protectedBranch === true || input.protected_branch === true) return true;
-  if (Array.isArray(input.protectedBranches) && input.protectedBranches.includes(branch)) return true;
-  return PROTECTED_BRANCHES.has(branch) || branch.startsWith("release/");
+  const extra = Array.isArray(input.protectedBranches) ? input.protectedBranches : [];
+  return isProtectedBranchName(branch, extra);
 }
 
 function approvalEvidence(input) {
@@ -319,6 +327,9 @@ export function evaluateOrcaWorktreeCleanup(input = {}) {
 
   const approval = approvalEvidence(input);
   if (!approval.approved) return deny("approval-required", ["cleanup requires explicit approval"]);
+  if (identity.isPrimaryWorktree || observed.isPrimaryWorktree || input.isMainWorktree === true) {
+    return deny("primary-worktree", ["the repository's primary worktree is never a cleanup target"]);
+  }
   if (protectedBranch(input, identity.branch)) return deny("protected-branch", ["protected branches cannot be cleaned up"]);
 
   if (input.raceDetected === true || input.race_detected === true || input.stateChanged === true

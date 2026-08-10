@@ -383,6 +383,18 @@ function samePlanFingerprint(plan, decision) {
   return isObject(plan?.precondition) && plan.precondition.fingerprint === decision.precondition?.fingerprint;
 }
 
+function sameExecutionPlan(plan, decision) {
+  let planIdentity;
+  try {
+    planIdentity = normalizeIdentity(plan.identity, "plan.identity");
+  } catch {
+    return false;
+  }
+  return samePlanFingerprint(plan, decision)
+    && JSON.stringify(planIdentity) === JSON.stringify(decision.identity)
+    && JSON.stringify(plan.operations) === JSON.stringify(decision.operations);
+}
+
 function isSafeExecutionPlan(plan) {
   if (!isObject(plan) || plan.authorized !== true || !isObject(plan.identity)
     || !isObject(plan.precondition) || typeof plan.precondition.fingerprint !== "string") return false;
@@ -420,9 +432,11 @@ function isSafeExecutionPlan(plan) {
  * mutating command is invoked.
  */
 export async function executeOrcaWorktreeCleanup({ input, plan, confirm = false, readState, runCommand } = {}) {
-  const decision = plan ?? evaluateOrcaWorktreeCleanup(input);
+  const decision = evaluateOrcaWorktreeCleanup(input);
   if (!decision?.authorized) return decision?.reason ? decision : deny("approval-required", ["cleanup plan is not authorized"]);
-  if (plan && !isSafeExecutionPlan(plan)) return deny("malformed-input", ["cleanup plan is not a deterministic authorized plan"]);
+  if (plan && (!isSafeExecutionPlan(plan) || !sameExecutionPlan(plan, decision))) {
+    return deny("malformed-input", ["cleanup plan is not the evaluator-authorized plan"]);
+  }
   if (confirm !== true) return deny("approval-required", ["cleanup execution requires explicit confirmation"]);
   if (typeof runCommand !== "function") return deny("malformed-input", ["runCommand callback is required for execution"]);
   if (typeof readState === "function") {

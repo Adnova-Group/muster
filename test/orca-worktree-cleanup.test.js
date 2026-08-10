@@ -122,6 +122,28 @@ test("execution requires confirmation and rechecks the exact precondition before
   assert.deepEqual(commands.map((command) => command.args), [plan.operations[0].args]);
 });
 
+test("execution re-evaluates a supplied plan before allowing protected branch deletion", async () => {
+  const input = await fixture("local-approved");
+  input.deleteBranch = true;
+  input.approval.branchDeletion = true;
+  const plan = evaluateOrcaWorktreeCleanup(input);
+  const forged = structuredClone(plan);
+  forged.identity.branch = "main";
+  forged.operations[1].branch = "main";
+  forged.operations[1].args = ["branch", "-d", "--", "main"];
+
+  let calls = 0;
+  const result = await executeOrcaWorktreeCleanup({
+    input,
+    plan: forged,
+    confirm: true,
+    runCommand: async () => { calls += 1; },
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "malformed-input");
+  assert.equal(calls, 0);
+});
+
 test("fingerprints are stable and bind identity plus merge evidence", async () => {
   const input = await fixture("local-approved");
   const plan = evaluateOrcaWorktreeCleanup(input);

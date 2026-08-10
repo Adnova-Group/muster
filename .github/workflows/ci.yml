@@ -28,6 +28,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes bubblewrap
+          sudo chmod 4755 /usr/bin/bwrap
+          bwrap --ro-bind / / --unshare-pid --proc /proc -- /bin/true
       - name: Verify backlog completion receipts
         run: node scripts/check-backlog-receipts.mjs --release-ref "origin/${GITHUB_BASE_REF:-main}"
       - run: npm ci

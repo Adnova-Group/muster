@@ -97,16 +97,13 @@ function runOneStrictConfigCheck({
       if (escalationTimer) return;
       signalTree("SIGTERM");
       escalationTimer = setTimeout(() => signalTree("SIGKILL"), 100);
-      escalationTimer.unref?.();
       lifecycleTimer = setTimeout(() => finish(new Error(
         `${pendingFailure.message}; parser termination could not be confirmed after ${terminationGraceMs}ms`
       )), terminationGraceMs);
-      lifecycleTimer.unref?.();
     };
     const timer = setTimeout(() => requestTermination(
       new Error(`Codex app-server strict config validation timed out after ${timeoutMs}ms`)
     ), timeoutMs);
-    timer.unref?.();
     try {
       child = spawn(runtimeIdentity.nativeCodex, ["app-server", "--strict-config", "--listen", "stdio://"], {
         cwd,

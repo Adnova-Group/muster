@@ -111,14 +111,22 @@ export async function physicalFileSnapshot(path) {
   try { handle = await open(path, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0)); }
   catch (error) { if (error.code === "ENOENT") return { exists: false, dev: null, ino: null, bytes: null }; throw error; }
   try {
-    const before = await handle.stat();
+    const before = await handle.stat({ bigint: true });
     if (!before.isFile()) throw new Error(`Codex configuration target must be a regular file: ${path}`);
     const bytes = await handle.readFile();
-    const after = await handle.stat();
-    if (before.dev !== after.dev || before.ino !== after.ino || before.size !== after.size) {
+    const after = await handle.stat({ bigint: true });
+    if (before.dev !== after.dev || before.ino !== after.ino || before.size !== after.size
+      || before.ctimeNs !== after.ctimeNs || before.mtimeNs !== after.mtimeNs) {
       throw new Error(`Codex hook activation file changed while being read: ${path}`);
     }
-    return { exists: true, dev: String(after.dev), ino: String(after.ino), bytes };
+    return {
+      exists: true,
+      dev: String(after.dev),
+      ino: String(after.ino),
+      ctimeNs: String(after.ctimeNs),
+      mtimeNs: String(after.mtimeNs),
+      bytes,
+    };
   } finally { await handle.close(); }
 }
 
@@ -126,6 +134,7 @@ export function samePhysicalFile(left, right) {
   if (left.unsafe || right.unsafe) return left.unsafe === true && right.unsafe === true
     && left.code === right.code && left.message === right.message;
   return left.exists === right.exists && left.dev === right.dev && left.ino === right.ino
+    && left.ctimeNs === right.ctimeNs && left.mtimeNs === right.mtimeNs
     && (!left.exists || left.bytes.equals(right.bytes));
 }
 

@@ -5,8 +5,8 @@ import { readFile } from "node:fs/promises";
 // Regression test for the coordination standing-context preflight's fingerprint set
 // (backlog item `coordination-preflight`). The preflight exists to catch drift in
 // "every file a runner's behavior is actually bound by" -- but two of its five
-// watched paths (plugin/commands/sprint.md, plugin/commands/autopilot.md) were minimal
-// legacy-alias stubs that only redirect to plugin/commands/go-backlog.md and
+// watched paths (plugin/commands/sprint.md, plugin/commands/autopilot.md) were once minimal
+// legacy-alias stubs that only redirected to plugin/commands/go-backlog.md and
 // plugin/commands/go.md respectively (per the mode/plan/go verb-lexicon rename) and
 // never again carry the behavior they were named for -- the mechanism was blind to
 // edits in exactly the files it exists to watch. This test pins both copies of the
@@ -22,9 +22,9 @@ const read = (p) => readFile(new URL(p, root), "utf8");
 
 const SKILL = "plugin/skills/coordination/SKILL.md";
 
-// Known dead alias stubs as of the mode/plan/go verb-lexicon rename -- each is a
-// minimal redirect, never the live behavior file. `run.md` is included defensively
-// even though it was never actually part of the fingerprint set (it aliases
+// Former alias-stub names from the mode/plan/go verb-lexicon rename; all three files
+// were removed in 0.7.0. `run.md` is included defensively even though it was never
+// actually part of the fingerprint set (it aliased
 // plugin/commands/plan.md, unrelated to the sprint/autopilot -> go-backlog/go
 // rename) -- the assertion is "the fingerprint set never regresses to naming ANY of
 // these", not "these three specific files used to be there".

@@ -244,14 +244,14 @@ What survives as **muster-owned** vs becomes a **thin native adapter** after max
 | surface | count | survives muster-owned | thins to native / retire |
 |---|---|---|---|
 | **skills** | 11 | **11/11** survive as owned *content* — skills are the irreducible core [src: m-surface] | the load-bearing *mechanic inside* 2 skills delegates: orchestrator wave loop → Workflow/spawn_agent/delegate_task; coordination → Hermes kanban binding. 4 of 5 largest already cut ≥40% by speed-tuning [src: m-surface] |
-| **verbs** | 11 | **8/11** real entry points, already riding the native slash-command layer (a command file IS the native primitive) [src: cc-skills] | **3 legacy alias stubs** (autopilot/run/sprint) — retire-eligible behind a deprecation window [src: m-surface] |
+| **verbs** | 10 | **10/10** canonical entry points, already riding the native slash-command layer (a command file IS the native primitive) [src: cc-skills] | the 3 legacy alias stubs (autopilot/run/sprint) were retired in 0.7.0 [src: m-surface] |
 | **hooks** | 8 JS files → **3 wired** | enforcement already collapsed to **1 hard deny (action fence) + 1 warn (border invitation)** [src: m-hooks] | no owned judgment in the hook layer — real quality enforcement is the review-gate skills; on advisory-only harnesses the deny degrades to warn (Codex) or is absent (Cowork) [src: cx-hooks] [src: cw-augment] |
 | **agents** | 27 | **7/27** muster-* profiles (crew-role judgment); dispatch mechanic is 100% native [src: cc-subagents] | **20 vendored wsh-*** (MIT) — already "buy," muster owns none of their content [src: m-surface] |
 | **src/ brain** | ~23 modules | the deterministic judgment substrate stays owned (manifest/capabilities/match/fusion/review/gate-cadence/fast-path/scope/domain/detect/sprint-waves/crew) [src: m-surface] | thin mechanics absorb-able or self-scaffolding: `wave.js` (generic topo-sort), `cli-resolve.js` (npx perf shim), the projection/lint family (token/perf/plan-budget/brief-lint/skill-footprint) [src: m-surface] |
 
-**Net bloat verdict:** the surviving muster-owned surface is **11 skills (content) + 8 verbs +
+**Net bloat verdict:** the surviving muster-owned surface is **11 skills (content) + 10 verbs +
 2 hook behaviors + 7 agent profiles + the deterministic src/ brain**. The delete/thin column
-is **3 legacy verbs, 20 vendored agents (already bought), the 5 self-measurement helper
+is **20 vendored agents (already bought), the 5 self-measurement helper
 modules, and the dispatch/isolation/plan/task-board mechanics now delegated to natives.**
 Skills don't shrink in *number* — they ARE muster — they shrink in *token footprint* and in
 the amount of native-mechanic narration they carry. **[JUDGMENT]**
@@ -492,7 +492,7 @@ The next wave in this ledger, already shipped since Part B's tables were written
 - hermes-port: docs/research/hermes.md §10–11 — first-class verdict; skills/hooks Direct; kanban = coordination protocol as harness machinery; Python-shim port constraints.
 - dr-efficiency: docs/decisions/retriage-codex-efficiency-enforcement.md — retire-not-rescope; fail-closed unreachable on Codex ("it never existed"); advisory-diagnostics-only consequence.
 - dr-install: docs/decisions/retriage-install-items.md — historical retriage that identified the thread-limit gap now closed by `ensureCodexThreadLimits`/`restoreCodexThreadLimits`.
-- m-surface: plugin/skills/*, plugin/commands/*, plugin/agents/*, src/*.js — current muster inventory: 11 skills, 11 verbs (8 canonical + 3 legacy aliases), 27 agents (7 muster + 20 vendored wsh), the deterministic src/ brain.
+- m-surface: plugin/skills/*, plugin/commands/*, plugin/agents/*, src/*.js — current muster inventory: 11 public skills, 10 canonical verbs, no legacy command aliases, 27 agents (7 muster + 20 vendored wsh), and the deterministic src/ brain.
 - m-hooks: plugin/hooks/pre-tool-use.js + hooks.json — 3 wired hooks (SessionStart/UserPromptSubmit/PreToolUse); enforcement collapsed to one action-class fence (sole DENY) + one border invitation (WARN).
 - m-perf: docs/weight-reduction.md + .muster/STATE.md weight/speed-tuning receipts — plan=8,831 tok; plan-to-manifest 806 ms; 4/5 largest skills cut ≥40%; small-task consumption 39.8%; fast-path 41.2% vs ≤25% target.
 - m-memory: src/memory.js — slug-indexed, markdown-backed memory store; no harness-specific dependencies, portable across every harness this doc targets.

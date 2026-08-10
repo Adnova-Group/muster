@@ -18,8 +18,8 @@ test("the ralph loop drives orchestration until done or the cap escalates", () =
 test("orchestration surfaces wire the ralph loop primitive by name", async () => {
   const surfaces = [
     new URL("../plugin/skills/orchestrator/SKILL.md", import.meta.url),
-    // go.md is the canonical hands-off runner now (autopilot.md is a legacy alias stub —
-    // see the alias-shape/alias-guidance checks in test/mode-evals.test.js).
+    // go.md is the canonical hands-off runner; the autopilot.md alias was retired
+    // in 0.7.0.
     new URL("../plugin/commands/go.md", import.meta.url)
   ];
   for (const url of surfaces) {

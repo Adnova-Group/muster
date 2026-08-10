@@ -13,8 +13,7 @@ test("assessOutcome gates the interview: thin -> not clear, rich -> clear", () =
 });
 
 test("plan.md runs the gap-check + interview as its front half, before routing", async () => {
-  // plan.md is the canonical home now (run.md is a legacy alias stub whose front half
-  // is unchanged — see the alias-shape/alias-guidance checks in test/mode-evals.test.js).
+  // plan.md is the canonical home; the run.md alias was retired in 0.7.0.
   const plan = await readFile(new URL("../plugin/commands/plan.md", import.meta.url), "utf8");
   assert.match(plan, /muster assess/, "plan must run the assess gap-check");
   assert.match(plan, /\binterview\b/, "plan must invoke the interview skill");
@@ -24,8 +23,8 @@ test("plan.md runs the gap-check + interview as its front half, before routing",
 });
 
 test("go.md triggers the interview on a gap, but never blocks when unattended", async () => {
-  // go.md is the canonical hands-off runner now (autopilot.md is a legacy alias stub —
-  // see the alias-shape/alias-guidance checks in test/mode-evals.test.js).
+  // go.md is the canonical hands-off runner; the autopilot.md alias was retired
+  // in 0.7.0.
   const go = await readFile(new URL("../plugin/commands/go.md", import.meta.url), "utf8");
   assert.match(go, /muster assess/, "go must run the gap-check");
   assert.match(go, /\binterview\b/, "go must reference the interview for attended gaps");

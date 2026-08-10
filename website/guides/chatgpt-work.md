@@ -69,7 +69,7 @@ export MUSTER_CHATGPT_WORK_PROBE_NONCE=<32-lowercase-hex-nonce>
 export MUSTER_CHATGPT_WORK_PROBE_ATTESTATION_PATH=/absolute/private/probe-dir/server-attestation.json
 export MUSTER_CHATGPT_WORK_CONNECTION_ID=asdk_app_...
 export MUSTER_CHATGPT_WORK_APP_JSON_PATH=/absolute/path/to/installed/.app.json
-export MUSTER_CHATGPT_WORK_PLUGIN_VERSION=0.6.0
+export MUSTER_CHATGPT_WORK_PLUGIN_VERSION=0.7.0
 export MUSTER_CHATGPT_WORK_CONNECTION_LABEL="Muster ChatGPT Work"
 tunnel-client init --sample sample_mcp_stdio_local --profile muster-chatgpt-work \
   --tunnel-id tunnel_... --mcp-command "node runtime/chatgpt-work-server.mjs"

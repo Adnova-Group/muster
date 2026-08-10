@@ -555,8 +555,8 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // ambiguous conversational cue; runner's own prose frames it as fired by a Routine/cron, never
   // a conversational trigger, and never describes a natural-language invocation phrase the way
   // diagnose/capture/go do. The hands-off/approve-first pipeline verbs (go, go-backlog, plan,
-  // plan-backlog, diagnose, capture) and the three legacy aliases (run, autopilot, sprint) were
-  // deliberately left model-invocable -- muster's border model routes natural-language
+  // plan-backlog, diagnose, capture) and, at that pre-0.7.0 point, the three legacy aliases
+  // (run, autopilot, sprint) were deliberately left model-invocable -- muster's border model routes natural-language
   // invitations to exactly these verbs by design (docs/research/claude-code-cli.md's
   // augmentation-surface table: "`disable-model-invocation` for side-effectful verbs" is a
   // targeted lever, not a default). `context: fork` and skill-scoped `hooks` were declined

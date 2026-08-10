@@ -8,9 +8,9 @@
 ## Context
 
 The legacy `run`, `autopilot`, and `sprint` aliases entered deprecation with
-notices saying they retire in muster 0.7.0. The repository is now on 0.6.0,
-which made it unclear whether the notice described a release milestone or an
-elapsed-time window.
+notices saying they retire in muster 0.7.0. At the time of this decision, the
+repository was on 0.6.0, which made it unclear whether the notice described a
+release milestone or an elapsed-time window.
 
 Muster follows Semantic Versioning, and its release history advances through
 tagged versions rather than a fixed calendar cadence. The notice therefore

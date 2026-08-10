@@ -393,10 +393,9 @@ test("pre-tool-use.js: no residue of the deleted wave-guard/scale-gate machinery
 });
 
 // ── residue 3: src/ header comments — no live citation of a dead mode-file step ──
-// run.md, sprint.md, and autopilot.md were retired to one-line alias stubs (their
-// step-numbered content moved to plan.md/go.md/go-backlog.md). A src/ comment MAY
-// still name one of them historically (e.g. "run.md/sprint.md are now dead alias
-// stubs" — src/batch-plan.js's header) but must never cite a SPECIFIC STEP in a dead
+// run.md, sprint.md, and autopilot.md were first reduced to one-line alias stubs and
+// then removed in 0.7.0 (their step-numbered content moved to plan.md/go.md/go-backlog.md).
+// A src/ comment MAY still name one historically but must never cite a SPECIFIC STEP in a dead
 // file ("run.md step 0b") as if it were still the doc to consult — that citation
 // only makes sense against a step-numbered file, and the numbering no longer exists
 // there. A citation counts as historical (allowed) when a marker word (dead/legacy/
@@ -446,7 +445,7 @@ test('eval/modes/grade-modes.mjs and test/batch-plan.test.js no longer cite "run
   }
 });
 
-// ── residue 5: "sprint.md step 1" is gone too -- sprint.md is a dead alias stub, its
+// ── residue 5: "sprint.md step 1" is gone too -- sprint.md was a dead alias stub, its
 // step-numbered content moved to go-backlog.md step 1 (src/batch-plan.js's own header
 // already cites the live "go-backlog.md step 1" location). test/batch-plan.test.js's
 // parseBacklogRef header comment still cited "sprint.md step 1" -- reworded to name the

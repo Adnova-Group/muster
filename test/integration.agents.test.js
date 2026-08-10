@@ -57,8 +57,8 @@ test("orchestrator + go dispatch by chosen.kind and apply the role model", async
   assert.match(orch, /chosen\.kind/, "orchestrator must dispatch by chosen.kind");
   assert.match(orch, /subagent_type|agentType/, "orchestrator must dispatch agents as the subagent type");
   assert.match(orch, /model.*override|override.*model/i, "orchestrator must pass the role model as an override");
-  // go.md is the canonical hands-off runner now (autopilot.md is a legacy alias stub —
-  // see the alias-shape/alias-guidance checks in test/mode-evals.test.js).
+  // go.md is the canonical hands-off runner; the autopilot.md alias was retired
+  // in 0.7.0.
   const go = await readFile(new URL("../plugin/commands/go.md", import.meta.url), "utf8");
   assert.match(go, /chosen\.kind|provider kind/, "go must note provider-kind dispatch");
 });

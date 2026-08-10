@@ -6,8 +6,8 @@ import { readFile } from "node:fs/promises";
 // step must be non-interactive with safe defaults, and the README must tell operators how.
 
 test("go.md documents an unattended Routine mode with safe finish defaults", async () => {
-  // go.md is the canonical hands-off runner now (autopilot.md is a legacy alias stub —
-  // see the alias-shape/alias-guidance checks in test/mode-evals.test.js).
+  // go.md is the canonical hands-off runner; the autopilot.md alias was retired
+  // in 0.7.0.
   const text = await readFile(new URL("../plugin/commands/go.md", import.meta.url), "utf8");
   assert.match(text, /unattended/i, "go must document unattended mode");
   assert.match(text, /routine/i, "go must tie unattended mode to Routines");

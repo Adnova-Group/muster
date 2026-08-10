@@ -785,7 +785,7 @@ async function ensureLearningAncestors(root, path, rel) {
   if (!(await resolveContainedRealpath(root, dirname(path)))) throw new Error(`unsafe ancestor for ${rel}`);
 }
 
-async function readLearningMetadata(root, path, rel, expectedInfo, capture, deadline = Infinity) {
+async function readLearningMetadata(root, path, rel, expectedInfo, capture, deadline = Infinity, afterOpen) {
   let handle;
   try {
     await ensureLearningAncestors(root, path, rel);
@@ -798,6 +798,7 @@ async function readLearningMetadata(root, path, rel, expectedInfo, capture, dead
     if (before.ino !== expectedInfo.ino || before.dev !== expectedInfo.dev) {
       throw learningFileChanged(rel);
     }
+    await afterOpen?.({ path, rel });
     if (before.size > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error(`unsafe regular file: ${rel}`);
     const size = Number(before.size);
     const digest = createHash("sha256");
@@ -838,7 +839,7 @@ async function readLearningMetadata(root, path, rel, expectedInfo, capture, dead
   }
 }
 
-async function learnFacts(root, deadline = Date.now() + INIT_LIMITS.fingerprintDeadlineMs) {
+async function learnFacts(root, deadline = Date.now() + INIT_LIMITS.fingerprintDeadlineMs, { afterLearningOpen } = {}) {
   const digests = new Map();
   const rows = [];
   const limitations = [];
@@ -917,7 +918,7 @@ async function learnFacts(root, deadline = Date.now() + INIT_LIMITS.fingerprintD
         if (!reserveEvidence(factBytes, rel)) continue;
         const parse = name === "package.json" && info.size <= BigInt(INIT_LIMITS.learnFileBytes) &&
           info.size <= BigInt(INIT_LIMITS.learnCaptureBytes - capturedBytes);
-        const opened = await readLearningMetadata(root, path, rel, info, parse, deadline);
+        const opened = await readLearningMetadata(root, path, rel, info, parse, deadline, afterLearningOpen);
         learnedBytes += opened.size;
         capturedBytes += opened.bytes?.length || 0;
         digests.set(rel, opened);
@@ -960,14 +961,16 @@ function boundSerializedProfile(profile) {
   return profile;
 }
 
-export async function learnProjectProfile(dir) {
+export async function learnProjectProfile(dir, { __afterLearningOpen } = {}) {
   const root = await validateRoot(dir);
   const deadline = Date.now() + INIT_LIMITS.fingerprintDeadlineMs;
   const learningSnapshot = await rejectSpecialEntries(root, root, "", null, { deadline, entries: 0 });
   const vcs = await rootVcs(root);
   const owned = await readOwned(root);
   const classification = owned?.receipt.classification ?? await classify(root);
-  const { digests, extensions, limitations, rows, sourceRoots, testRoots } = await learnFacts(root, deadline);
+  const { digests, extensions, limitations, rows, sourceRoots, testRoots } = await learnFacts(root, deadline, {
+    afterLearningOpen: __afterLearningOpen,
+  });
   const languages = new Set();
   const frameworks = new Set();
   const managers = new Set();

@@ -922,41 +922,28 @@ test("learnProjectProfile: a manifest swapped mid-read rejects with the changed-
   // hardlinks work): repositoryFingerprint (init.js:332) walks EVERY root
   // entry, so in-root stagings would be raced too and could throw first.
   const stagingDir = await tmp();
-  // Big (valid-JSON) manifest so the guarded read spans many swap cycles; the
-  // learning read cap (INIT_LIMITS.learnFileBytes) is 1 MiB.
+  // Big (valid-JSON) manifest exercises the captured-read path; the learning
+  // read cap (INIT_LIMITS.learnFileBytes) is 1 MiB.
   const big = `{"scripts":{"test":"node --test"},"_filler":"${"a".repeat(800_000)}"}`;
   const stagingA = join(stagingDir, "staging-a.json"), stagingB = join(stagingDir, "staging-b.json");
   await writeFile(stagingA, big);
   await writeFile(stagingB, big);
   const target = join(dir, "package.json");
   await link(stagingA, target);
-  // Continuously replace the target between the walk's lstat and the guarded
-  // read: unlink drops the held inode's nlink mid-read, the alternating relink
-  // swaps which inode the name resolves to, and the 1ms dwell keeps the name
-  // resolving (without it the target is absent at open too often).
-  let stop = false;
-  const swapper = (async () => {
-    const stagings = [stagingA, stagingB];
-    for (let i = 0; !stop; i++) {
-      await unlink(target).catch(() => {});
-      await link(stagings[i % 2], target).catch(() => {});
-      await sleep(1);
-    }
-  })();
-  try {
-    let changed = null;
-    for (let attempt = 0; attempt < 12 && changed === null; attempt++) {
-      try {
-        await learnProjectProfile(dir); // a miss reads clean -- retry
-      } catch (error) {
-        // A benign ENOENT (open landing in the unlinked gap) is a miss too.
-        if (error?.fsSafe?.reason === "changed") changed = error;
-      }
-    }
-    assert.ok(changed, "the changed-while-reading rejection must surface within 12 attempts");
-    assert.equal(changed.message, "file changed while reading: package.json");
-  } finally {
-    stop = true;
-    await swapper;
-  }
+  // Replace the name only after the reader has pinned stagingA's descriptor.
+  // This deterministically drops that inode's link count and redirects the
+  // path to stagingB without depending on event-loop scheduling.
+  let swapped = false;
+  await assert.rejects(
+    learnProjectProfile(dir, {
+      async __afterLearningOpen({ rel }) {
+        if (rel !== "package.json" || swapped) return;
+        swapped = true;
+        await unlink(target);
+        await link(stagingB, target);
+      },
+    }),
+    error => error?.fsSafe?.reason === "changed" && error.message === "file changed while reading: package.json",
+  );
+  assert.equal(swapped, true);
 });

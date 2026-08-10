@@ -119,7 +119,6 @@ async function withinInventoryDeadline(operation, { __timeoutMs } = {}) {
           },
           timeoutMs,
         );
-        timer.unref?.();
       }),
     ]);
   } finally {

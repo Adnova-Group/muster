@@ -1,0 +1,465 @@
+import { posix } from "node:path";
+
+// Cleanup is deliberately a policy boundary.  It consumes bounded observations
+// from Orca's documented CLI/filesystem surfaces and produces commands for an
+// Orca caller to approve and execute.  It never talks to Orca's RPC layer or
+// database, and planning is always side-effect free.
+export const ORCA_WORKTREE_CLEANUP_SCHEMA_VERSION = 1;
+export const ORCA_CLEANUP_OPERATIONS = Object.freeze([
+  "worktree-remove",
+  "branch-delete",
+]);
+export const ORCA_CLEANUP_REASONS = Object.freeze([
+  "malformed-input",
+  "approval-required",
+  "terminal-not-released",
+  "terminal-active",
+  "terminal-release-uncertain",
+  "dirty-tree",
+  "clean-tree-unproven",
+  "identity-mismatch",
+  "receipt-incomplete",
+  "receipt-not-durable",
+  "receipt-identity-mismatch",
+  "review-not-passed",
+  "ship-not-approved",
+  "merged-ancestry-unverified",
+  "unmerged",
+  "remote-selector-invalid",
+  "race-detected",
+  "protected-branch",
+  "branch-deletion-not-approved",
+  "remote-branch-deletion-unsupported",
+]);
+
+const SHA_RE = /^[0-9a-f]{40}$/;
+const MAX_TEXT = 1024;
+const MAX_PATH = 4096;
+const RELEASED_STATES = new Set(["released", "closed", "terminated", "detached"]);
+const COMPLETED_STATES = new Set(["completed", "complete", "passed", "success", "succeeded"]);
+const SHIPPED_STATES = new Set(["approved", "merged", "shipped", "complete", "completed", "passed"]);
+const PROTECTED_BRANCHES = new Set(["main", "master", "develop", "development", "trunk", "production", "staging"]);
+
+function isObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function text(value, label, { optional = false, max = MAX_TEXT } = {}) {
+  if (value === undefined || value === null) {
+    if (optional) return null;
+    throw new TypeError(`${label} is required`);
+  }
+  if (typeof value !== "string" || !value.trim() || value.length > max
+    || /[\u0000-\u001f\u007f-\u009f]/.test(value)) {
+    throw new TypeError(`${label} must be a bounded string`);
+  }
+  return value.trim();
+}
+
+function optionalText(value, label, options = {}) {
+  return text(value, label, { ...options, optional: true });
+}
+
+function bool(value) {
+  return typeof value === "boolean" ? value : null;
+}
+
+function first(value, ...keys) {
+  if (!isObject(value)) return null;
+  for (const key of keys) if (value[key] !== undefined && value[key] !== null) return value[key];
+  return null;
+}
+
+function lower(value) {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
+}
+
+function sha(value, label, { optional = false } = {}) {
+  const result = optionalText(value, label, { max: 40 });
+  if (result === null) {
+    if (optional) return null;
+    throw new TypeError(`${label} must be a Git SHA`);
+  }
+  if (!SHA_RE.test(result)) throw new TypeError(`${label} must be a lowercase 40-character Git SHA`);
+  return result;
+}
+
+function normalizeBranch(value) {
+  const branch = text(value, "branch");
+  if (branch.length > 512 || branch.startsWith("-") || branch.includes("..")
+    || branch.includes("//") || branch.endsWith("/") || branch.endsWith(".")
+    || /[\s~^:?*\\[\]\\]/.test(branch)) {
+    throw new TypeError("branch is not a safe Git branch name");
+  }
+  return branch;
+}
+
+function normalizeIdentity(value, label = "identity") {
+  if (!isObject(value)) throw new TypeError(`${label} must be an object`);
+  const worktreeId = text(first(value, "worktreeId", "worktree_id", "id"), `${label}.worktreeId`);
+  const repositoryId = text(first(value, "repositoryId", "repository_id", "repoId", "repo_id"), `${label}.repositoryId`);
+  const path = text(first(value, "worktreePath", "worktree_path", "path"), `${label}.path`, { max: MAX_PATH });
+  if (!posix.isAbsolute(path) || posix.normalize(path) !== path) throw new TypeError(`${label}.path must be absolute and normalized`);
+  const branch = normalizeBranch(first(value, "branch", "branchName", "branch_name"));
+  const baseSha = sha(first(value, "baseSha", "base_sha", "baseRevisionSha", "base_revision_sha"), `${label}.baseSha`);
+  const baseRef = optionalText(first(value, "baseRef", "base_ref", "baseBranch", "base_branch"), `${label}.baseRef`);
+  const host = text(first(value, "host", "hostId", "host_id") ?? "local", `${label}.host`);
+  const environmentId = text(first(value, "environmentId", "environment_id") ?? (host === "local" ? "local" : null), `${label}.environmentId`);
+  const remoteSelector = text(first(value, "remoteSelector", "remote_selector", "selector"), `${label}.remoteSelector`);
+  const expectedSelector = host === "local" ? `path:${path}` : `id:${repositoryId}::${path}`;
+  if (remoteSelector !== expectedSelector) throw new TypeError("remote selector does not identify the exact worktree");
+  if ((host === "local") !== (environmentId === "local")) throw new TypeError("host and environment identity disagree");
+  return Object.freeze({
+    worktreeId,
+    repositoryId,
+    path,
+    branch,
+    baseRef,
+    baseSha,
+    host,
+    environmentId,
+    remoteSelector,
+  });
+}
+
+function identityMismatches(expected, observed) {
+  return [
+    ["worktreeId", expected.worktreeId, observed.worktreeId],
+    ["repositoryId", expected.repositoryId, observed.repositoryId],
+    ["path", expected.path, observed.path],
+    ["branch", expected.branch, observed.branch],
+    ["baseRef", expected.baseRef, observed.baseRef],
+    ["baseSha", expected.baseSha, observed.baseSha],
+    ["host", expected.host, observed.host],
+    ["environmentId", expected.environmentId, observed.environmentId],
+    ["remoteSelector", expected.remoteSelector, observed.remoteSelector],
+  ].filter(([, left, right]) => left !== right).map(([key]) => key);
+}
+
+function identityFrom(input, ...keys) {
+  for (const key of keys) if (isObject(input?.[key])) return input[key];
+  return input;
+}
+
+function releaseEvidence(input) {
+  const source = first(input, "terminalRelease", "terminal_release", "releaseEvidence", "release_evidence")
+    ?? (isObject(input?.terminal) ? input.terminal : input);
+  if (!isObject(source)) return { state: "malformed" };
+  const active = bool(first(source, "active", "isActive"));
+  const released = bool(first(source, "released", "releasedEvidence", "releaseObserved"));
+  const state = lower(first(source, "state", "status", "lifecycle"));
+  const observed = bool(first(source, "observed", "verified", "evidence"));
+  return { active, released, state, observed };
+}
+
+function treeEvidence(input) {
+  const source = first(input, "tree", "cleanTree", "clean_tree", "treeProof") ?? {};
+  if (!isObject(source)) return { clean: null };
+  const porcelain = first(source, "statusPorcelain", "status_porcelain", "porcelain", "gitStatus");
+  const clean = bool(source.clean);
+  return {
+    clean,
+    porcelain: typeof porcelain === "string" ? porcelain : null,
+    observed: bool(first(source, "observed", "verified", "proof")),
+    untracked: bool(first(source, "untracked", "hasUntracked")),
+    changed: bool(first(source, "changed", "hasChanges")),
+    race: source.race === true || source.replaced === true,
+  };
+}
+
+function receiptIdentity(receipt) {
+  return first(receipt, "identity", "orca", "worktree", "topology");
+}
+
+function receiptEvidence(input) {
+  const receipt = first(input, "receipt", "musterReceipt", "muster_receipt");
+  if (!isObject(receipt)) return { receipt: null, status: "", durable: null, id: null };
+  return {
+    receipt,
+    status: lower(first(receipt, "status", "state", "result")),
+    durable: receipt.durable === true || lower(first(receipt, "durability", "persistence")) === "durable",
+    id: optionalText(first(receipt, "id", "receiptId", "receipt_id"), "receipt.id"),
+  };
+}
+
+function reviewEvidence(input) {
+  const review = first(input, "review", "reviewEvidence", "review_evidence") ?? {};
+  const ship = first(input, "ship", "shipEvidence", "ship_evidence", "handoff") ?? review.ship ?? {};
+  return {
+    review,
+    ship,
+    verdict: lower(first(review, "verdict", "reviewVerdict", "review_verdict", "result"))
+      || lower(first(input, "reviewVerdict", "review_verdict")),
+    shipApproved: ship.approved === true || ship.authorized === true,
+    shipStatus: lower(first(ship, "status", "state", "result")),
+  };
+}
+
+function mergeEvidence(input) {
+  const source = first(input, "merge", "mergedCommit", "merged_commit", "ancestry") ?? {};
+  const ancestry = isObject(source.ancestry) ? source.ancestry : source;
+  const commitSha = first(ancestry, "commitSha", "commit_sha", "mergedCommitSha", "merged_commit_sha", "sha");
+  const targetSha = first(ancestry, "targetSha", "target_sha", "baseHeadSha", "base_head_sha", "intoSha", "into_sha", "target", "base");
+  return {
+    source,
+    merged: source.merged === true || source.status === "merged" || source.state === "merged",
+    commitSha: commitSha === null ? null : sha(commitSha, "merge.commitSha"),
+    targetSha: targetSha === null ? null : sha(targetSha, "merge.targetSha"),
+    verified: ancestry.verified === true || ancestry.ancestryVerified === true || ancestry.ancestry_verified === true,
+    isAncestor: ancestry.isAncestor === true || ancestry.is_ancestor === true,
+    race: source.race === true || ancestry.race === true,
+  };
+}
+
+function protectedBranch(input, branch) {
+  if (input.protectedBranch === true || input.protected_branch === true) return true;
+  if (Array.isArray(input.protectedBranches) && input.protectedBranches.includes(branch)) return true;
+  return PROTECTED_BRANCHES.has(branch) || branch.startsWith("release/");
+}
+
+function approvalEvidence(input) {
+  const approval = isObject(input.approval) ? input.approval : {};
+  return {
+    approval,
+    approved: approval.approved === true || approval.authorized === true || input.explicitApproval === true,
+    branchDeleteRequested: input.deleteBranch === true || input.delete_branch === true || input.branchDeletion === true,
+    branchDeleteApproved: approval.deleteBranch === true || approval.delete_branch === true
+      || approval.branchDeletion === true || approval.branch_deletion === true,
+  };
+}
+
+function deny(reason, errors = [reason], details = {}) {
+  return {
+    ok: false,
+    authorized: false,
+    reason,
+    errors: errors.filter(Boolean),
+    operations: [],
+    readOnly: true,
+    stateMutation: false,
+    ...details,
+  };
+}
+
+export function computeOrcaCleanupFingerprint(identity, evidence = {}) {
+  const normalized = normalizeIdentity(identity, "fingerprint.identity");
+  const stable = {
+    identity: normalized,
+    terminalReleaseId: optionalText(evidence.terminalReleaseId, "fingerprint.terminalReleaseId"),
+    receiptId: optionalText(evidence.receiptId, "fingerprint.receiptId"),
+    mergedCommitSha: evidence.mergedCommitSha ?? null,
+    targetSha: evidence.targetSha ?? null,
+  };
+  return JSON.stringify(stable);
+}
+
+/**
+ * Evaluate cleanup authorization and return deterministic, non-mutating
+ * operations. Every required observation is explicit; missing or uncertain
+ * evidence is a denial rather than a best effort.
+ */
+export function evaluateOrcaWorktreeCleanup(input = {}) {
+  if (!isObject(input)) return deny("malformed-input", ["cleanup request must be an object"]);
+  let identity;
+  let observed;
+  try {
+    identity = normalizeIdentity(identityFrom(input, "identity", "expectedIdentity", "expected_identity", "worktree"));
+    observed = normalizeIdentity(identityFrom(input, "observedIdentity", "observed_identity", "currentIdentity", "current_identity", "observed"), "observed identity");
+  } catch (error) {
+    const reason = error.message.includes("remote selector") ? "remote-selector-invalid" : "malformed-input";
+    return deny(reason, [error.message]);
+  }
+  const mismatches = identityMismatches(identity, observed);
+  if (mismatches.length) return deny("identity-mismatch", [`identity mismatch: ${mismatches.join(", ")}`], { mismatches });
+
+  const approval = approvalEvidence(input);
+  if (!approval.approved) return deny("approval-required", ["cleanup requires explicit approval"]);
+  if (protectedBranch(input, identity.branch)) return deny("protected-branch", ["protected branches cannot be cleaned up"]);
+
+  if (input.raceDetected === true || input.race_detected === true || input.stateChanged === true
+    || input.concurrentlyModified === true || input.precondition?.stable === false) {
+    return deny("race-detected", ["cleanup observations changed during preflight"]);
+  }
+
+  const terminal = releaseEvidence(input);
+  if (terminal.active === true) return deny("terminal-active", ["terminal is still active"]);
+  if (terminal.released !== true && !RELEASED_STATES.has(terminal.state)) {
+    return deny("terminal-not-released", ["terminal release evidence is required"]);
+  }
+  if (terminal.active !== false) return deny("terminal-release-uncertain", ["terminal active state is unknown"]);
+  if (terminal.observed === false) return deny("terminal-release-uncertain", ["terminal release was not observed"]);
+
+  const tree = treeEvidence(input);
+  if (tree.race) return deny("race-detected", ["tree proof was replaced during preflight"]);
+  if (tree.porcelain !== null && tree.porcelain !== "") return deny("dirty-tree", ["git status reports changes"]);
+  if (tree.untracked === true || tree.changed === true || tree.clean === false) return deny("dirty-tree", ["worktree is dirty"]);
+  if (tree.clean !== true && !(tree.porcelain === "" && tree.observed === true)) {
+    return deny("clean-tree-unproven", ["clean-tree proof is required"]);
+  }
+
+  const receipt = receiptEvidence(input);
+  if (!receipt.receipt || !COMPLETED_STATES.has(receipt.status)) return deny("receipt-incomplete", ["a completed Muster receipt is required"]);
+  if (!receipt.durable) return deny("receipt-not-durable", ["Muster receipt durability was not proven"]);
+  if (!receipt.id) return deny("receipt-incomplete", ["Muster receipt id is required"]);
+  if (receipt.receipt.owner !== undefined && lower(receipt.receipt.owner) !== "muster") {
+    return deny("receipt-incomplete", ["receipt owner must be Muster"]);
+  }
+  if (receiptIdentity(receipt.receipt) !== null) {
+    try {
+      const receiptWorktree = normalizeIdentity(receiptIdentity(receipt.receipt), "receipt.identity");
+      const receiptMismatches = identityMismatches(identity, receiptWorktree);
+      if (receiptMismatches.length) return deny("receipt-identity-mismatch", [`receipt identity mismatch: ${receiptMismatches.join(", ")}`], { mismatches: receiptMismatches });
+    } catch (error) {
+      return deny("receipt-identity-mismatch", [error.message]);
+    }
+  }
+
+  const review = reviewEvidence(input);
+  if (!isObject(review.review) || review.verdict !== "pass") return deny("review-not-passed", ["Muster review evidence must be PASS"]);
+  if (!review.shipApproved && !SHIPPED_STATES.has(review.shipStatus)) return deny("ship-not-approved", ["ship evidence must be explicitly approved"]);
+
+  let merge;
+  try {
+    merge = mergeEvidence(input);
+  } catch (error) {
+    return deny("merged-ancestry-unverified", [error.message]);
+  }
+  if (merge.race) return deny("race-detected", ["merge evidence changed during preflight"]);
+  if (!merge.merged) return deny("unmerged", ["merged state is required"]);
+  if (!merge.commitSha || !merge.targetSha || !merge.verified || !merge.isAncestor) {
+    return deny("merged-ancestry-unverified", ["merged commit ancestry must be verified"]);
+  }
+
+  const expectedFingerprint = optionalText(input.precondition?.fingerprint, "precondition.fingerprint");
+  const fingerprint = computeOrcaCleanupFingerprint(identity, {
+    terminalReleaseId: first(input.terminalRelease ?? input.releaseEvidence, "id", "releaseId", "release_id"),
+    receiptId: receipt.id,
+    mergedCommitSha: merge.commitSha,
+    targetSha: merge.targetSha,
+  });
+  if (expectedFingerprint !== null && expectedFingerprint !== fingerprint) {
+    return deny("race-detected", ["cleanup precondition fingerprint does not match current evidence"]);
+  }
+
+  if (approval.branchDeleteRequested && identity.host !== "local") {
+    return deny("remote-branch-deletion-unsupported", ["remote branch deletion requires a separately documented Orca operation"]);
+  }
+  if (approval.branchDeleteRequested && !approval.branchDeleteApproved) {
+    return deny("branch-deletion-not-approved", ["branch deletion requires separate explicit approval"]);
+  }
+
+  const operations = [{
+    type: "worktree-remove",
+    command: "orca",
+    args: ["worktree", "rm", "--worktree", identity.remoteSelector, "--json"],
+    selector: identity.remoteSelector,
+    requiresExplicitApproval: true,
+  }];
+  if (approval.branchDeleteRequested) operations.push({
+    type: "branch-delete",
+    command: "git",
+    args: ["branch", "-d", "--", identity.branch],
+    branch: identity.branch,
+    requiresExplicitApproval: true,
+  });
+  return {
+    ok: true,
+    authorized: true,
+    reason: null,
+    errors: [],
+    schemaVersion: ORCA_WORKTREE_CLEANUP_SCHEMA_VERSION,
+    identity,
+    operations,
+    precondition: { fingerprint, identity, receiptId: receipt.id, mergedCommitSha: merge.commitSha, targetSha: merge.targetSha },
+    readOnly: true,
+    stateMutation: false,
+  };
+}
+
+export const authorizeOrcaWorktreeCleanup = evaluateOrcaWorktreeCleanup;
+export const planOrcaWorktreeCleanup = evaluateOrcaWorktreeCleanup;
+
+function samePlanFingerprint(plan, decision) {
+  return isObject(plan?.precondition) && plan.precondition.fingerprint === decision.precondition?.fingerprint;
+}
+
+function isSafeExecutionPlan(plan) {
+  if (!isObject(plan) || plan.authorized !== true || !isObject(plan.identity)
+    || !isObject(plan.precondition) || typeof plan.precondition.fingerprint !== "string") return false;
+  let identity;
+  try {
+    identity = normalizeIdentity(plan.identity, "plan.identity");
+  } catch {
+    return false;
+  }
+  if (!Array.isArray(plan.operations) || (plan.operations.length !== 1 && plan.operations.length !== 2)) return false;
+  const expected = [{
+    type: "worktree-remove",
+    command: "orca",
+    args: ["worktree", "rm", "--worktree", identity.remoteSelector, "--json"],
+    selector: identity.remoteSelector,
+    requiresExplicitApproval: true,
+  }];
+  if (plan.operations.length === 2) {
+    if (identity.host !== "local") return false;
+    expected.push({
+      type: "branch-delete",
+      command: "git",
+      args: ["branch", "-d", "--", identity.branch],
+      branch: identity.branch,
+      requiresExplicitApproval: true,
+    });
+  }
+  return plan.operations.every((operation, index) => JSON.stringify(operation) === JSON.stringify(expected[index]));
+}
+
+/**
+ * Execute only a previously authorized plan after explicit confirmation. The
+ * optional readState callback is a public-CLI recheck seam; if supplied, its
+ * normalized observation must produce the exact same fingerprint before any
+ * mutating command is invoked.
+ */
+export async function executeOrcaWorktreeCleanup({ input, plan, confirm = false, readState, runCommand } = {}) {
+  const decision = plan ?? evaluateOrcaWorktreeCleanup(input);
+  if (!decision?.authorized) return decision?.reason ? decision : deny("approval-required", ["cleanup plan is not authorized"]);
+  if (plan && !isSafeExecutionPlan(plan)) return deny("malformed-input", ["cleanup plan is not a deterministic authorized plan"]);
+  if (confirm !== true) return deny("approval-required", ["cleanup execution requires explicit confirmation"]);
+  if (typeof runCommand !== "function") return deny("malformed-input", ["runCommand callback is required for execution"]);
+  if (typeof readState === "function") {
+    let current;
+    try {
+      current = await readState({ selector: decision.identity.remoteSelector, identity: decision.identity });
+    } catch (error) {
+      return deny("race-detected", [`cleanup recheck failed: ${error.message}`]);
+    }
+    const currentInput = isObject(current)
+      ? { ...(isObject(input) ? input : {}), ...current,
+        observedIdentity: current.observedIdentity ?? current.observed_identity ?? current.identity ?? current }
+      : input;
+    const fresh = evaluateOrcaWorktreeCleanup(currentInput);
+    if (!fresh.authorized || !samePlanFingerprint(decision, fresh)) {
+      return deny("race-detected", ["cleanup recheck did not match the authorized precondition"]);
+    }
+  }
+  const completed = [];
+  try {
+    for (const operation of decision.operations) {
+      await runCommand({ command: operation.command, args: [...operation.args], operation: operation.type, selector: operation.selector, branch: operation.branch });
+      completed.push(operation.type);
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      authorized: true,
+      reason: "cleanup-operation-failed",
+      errors: [error?.message || "cleanup operation failed"],
+      completed,
+      operations: decision.operations,
+      readOnly: false,
+      stateMutation: completed.length > 0,
+    };
+  }
+  return { ok: true, authorized: true, reason: null, errors: [], completed, operations: decision.operations, readOnly: false, stateMutation: true };
+}
+
+export const applyOrcaWorktreeCleanup = executeOrcaWorktreeCleanup;

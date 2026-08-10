@@ -30,7 +30,7 @@ adapter or user action.
 
 | Concern | Default owner | Allowed observer/integration | Boundary rule |
 |---|---|---|---|
-| Orca-created worktrees | Orca | Muster | Muster records exact path/id/base SHA; it does not remove or rename them. |
+| Orca-created worktrees | Orca | Muster | Muster records exact path/id/base SHA; the merge gate may emit an explicit public-CLI cleanup disposition after merge, but never removes implicitly. |
 | Muster-created worktrees | Muster | Orca, after import/registration | Orca may provide terminals/UI; Muster remains responsible for lifecycle and receipts. |
 | Terminal tabs, panes, PTYs | Orca | Muster | Use Orca CLI handles and status; never infer task completion from idle alone. |
 | Session restore/hibernation | Orca | Muster | Reacquire terminal identity after restore; resume is provider-specific. |
@@ -93,9 +93,9 @@ Muster-owned slice.
    shared Muster state root.
 5. Orca's worktree comment may be updated with a short human checkpoint, but
    the full result remains in the Muster receipt.
-6. Cleanup is decided by the owner: Muster closes its task/receipt; Orca
-   archives/deletes the worktree only after the user or an explicit Orca
-   workflow requests it.
+6. Muster closes its task/receipt and, when the existing merge gate passes,
+   emits the exact post-merge cleanup disposition. Orca executes the public
+   CLI operations; no worktree or branch is removed implicitly.
 
 The adapter must classify `.worktreeinclude`, shared directories, generated
 dependencies, and secrets before declaring a receipt reproducible. A shared
@@ -275,6 +275,30 @@ Add read-only projections:
 
 Success criterion: users can understand both states without either system
 mutating the other's graph.
+
+### Phase 2.5 — Merge-gate cleanup disposition
+
+Cleanup is part of the existing Muster merge gate, not a second approval flow.
+After the gate proves authority, receipt durability, review PASS, explicit ship
+handoff, exact Orca identity, clean-tree state, terminal release, and merged
+commit ancestry, it composes the cleanup evaluator and returns one bounded
+post-merge disposition:
+
+```text
+orca worktree rm --worktree <exact-public-selector> --json
+git branch -d -- <eligible-local-branch>
+```
+
+The branch operation is included only for an eligible local, non-protected
+branch requested by that same merge disposition. Remote branch deletion is
+unsupported in this contract. The evaluator returns no operations for dirty,
+active, unmerged, mismatched, raced, protected, malformed, or uncertain state.
+Execution remains behind the public Orca CLI boundary and performs an exact
+state recheck against the disposition fingerprint before invoking any command.
+
+Success criterion: a passing merge gate produces deterministic cleanup
+operations, while every unsafe or incomplete precondition fails closed without
+deleting a worktree, branch, receipt, or task graph.
 
 ### Phase 3 — Explicit placement handoff
 

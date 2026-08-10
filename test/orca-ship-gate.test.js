@@ -13,9 +13,14 @@ import {
 import { buildOrcaStatusBridge } from "../src/orca-status-bridge.js";
 
 const FIXTURE_ROOT = join(process.cwd(), "test/fixtures/orca-topology");
+const CLEANUP_FIXTURE_ROOT = join(process.cwd(), "test/fixtures/orca-cleanup");
 
 async function fixture(name) {
   return JSON.parse(await readFile(join(FIXTURE_ROOT, `${name}.json`), "utf8"));
+}
+
+async function cleanupFixture(name = "local-approved") {
+  return JSON.parse(await readFile(join(CLEANUP_FIXTURE_ROOT, `${name}.json`), "utf8"));
 }
 
 async function validEvidence() {
@@ -46,18 +51,19 @@ async function validEvidence() {
   return { orca, status, receipt, handoff: handoff.handoff };
 }
 
-test("the five Orca ship paths have stable classifications", () => {
-  assert.deepEqual(ORCA_SHIP_ACTIONS, ["commit", "push", "pull-request", "check", "direct-git"]);
+test("the direct Orca ship paths and merge gate have stable classifications", () => {
+  assert.deepEqual(ORCA_SHIP_ACTIONS, ["commit", "push", "pull-request", "check", "direct-git", "merge"]);
   assert.equal(classifyOrcaShipAction("commit"), "commit");
   assert.equal(classifyOrcaShipAction({ command: "git push origin feature" }), "push");
   assert.equal(classifyOrcaShipAction({ command: "gh pr create --title ship" }), "pull-request");
   assert.equal(classifyOrcaShipAction({ command: "gh pr checks 42" }), "check");
   assert.equal(classifyOrcaShipAction({ command: "git status --short" }), "direct-git");
+  assert.equal(classifyOrcaShipAction({ command: "git merge --no-ff feature" }), "merge");
   assert.equal(classifyOrcaShipAction("unrecognized"), null);
 });
 
 test("every direct Orca path fails closed when Muster evidence is absent", () => {
-  for (const action of ORCA_SHIP_ACTIONS) {
+  for (const action of ORCA_SHIP_ACTIONS.filter((candidate) => candidate !== "merge")) {
     const result = evaluateOrcaShipAction({ action, workflowOwner: "muster" });
     assert.equal(result.allowed, false, action);
     assert.equal(result.readOnly, true, action);
@@ -68,7 +74,7 @@ test("every direct Orca path fails closed when Muster evidence is absent", () =>
 
 test("all five paths pass only with matching status, receipt, review, and explicit handoff", async () => {
   const evidence = await validEvidence();
-  for (const action of ORCA_SHIP_ACTIONS) {
+  for (const action of ORCA_SHIP_ACTIONS.filter((candidate) => candidate !== "merge")) {
     const handoff = buildOrcaMusterShipHandoff({
       action,
       attemptId: "attempt-ship-1",
@@ -132,4 +138,87 @@ test("Orca-owned work remains outside this Muster gate", () => {
     readOnly: true,
     stateMutation: false,
   });
+});
+
+test("merge gate composes cleanup and returns one authorized post-merge disposition", async () => {
+  const evidence = await validEvidence();
+  const cleanup = await cleanupFixture();
+  const handoff = buildOrcaMusterShipHandoff({
+    action: "merge",
+    attemptId: "attempt-ship-1",
+    receiptId: "receipt-ship-1",
+    branch: evidence.orca.branch,
+  });
+  const result = evaluateOrcaShipAction({
+    action: "merge",
+    workflowOwner: "muster",
+    statusBridge: evidence.status,
+    receipt: evidence.receipt,
+    handoff: handoff.handoff,
+    cleanup,
+  });
+  assert.equal(result.allowed, true, result.errors?.join("; "));
+  assert.equal(result.disposition, "merge-approved-with-cleanup");
+  assert.equal(result.cleanup.authorized, true);
+  assert.deepEqual(result.operations[0].args, ["worktree", "rm", "--worktree", "path:/workspace/muster-worker", "--json"]);
+  assert.equal(result.stateMutation, false);
+});
+
+test("merge gate makes eligible local branch deletion part of the same authorization", async () => {
+  const evidence = await validEvidence();
+  const cleanup = await cleanupFixture();
+  cleanup.deleteBranch = true;
+  const handoff = buildOrcaMusterShipHandoff({
+    action: "merge",
+    attemptId: "attempt-ship-1",
+    receiptId: "receipt-ship-1",
+    branch: evidence.orca.branch,
+  });
+  const result = evaluateOrcaShipAction({
+    action: "merge", workflowOwner: "muster", statusBridge: evidence.status,
+    receipt: evidence.receipt, handoff: handoff.handoff, cleanup,
+  });
+  assert.equal(result.allowed, true, result.errors?.join("; "));
+  assert.deepEqual(result.operations.at(-1).args, ["branch", "-d", "--", "feature/muster-worker"]);
+});
+
+for (const [label, mutate, reason] of [
+  ["active terminal", (input) => { input.terminalRelease.active = true; }, "terminal-active"],
+  ["dirty tree", (input) => { input.tree.clean = false; input.tree.statusPorcelain = " M file"; }, "dirty-tree"],
+  ["unmerged result", (input) => { input.merge.merged = false; }, "unmerged"],
+  ["identity mismatch", (input) => { input.observedIdentity.branch = "feature/replaced"; }, "identity-mismatch"],
+  ["race", (input) => { input.raceDetected = true; }, "race-detected"],
+  ["protected branch", (input) => { input.identity.branch = "main"; input.observedIdentity.branch = "main"; }, "protected-branch"],
+]) {
+  test(`merge gate denies ${label} without cleanup operations`, async () => {
+    const evidence = await validEvidence();
+    const cleanup = await cleanupFixture();
+    mutate(cleanup);
+    const handoff = buildOrcaMusterShipHandoff({
+      action: "merge", attemptId: "attempt-ship-1", receiptId: "receipt-ship-1", branch: evidence.orca.branch,
+    });
+    const result = evaluateOrcaShipAction({
+      action: "merge", workflowOwner: "muster", statusBridge: evidence.status,
+      receipt: evidence.receipt, handoff: handoff.handoff, cleanup,
+    });
+    assert.equal(result.allowed, false);
+    assert.equal(result.reason, "cleanup-not-authorized");
+    assert.match(result.errors.join(";"), new RegExp(reason));
+  });
+}
+
+test("merge gate denies remote branch deletion as unsupported", async () => {
+  const evidence = await validEvidence();
+  const cleanup = await cleanupFixture("remote-approved");
+  cleanup.deleteBranch = true;
+  const handoff = buildOrcaMusterShipHandoff({
+    action: "merge", attemptId: "attempt-ship-1", receiptId: "receipt-ship-1", branch: evidence.orca.branch,
+  });
+  const result = evaluateOrcaShipAction({
+    action: "merge", workflowOwner: "muster", statusBridge: evidence.status,
+    receipt: evidence.receipt, handoff: handoff.handoff, cleanup,
+  });
+  assert.equal(result.allowed, false);
+  assert.equal(result.reason, "cleanup-not-authorized");
+  assert.match(result.errors.join(";"), /remote branch deletion/i);
 });

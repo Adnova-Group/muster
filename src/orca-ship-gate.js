@@ -8,6 +8,7 @@ import {
   normalizeOrcaWorktreeMetadata,
   validateOrcaReceipt,
 } from "./orca-worktree-receipts.js";
+import { evaluateOrcaWorktreeCleanup } from "./orca-worktree-cleanup.js";
 
 // This is a pure boundary decision.  It does not invoke the Orca CLI, write a
 // checkpoint, update a Run/Task, or alter a Muster receipt.  A caller can use
@@ -19,6 +20,7 @@ export const ORCA_SHIP_ACTIONS = Object.freeze([
   "pull-request",
   "check",
   "direct-git",
+  "merge",
 ]);
 
 const MUSTER_WORKFLOW_AUTHORITY = Object.freeze({
@@ -47,6 +49,9 @@ const ACTION_ALIASES = new Map([
   ["direct-git", "direct-git"],
   ["direct_git", "direct-git"],
   ["git", "direct-git"],
+  ["merge", "merge"],
+  ["merge-gate", "merge"],
+  ["merge_gate", "merge"],
 ]);
 
 const SHIP_COMMANDS = Object.freeze([
@@ -54,6 +59,7 @@ const SHIP_COMMANDS = Object.freeze([
   { expression: /\bgit\s+push\b/i, action: "push" },
   { expression: /\b(?:gh|git)\s+(?:pr\s+create|pull-request\s+create)\b/i, action: "pull-request" },
   { expression: /\b(?:gh\s+pr\s+(?:checks|status)|git\s+diff\s+[^\n]*--check|git\s+fsck)\b/i, action: "check" },
+  { expression: /\b(?:git|gh)\s+(?:merge|pr\s+merge)\b/i, action: "merge" },
   { expression: /\bgit\b/i, action: "direct-git" },
 ]);
 
@@ -293,6 +299,9 @@ export function evaluateOrcaShipAction({
   musterReceipt,
   expectedContext,
   handoff,
+  cleanup,
+  cleanupInput,
+  merge,
 } = {}) {
   const normalizedAction = classifyOrcaShipAction({ action, operation, command });
   const deny = (reason, errors = [reason]) => ({
@@ -330,6 +339,45 @@ export function evaluateOrcaShipAction({
   }
   const branch = currentReceipt?.orca?.branch;
   if (branch && values.branch !== branch) return deny("handoff-branch-mismatch", ["handoff branch does not match receipt worktree"]);
+  if (normalizedAction === "merge") {
+    const requestedCleanup = cleanupInput ?? cleanup;
+    if (!isObject(requestedCleanup)) {
+      return deny("cleanup-evidence-required", ["merge disposition requires cleanup evidence"]);
+    }
+    // The already-validated merge handoff is the sole authorization boundary
+    // for cleanup.  Do not ask the caller to obtain a second cleanup approval;
+    // only preserve the cleanup request's bounded observations and options.
+    const requestedBranchDeletion = requestedCleanup.deleteBranch === true
+      || requestedCleanup.delete_branch === true
+      || requestedCleanup.branchDeletion === true;
+    const cleanupDecision = evaluateOrcaWorktreeCleanup({
+      ...requestedCleanup,
+      explicitApproval: true,
+      approval: {
+        ...(isObject(requestedCleanup.approval) ? requestedCleanup.approval : {}),
+        approved: true,
+        // A requested local branch deletion is part of this same authorized
+        // merge disposition.  The evaluator still rejects remote deletion.
+        ...(requestedBranchDeletion ? { branchDeletion: true } : {}),
+      },
+      merge: requestedCleanup.merge ?? merge,
+    });
+    if (!cleanupDecision.authorized) {
+      return deny("cleanup-not-authorized", [cleanupDecision.reason, ...cleanupDecision.errors]);
+    }
+    return {
+      ok: true,
+      allowed: true,
+      action: normalizedAction,
+      reason: "muster-merge-gate-verified",
+      disposition: "merge-approved-with-cleanup",
+      errors: [],
+      readOnly: true,
+      stateMutation: false,
+      cleanup: cleanupDecision,
+      operations: cleanupDecision.operations,
+    };
+  }
   return {
     ok: true,
     allowed: true,

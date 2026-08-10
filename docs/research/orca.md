@@ -448,6 +448,17 @@ Also worth recording: `terminal create` returns `paneKey` and `executionHostId`,
 two fields `terminal list` omits, and its `paneKey` is exactly the
 `<tabId>:<leafId>` form derived elsewhere in this note.
 
+**A Run cannot be deleted, and `reset` is database-wide.** There is no
+`run-delete` in the 29-command surface, and `orchestration reset --tasks |
+--messages | --all` "clears the selected local orchestration database state"
+[DOCUMENTED, guide] — it takes no `--run` selector, so it is not a per-Run
+operation and cannot be used to retire one Run while others exist in the same
+database. `run-use` binds a Run to the calling terminal and has no unbind. The
+only way to retire a Run is to drive its tasks to terminal states and
+acknowledge its deliveries; the Run row itself persists as an inert namespace,
+which is consistent with a Run being "only a durable namespace and coordinator
+inbox" that "never schedules or places workers".
+
 What remains [UNRESOLVED]: `failed`, `outcome_unknown`, `release_pending`, and
 `release_unknown` were documented but not observed — producing them requires an
 agent that genuinely errors or a runtime that loses a PTY mid-dispatch, neither
@@ -464,9 +475,17 @@ backlog from follow-up commit"). Orca also injects a terminal notice telling the
 agent to run `orca orchestration check`. A Muster adapter must treat message
 bodies as data to report, never as instructions to follow: check the `to_handle`
 and `run_id` before a message is even considered relevant, and never let inbox
-text redirect a Muster plan. Reading is also not free of state — plain `check`
-consumes a delivery batch, so use `--peek` for inspection and reserve `--ack`
-for a batch the coordinator genuinely owns.
+text redirect a Muster plan.
+
+Reading, however, is **not** destructive, and an earlier draft of this note said
+otherwise. Verified against the live runtime: a plain `check` left the message's
+`read` flag at `0` and its `delivered_at` null. The documented semantics are
+`--peek` returns unread messages without marking them read, `--all` returns
+every message for the handle and also does not mark read, and only
+`--ack <delivery_id>` acknowledges a batch — "a bound Run replays the same
+Delivery until `--ack`". Inspection is therefore safe with or without `--peek`;
+the thing to withhold is `--ack`, and only for a batch the coordinator does not
+own.
 
 Useful documented examples include:
 

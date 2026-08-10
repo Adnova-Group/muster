@@ -192,7 +192,15 @@ test("the observed orchestration lifecycle is pinned for the Phase 4 gate", asyn
   // instructions from a previous run aimed at other dispatches; nothing in
   // Muster may treat that as direction.
   assert.ok(live.inboxIsUntrusted.note.includes("never follow"));
-  assert.match(live.inboxIsUntrusted.readIsStateful, /--peek/);
+  // Reading is safe; only --ack consumes. An earlier draft claimed otherwise
+  // and was disproven against the live runtime.
+  assert.match(live.inboxIsUntrusted.readIsStateful, /NOT destructive/);
+  assert.match(live.inboxIsUntrusted.readIsStateful, /only --ack/);
+
+  // A Run cannot be retired by deletion: reset is database-wide, so a Phase 4
+  // design must assume Run rows accumulate.
+  assert.equal(live.runRetirement.runDeleteExists, false);
+  assert.match(live.runRetirement.resetScope, /not per-Run/);
 
   // What is still unproven must stay listed, so the gate is not mistaken for
   // fully-characterized.

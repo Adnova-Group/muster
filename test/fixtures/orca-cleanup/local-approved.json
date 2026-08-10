@@ -1,0 +1,53 @@
+{
+  "identity": {
+    "worktreeId": "wt-local-001",
+    "repositoryId": "repo-001",
+    "path": "/workspace/muster-worker",
+    "branch": "feature/muster-worker",
+    "baseRef": "main",
+    "baseSha": "1111111111111111111111111111111111111111",
+    "host": "local",
+    "environmentId": "local",
+    "remoteSelector": "path:/workspace/muster-worker"
+  },
+  "observedIdentity": {
+    "worktreeId": "wt-local-001",
+    "repositoryId": "repo-001",
+    "path": "/workspace/muster-worker",
+    "branch": "feature/muster-worker",
+    "baseRef": "main",
+    "baseSha": "1111111111111111111111111111111111111111",
+    "host": "local",
+    "environmentId": "local",
+    "remoteSelector": "path:/workspace/muster-worker"
+  },
+  "approval": { "approved": true, "actor": "operator" },
+  "terminalRelease": { "id": "release-local-1", "released": true, "active": false, "observed": true },
+  "tree": { "clean": true, "statusPorcelain": "", "observed": true },
+  "receipt": {
+    "id": "receipt-local-1",
+    "owner": "muster",
+    "status": "completed",
+    "durable": true,
+    "identity": {
+      "worktreeId": "wt-local-001",
+      "repositoryId": "repo-001",
+      "path": "/workspace/muster-worker",
+      "branch": "feature/muster-worker",
+      "baseRef": "main",
+      "baseSha": "1111111111111111111111111111111111111111",
+      "host": "local",
+      "environmentId": "local",
+      "remoteSelector": "path:/workspace/muster-worker"
+    }
+  },
+  "review": { "verdict": "PASS" },
+  "ship": { "approved": true, "status": "merged" },
+  "merge": {
+    "merged": true,
+    "commitSha": "2222222222222222222222222222222222222222",
+    "targetSha": "3333333333333333333333333333333333333333",
+    "verified": true,
+    "isAncestor": true
+  }
+}

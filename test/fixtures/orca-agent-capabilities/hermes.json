@@ -6,6 +6,6 @@
     "mcp": "SUPPORTED",
     "hooks": "SUPPORTED",
     "transcript": "SUPPORTED",
-    "resume": "SUPPORTED"
+    "resume": "UNSUPPORTED"
   }
 }

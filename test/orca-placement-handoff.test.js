@@ -64,10 +64,16 @@ test("one terminal placement is exactly-once and a duplicate does not call Orca 
   const request = prepareOrcaPlacementHandoff(options);
   const ledger = createOrcaPlacementLedger();
   let starts = 0;
-  const startWorker = async ({ request: received, argv }) => {
+  const startWorker = async ({ request: received, operation }) => {
     starts += 1;
     assert.equal(received.attempt_id, request.attempt_id);
-    assert.deepEqual(argv, ["orchestration", "worker-start", "--agent", "codex", "--json"]);
+    // Not a runnable argv: Orca's worker-start requires --task, and this module
+    // refuses to mint an Orca Task. The host is handed the template plus the
+    // flag it must still supply, and the Orca agent name -- not the Muster
+    // profile id -- for --agent.
+    assert.deepEqual(operation.subcommand, ["orchestration", "worker-start"]);
+    assert.equal(operation.agent, "codex");
+    assert.deepEqual(operation.requires, ["--task <orca_task_id>"]);
     return { ok: true, worker_id: "worker-1", terminal_handle: "term-local" };
   };
   const first = await handoffMusterAttemptToOrca({ request, ledger, startWorker });

@@ -76,7 +76,12 @@ const PROFILE_DATA = {
       mcp: status("SUPPORTED", "Hermes MCP integration"),
       hooks: status("SUPPORTED", "Hermes lifecycle hooks"),
       transcript: status("SUPPORTED", "Hermes session persistence"),
-      resume: status("SUPPORTED", "Hermes session/checkpoint continuation"),
+      // Orca is the authority for resume INSIDE Orca, and it names Hermes as
+      // non-resumable: "Cursor CLI, Hermes, Copilot, Trae, and other
+      // non-resumable terminals are left running" [Orca docs, Agent
+      // hibernation]. Whatever continuation Hermes offers on its own, Orca
+      // will not hibernate and resume it.
+      resume: status("UNSUPPORTED", "Orca lists Hermes among non-resumable terminals"),
     },
   },
   cowork: {
@@ -121,6 +126,60 @@ export const ORCA_AGENT_CAPABILITY_PROFILES = Object.freeze(
   Object.fromEntries(Object.entries(PROFILE_DATA).map(([id, profile]) => [id, freezeProfile(profile)])),
 );
 export const ORCA_AGENT_PROVIDERS = Object.freeze(Object.keys(ORCA_AGENT_CAPABILITY_PROFILES));
+
+/**
+ * Orca's own hibernation eligibility list, quoted from the docs rather than
+ * inferred from a Muster provider profile.
+ *
+ * Eligible: "Claude, Codex, Gemini, Antigravity, OpenCode, Pi, MiMo Code,
+ * Droid, Grok, Devin, or OMP."
+ * Not eligible: "Cursor CLI, Hermes, Copilot, Trae, and other non-resumable
+ * terminals are left running."
+ * [Orca docs, Agent hibernation]
+ *
+ * This is deliberately separate from CAPABILITY_SURFACES.resume: that surface
+ * describes what the provider CLI can do, this one describes what Orca will do
+ * with it. Only the latter can explain a disconnected Orca terminal.
+ */
+export const ORCA_HIBERNATION_ELIGIBLE_PROVIDERS = Object.freeze([
+  "claude", "claude-code", "codex", "gemini", "antigravity", "opencode",
+  "pi", "mimo-code", "droid", "grok", "devin", "omp",
+]);
+
+export const ORCA_HIBERNATION_INELIGIBLE_PROVIDERS = Object.freeze([
+  "cursor-cli", "hermes", "copilot", "trae",
+]);
+
+/** "eligible" | "not-eligible" | "unknown" -- never guessed from a resume flag. */
+export function orcaHibernationEligibility(provider) {
+  const key = profileKey(provider);
+  if (key === null) return "unknown";
+  if (ORCA_HIBERNATION_ELIGIBLE_PROVIDERS.includes(key)) return "eligible";
+  if (ORCA_HIBERNATION_INELIGIBLE_PROVIDERS.includes(key)) return "not-eligible";
+  return "unknown";
+}
+
+/**
+ * The value Orca's `--agent` flag expects, per provider profile.
+ *
+ * A Muster profile id is not an Orca agent name. `cowork` and `chatgpt-work`
+ * are Muster-side providers that do not appear in Orca's supported-agent
+ * catalog at all, so they map to null and placement must refuse them rather
+ * than emit a flag Orca cannot resolve.
+ */
+export const ORCA_AGENT_NAMES = Object.freeze({
+  "claude-code": "claude",
+  codex: "codex",
+  kimi: "kimi",
+  hermes: "hermes",
+  cowork: null,
+  "chatgpt-work": null,
+});
+
+export function orcaAgentName(profile) {
+  const key = profileKey(profile);
+  return key === null ? null : ORCA_AGENT_NAMES[key] ?? null;
+}
 
 function isObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);

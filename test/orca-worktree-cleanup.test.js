@@ -22,8 +22,10 @@ test("local cleanup requires all terminal, tree, receipt, review, ship, and ance
   assert.deepEqual(result.operations[0], {
     type: "worktree-remove",
     command: "orca",
-    args: ["worktree", "rm", "--worktree", "path:/workspace/muster-worker", "--json"],
+    args: ["worktree", "rm", "--worktree", "path:/workspace/muster-worker", "--force", "--json"],
     selector: "path:/workspace/muster-worker",
+    branch: "feature/muster-worker",
+    deletesBranch: true,
     requiresExplicitApproval: true,
   });
   assert.equal(result.operations.length, 1);
@@ -34,20 +36,50 @@ test("remote cleanup uses an exact id selector and never invents a local path co
   const result = evaluateOrcaWorktreeCleanup(await fixture("remote-approved"));
   assert.equal(result.ok, true, result.errors?.join("; "));
   assert.deepEqual(result.operations.map((operation) => operation.args), [[
-    "worktree", "rm", "--worktree", "id:repo-001::/srv/worktrees/muster-worker", "--json",
+    "worktree", "rm", "--worktree", "id:repo-001::/srv/worktrees/muster-worker", "--force", "--json",
   ]]);
 });
 
-test("branch deletion is optional and separately approved", async () => {
+// Orca documents worktree deletion as removing the directory AND the branch, so
+// there is no second `git branch -d` to approve -- and no way to keep a branch
+// whose worktree is being removed. Both facts have to be visible in the result.
+test("the single removal operation declares that Orca deletes the branch with it", async () => {
+  const result = evaluateOrcaWorktreeCleanup(await fixture("local-approved"));
+  assert.equal(result.ok, true, result.errors?.join("; "));
+  assert.equal(result.operations.length, 1);
+  assert.equal(result.operations[0].deletesBranch, true);
+  assert.deepEqual(result.branchDisposition, {
+    branch: "feature/muster-worker",
+    removedBy: "orca",
+    evidence: "Orca documents worktree deletion as removing both the directory and the branch",
+  });
+  assert.equal(result.operations.some((operation) => operation.command === "git"), false);
+});
+
+test("branch deletion must be acknowledged because the removal cannot avoid it", async () => {
   const input = await fixture("local-approved");
-  input.deleteBranch = true;
-  let denied = evaluateOrcaWorktreeCleanup(input);
+  delete input.approval.branchDeletion;
+  const denied = evaluateOrcaWorktreeCleanup(input);
   assert.equal(denied.ok, false);
   assert.equal(denied.reason, "branch-deletion-not-approved");
-  input.approval.branchDeletion = true;
-  const result = evaluateOrcaWorktreeCleanup(input);
-  assert.equal(result.ok, true, result.errors?.join("; "));
-  assert.deepEqual(result.operations.at(-1).args, ["branch", "-d", "--", "feature/muster-worker"]);
+  assert.deepEqual(denied.operations, []);
+});
+
+test("a request to preserve the branch fails closed rather than being silently ignored", async () => {
+  const input = await fixture("local-approved");
+  input.preserveBranch = true;
+  const denied = evaluateOrcaWorktreeCleanup(input);
+  assert.equal(denied.ok, false);
+  assert.equal(denied.reason, "branch-preservation-unsupported");
+  assert.deepEqual(denied.operations, []);
+});
+
+test("deleting a remote-tracking branch stays outside this contract", async () => {
+  const input = await fixture("remote-approved");
+  input.deleteRemoteBranch = true;
+  const denied = evaluateOrcaWorktreeCleanup(input);
+  assert.equal(denied.ok, false);
+  assert.equal(denied.reason, "remote-branch-deletion-unsupported");
 });
 
 for (const [label, mutate, reason] of [
@@ -124,13 +156,10 @@ test("execution requires confirmation and rechecks the exact precondition before
 
 test("execution re-evaluates a supplied plan before allowing protected branch deletion", async () => {
   const input = await fixture("local-approved");
-  input.deleteBranch = true;
-  input.approval.branchDeletion = true;
   const plan = evaluateOrcaWorktreeCleanup(input);
   const forged = structuredClone(plan);
   forged.identity.branch = "main";
-  forged.operations[1].branch = "main";
-  forged.operations[1].args = ["branch", "-d", "--", "main"];
+  forged.operations[0].branch = "main";
 
   let calls = 0;
   const result = await executeOrcaWorktreeCleanup({

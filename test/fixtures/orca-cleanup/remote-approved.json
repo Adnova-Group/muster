@@ -1,6 +1,6 @@
 {
   "identity": {
-    "worktreeId": "wt-remote-001",
+    "worktreeId": "repo-001::/srv/worktrees/muster-worker",
     "repositoryId": "repo-001",
     "path": "/srv/worktrees/muster-worker",
     "branch": "feature/muster-worker-remote",
@@ -11,7 +11,7 @@
     "remoteSelector": "id:repo-001::/srv/worktrees/muster-worker"
   },
   "observedIdentity": {
-    "worktreeId": "wt-remote-001",
+    "worktreeId": "repo-001::/srv/worktrees/muster-worker",
     "repositoryId": "repo-001",
     "path": "/srv/worktrees/muster-worker",
     "branch": "feature/muster-worker-remote",
@@ -21,12 +21,34 @@
     "environmentId": "build-001",
     "remoteSelector": "id:repo-001::/srv/worktrees/muster-worker"
   },
-  "approval": { "approved": true, "actor": "operator" },
-  "terminalRelease": { "released": true, "active": false, "observed": true },
-  "tree": { "clean": true, "statusPorcelain": "", "observed": true },
-  "receipt": { "id": "receipt-remote-1", "owner": "muster", "status": "completed", "durable": true },
-  "review": { "verdict": "PASS" },
-  "ship": { "approved": true, "status": "merged" },
+  "approval": {
+    "approved": true,
+    "actor": "operator",
+    "branchDeletion": true
+  },
+  "terminalRelease": {
+    "released": true,
+    "active": false,
+    "observed": true
+  },
+  "tree": {
+    "clean": true,
+    "statusPorcelain": "",
+    "observed": true
+  },
+  "receipt": {
+    "id": "receipt-remote-1",
+    "owner": "muster",
+    "status": "completed",
+    "durable": true
+  },
+  "review": {
+    "verdict": "PASS"
+  },
+  "ship": {
+    "approved": true,
+    "status": "merged"
+  },
   "merge": {
     "merged": true,
     "commitSha": "5555555555555555555555555555555555555555",

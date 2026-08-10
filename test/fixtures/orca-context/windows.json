@@ -1,0 +1,35 @@
+{
+  "agentContext": {
+    "schemaVersion": 1,
+    "commandCount": 4,
+    "commands": [
+      { "command": "agent-context" },
+      { "command": "status" },
+      { "command": "terminal list" },
+      { "command": "worktree current" }
+    ]
+  },
+  "status": {
+    "runtime": { "state": "ready", "reachable": true, "runtimeId": "runtime-windows" },
+    "graph": { "state": "ready" }
+  },
+  "worktree": {
+    "worktree": {
+      "id": "repo-windows::C:\\Users\\dev\\worktrees\\app",
+      "repoId": "repo-windows",
+      "path": "C:\\Users\\dev\\worktrees\\app",
+      "branch": "feature/windows",
+      "baseRef": "origin/main",
+      "baseSha": "8888888888888888888888888888888888888888",
+      "hostId": "local",
+      "runtimeOwnerEnvironmentId": "local",
+      "git": { "path": "C:\\Users\\dev\\worktrees\\app", "head": "9999999999999999999999999999999999999999", "branch": "feature/windows" }
+    }
+  },
+  "terminals": {
+    "terminals": [
+      { "handle": "term-windows", "worktreeId": "repo-windows::C:\\Users\\dev\\worktrees\\app", "connected": true, "paneKey": "pane-windows", "sessionId": "session-windows" }
+    ]
+  },
+  "env": { "ORCA_WORKTREE_ID": "repo-windows::C:\\Users\\dev\\worktrees\\app" }
+}

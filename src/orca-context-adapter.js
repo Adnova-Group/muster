@@ -1,6 +1,13 @@
 import { execFile as execFileCallback } from "node:child_process";
 import { promisify } from "node:util";
 
+import {
+  canonicalOrcaSelector,
+  isCanonicalRuntimePath,
+  isOrcaSharedClassification,
+  worktreeIdBelongsToRepository,
+} from "./orca-contract.js";
+
 const execFile = promisify(execFileCallback);
 
 /**
@@ -10,12 +17,23 @@ const execFile = promisify(execFileCallback);
  *
  * - The public CLI JSON boundary is the only Orca integration surface. The
  *   adapter never imports Orca code, opens its database, or speaks runtime RPC.
- * - `orca agent-context --json` is the pinned schema gate. Schema version 1 is
- *   the minimum contract for the commands used below; an unknown version is
- *   unavailable rather than guessed.
+ * - `orca agent-context --json` is a best-effort schema probe, not a gate. It
+ *   is absent from Orca's public CLI reference, so an Orca build without it --
+ *   or a future build that renames it -- must not make Muster blind to a
+ *   runtime that `status` and `worktree current` can still describe. Those two
+ *   are the bootstrap probes the integration strategy actually names. Schema
+ *   version 1 is the pinned MINIMUM; a lower or non-integer version is an
+ *   incompatibility and fails closed, a higher one is recorded and accepted
+ *   because every command used here is read-only.
  * - `orca status --json` reports runtime reachability and runtimeId, while
  *   `orca worktree current --json` reports the current worktree's concrete id,
- *   repository id, path, branch, host, and optional base metadata.
+ *   repository id, path, branch, host, and optional base metadata. Only
+ *   `runtime` is treated as required: no public Orca document specifies the
+ *   response shape, so any further field is optional evidence rather than a
+ *   precondition invented by this adapter.
+ * - A worktree path may be POSIX, a Windows drive path, or a UNC path, because
+ *   Orca ships macOS, Windows, and Linux builds. The shared contract module
+ *   owns that predicate so downstream receipt and cleanup code cannot narrow it.
  * - `orca terminal list --worktree <selector> --json` is observational only.
  *   A missing terminal is valid: a shell can be inside an Orca worktree without
  *   being an Orca-managed terminal.
@@ -41,7 +59,8 @@ export const ORCA_CONTEXT_COMMANDS = Object.freeze({
 
 const DEFAULT_TIMEOUT_MS = 5_000;
 const DEFAULT_MAX_BUFFER = 2 * 1024 * 1024;
-const ABSOLUTE_PATH = /^(?:[A-Za-z]:[\\/]|\\\\|\/)/;
+const READY_RUNTIME_STATES = new Set(["ready"]);
+const RECONNECTING_STATES = new Set(["stale_bootstrap", "reloading", "reconnecting", "restoring"]);
 
 const REASON = Object.freeze({
   COMMAND_FAILED: "command-failed",
@@ -94,15 +113,22 @@ function normalizeSharedPaths(worktree) {
     }
     if (!isObject(entry)) return null;
     const path = boundedString(firstString(entry.path, entry.absolutePath, entry.name), 1024);
-    const classification = boundedString(firstString(entry.classification, entry.kind, entry.type), 64);
-    if (!path || !classification) return null;
+    const reported = boundedString(firstString(entry.classification, entry.kind, entry.type), 64);
+    if (!path || !reported) return null;
+    // Orca's own vocabulary is not Muster's. An unrecognized value is recorded
+    // as `unknown` -- falling back to the raw term as `source` when Orca did not
+    // supply one -- so a future Orca classification cannot make an otherwise
+    // valid context unusable downstream.
+    const classification = isOrcaSharedClassification(reported) ? reported : "unknown";
+    const source = boundedString(firstString(entry.source), 128)
+      ?? (classification === "unknown" ? reported : null);
     paths.push({
       path,
       classification,
       ...(boundedString(firstString(entry.owner, entry.ownerSystem), 128) ? {
         owner: boundedString(firstString(entry.owner, entry.ownerSystem), 128),
       } : {}),
-      ...(boundedString(firstString(entry.source), 128) ? { source: boundedString(firstString(entry.source), 128) } : {}),
+      ...(source ? { source } : {}),
     });
   }
   return paths;
@@ -230,18 +256,46 @@ function normalizeCommandError(error, commandName) {
 }
 
 function unwrapStatus(payload) {
-  if (!isObject(payload.runtime) || !isObject(payload.graph)) {
-    throw new AdapterError(REASON.MALFORMED_RESPONSE, "status response is missing runtime or graph");
+  if (!isObject(payload.runtime)) {
+    throw new AdapterError(REASON.MALFORMED_RESPONSE, "status response is missing runtime");
   }
   if (typeof payload.runtime.reachable !== "boolean" || typeof payload.runtime.state !== "string") {
     throw new AdapterError(REASON.MALFORMED_RESPONSE, "status runtime readiness fields are malformed");
   }
+  // `graph` is an observed field in some builds, not a documented one. Require
+  // its shape only when it is present, and never require its presence.
+  if (payload.graph !== undefined && payload.graph !== null && !isObject(payload.graph)) {
+    throw new AdapterError(REASON.MALFORMED_RESPONSE, "status graph field is malformed");
+  }
   return payload;
+}
+
+/** The readiness verdict, kept in one place so the vocabulary is auditable. */
+function statusReadiness(status) {
+  const runtimeState = status.runtime.state;
+  const graphState = isObject(status.graph) && typeof status.graph.state === "string"
+    ? status.graph.state
+    : null;
+  if (status.runtime.reachable && READY_RUNTIME_STATES.has(runtimeState)
+    && (graphState === null || READY_RUNTIME_STATES.has(graphState))) {
+    return {
+      ready: true,
+      diagnostics: graphState === null ? ["status response did not report a graph state"] : [],
+    };
+  }
+  const reconnecting = RECONNECTING_STATES.has(runtimeState)
+    || (graphState !== null && RECONNECTING_STATES.has(graphState));
+  return {
+    ready: false,
+    reason: reconnecting ? REASON.RECONNECT : REASON.ORCA_UNAVAILABLE,
+    detail: `Orca runtime/graph is ${runtimeState}/${graphState ?? "unreported"}`,
+    diagnostics: [],
+  };
 }
 
 function validateAgentContext(payload) {
   const schemaVersion = payload.schemaVersion;
-  if (schemaVersion !== ORCA_AGENT_CONTEXT_SCHEMA_VERSION) {
+  if (!Number.isInteger(schemaVersion) || schemaVersion < ORCA_AGENT_CONTEXT_SCHEMA_VERSION) {
     throw new AdapterError(REASON.SCHEMA_VERSION, `unsupported Orca agent-context schema version: ${String(schemaVersion)}`);
   }
   if (!Number.isInteger(payload.commandCount) || !Array.isArray(payload.commands)) {
@@ -260,12 +314,10 @@ function unwrapWorktree(payload) {
   const repoId = firstString(worktree.repoId, worktree.repositoryId, worktree.repo_id);
   const path = firstString(worktree.path, worktree.worktreePath, worktree.git?.path);
   const branch = firstString(worktree.branch, worktree.git?.branch);
-  if (!id || !repoId || !path || !branch || !ABSOLUTE_PATH.test(path)) {
+  if (!id || !repoId || !path || !branch || !isCanonicalRuntimePath(path)) {
     throw new AdapterError(REASON.MALFORMED_RESPONSE, "worktree identity is incomplete or not an absolute runtime path");
   }
-  // This is a shape check, not a parser for arbitrary future ids. The public
-  // selector contract makes this exact prefix the safe minimum invariant.
-  if (!id.startsWith(`${repoId}::`)) {
+  if (!worktreeIdBelongsToRepository(id, repoId)) {
     throw new AdapterError(REASON.MALFORMED_RESPONSE, "worktree id does not contain its repository id");
   }
   return { worktree, id, repoId, path, branch };
@@ -336,7 +388,7 @@ function normalizeContext({ status, worktreeInfo, terminal, env, agentContext })
   if (sharedPaths === null || setupProvenance === null || lineage === null) {
     throw new AdapterError(REASON.MALFORMED_RESPONSE, "worktree topology metadata is malformed");
   }
-  const remoteSelector = `id:${id}`;
+  const remoteSelector = canonicalOrcaSelector(id);
 
   return {
     source: "orca-cli",
@@ -363,7 +415,7 @@ function normalizeContext({ status, worktreeInfo, terminal, env, agentContext })
       state: status.runtime.state,
       reachable: status.runtime.reachable,
       app_version: firstString(status.runtime.appVersion),
-      agent_context_schema_version: agentContext.schemaVersion,
+      agent_context_schema_version: Number.isInteger(agentContext?.schemaVersion) ? agentContext.schemaVersion : null,
     },
     repository: {
       id: repoId,
@@ -447,13 +499,17 @@ export async function discoverOrcaContext({
   runCommand,
 } = {}) {
   const diagnostics = [];
-  let agentContext;
+  // `agent-context` is a capability probe, not a gate. An Orca build that does
+  // not ship it still has a discoverable runtime; only an explicitly
+  // INCOMPATIBLE reported schema stops the adapter.
+  let agentContext = { schemaVersion: null };
   try {
     const raw = await runCliCommand({ command, args: ORCA_CONTEXT_COMMANDS.schema, cwd, env, timeoutMs, execFile: execFileImpl, runCommand });
     agentContext = validateAgentContext(parseJsonOutput(raw?.stdout ?? raw, "agent-context"));
   } catch (error) {
     const normalized = normalizeCommandError(error, "agent-context");
-    return unavailable(normalized.reason, normalized.message);
+    if (normalized.reason === REASON.SCHEMA_VERSION) return unavailable(normalized.reason, normalized.message);
+    diagnostics.push(`${normalized.reason}: agent-context schema probe unavailable`);
   }
 
   let status;
@@ -464,11 +520,9 @@ export async function discoverOrcaContext({
     const normalized = normalizeCommandError(error, "status");
     return unavailable(normalized.reason, normalized.message);
   }
-  if (!status.runtime.reachable || status.runtime.state !== "ready" || status.graph.state !== "ready") {
-    const reconnecting = status.runtime.state === "stale_bootstrap" || status.graph.state === "reloading";
-    const reason = reconnecting ? REASON.RECONNECT : REASON.ORCA_UNAVAILABLE;
-    return unavailable(reason, `Orca runtime/graph is ${status.runtime.state}/${status.graph.state}`);
-  }
+  const readiness = statusReadiness(status);
+  if (!readiness.ready) return unavailable(readiness.reason, readiness.detail, diagnostics);
+  diagnostics.push(...readiness.diagnostics);
 
   let worktreeInfo;
   try {
@@ -483,7 +537,7 @@ export async function discoverOrcaContext({
 
   let terminals = [];
   try {
-    const selector = `id:${worktreeInfo.id}`;
+    const selector = canonicalOrcaSelector(worktreeInfo.id);
     const raw = await runCliCommand({
       command,
       args: ["terminal", "list", "--worktree", selector, "--json"],
@@ -518,7 +572,7 @@ export async function discoverOrcaContext({
 
 export const readOrcaContext = discoverOrcaContext;
 
-export function normalizeOrcaContext({ status, worktree, terminals = [], env = process.env, agentContext = { schemaVersion: ORCA_AGENT_CONTEXT_SCHEMA_VERSION } }) {
+export function normalizeOrcaContext({ status, worktree, terminals = [], env = process.env, agentContext = { schemaVersion: null } }) {
   const normalizedStatus = unwrapStatus(status);
   const worktreeInfo = unwrapWorktree(worktree);
   const terminal = chooseTerminal(unwrapTerminals({ terminals }), worktreeInfo.id, env);

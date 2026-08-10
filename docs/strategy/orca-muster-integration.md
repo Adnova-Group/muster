@@ -30,7 +30,7 @@ adapter or user action.
 
 | Concern | Default owner | Allowed observer/integration | Boundary rule |
 |---|---|---|---|
-| Orca-created worktrees | Orca | Muster | Muster records exact path/id/base SHA; the merge gate may emit an explicit public-CLI cleanup disposition after merge, but never removes implicitly. |
+| Orca-created worktrees | Orca | Muster | Muster records exact path/id and base SHA when Orca reports one; the merge gate may emit an explicit public-CLI cleanup disposition after merge, but never removes implicitly and never deletes a branch itself. |
 | Muster-created worktrees | Muster | Orca, after import/registration | Orca may provide terminals/UI; Muster remains responsible for lifecycle and receipts. |
 | Terminal tabs, panes, PTYs | Orca | Muster | Use Orca CLI handles and status; never infer task completion from idle alone. |
 | Session restore/hibernation | Orca | Muster | Reacquire terminal identity after restore; resume is provider-specific. |
@@ -95,11 +95,18 @@ Muster-owned slice.
    the full result remains in the Muster receipt.
 6. Muster closes its task/receipt and, when the existing merge gate passes,
    emits the exact post-merge cleanup disposition. Orca executes the public
-   CLI operations; no worktree or branch is removed implicitly.
+   CLI operation, which removes the worktree and its branch together; nothing
+   is removed implicitly and Muster never deletes a branch itself.
 
 The adapter must classify `.worktreeinclude`, shared directories, generated
 dependencies, and secrets before declaring a receipt reproducible. A shared
-`node_modules` or cache is not an independent worker artifact.
+`node_modules` or cache is not an independent worker artifact. The vocabulary
+follows Orca's three documented mechanisms — `tracked`, `orca-shared-link`
+(Worktree Shared Paths and `worktree.sharedDirectories`, which symlink or
+clone-copy), `orca-include-copy` (`.worktreeinclude`, which copies), and
+`worker-owned` — alongside the content hints that carry the reproducibility
+signal. An Orca classification Muster does not recognize is recorded as
+`unknown` with the raw term preserved, never rejected.
 
 ### C. Orca orchestration supervises Muster-created workers
 
@@ -159,7 +166,13 @@ orca terminal wait --terminal <handle> --for tui-idle --timeout-ms 300000 --json
 
 Use `orca agent-context --json` to discover the installed command schema when
 available. Pin the minimum schema/version expected by the adapter and fail
-closed to read-only behavior on an incompatible schema.
+closed to read-only behavior on an incompatible schema. `agent-context` is not
+in Orca's public CLI reference, so it is a capability probe and never a gate: a
+build that does not ship it must still be discoverable through `status` and
+`worktree current`, which are the bootstrap probes above. A version at or above
+the pinned minimum is recorded and accepted — every command used here is
+read-only, and the shape checks on the fields actually read are what fail closed
+on a breaking change.
 
 ### Environment and context discovery
 
@@ -168,7 +181,9 @@ At startup, record (without treating all values as trustworthy authority):
 - `PWD`/current path and the enclosing Orca worktree from `worktree current`;
 - Orca worktree/repository/branch/base-ref identity from JSON;
 - `ORCA_WORKSPACE_ID`, `ORCA_WORKTREE_ID`, `ORCA_TERMINAL_HANDLE`, and
-  `ORCA_PANE_KEY` when present;
+  `ORCA_PANE_KEY` when present. **No `ORCA_*` variable is documented by Orca**;
+  these names are unverified, so their absence must be normal and CLI identity
+  always wins over an environment hint;
 - host/environment/runtime identity when the worktree is remote;
 - the selected agent/provider and whether its session is resumable.
 
@@ -285,16 +300,32 @@ commit ancestry, it composes the cleanup evaluator and returns one bounded
 post-merge disposition:
 
 ```text
-orca worktree rm --worktree <exact-public-selector> --json
-git branch -d -- <eligible-local-branch>
+orca worktree rm --worktree <exact-public-selector> --force --json
 ```
 
-The branch operation is included only for an eligible local, non-protected
-branch requested by that same merge disposition. Remote branch deletion is
-unsupported in this contract. The evaluator returns no operations for dirty,
-active, unmerged, mismatched, raced, protected, malformed, or uncertain state.
-Execution remains behind the public Orca CLI boundary and performs an exact
-state recheck against the disposition fingerprint before invoking any command.
+That is the whole disposition: exactly one command. Orca documents worktree
+deletion as removing "both the directory and the branch (with confirmation)", so
+the branch is Orca's to delete and Muster must not follow with its own
+`git branch -d` — that second command would run against a branch Orca has
+already removed, and gating it behind a separate approval would advertise a
+protection that does not exist. Branch removal is therefore an acknowledged
+effect of the disposition, not an opt-in: the evaluator requires explicit
+branch-deletion approval before emitting anything, refuses a branch-preservation
+request outright rather than silently ignoring it, and still declines to touch a
+remote-tracking branch. `--force` is required because the command is executed
+non-interactively and deletion otherwise prompts.
+
+The evaluator returns no operations for dirty, active, unmerged, mismatched,
+raced, protected, malformed, or uncertain state. Execution remains behind the
+public Orca CLI boundary and performs an exact state recheck against the
+disposition fingerprint before invoking any command.
+
+The exact worktree selector is `id:<worktree-id>` for every host, with
+`path:<absolute-path>` accepted only for a local worktree. One canonical
+identity contract (`src/orca-contract.js`) owns that rule, the absolute-runtime-
+path predicate, and the shared-path classification vocabulary, so the adapter,
+the receipt normalizer, and this evaluator cannot drift into mutually
+incompatible shapes.
 
 Success criterion: a passing merge gate produces deterministic cleanup
 operations, while every unsafe or incomplete precondition fails closed without

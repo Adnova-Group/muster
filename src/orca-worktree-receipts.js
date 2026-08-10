@@ -1,5 +1,10 @@
-import { posix } from "node:path";
 import { discoverOrcaContext } from "./orca-context-adapter.js";
+import {
+  ORCA_SHARED_CLASSIFICATIONS,
+  isAcceptedOrcaSelector,
+  isCanonicalRuntimePath,
+  worktreeIdBelongsToRepository,
+} from "./orca-contract.js";
 
 // Public, versioned metadata carried by a Muster manifest or lifecycle receipt.
 // This module deliberately accepts only the normalized output of the read-only
@@ -12,9 +17,7 @@ export const ORCA_IDENTITY_MISMATCH_REASON = "identity-mismatch";
 const SHA_RE = /^[0-9a-f]{40}$/;
 const MAX_STRING = 1024;
 const MAX_PATH = 4096;
-const SHARED_CLASSIFICATIONS = new Set([
-  "shared", "shared-cache", "shared-secret", "shared-generated", "worker-owned", "unknown",
-]);
+const SHARED_CLASSIFICATIONS = new Set(ORCA_SHARED_CLASSIFICATIONS);
 const SETUP_STATUSES = new Set(["ready", "completed", "partial", "failed", "unavailable", "unknown"]);
 
 function isObject(value) {
@@ -139,11 +142,15 @@ function normalizeTopology(context) {
   const worktreeId = string(rawField(context, "orca_worktree_id", "worktree_id") ?? rawField(worktree, "id", "worktree_id"), "orca_worktree_id");
   const repoId = string(rawField(context, "orca_repo_id", "repo_id", "repository_id") ?? rawField(repository, "id", "repository_id") ?? rawField(worktree, "repository_id"), "orca_repo_id");
   const path = string(rawField(context, "worktree_path", "path") ?? rawField(worktree, "path"), "worktree_path", { max: MAX_PATH });
-  if (!posix.isAbsolute(path) || posix.normalize(path) !== path) throw new TypeError("worktree_path must be an absolute normalized path");
+  if (!isCanonicalRuntimePath(path)) throw new TypeError("worktree_path must be an absolute normalized path");
   const branch = string(rawField(context, "branch", "branch_name") ?? rawField(worktree, "branch", "branch_name"), "branch");
   const baseRef = optionalString(rawField(context, "base_ref", "base_branch", "start_from") ?? rawField(baseRevision, "ref", "base_ref") ?? rawField(worktree, "base_ref"), "base_ref");
-  const baseSha = string(rawField(context, "base_sha", "base_revision_sha", "start_sha") ?? rawField(baseRevision, "sha", "base_sha") ?? rawField(worktree, "base_sha"), "base_sha");
-  if (!SHA_RE.test(baseSha)) throw new TypeError("base_sha must be a lowercase 40-character Git SHA");
+  // Orca's start-from picker accepts a branch, a remote branch, or a specific
+  // commit SHA, so a worktree need not expose a base SHA at all. Recording the
+  // identity must not depend on one; the merge-gate cleanup evaluator requires
+  // it separately, because a merge disposition genuinely cannot do without it.
+  const baseSha = optionalString(rawField(context, "base_sha", "base_revision_sha", "start_sha") ?? rawField(baseRevision, "sha", "base_sha") ?? rawField(worktree, "base_sha"), "base_sha");
+  if (baseSha !== null && !SHA_RE.test(baseSha)) throw new TypeError("base_sha must be a lowercase 40-character Git SHA");
   const runtimeId = string(rawField(context, "orca_runtime_id", "runtime_id") ?? rawField(runtime, "id", "runtime_id"), "orca_runtime_id");
   const hostValue = typeof context.host === "string" ? context.host : null;
   const hostId = string(rawField(context, "host_id") ?? hostValue ?? rawField(host, "id", "host_id") ?? rawField(hostInfo, "id", "host_id"), "host");
@@ -187,9 +194,10 @@ function normalizeTopology(context) {
   topology.host_info = { id: hostId, kind: environmentKind, environment_id: environmentId, runtime_id: runtimeId };
   if (hostId === "local" && environmentId !== "local") throw new Error("local Orca host requires environment_id local");
   if (hostId !== "local" && environmentId === "local") throw new Error("remote Orca host cannot use local environment_id");
-  const expectedSelector = `id:${repoId}::${path}`;
-  const localPathSelector = `path:${path}`;
-  if (remoteSelector !== expectedSelector && !(hostId === "local" && remoteSelector === localPathSelector)) {
+  if (!worktreeIdBelongsToRepository(worktreeId, repoId)) {
+    throw new Error("orca_worktree_id does not contain its repository id");
+  }
+  if (!isAcceptedOrcaSelector(remoteSelector, { worktreeId, path, host: hostId })) {
     throw new Error("remote_selector does not identify the exact Orca worktree");
   }
   return topology;

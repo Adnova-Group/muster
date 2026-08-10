@@ -1,6 +1,7 @@
 import {
   CAPABILITY_STATUSES,
   CAPABILITY_SURFACES,
+  orcaAgentName,
   validateOrcaAgentCapabilityProbe,
 } from "./orca-agent-capability-probe.js";
 import {
@@ -95,9 +96,15 @@ function parseCapability(capability) {
   if (capability.capabilities["working-directory"].status !== "SUPPORTED") {
     throw new Error("Orca working-directory capability must be SUPPORTED");
   }
+  const profile = optionalText(capability.profile, "capability.profile", { max: 128 }) ?? "unknown";
+  // A Muster profile id is not an Orca `--agent` value. Refuse to place a
+  // provider Orca does not list rather than hand the host an unresolvable flag.
+  const agent = orcaAgentName(profile);
+  if (agent === null) throw new Error(`profile has no Orca agent name: ${profile}`);
   return {
     provider: optionalText(capability.provider, "capability.provider", { max: 128 }) ?? "unknown",
-    profile: optionalText(capability.profile, "capability.profile", { max: 128 }) ?? "unknown",
+    profile,
+    orca_agent: agent,
     capabilities: Object.fromEntries(CAPABILITY_SURFACES.map((surface) => [surface, { ...capability.capabilities[surface] }])),
   };
 }
@@ -347,9 +354,22 @@ export async function startOrcaPlacementHandoff({ request, ledger, startWorker }
   if (typeof startWorker !== "function") return { outcome: "rejected", ok: false, errors: ["explicit startWorker callback is required"] };
   const starting = store.put(baseRecord(normalized, "starting"));
   try {
+    // Deliberately NOT a runnable argv. Orca's `worker-start` requires
+    // `--task <task_id>`, and this module refuses to mint an Orca Task
+    // (`orca_mapping` stays null by contract), so any argv emitted here would
+    // be missing its required flag. The host owns that choice; it receives the
+    // command template, the resolved Orca agent name, and the flags it must
+    // still supply.
     const result = callbackResult(await startWorker({
       request: clone(normalized),
-      argv: ["orchestration", "worker-start", "--agent", normalized.capability.profile, "--json"],
+      operation: {
+        command: "orca",
+        subcommand: ["orchestration", "worker-start"],
+        agent: normalized.capability.orca_agent,
+        worktree_selector: normalized.target.remote_selector,
+        requires: ["--task <orca_task_id>"],
+        note: "Muster does not create Orca Run/Task/Dispatch identities; supply --task explicitly.",
+      },
     }), "startWorker");
     if (!placementIdentityMatches(result, normalized)) {
       const record = store.put(baseRecord(normalized, "recovery-required", { error: "worker placement identity disagrees with the requested target" }));

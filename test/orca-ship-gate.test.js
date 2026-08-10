@@ -160,14 +160,17 @@ test("merge gate composes cleanup and returns one authorized post-merge disposit
   assert.equal(result.allowed, true, result.errors?.join("; "));
   assert.equal(result.disposition, "merge-approved-with-cleanup");
   assert.equal(result.cleanup.authorized, true);
-  assert.deepEqual(result.operations[0].args, ["worktree", "rm", "--worktree", "path:/workspace/muster-worker", "--json"]);
+  assert.deepEqual(result.operations[0].args, ["worktree", "rm", "--worktree", "path:/workspace/muster-worker", "--force", "--json"]);
   assert.equal(result.stateMutation, false);
 });
 
-test("merge gate makes eligible local branch deletion part of the same authorization", async () => {
+// The merge handoff is the single authorization boundary: it approves the
+// removal, and Orca's removal takes the branch. No second approval, and no
+// second command.
+test("merge gate authorizes the branch removal Orca performs as part of the same act", async () => {
   const evidence = await validEvidence();
   const cleanup = await cleanupFixture();
-  cleanup.deleteBranch = true;
+  delete cleanup.approval.branchDeletion;
   const handoff = buildOrcaMusterShipHandoff({
     action: "merge",
     attemptId: "attempt-ship-1",
@@ -179,7 +182,25 @@ test("merge gate makes eligible local branch deletion part of the same authoriza
     receipt: evidence.receipt, handoff: handoff.handoff, cleanup,
   });
   assert.equal(result.allowed, true, result.errors?.join("; "));
-  assert.deepEqual(result.operations.at(-1).args, ["branch", "-d", "--", "feature/muster-worker"]);
+  assert.equal(result.operations.length, 1);
+  assert.equal(result.operations[0].deletesBranch, true);
+  assert.equal(result.cleanup.branchDisposition.removedBy, "orca");
+});
+
+test("merge gate surfaces a branch-preservation request instead of overriding it", async () => {
+  const evidence = await validEvidence();
+  const cleanup = await cleanupFixture();
+  cleanup.preserveBranch = true;
+  const handoff = buildOrcaMusterShipHandoff({
+    action: "merge", attemptId: "attempt-ship-1", receiptId: "receipt-ship-1", branch: evidence.orca.branch,
+  });
+  const result = evaluateOrcaShipAction({
+    action: "merge", workflowOwner: "muster", statusBridge: evidence.status,
+    receipt: evidence.receipt, handoff: handoff.handoff, cleanup,
+  });
+  assert.equal(result.allowed, false);
+  assert.equal(result.reason, "cleanup-not-authorized");
+  assert.match(result.errors.join(";"), /branch-preservation-unsupported/);
 });
 
 for (const [label, mutate, reason] of [
@@ -207,10 +228,10 @@ for (const [label, mutate, reason] of [
   });
 }
 
-test("merge gate denies remote branch deletion as unsupported", async () => {
+test("merge gate denies remote-tracking branch deletion as unsupported", async () => {
   const evidence = await validEvidence();
   const cleanup = await cleanupFixture("remote-approved");
-  cleanup.deleteBranch = true;
+  cleanup.deleteRemoteBranch = true;
   const handoff = buildOrcaMusterShipHandoff({
     action: "merge", attemptId: "attempt-ship-1", receiptId: "receipt-ship-1", branch: evidence.orca.branch,
   });
@@ -220,5 +241,5 @@ test("merge gate denies remote branch deletion as unsupported", async () => {
   });
   assert.equal(result.allowed, false);
   assert.equal(result.reason, "cleanup-not-authorized");
-  assert.match(result.errors.join(";"), /remote branch deletion/i);
+  assert.match(result.errors.join(";"), /remote-tracking branch/i);
 });

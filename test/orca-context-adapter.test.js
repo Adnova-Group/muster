@@ -94,13 +94,52 @@ test("fails closed for malformed public JSON responses", async () => {
   assert.equal(result.context, null);
 });
 
-test("fails closed for an unknown agent-context schema version", async () => {
+test("fails closed for an incompatible agent-context schema version", async () => {
   const data = await fixture("schema-version");
   const result = await discoverOrcaContext({ env: data.env, runCommand: runnerFor(data) });
   assert.equal(result.available, false);
   assert.equal(result.reason, "schema-version");
-  assert.match(result.detail, /version: 2/);
+  assert.match(result.detail, /version: 0/);
   assert.equal(result.context, null);
+});
+
+// Version 1 is a pinned MINIMUM, not an exact match: every command this adapter
+// issues is read-only, so a newer Orca schema is recorded rather than refused.
+// A field this adapter actually reads still has to be present -- shape checks,
+// not the version number, are what fail closed on a breaking change.
+test("accepts and records a newer agent-context schema version", async () => {
+  const data = await fixture("local");
+  data.agentContext.schemaVersion = 7;
+  const result = await discoverOrcaContext({ env: data.env, runCommand: runnerFor(data) });
+  assert.equal(result.available, true, result.detail);
+  assert.equal(result.context.runtime.agent_context_schema_version, 7);
+});
+
+// `agent-context` is absent from Orca's public CLI reference. An Orca build
+// that does not ship it must not make an otherwise-discoverable runtime dark.
+test("degrades to a diagnostic when agent-context is unavailable", async () => {
+  const data = await fixture("local");
+  const runner = runnerFor(data);
+  const result = await discoverOrcaContext({
+    env: data.env,
+    runCommand: async (call) => {
+      if (call.args[0] === "agent-context") throw new Error("unknown command: agent-context");
+      return runner(call);
+    },
+  });
+  assert.equal(result.available, true, result.detail);
+  assert.equal(result.context.runtime.agent_context_schema_version, null);
+  assert.match(result.diagnostics.join(";"), /agent-context schema probe unavailable/);
+});
+
+// No public Orca document specifies the `status --json` response shape, so a
+// `graph` field this adapter invented must never be a precondition.
+test("a status response without a graph field is still ready", async () => {
+  const data = await fixture("local");
+  delete data.status.graph;
+  const result = await discoverOrcaContext({ env: data.env, runCommand: runnerFor(data) });
+  assert.equal(result.available, true, result.detail);
+  assert.match(result.diagnostics.join(";"), /did not report a graph state/);
 });
 
 test("fails closed when CLI and ORCA_WORKTREE_ID disagree", async () => {

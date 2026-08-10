@@ -1,13 +1,27 @@
-import { posix } from "node:path";
+import {
+  canonicalOrcaSelector,
+  isAcceptedOrcaSelector,
+  isCanonicalRuntimePath,
+  worktreeIdBelongsToRepository,
+} from "./orca-contract.js";
 
 // Cleanup is deliberately a policy boundary.  It consumes bounded observations
 // from Orca's documented CLI/filesystem surfaces and produces commands for an
 // Orca caller to approve and execute.  It never talks to Orca's RPC layer or
 // database, and planning is always side-effect free.
-export const ORCA_WORKTREE_CLEANUP_SCHEMA_VERSION = 1;
+//
+// Branch removal is Orca's, not Muster's.  Orca documents worktree deletion as
+// "removes both the directory and the branch (with confirmation)", so a second
+// `git branch -d` after `orca worktree rm` would run against a branch Orca has
+// already deleted -- failing every time, after the worktree is gone, with
+// stateMutation already true.  Worse, gating that second command behind its own
+// approval implied a protection that never existed: the removal Muster emits
+// takes the branch with it regardless.  So there is exactly one operation, it
+// declares that it deletes the branch, and branch-deletion approval is a
+// precondition of the whole disposition rather than of a second command.
+export const ORCA_WORKTREE_CLEANUP_SCHEMA_VERSION = 2;
 export const ORCA_CLEANUP_OPERATIONS = Object.freeze([
   "worktree-remove",
-  "branch-delete",
 ]);
 export const ORCA_CLEANUP_REASONS = Object.freeze([
   "malformed-input",
@@ -29,6 +43,7 @@ export const ORCA_CLEANUP_REASONS = Object.freeze([
   "race-detected",
   "protected-branch",
   "branch-deletion-not-approved",
+  "branch-preservation-unsupported",
   "remote-branch-deletion-unsupported",
 ]);
 
@@ -99,15 +114,19 @@ function normalizeIdentity(value, label = "identity") {
   const worktreeId = text(first(value, "worktreeId", "worktree_id", "id"), `${label}.worktreeId`);
   const repositoryId = text(first(value, "repositoryId", "repository_id", "repoId", "repo_id"), `${label}.repositoryId`);
   const path = text(first(value, "worktreePath", "worktree_path", "path"), `${label}.path`, { max: MAX_PATH });
-  if (!posix.isAbsolute(path) || posix.normalize(path) !== path) throw new TypeError(`${label}.path must be absolute and normalized`);
+  if (!isCanonicalRuntimePath(path)) throw new TypeError(`${label}.path must be absolute and normalized`);
   const branch = normalizeBranch(first(value, "branch", "branchName", "branch_name"));
   const baseSha = sha(first(value, "baseSha", "base_sha", "baseRevisionSha", "base_revision_sha"), `${label}.baseSha`);
   const baseRef = optionalText(first(value, "baseRef", "base_ref", "baseBranch", "base_branch"), `${label}.baseRef`);
   const host = text(first(value, "host", "hostId", "host_id") ?? "local", `${label}.host`);
   const environmentId = text(first(value, "environmentId", "environment_id") ?? (host === "local" ? "local" : null), `${label}.environmentId`);
   const remoteSelector = text(first(value, "remoteSelector", "remote_selector", "selector"), `${label}.remoteSelector`);
-  const expectedSelector = host === "local" ? `path:${path}` : `id:${repositoryId}::${path}`;
-  if (remoteSelector !== expectedSelector) throw new TypeError("remote selector does not identify the exact worktree");
+  if (!worktreeIdBelongsToRepository(worktreeId, repositoryId)) {
+    throw new TypeError(`${label}.worktreeId does not contain its repository id`);
+  }
+  if (!isAcceptedOrcaSelector(remoteSelector, { worktreeId, path, host })) {
+    throw new TypeError("remote selector does not identify the exact worktree");
+  }
   if ((host === "local") !== (environmentId === "local")) throw new TypeError("host and environment identity disagree");
   return Object.freeze({
     worktreeId,
@@ -222,9 +241,15 @@ function approvalEvidence(input) {
   return {
     approval,
     approved: approval.approved === true || approval.authorized === true || input.explicitApproval === true,
-    branchDeleteRequested: input.deleteBranch === true || input.delete_branch === true || input.branchDeletion === true,
+    // Orca's removal takes the branch with the worktree, so this is an
+    // acknowledgement of an unavoidable effect, not an opt-in to a second one.
     branchDeleteApproved: approval.deleteBranch === true || approval.delete_branch === true
       || approval.branchDeletion === true || approval.branch_deletion === true,
+    branchPreservationRequested: input.deleteBranch === false || input.delete_branch === false
+      || input.preserveBranch === true || input.preserve_branch === true
+      || approval.deleteBranch === false || approval.branchDeletion === false,
+    remoteBranchDeletionRequested: input.deleteRemoteBranch === true || input.delete_remote_branch === true
+      || input.deleteOriginBranch === true || input.deleteUpstreamBranch === true,
   };
 }
 
@@ -238,6 +263,26 @@ function deny(reason, errors = [reason], details = {}) {
     readOnly: true,
     stateMutation: false,
     ...details,
+  };
+}
+
+/**
+ * The single cleanup operation.
+ *
+ * `--force` is part of every removal example in Orca's own CLI reference and
+ * overview, and deletion is documented as prompting for confirmation. This
+ * command is executed non-interactively behind a caller-supplied `runCommand`,
+ * so omitting `--force` risked a prompt that no one can answer.
+ */
+function buildRemoveOperation(identity) {
+  return {
+    type: "worktree-remove",
+    command: "orca",
+    args: ["worktree", "rm", "--worktree", identity.remoteSelector, "--force", "--json"],
+    selector: identity.remoteSelector,
+    branch: identity.branch,
+    deletesBranch: true,
+    requiresExplicitApproval: true,
   };
 }
 
@@ -341,27 +386,21 @@ export function evaluateOrcaWorktreeCleanup(input = {}) {
     return deny("race-detected", ["cleanup precondition fingerprint does not match current evidence"]);
   }
 
-  if (approval.branchDeleteRequested && identity.host !== "local") {
-    return deny("remote-branch-deletion-unsupported", ["remote branch deletion requires a separately documented Orca operation"]);
+  if (approval.remoteBranchDeletionRequested) {
+    return deny("remote-branch-deletion-unsupported", ["deleting a remote-tracking branch is outside this contract"]);
   }
-  if (approval.branchDeleteRequested && !approval.branchDeleteApproved) {
-    return deny("branch-deletion-not-approved", ["branch deletion requires separate explicit approval"]);
+  if (approval.branchPreservationRequested) {
+    return deny("branch-preservation-unsupported", [
+      "Orca worktree removal deletes the branch; this contract cannot preserve it",
+    ]);
+  }
+  if (!approval.branchDeleteApproved) {
+    return deny("branch-deletion-not-approved", [
+      "Orca worktree removal also deletes the branch and requires explicit branch-deletion approval",
+    ]);
   }
 
-  const operations = [{
-    type: "worktree-remove",
-    command: "orca",
-    args: ["worktree", "rm", "--worktree", identity.remoteSelector, "--json"],
-    selector: identity.remoteSelector,
-    requiresExplicitApproval: true,
-  }];
-  if (approval.branchDeleteRequested) operations.push({
-    type: "branch-delete",
-    command: "git",
-    args: ["branch", "-d", "--", identity.branch],
-    branch: identity.branch,
-    requiresExplicitApproval: true,
-  });
+  const operations = [buildRemoveOperation(identity)];
   return {
     ok: true,
     authorized: true,
@@ -370,6 +409,11 @@ export function evaluateOrcaWorktreeCleanup(input = {}) {
     schemaVersion: ORCA_WORKTREE_CLEANUP_SCHEMA_VERSION,
     identity,
     operations,
+    branchDisposition: {
+      branch: identity.branch,
+      removedBy: "orca",
+      evidence: "Orca documents worktree deletion as removing both the directory and the branch",
+    },
     precondition: { fingerprint, identity, receiptId: receipt.id, mergedCommitSha: merge.commitSha, targetSha: merge.targetSha },
     readOnly: true,
     stateMutation: false,
@@ -404,24 +448,8 @@ function isSafeExecutionPlan(plan) {
   } catch {
     return false;
   }
-  if (!Array.isArray(plan.operations) || (plan.operations.length !== 1 && plan.operations.length !== 2)) return false;
-  const expected = [{
-    type: "worktree-remove",
-    command: "orca",
-    args: ["worktree", "rm", "--worktree", identity.remoteSelector, "--json"],
-    selector: identity.remoteSelector,
-    requiresExplicitApproval: true,
-  }];
-  if (plan.operations.length === 2) {
-    if (identity.host !== "local") return false;
-    expected.push({
-      type: "branch-delete",
-      command: "git",
-      args: ["branch", "-d", "--", identity.branch],
-      branch: identity.branch,
-      requiresExplicitApproval: true,
-    });
-  }
+  if (!Array.isArray(plan.operations) || plan.operations.length !== 1) return false;
+  const expected = [buildRemoveOperation(identity)];
   return plan.operations.every((operation, index) => JSON.stringify(operation) === JSON.stringify(expected[index]));
 }
 

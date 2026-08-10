@@ -68,11 +68,13 @@ Muster contract.”
 
 ### Supported agents and the compatibility ceiling
 
-The supported-agent catalog includes provider-specific launchers such as Claude
-Code, Codex, Cursor CLI, OpenCode, Gemini, Pi, Hermes, Copilot, and others, and
-the custom-agent flow accepts an arbitrary terminal command [DOCUMENTED: [Supported agents](https://www.onorca.dev/docs/agents/supported),
-[Add a custom CLI agent](https://www.onorca.dev/docs/agents/custom-cli)]. This
-means Orca can host arbitrary terminal-based coding agents. It does not mean
+The supported-agent catalog names 34 provider-specific launchers, including
+Claude Code, Claude Agent Teams, Codex, Grok, GitHub Copilot CLI, OpenCode, Pi,
+OMP, Gemini, Antigravity, Cursor CLI, Devin, Droid (Factory), Kimi, Qwen Code,
+Hermes, and Trae. The same page states that "Orca works with **any CLI agent** —
+the agent combobox just launches a process in a terminal"; there is no separate
+custom-agent page [DOCUMENTED: [Supported agents](https://www.onorca.dev/docs/agents/supported)].
+This means Orca can host arbitrary terminal-based coding agents. It does not mean
 those agents share a session transcript format, hook protocol, skill location,
 MCP support, resume flag, working-directory contract, or permission model
 [INFERRED]. A Muster adapter must probe the selected agent's surfaces instead
@@ -180,11 +182,18 @@ A host reboot, kernel panic, hard power-off, or daemon death ends the running
 processes, though worktrees, layout, and last-persisted scrollback restore on
 the next launch [DOCUMENTED: [Session restore](https://www.onorca.dev/docs/model/session-restore)].
 
-Agent hibernation is experimental and off by default. It stops eligible idle
-agent terminals and resumes them with provider-specific resume flags when the
-worktree is reopened. Only providers with resumable sessions are eligible;
-Hermes, Cursor CLI, Copilot, and other non-resumable terminals remain running
+Agent hibernation is off by default and must be enabled in Settings. It stops
+eligible idle agent terminals and resumes them with provider-specific resume
+flags (`claude --resume <id>`, `codex resume <id>`, and equivalents) when the
+worktree is reopened. Eligibility is an explicit documented list — "Claude,
+Codex, Gemini, Antigravity, OpenCode, Pi, MiMo Code, Droid, Grok, Devin, or OMP"
+— while "Cursor CLI, Hermes, Copilot, Trae, and other non-resumable terminals
+are left running"
 [DOCUMENTED: [Agent hibernation](https://www.onorca.dev/docs/agents/hibernation)].
+This list is Orca's, not the provider's: whether a CLI can resume itself does
+not decide whether Orca will hibernate it. A Muster adapter must read
+eligibility from this list rather than from a provider capability flag
+[INFERRED].
 This is a major collision risk for a coordinator that assumes a worker process
 is continuously attached [INFERRED].
 
@@ -227,6 +236,18 @@ serializes the runtime response rather than a best-effort human string
 [CODE-VERIFIED] [src: cli-format]. JSON should be treated as the machine
 boundary, with explicit schema/version checks and preserved raw receipts
 [INFERRED].
+
+The **field-level response shape of `orca status --json` is not published**. The
+CLI reference lists the command without an example payload, and nothing here
+establishes a `runtime`, `graph`, or readiness-state vocabulary as a stable
+contract [UNRESOLVED]. An adapter may require the fields it actually reads and
+must treat every other field as optional evidence; requiring an unpublished
+field is indistinguishable from requiring a field Orca never emits.
+
+Likewise, **no `ORCA_*` environment variable is documented**. Neither the CLI
+overview nor the CLI reference lists one, and the pinned source was not searched
+for the set an agent terminal actually inherits [UNRESOLVED]. Treat any such
+variable as an observational correlation hint whose absence is normal.
 
 Useful documented examples include:
 

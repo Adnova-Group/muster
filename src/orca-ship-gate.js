@@ -347,18 +347,21 @@ export function evaluateOrcaShipAction({
     // The already-validated merge handoff is the sole authorization boundary
     // for cleanup.  Do not ask the caller to obtain a second cleanup approval;
     // only preserve the cleanup request's bounded observations and options.
-    const requestedBranchDeletion = requestedCleanup.deleteBranch === true
-      || requestedCleanup.delete_branch === true
-      || requestedCleanup.branchDeletion === true;
+    //
+    // Orca's worktree removal deletes the branch too, so the merge disposition
+    // approves that as one act.  A caller that explicitly asked to keep the
+    // branch is NOT overridden here -- the evaluator surfaces
+    // `branch-preservation-unsupported` so the contradiction reaches the user.
+    const preserveBranchRequested = requestedCleanup.deleteBranch === false
+      || requestedCleanup.delete_branch === false
+      || requestedCleanup.preserveBranch === true;
     const cleanupDecision = evaluateOrcaWorktreeCleanup({
       ...requestedCleanup,
       explicitApproval: true,
       approval: {
         ...(isObject(requestedCleanup.approval) ? requestedCleanup.approval : {}),
         approved: true,
-        // A requested local branch deletion is part of this same authorized
-        // merge disposition.  The evaluator still rejects remote deletion.
-        ...(requestedBranchDeletion ? { branchDeletion: true } : {}),
+        ...(preserveBranchRequested ? {} : { branchDeletion: true }),
       },
       merge: requestedCleanup.merge ?? merge,
     });

@@ -1,19 +1,42 @@
 {
   "agentContext": {
-    "schemaVersion": 2,
+    "schemaVersion": 0,
     "commandCount": 4,
     "commands": [
-      { "command": "agent-context" },
-      { "command": "status" },
-      { "command": "terminal list" },
-      { "command": "worktree current" }
+      {
+        "command": "agent-context"
+      },
+      {
+        "command": "status"
+      },
+      {
+        "command": "terminal list"
+      },
+      {
+        "command": "worktree current"
+      }
     ]
   },
   "status": {
-    "runtime": { "state": "ready", "reachable": true, "runtimeId": "runtime-new" },
-    "graph": { "state": "ready" }
+    "runtime": {
+      "state": "ready",
+      "reachable": true,
+      "runtimeId": "runtime-new"
+    },
+    "graph": {
+      "state": "ready"
+    }
   },
-  "worktree": { "worktree": { "id": "repo::/new", "repoId": "repo", "path": "/new", "branch": "feature/new" } },
-  "terminals": { "terminals": [] },
+  "worktree": {
+    "worktree": {
+      "id": "repo::/new",
+      "repoId": "repo",
+      "path": "/new",
+      "branch": "feature/new"
+    }
+  },
+  "terminals": {
+    "terminals": []
+  },
   "env": {}
 }

@@ -5,6 +5,7 @@ import {
   CAPABILITY_STATUSES,
   CAPABILITY_SURFACES,
   UNKNOWN,
+  orcaHibernationEligibility,
   probeOrcaAgentCapabilities,
 } from "./orca-agent-capability-probe.js";
 import {
@@ -170,8 +171,13 @@ function classifyLifecycle({ context, topology, capabilities }) {
   if (["restoring", "restore", "reattaching", "reattach"].includes(terminalState)) return "restoring";
   if (["hibernated", "hibernate", "suspended"].includes(terminalState)) return "hibernated";
   if (terminal.restored_from || ["restored", "resumed", "reconnected"].includes(terminalState)) return "ready";
-  if (terminal.connected === false && capabilities.capabilities.resume.status === "SUPPORTED") return "hibernated";
-  if (terminal.connected === false) return "unknown";
+  // Whether a disconnected terminal is hibernated is Orca's decision, not the
+  // provider CLI's. Orca hibernates only the providers it lists as eligible and
+  // leaves every other terminal running, so a provider's own resume support
+  // says nothing about which of the two happened here.
+  if (terminal.connected === false) {
+    return orcaHibernationEligibility(capabilities.provider) === "eligible" ? "hibernated" : "unknown";
+  }
   return "ready";
 }
 

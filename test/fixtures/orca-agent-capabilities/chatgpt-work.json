@@ -1,0 +1,11 @@
+{
+  "profile": "chatgpt-work",
+  "expected": {
+    "working-directory": "UNKNOWN",
+    "skills": "UNKNOWN",
+    "mcp": "UNKNOWN",
+    "hooks": "UNKNOWN",
+    "transcript": "UNKNOWN",
+    "resume": "UNKNOWN"
+  }
+}

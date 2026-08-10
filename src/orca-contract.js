@@ -10,9 +10,10 @@ import { posix } from "node:path";
  *
  * Documented Orca surface this encodes:
  *
- * - `orca worktree rm --worktree id:<worktreeId> --json` and
+ * - `orca worktree rm --worktree id:<worktreeId> --force --json` and
  *   `orca worktree show --worktree path:/abs/path --json` are both public
- *   selector forms [Orca CLI reference].
+ *   selector forms [Orca CLI reference]. Removal runs non-interactively, so
+ *   `--force` is required -- deletion otherwise prompts.
  * - For a remote runtime the caller must pass an explicit server-side selector,
  *   `id:<repoId>::<absolute-worktree-path>` or `path:<absolute-server-path>`;
  *   a local `active`/`current` alias is invalid there [Orca CLI reference].

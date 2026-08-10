@@ -10,6 +10,11 @@ import {
 } from "../src/orca-status-bridge.js";
 import { ORCA_CONTEXT_COMMANDS } from "../src/orca-context-adapter.js";
 
+// These fixtures are SYNTHETIC: their terminal `state`/`resumable`/
+// `restored_from` fields and lifecycle names (hibernation, restoration) come
+// from Orca's docs, not from a live capture -- no observed terminal record
+// carries them. They exercise inert-by-design branches; the verified signals
+// are `connected` and `orphaned` only.
 const FIXTURE_ROOT = join(process.cwd(), "test/fixtures/orca-status-bridge");
 
 async function fixture(name) {
@@ -56,6 +61,30 @@ test("four lifecycle fixtures produce bounded read-only projections", async () =
     assert.ok(calls.every(({ args }) => args.includes("--json")), `${name} must use JSON CLI reads`);
     assert.ok(calls.every(({ args }) => args[0] === "agent-context" || args[0] === "status" || args[0] === "worktree" || args[0] === "terminal"));
   }
+});
+
+test("a disconnected terminal without a positive hibernation signal is unknown, not hibernated", async () => {
+  const data = await fixture("hibernation");
+  // Strip the self-authored fields: no live Orca terminal record carries
+  // `state`/`resumable`, and Orca's hibernation preconditions (agent done,
+  // idle window elapsed, no unsettled dispatch) are not visible in any record.
+  // A crashed or daemon-killed terminal looks identical to a hibernated one,
+  // so the honest classification for a bare `connected: false` is unknown.
+  const stripped = JSON.parse(JSON.stringify(data));
+  for (const terminal of stripped.terminals.terminals) {
+    delete terminal.state;
+    delete terminal.resumable;
+  }
+  const result = await readOrcaStatusBridge({
+    profile: stripped.profile,
+    profileFixture: stripped.profileFixture,
+    env: stripped.env,
+    contextOptions: { runCommand: runnerFor(stripped, []) },
+    muster: stripped.muster,
+  });
+  assert.equal(result.orca.lifecycle.state, "unknown");
+  assert.equal(result.orca.terminal.status, "UNKNOWN");
+  assert.equal(result.orca.session.status, "UNKNOWN");
 });
 
 test("hibernation retains Muster state but never upgrades it from an Orca terminal observation", async () => {

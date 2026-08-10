@@ -191,8 +191,13 @@ Codex, Gemini, Antigravity, OpenCode, Pi, MiMo Code, Droid, Grok, Devin, or OMP"
 are left running"
 [DOCUMENTED: [Agent hibernation](https://www.onorca.dev/docs/agents/hibernation)].
 This list is Orca's, not the provider's: whether a CLI can resume itself does
-not decide whether Orca will hibernate it. A Muster adapter must read
-eligibility from this list rather than from a provider capability flag
+not decide whether Orca will hibernate it. Hibernation additionally requires a
+done agent, the configured idle window, and no unsettled orchestration
+Dispatch — none of which a `terminal list` record exposes — so a disconnected
+terminal is NOT positive evidence of hibernation: a crashed or daemon-killed
+terminal looks identical. The status bridge therefore classifies a bare
+`connected: false` as `unknown`, and only reports `hibernated` when a record
+carries an explicit hibernation state (no live record has been observed to)
 [INFERRED].
 This is a major collision risk for a coordinator that assumes a worker process
 is continuously attached [INFERRED].
@@ -244,7 +249,11 @@ carries `state:"ready"`, `reachable:true`, `runtimeId`, `appVersion`, and a
 capability list, and `graph` carries `state:"ready"` [OBSERVED: live capture,
 `test/fixtures/orca-live/local-wsl-unc.json`]. This is a captured observation of
 one release, not a published contract: an adapter should require only the fields
-it actually reads and treat the rest as optional evidence.
+it actually reads and treat the rest as optional evidence. The adapter pins the
+verified version (`ORCA_VERIFIED_RUNTIME_VERSION = "1.4.177"`), echoes it as
+`runtime.verified_against`, and emits a `version-drift` diagnostic when a live
+runtime reports a different `appVersion` — drift is surfaced, never silently
+accepted, and shape checks remain the fail-closed guard.
 
 `orca agent-context --json` returns its payload **unwrapped** — a bare
 `{schemaVersion, commandCount, commands}` rather than the `{ok, result}`
@@ -252,6 +261,15 @@ envelope used by other commands — with `schemaVersion: 1` and 223 commands
 [OBSERVED]. Its `worktree create` help states the identity contract verbatim:
 "Worktree ids are the full `<repo-id>::<path>` values returned by
 `orca worktree list --json`."
+
+**Binary resolution is part of the CLI contract.** Orca's own `orca-cli` skill
+fixes the order: `ORCA_CLI_COMMAND` (exported into managed sessions) wins; on
+Linux outside an Orca-managed terminal the binary is `orca-ide`, because bare
+`orca` there normally resolves to the GNOME screen reader; everywhere else it
+is `orca` [DOCUMENTED: installed `orca-cli`/`orchestration` skill stubs].
+Muster's adapter resolves in that order when no explicit `--command` /
+`MUSTER_ORCA_CLI` override is given (`resolveOrcaCliCommand` in
+`src/orca-context-adapter.js`).
 
 A live worktree record carries `id`, `instanceId`, `repoId`, `projectId`,
 `hostId`, `path`, `head`, `branch`, `isBare`, `isMainWorktree`, `lineage`,
@@ -261,6 +279,11 @@ kind** [OBSERVED]. Two shapes matter for any guard built on this record:
 - `branch` is a fully-qualified ref (`refs/heads/main`), never a short name.
 - `path` follows the host runtime, so a Windows Orca managing a WSL checkout
   reports a UNC path (`\\wsl.localhost\Ubuntu\home\...`).
+
+`orca worktree current --json` itself has never been captured live: the
+`{worktree: {...}}` wrapper shape is an assumption. The adapter therefore
+accepts the wrapper AND the bare record above, and fails closed on anything
+that is neither (`unwrapWorktree` in `src/orca-context-adapter.js`).
 
 `orca worktree rm --worktree id:<id> --force --json` returns
 `{"ok":true,"result":{"removed":true}}` and removes the directory, the git
@@ -287,8 +310,11 @@ Orca-launched terminal inherits has now been captured from inside one
 `ORCA_WORKSPACE_ID`, `ORCA_HOST_ID`, `ORCA_RUNTIME_ID`, `ORCA_ENVIRONMENT_ID`,
 `ORCA_SESSION_ID`, `ORCA_AGENT_SESSION_ID`, `ORCA_AGENT_PROFILE`, and
 `ORCA_AGENT_PROVIDER` were previously assumed and **do not exist** in a launched
-terminal. Two of the real variables are bearer secrets; the strategy's
-redaction rule applies to them specifically.
+terminal. The adapter still reads a few of them as *defensive* fallbacks for
+hosts the single-host capture could not cover — tolerated, never asserted (see
+`ORCA_ENVIRONMENT.tolerated` and `checkEnvironmentIdentity` in
+`src/orca-context-adapter.js`). Two of the real variables are bearer secrets;
+the strategy's redaction rule applies to them specifically.
 
 A WSL checkout is reported as host `local` with kind `wsl` and a UNC path — the
 runtime is the local desktop even though the filesystem is reached over UNC.

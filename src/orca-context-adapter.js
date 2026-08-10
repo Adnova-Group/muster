@@ -54,6 +54,10 @@ const execFile = promisify(execFileCallback);
 
 export const ORCA_CONTEXT_SCHEMA_VERSION = 1;
 export const ORCA_AGENT_CONTEXT_SCHEMA_VERSION = 1;
+// The one runtime this adapter's shapes were verified against (live capture,
+// WSL host). A different appVersion is a diagnostic, never a failure: shape
+// checks on the fields actually read are the fail-closed guard.
+export const ORCA_VERIFIED_RUNTIME_VERSION = "1.4.177";
 export const ORCA_CONTEXT_COMMANDS = Object.freeze({
   schema: Object.freeze(["agent-context", "--json"]),
   status: Object.freeze(["status", "--json"]),
@@ -105,6 +109,24 @@ const REASON = Object.freeze({
   SCHEMA_VERSION: "schema-version",
 });
 
+/**
+ * Resolve the Orca CLI binary for this environment.
+ *
+ * Orca's own skill contract (`orca skills get orca-cli`) fixes the order:
+ * `ORCA_CLI_COMMAND` — exported by Orca into managed sessions — wins. On Linux
+ * outside an Orca-managed terminal the binary is `orca-ide`: bare `orca` there
+ * normally resolves to the GNOME screen reader and starts speech on the user's
+ * machine. Everywhere else the binary is `orca`. Explicit caller overrides
+ * (`--command`, `MUSTER_ORCA_CLI`) are applied by the CLI before this runs.
+ */
+export function resolveOrcaCliCommand({ env = process.env, platform = process.platform } = {}) {
+  const exported = nonEmptyString(env.ORCA_CLI_COMMAND);
+  if (exported) return exported;
+  const inOrcaTerminal = Boolean(nonEmptyString(env.ORCA_WORKTREE_ID) || nonEmptyString(env.ORCA_TERMINAL_HANDLE));
+  if (platform === "linux" && !inOrcaTerminal) return "orca-ide";
+  return "orca";
+}
+
 function isObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -133,6 +155,10 @@ function boundedString(value, max = 512) {
   return result === null ? null : result.slice(0, max);
 }
 
+// ASSUMED shapes: no live worktree record (1.4.177) carried shared-path,
+// setup-provenance, or lineage-object fields -- only `lineage: null` and a
+// bare `parentWorktreeId` were observed. The key variants below are defensive
+// tolerance for runtimes that add them, not a verified Orca contract.
 function normalizeSharedPaths(worktree) {
   const raw = firstValue(worktree.sharedPaths, worktree.shared_paths, worktree.pathClasses);
   if (raw === null) return [];
@@ -342,8 +368,12 @@ function validateAgentContext(payload) {
 }
 
 function unwrapWorktree(payload) {
-  const worktree = payload.worktree;
-  if (!isObject(worktree)) throw new AdapterError(REASON.MALFORMED_RESPONSE, "worktree response is missing worktree");
+  // `worktree current --json` has never been captured live, so the
+  // `{worktree: {...}}` wrapper is an assumption, not a contract. The bare
+  // `worktree list` record shape IS verified -- accept either, and let the
+  // identity checks below fail closed on anything that is neither.
+  const worktree = isObject(payload.worktree) ? payload.worktree : payload;
+  if (!isObject(worktree)) throw new AdapterError(REASON.MALFORMED_RESPONSE, "worktree response is neither a wrapper nor a record");
   const id = firstString(worktree.id);
   const repoId = firstString(worktree.repoId, worktree.repositoryId, worktree.repo_id);
   const path = firstString(worktree.path, worktree.worktreePath, worktree.git?.path);
@@ -383,13 +413,17 @@ function hostIdentity(worktree, env) {
     return { host: "local", kind: declaredKind === "wsl" ? "wsl" : "local" };
   }
   const lower = raw.toLowerCase();
-  if (lower.startsWith("ssh:") || lower === "ssh" || lower.includes("ssh")) {
+  // Only the explicit prefix conventions are honored, and only `local`/`wsl`
+  // identity has been captured live. Substring guesses (`includes("ssh")` and
+  // friends) misclassify arbitrary host ids, so anything unprefixed falls
+  // through to plain `remote`.
+  if (lower.startsWith("ssh:") || lower === "ssh") {
     return { host: raw, kind: "ssh" };
   }
-  if (lower.startsWith("runtime:") || lower.includes("server")) {
+  if (lower.startsWith("runtime:") || lower.startsWith("server:")) {
     return { host: raw, kind: "server" };
   }
-  if (lower.startsWith("vm:") || lower.startsWith("cloud:") || lower.includes("vm") || lower.includes("cloud")) {
+  if (lower.startsWith("vm:") || lower.startsWith("cloud:")) {
     return { host: raw, kind: "vm-cloud" };
   }
   return { host: raw, kind: "remote" };
@@ -474,6 +508,7 @@ function normalizeContext({ status, worktreeInfo, terminal, env, agentContext })
       state: status.runtime.state,
       reachable: status.runtime.reachable,
       app_version: firstString(status.runtime.appVersion),
+      verified_against: ORCA_VERIFIED_RUNTIME_VERSION,
       agent_context_schema_version: Number.isInteger(agentContext?.schemaVersion) ? agentContext.schemaVersion : null,
     },
     repository: {
@@ -530,11 +565,15 @@ function normalizeContext({ status, worktreeInfo, terminal, env, agentContext })
 }
 
 function checkEnvironmentIdentity(worktreeId, env) {
+  // ORCA_WORKTREE_ID is the only observed correlation variable. The tolerated
+  // fallbacks (ORCA_WORKSPACE_ID here; the ORCA_ENVIRONMENT.tolerated list in
+  // general) were NOT present in the live 1.4.177 capture -- they are read
+  // defensively for other hosts/releases, not because any release is known to
+  // set them.
   const observed = firstString(env.ORCA_WORKTREE_ID, env.ORCA_WORKSPACE_ID);
   if (!observed) return null;
-  // ORCA_WORKSPACE_ID is usually the same selector as ORCA_WORKTREE_ID, but
-  // some releases use a workspace key prefix. Only reject an explicit full id
-  // that contradicts the CLI result; unknown forms remain observational hints.
+  // Only reject an explicit full id that contradicts the CLI result; unknown
+  // forms remain observational hints.
   if (observed.includes("::") && observed !== worktreeId) {
     return new AdapterError(REASON.IDENTITY_MISMATCH, "Orca worktree environment id disagrees with CLI identity");
   }
@@ -561,20 +600,21 @@ async function runCliCommand({ command, args, cwd, env, timeoutMs, execFile: exe
  * name and argv, never a shell string, and should return `{ stdout }` or JSON.
  */
 export async function discoverOrcaContext({
-  command = "orca",
+  command,
   cwd = process.cwd(),
   env = process.env,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   execFile: execFileImpl = execFile,
   runCommand,
 } = {}) {
+  const binary = nonEmptyString(command) ?? resolveOrcaCliCommand({ env });
   const diagnostics = [];
   // `agent-context` is a capability probe, not a gate. An Orca build that does
   // not ship it still has a discoverable runtime; only an explicitly
   // INCOMPATIBLE reported schema stops the adapter.
   let agentContext = { schemaVersion: null };
   try {
-    const raw = await runCliCommand({ command, args: ORCA_CONTEXT_COMMANDS.schema, cwd, env, timeoutMs, execFile: execFileImpl, runCommand });
+    const raw = await runCliCommand({ command: binary, args: ORCA_CONTEXT_COMMANDS.schema, cwd, env, timeoutMs, execFile: execFileImpl, runCommand });
     agentContext = validateAgentContext(parseJsonOutput(raw?.stdout ?? raw, "agent-context"));
   } catch (error) {
     const normalized = normalizeCommandError(error, "agent-context");
@@ -584,7 +624,7 @@ export async function discoverOrcaContext({
 
   let status;
   try {
-    const raw = await runCliCommand({ command, args: ORCA_CONTEXT_COMMANDS.status, cwd, env, timeoutMs, execFile: execFileImpl, runCommand });
+    const raw = await runCliCommand({ command: binary, args: ORCA_CONTEXT_COMMANDS.status, cwd, env, timeoutMs, execFile: execFileImpl, runCommand });
     status = unwrapStatus(parseJsonOutput(raw?.stdout ?? raw, "status"));
   } catch (error) {
     const normalized = normalizeCommandError(error, "status");
@@ -593,10 +633,14 @@ export async function discoverOrcaContext({
   const readiness = statusReadiness(status);
   if (!readiness.ready) return unavailable(readiness.reason, readiness.detail, diagnostics);
   diagnostics.push(...readiness.diagnostics);
+  const appVersion = firstString(status.runtime.appVersion);
+  if (appVersion && appVersion !== ORCA_VERIFIED_RUNTIME_VERSION) {
+    diagnostics.push(`version-drift: Orca appVersion ${appVersion} differs from the verified ${ORCA_VERIFIED_RUNTIME_VERSION}; shape checks remain the guard`);
+  }
 
   let worktreeInfo;
   try {
-    const raw = await runCliCommand({ command, args: ORCA_CONTEXT_COMMANDS.worktree, cwd, env, timeoutMs, execFile: execFileImpl, runCommand });
+    const raw = await runCliCommand({ command: binary, args: ORCA_CONTEXT_COMMANDS.worktree, cwd, env, timeoutMs, execFile: execFileImpl, runCommand });
     worktreeInfo = unwrapWorktree(parseJsonOutput(raw?.stdout ?? raw, "worktree current"));
   } catch (error) {
     const normalized = normalizeCommandError(error, "worktree current");
@@ -609,7 +653,7 @@ export async function discoverOrcaContext({
   try {
     const selector = canonicalOrcaSelector(worktreeInfo.id);
     const raw = await runCliCommand({
-      command,
+      command: binary,
       args: ["terminal", "list", "--worktree", selector, "--json"],
       cwd,
       env,

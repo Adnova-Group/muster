@@ -98,6 +98,15 @@ test("muster orca status surfaces the live-shaped identity fields", async () => 
   assert.equal(payload.is_main_worktree, false);
 });
 
+test("muster orca status honors ORCA_CLI_COMMAND when no override is given", async () => {
+  const bin = await stubOrca({ worktree: LIVE_SHAPED_WORKTREE });
+  const result = await cli(["orca", "status"], { env: scrubbedEnv({ ORCA_CLI_COMMAND: bin }) });
+  assert.equal(result.code, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.available, true);
+  assert.equal(payload.worktree_id, "repo-1::/workspace/worker");
+});
+
 test("muster orca bridge stays read-only", async () => {
   const bin = await stubOrca({ worktree: LIVE_SHAPED_WORKTREE });
   const result = await cli(["orca", "bridge", "--profile", "codex", "--command", bin]);

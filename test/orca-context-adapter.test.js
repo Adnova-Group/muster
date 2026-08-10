@@ -7,6 +7,7 @@ import {
   ORCA_CONTEXT_COMMANDS,
   ORCA_CONTEXT_SCHEMA_VERSION,
   parseOrcaJsonResponse,
+  resolveOrcaCliCommand,
 } from "../src/orca-context-adapter.js";
 
 const FIXTURE_ROOT = join(process.cwd(), "test/fixtures/orca-context");
@@ -52,6 +53,38 @@ test("discovers local context through JSON-only public CLI surfaces", async () =
   assert.ok(calls.every(({ args }) => args.includes("--json")));
 });
 
+// Orca's own skill contract (`orca skills get orca-cli`) fixes the binary
+// resolution order: ORCA_CLI_COMMAND first; on Linux outside an Orca-managed
+// terminal `orca-ide`, because bare `orca` resolves to the GNOME screen reader.
+test("resolveOrcaCliCommand follows Orca's documented resolution order", () => {
+  assert.equal(
+    resolveOrcaCliCommand({ env: { ORCA_CLI_COMMAND: "/opt/orca/bin/orca" }, platform: "linux" }),
+    "/opt/orca/bin/orca",
+  );
+  assert.equal(resolveOrcaCliCommand({ env: {}, platform: "linux" }), "orca-ide");
+  assert.equal(
+    resolveOrcaCliCommand({ env: { ORCA_WORKTREE_ID: "repo::/x" }, platform: "linux" }),
+    "orca",
+  );
+  assert.equal(
+    resolveOrcaCliCommand({ env: { ORCA_TERMINAL_HANDLE: "term_1" }, platform: "linux" }),
+    "orca",
+  );
+  assert.equal(resolveOrcaCliCommand({ env: {}, platform: "darwin" }), "orca");
+  assert.equal(resolveOrcaCliCommand({ env: {}, platform: "win32" }), "orca");
+});
+
+test("discoverOrcaContext resolves the binary from the environment when command is omitted", async () => {
+  const data = await fixture("local");
+  const calls = [];
+  await discoverOrcaContext({
+    env: { ...data.env, ORCA_CLI_COMMAND: "orca-from-env" },
+    runCommand: runnerFor(data, calls),
+  });
+  assert.ok(calls.length > 0);
+  assert.ok(calls.every(({ command }) => command === "orca-from-env"));
+});
+
 for (const [name, kind, host] of [
   ["ssh", "ssh", "ssh:build-host"],
   ["server", "server", "runtime:server-1"],
@@ -69,6 +102,18 @@ for (const [name, kind, host] of [
     assert.notEqual(result.context.selector.worktree, "current");
   });
 }
+
+// Only `local`/`wsl` host identity has been captured live. Substring guesses
+// (`includes("server")` etc.) misclassify arbitrary host ids, so an id without
+// an explicit prefix convention must fall through to plain `remote`.
+test("classifies an unprefixed remote host id as remote, never by substring guess", async () => {
+  const data = await fixture("ssh");
+  data.worktree.worktree.hostId = "team-server-9";
+  const result = await discoverOrcaContext({ env: data.env, runCommand: runnerFor(data) });
+  assert.equal(result.available, true, result.detail);
+  assert.equal(result.context.host, "team-server-9");
+  assert.equal(result.context.environment_kind, "remote");
+});
 
 test("fails closed while Orca is reconnecting", async () => {
   const data = await fixture("reconnect");
@@ -92,6 +137,43 @@ test("fails closed for malformed public JSON responses", async () => {
   assert.equal(result.available, false);
   assert.equal(result.reason, "malformed-response");
   assert.equal(result.context, null);
+});
+
+// `worktree current --json` has never been captured live; the only verified
+// record shape is the bare `worktree list` record. The adapter must accept the
+// bare record as readily as the documented `{worktree: {...}}` wrapper, so a
+// wrapper assumption can never darken a healthy runtime.
+test("accepts a bare worktree record from worktree current", async () => {
+  const data = await fixture("local");
+  const bare = { ...data, worktree: data.worktree.worktree };
+  const result = await discoverOrcaContext({ env: data.env, runCommand: runnerFor(bare) });
+  assert.equal(result.available, true, result.detail);
+  assert.equal(result.context.orca_worktree_id, "repo-local::/workspace/app");
+  assert.equal(result.context.branch, "feature/local");
+});
+
+// The adapter's shapes were verified against exactly one live runtime
+// (1.4.177). A different appVersion is not a failure -- shape checks are the
+// fail-closed guard -- but the drift must be visible, never silent.
+test("surfaces a version-drift diagnostic when the runtime version differs from the verified one", async () => {
+  const data = await fixture("local");
+  data.status.runtime.appVersion = "9.9.9";
+  const result = await discoverOrcaContext({ env: data.env, runCommand: runnerFor(data) });
+  assert.equal(result.available, true, result.detail);
+  assert.equal(result.context.runtime.app_version, "9.9.9");
+  assert.equal(result.context.runtime.verified_against, "1.4.177");
+  assert.ok(
+    result.diagnostics.some((line) => line.includes("version-drift") && line.includes("9.9.9")),
+    `expected a version-drift diagnostic, got ${JSON.stringify(result.diagnostics)}`,
+  );
+});
+
+test("records no version-drift diagnostic for the verified runtime version", async () => {
+  const data = await fixture("local");
+  data.status.runtime.appVersion = "1.4.177";
+  const result = await discoverOrcaContext({ env: data.env, runCommand: runnerFor(data) });
+  assert.equal(result.available, true, result.detail);
+  assert.ok(!result.diagnostics.some((line) => line.includes("version-drift")));
 });
 
 test("fails closed for an incompatible agent-context schema version", async () => {

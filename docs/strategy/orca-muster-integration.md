@@ -2,9 +2,12 @@
 
 This strategy proposes additive coexistence between Orca and Muster. It is
 based on the pinned Orca research snapshot `b09f7bd4314c66fcb2bba492833b53da67fa27a2`
-(`1.4.177-rc.0`) and the official Orca documentation. It does not claim live
-interoperability: no Orca runtime, agent, Run, Dispatch, or remote server was
-launched during this phase.
+(`1.4.177-rc.0`) and the official Orca documentation. Sections written before
+Phase 2.5 made no live-interoperability claims; Phase 2.5 and the environment
+capture in `docs/research/orca.md` have since verified the marked surfaces
+against a live Orca 1.4.177 runtime (WSL host). Where an older passage below
+says a name or shape is "unverified", the research document's [OBSERVED]
+capture supersedes it.
 
 ## Decision
 
@@ -158,11 +161,16 @@ Phase one should use documented commands such as:
 orca status --json
 orca worktree current --json
 orca worktree show --worktree id:<id> --json
-orca worktree set --worktree id:<id> --comment "muster: receipt ready" --json
 orca terminal list --worktree id:<id> --json
 orca terminal read --terminal <handle> --cursor <cursor> --limit 1000 --json
 orca terminal wait --terminal <handle> --for tui-idle --timeout-ms 300000 --json
 ```
+
+`orca worktree set --worktree id:<id> --comment "muster: receipt ready" --json`
+was listed here in the original plan as the checkpoint-comment channel. The
+implementation deliberately shipped read-only: `muster orca …` exposes no
+mutating Orca subcommand, so the comment channel is deferred until a phase
+that needs it, not silently dropped.
 
 Use `orca agent-context --json` to discover the installed command schema when
 available. Pin the minimum schema/version expected by the adapter and fail
@@ -180,10 +188,12 @@ At startup, record (without treating all values as trustworthy authority):
 
 - `PWD`/current path and the enclosing Orca worktree from `worktree current`;
 - Orca worktree/repository/branch/base-ref identity from JSON;
-- `ORCA_WORKSPACE_ID`, `ORCA_WORKTREE_ID`, `ORCA_TERMINAL_HANDLE`, and
-  `ORCA_PANE_KEY` when present. **No `ORCA_*` variable is documented by Orca**;
-  these names are unverified, so their absence must be normal and CLI identity
-  always wins over an environment hint;
+- `ORCA_WORKTREE_ID`, `ORCA_TERMINAL_HANDLE`, and `ORCA_PANE_KEY` when present.
+  These are still not documented by Orca, but the live capture
+  (`docs/research/orca.md`) observed them in a launched terminal;
+  `ORCA_WORKSPACE_ID` was assumed here and confirmed **absent** — the adapter
+  keeps it only as a defensive fallback. Absence of any variable must be normal
+  and CLI identity always wins over an environment hint;
 - host/environment/runtime identity when the worktree is remote;
 - the selected agent/provider and whether its session is resumable.
 
@@ -270,7 +280,8 @@ that:
 - detects Orca via `orca status --json`;
 - resolves and validates the current worktree;
 - records repo/worktree/path/branch/base/runtime metadata;
-- can update a bounded Orca checkpoint comment;
+- ~~can update a bounded Orca checkpoint comment~~ — deferred: the shipped
+  surface is read-only (see the note under "CLI invocation" above);
 - reads terminal status/output only when explicitly requested;
 - keeps Muster plans, manifests, receipts, and gates authoritative.
 

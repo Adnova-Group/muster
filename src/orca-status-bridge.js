@@ -5,7 +5,6 @@ import {
   CAPABILITY_STATUSES,
   CAPABILITY_SURFACES,
   UNKNOWN,
-  orcaHibernationEligibility,
   probeOrcaAgentCapabilities,
 } from "./orca-agent-capability-probe.js";
 import {
@@ -160,7 +159,7 @@ function normalizeTopology(context, topologyReceipt) {
   return normalizeOrcaWorktreeMetadata(candidate);
 }
 
-function classifyLifecycle({ context, topology, capabilities }) {
+function classifyLifecycle({ context, topology }) {
   if (!context.available) {
     if (context.reason === "reconnect") return "reconnecting";
     return "unavailable";
@@ -176,13 +175,12 @@ function classifyLifecycle({ context, topology, capabilities }) {
   // `resumable`, or `restored_from`, so those branches above are for runtimes
   // that add them and must never be the only way to detect a dead terminal.
   if (terminal.orphaned === true) return "unknown";
-  // Whether a disconnected terminal is hibernated is Orca's decision, not the
-  // provider CLI's. Orca hibernates only the providers it lists as eligible and
-  // leaves every other terminal running, so a provider's own resume support
-  // says nothing about which of the two happened here.
-  if (terminal.connected === false) {
-    return orcaHibernationEligibility(capabilities.provider) === "eligible" ? "hibernated" : "unknown";
-  }
+  // A disconnected terminal is NOT evidence of hibernation. Orca hibernates
+  // only when the agent is done, the configured idle window has elapsed, and
+  // no orchestration Dispatch is unsettled -- none of which a terminal record
+  // exposes -- and a crashed or daemon-killed terminal looks identical. With
+  // no positive signal the honest classification is unknown.
+  if (terminal.connected === false) return "unknown";
   return "ready";
 }
 
@@ -294,7 +292,7 @@ export function buildOrcaStatusBridge({
   const contextState = contextEnvelope(contextResult ?? context);
   const topology = normalizeTopology(contextState, topologyReceipt);
   const capabilities = sanitizeCapability(capabilityProbe ?? capability);
-  const lifecycle = classifyLifecycle({ context: contextState, topology, capabilities });
+  const lifecycle = classifyLifecycle({ context: contextState, topology });
   const orca = buildOrcaProjection({ context: contextState, topology, capabilities, lifecycle });
   const identity = contextState.available && topologyReceipt && topology.ok
     ? compareOrcaWorktreeIdentity(contextState.context, topologyReceipt)

@@ -35,7 +35,14 @@ test("a packed npm tarball can generate a Codex plugin whose real Codex cache co
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-cache-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));
   const packDir = join(tmp, "pack"); await mkdir(packDir);
-  const packed = JSON.parse((await execFile("npm", ["pack", "--json", "--pack-destination", packDir], { cwd: repoRoot, maxBuffer: 16 * 1024 * 1024 })).stdout)[0];
+  // `npm publish --dry-run` exports npm_config_dry_run=true into lifecycle tests.
+  // This nested pack intentionally creates a temporary tarball for extraction, so
+  // override the inherited publish setting instead of accepting a metadata-only pack.
+  const packed = JSON.parse((await execFile("npm", ["pack", "--json", "--pack-destination", packDir], {
+    cwd: repoRoot,
+    env: { ...process.env, npm_config_dry_run: "false" },
+    maxBuffer: 16 * 1024 * 1024,
+  })).stdout)[0];
   await execFile("tar", ["-xzf", join(packDir, packed.filename), "-C", tmp]);
   const extracted = join(tmp, "package");
   assert.ok(await readFile(join(extracted, "scripts", "build-codex.mjs"), "utf8"), "packed tarball must ship the install-time Codex generation script");

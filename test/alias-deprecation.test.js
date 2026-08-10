@@ -1,110 +1,48 @@
-// test/alias-deprecation.test.js — drift guard for the legacy-alias deprecation
-// window (item: legacy-alias-retirement, opening the sunset of run/autopilot/sprint).
-//
-// This item starts the window, it does not close it: a dated one-time notice ships
-// naming the replacement verb and a concrete retirement target, docs across the repo
-// stop claiming the aliases are "not deprecated on any schedule," and — critically —
-// nothing about the alias's own behavior changes yet (it still delegates to its
-// target verb, byte-identical Read-and-execute directive). These tests pin the two
-// fixed tokens in the accepted retirement decision across every surface that
-// documents the aliases' fate, and re-assert the "no behavior change" promise
-// against the same alias-shape contract test/mode-evals.test.js already pins.
+// Release guard for the accepted 0.7.0 legacy-alias retirement decision.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 
 const root = new URL("../", import.meta.url);
-const read = (p) => readFile(new URL(p, root), "utf8");
+const read = (path) => readFile(new URL(path, root), "utf8");
+const aliases = ["run", "autopilot", "sprint"];
 
-const ALIASES = { run: "plan", autopilot: "go", sprint: "go-backlog" };
-const SHARED_NOTICE_FILES = [
-  "README.md",
-  "cowork/sprint-protocol.md",
-  "docs/architecture.md",
-  "website/guides/codex.md",
-  "website/guides/install.md",
-  "website/reference/modes.md",
-];
+test("0.7.0 retires every legacy Claude command", async () => {
+  for (const alias of aliases) {
+    await assert.rejects(access(new URL(`plugin/commands/${alias}.md`, root)), { code: "ENOENT" });
+  }
+});
 
-async function retirementDecision() {
+test("0.7.0 retires every generated Codex alias skill", async () => {
+  const source = await read("scripts/build-codex.mjs");
+  for (const alias of aliases) {
+    assert.doesNotMatch(source, new RegExp(`^\\s*${alias}: \\{`, "m"));
+  }
+  assert.doesNotMatch(source, /legacy run, autopilot, and sprint skills/i);
+});
+
+test("current public guidance no longer advertises retired aliases", async () => {
+  const surfaces = [
+    "README.md",
+    "cowork/README.md",
+    "cowork/mcp-server.mjs",
+    "cowork/sprint-protocol.md",
+    "docs/architecture.md",
+    "mcp/codex-server.mjs",
+    "plugin/hooks/guidance.js",
+    "website/guides/codex.md",
+    "website/guides/install.md",
+    "website/guides/quickstart.md",
+    "website/reference/modes.md",
+  ];
+  for (const path of surfaces) {
+    const text = await read(path);
+    assert.doesNotMatch(text, /legacy aliases still work|retiring in muster 0\.7\.0|retires in muster 0\.7\.0/i, path);
+  }
+});
+
+test("the accepted decision records the completed release boundary", async () => {
   const text = await read("docs/decisions/legacy-alias-retirement-clock.md");
-  const status = text.match(/^- \*\*Status:\*\* (.+)$/m)?.[1];
-  const deprecationDate = text.match(/^- \*\*Deprecation date:\*\* `([^`]+)`$/m)?.[1];
-  const retirementTarget = text.match(/^- \*\*Retirement target:\*\* `([^`]+)`$/m)?.[1];
-
-  assert.equal(status, "Accepted", "only an accepted decision may govern the retirement clock");
-  assert.equal(deprecationDate, "2026-07-17", "the decision must preserve the notice date users already received");
-  assert.equal(retirementTarget, "muster 0.7.0", "the decision must explicitly reaffirm muster 0.7.0");
-  assert.match(text, /first shipped 0\.7\.0 release/i, "the decision must anchor retirement to a shipped release");
-  assert.match(text, /calendar time does not advance this clock/i, "the decision must reject a calendar-based interpretation");
-
-  return { deprecationDate, retirementTarget };
-}
-
-test("deprecation clock: an accepted decision makes the first shipped 0.7.0 release authoritative", async () => {
-  await retirementDecision();
-});
-
-test("deprecation notice: every alias command file's guidance line carries the dated notice and names the retirement target", async () => {
-  const { deprecationDate: DEPRECATION_DATE, retirementTarget: RETIREMENT_TARGET } = await retirementDecision();
-  for (const alias of Object.keys(ALIASES)) {
-    const text = await read(`plugin/commands/${alias}.md`);
-    const fmMatch = text.match(/^---\n([\s\S]*?)\n---\n/);
-    assert.ok(fmMatch, `${alias}.md must open with a --- frontmatter block`);
-    const frontmatter = fmMatch[1];
-    const body = text.slice(fmMatch[0].length);
-    assert.ok(
-      body.includes(`Deprecation notice (${DEPRECATION_DATE})`),
-      `${alias}.md must carry "Deprecation notice (${DEPRECATION_DATE})"`,
-    );
-    assert.ok(
-      body.includes(`retires in ${RETIREMENT_TARGET}`),
-      `${alias}.md must name the retirement target "retires in ${RETIREMENT_TARGET}"`,
-    );
-    assert.ok(frontmatter.includes(`deprecated ${DEPRECATION_DATE}`), `${alias}.md frontmatter must name the deprecation date`);
-    assert.ok(frontmatter.includes(`retiring in ${RETIREMENT_TARGET}`), `${alias}.md frontmatter must name the retirement target`);
-  }
-});
-
-test("deprecation notice: the notice lives in the SAME paragraph as the heads-up line, not a new third paragraph (alias-shape stays exactly 2 paragraphs)", async () => {
-  const { deprecationDate: DEPRECATION_DATE } = await retirementDecision();
-  for (const alias of Object.keys(ALIASES)) {
-    const text = await read(`plugin/commands/${alias}.md`);
-    const fmMatch = text.match(/^---\n[\s\S]*?\n---\n/);
-    assert.ok(fmMatch, `${alias}.md must open with a --- frontmatter block`);
-    const body = text.slice(fmMatch[0].length).trim();
-    const paragraphs = body.split(/\n\n+/).map((p) => p.trim()).filter(Boolean);
-    assert.equal(paragraphs.length, 2, `${alias}.md body must stay exactly 2 paragraphs — the deprecation notice must not add a third`);
-    assert.match(paragraphs[0], /^Heads-up for the user/, `${alias}.md's first paragraph must still open with the heads-up line`);
-    assert.match(paragraphs[0], new RegExp(`Deprecation notice \\(${DEPRECATION_DATE}\\)`), `${alias}.md's guidance paragraph must carry the deprecation notice`);
-  }
-});
-
-test("deprecation notice: no behavior change during the window — each alias still delegates to its target verb unchanged", async () => {
-  for (const [alias, target] of Object.entries(ALIASES)) {
-    const text = await read(`plugin/commands/${alias}.md`);
-    assert.match(
-      text,
-      new RegExp(`Read plugin/commands/${target}\\.md \\(resolve relative to this file's own directory / the plugin root\\) and execute its instructions exactly, with the arguments given to this command\\.`),
-      `${alias}.md must still delegate byte-identically to ${target}.md — the deprecation window changes the notice, never the behavior`,
-    );
-  }
-});
-
-test("deprecation notice: every shared documentation notice names the decision's date and target", async () => {
-  const { deprecationDate: DEPRECATION_DATE, retirementTarget: RETIREMENT_TARGET } = await retirementDecision();
-  for (const f of SHARED_NOTICE_FILES) {
-    const text = await read(f);
-    assert.ok(text.includes(DEPRECATION_DATE), `${f} must name the deprecation date ${DEPRECATION_DATE}`);
-    assert.ok(text.toLowerCase().includes(RETIREMENT_TARGET), `${f} must name the retirement target ${RETIREMENT_TARGET}`);
-    assert.doesNotMatch(text, /not deprecated on any schedule/, `${f} must not still claim the aliases are undeprecated`);
-  }
-});
-
-test("deprecation notice: website guides/quickstart.md names the retirement target once per alias section (3 total)", async () => {
-  const { retirementTarget: RETIREMENT_TARGET } = await retirementDecision();
-  const text = await read("website/guides/quickstart.md");
-  const escaped = RETIREMENT_TARGET.replace(/\./g, "\\.");
-  const hits = text.match(new RegExp(escaped, "g")) || [];
-  assert.equal(hits.length, 3, "expected the retirement target named once in each of run/autopilot/sprint's one-line notes");
+  assert.match(text, /first shipped 0\.7\.0 release will retire all three/i);
+  assert.match(text, /must remove all three\s+aliases and their compatibility documentation together/i);
 });

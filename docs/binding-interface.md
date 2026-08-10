@@ -19,10 +19,10 @@ and explicitly parked, not built.
 ## Scope of the audit
 
 "Plugin prose" here means the model-facing surface Claude Code actually loads and reads at
-dispatch time: `plugin/commands` (the ten modes plus the three legacy aliases,
-as `*.md` files), `plugin/skills` (the twenty-two core skills, one `SKILL.md` per
+dispatch time: `plugin/commands` (the ten modes as `*.md` files),
+`plugin/skills` (the twenty-two core skills, one `SKILL.md` per
 subdirectory), muster's own agents in `plugin/agents` (seven `muster-*.md` files; not the
-vendored `wsh-*.md` personas), and `plugin/output-styles/muster.md` -- forty-three files.
+vendored `wsh-*.md` personas), and `plugin/output-styles/muster.md` -- forty files.
 
 Two adjacent trees were deliberately excluded, with evidence rather than assertion:
 

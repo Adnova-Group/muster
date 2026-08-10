@@ -7,10 +7,6 @@ session can follow it without the plugin loaded. Plain backlogs use the sequenti
 backlogs consume the deterministic build/barrier/integration schedule. Same intent, same guarantees
 where they port; the gaps below are named, not papered over.
 
-`/muster:sprint` still works as the legacy alias of `/muster:go-backlog`, deprecated as of
-2026-07-17 and retiring in muster 0.7.0 (same schedule as the plugin-side aliases), behavior
-unchanged until then.
-
 ## What this session lacks — be honest about it
 
 - **No hooks.** No `SessionStart`, `UserPromptSubmit`, or `PreToolUse`. Concretely: no automatic

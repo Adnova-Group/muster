@@ -130,12 +130,12 @@ test("generated Codex package exposes the native-dispatch resolvers the orchestr
 });
 
 // Every generated surface that carries the agent watch protocol (adapter + orchestrator +
-// the root router and 14 mode skills), shared by the watch-invariant and dispatch-shape
+// the root router and 11 mode skills), shared by the watch-invariant and dispatch-shape
 // guards below and mirroring scripts/check-codex.mjs's own `watchSurfaces` list.
 const watchInvariantSurfaces = new Map([
   ["adapter", join(selectedPluginRoot, "runtime", "codex-skill-adapter.md")],
   ["orchestrator", join(selectedPluginRoot, "internal-skills", "orchestrator", "SKILL.md")],
-  ...["muster", "muster-init", "muster-design", "muster-plan", "muster-go", "muster-plan-backlog", "muster-go-backlog", "muster-diagnose", "muster-audit", "muster-runner", "muster-capture", "run", "autopilot", "sprint"]
+  ...["muster", "muster-init", "muster-design", "muster-plan", "muster-go", "muster-plan-backlog", "muster-go-backlog", "muster-diagnose", "muster-audit", "muster-runner", "muster-capture"]
     .map(name => [name, join(selectedPluginRoot, "skills", name, "SKILL.md")])
 ]);
 
@@ -151,7 +151,7 @@ async function generatedSpawnSurfaces(root) {
 
 test("every generated spawn-bearing production surface mandates codex-wave admission", async () => {
   const surfaces = await generatedSpawnSurfaces(selectedPluginRoot);
-  assert.ok(surfaces.length >= 17, "the global guard must cover every current explicit non-wave spawn surface");
+  assert.ok(surfaces.length >= 14, "the global guard must cover every current explicit non-wave spawn surface");
   for (const path of surfaces) {
     const text = await readFile(path, "utf8");
     assert.match(
@@ -178,7 +178,7 @@ test("generated production-wave steps contain process manifests, never direct su
 
 test("generated Codex orchestration surfaces enforce the state-based agent watch invariant", async () => {
   const surfaces = watchInvariantSurfaces;
-  assert.equal(surfaces.size, 16, "every generated Codex watch-invariant surface must be covered");
+  assert.equal(surfaces.size, 13, "every generated Codex watch-invariant surface must be covered");
   for (const [name, path] of surfaces) {
     const text = await readFile(path, "utf8");
     assert.match(text, /collaboration\.list_agents/, `${name} must reconcile worker state`);
@@ -336,8 +336,8 @@ test("Codex exposes a bounded public skill surface while packaging internal work
     .filter(entry => entry.isDirectory()).map(entry => entry.name).sort();
   assert.equal(publicSkills.length, CODEX_COUNTS.publicSkills);
   assert.deepEqual(publicSkills, [
-    "autopilot", "muster", "muster-audit", "muster-capture", "muster-design", "muster-diagnose", "muster-go",
-    "muster-go-backlog", "muster-init", "muster-plan", "muster-plan-backlog", "muster-runner", "run", "sprint"
+    "muster", "muster-audit", "muster-capture", "muster-design", "muster-diagnose", "muster-go",
+    "muster-go-backlog", "muster-init", "muster-plan", "muster-plan-backlog", "muster-runner"
   ]);
 
   const internalRoot = join(selectedPluginRoot, "internal-skills");
@@ -358,8 +358,8 @@ test("Codex exposes a bounded public skill surface while packaging internal work
 
 test("generated Codex public skill metadata stays within Muster's discovery budget", async () => {
   const expectedSkills = [
-    "autopilot", "muster", "muster-audit", "muster-capture", "muster-design", "muster-diagnose", "muster-go",
-    "muster-go-backlog", "muster-init", "muster-plan", "muster-plan-backlog", "muster-runner", "run", "sprint"
+    "muster", "muster-audit", "muster-capture", "muster-design", "muster-diagnose", "muster-go",
+    "muster-go-backlog", "muster-init", "muster-plan", "muster-plan-backlog", "muster-runner"
   ];
   const metadata = [];
   for (const name of expectedSkills) {
@@ -374,7 +374,7 @@ test("generated Codex public skill metadata stays within Muster's discovery budg
     (total, skill) => total + skill.name.length + skill.description.length,
     0
   );
-  const discoveryBudget = CODEX_COUNTS.publicSkills * 65;
+  const discoveryBudget = CODEX_COUNTS.publicSkills * 73;
   assert.ok(
     advertisedCharacters <= discoveryBudget,
     `generated Muster skills advertise ${advertisedCharacters} name/description characters; expected at most ${discoveryBudget}`

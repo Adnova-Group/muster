@@ -40,7 +40,8 @@ test("Claude orchestration surface remains byte-identical outside release metada
     hash.update(await readFile(join(root, path)));
     hash.update("\0");
   }
-  assert.equal(paths.length, 160); // previous 159-file surface +1: audit-pattern-batch2's new
+  assert.equal(paths.length, 157); // 0.7.0 retires the run/autopilot/sprint command files together.
+  // Previous 159-file surface +1: audit-pattern-batch2's new
   // plugin/skills/audit-pattern-documentation/SKILL.md (the 10th pattern skill, approved via the
   // second improver batch, composed onto readability + design-ux). The batch also appended 19
   // dated entries across the other 9 existing plugin/skills/audit-pattern-*/SKILL.md files and
@@ -1469,5 +1470,5 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // replaced with a one-liner that survives future appends ("may append further dated,
   // evidenced entries here from run receipts, gated by user approval"); the new
   // audit-pattern-documentation skill already omitted the placeholder and needed no change.
-  assert.equal(hash.digest("hex"), "3ab74b1a725a48ed90fe8e06f9b2630733a0d2a3e2ac5ac6c6ff1a0859259ac0");
+  assert.equal(hash.digest("hex"), "309eb2df6ff64aa5c92dc73a9a32f673071594424f5326682c6439c575daf383");
 });

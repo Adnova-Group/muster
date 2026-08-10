@@ -40,8 +40,6 @@ If the outcome is thin, Muster runs a deterministic gap-check (`muster assess`) 
 
 Plan also takes a backlog ref (`/muster:plan .muster/backlog.md`, `issues:<label>`, or `linear:<key>`) and, once scope confirms, delegates to `/muster:plan-backlog` to plan the whole batch first: every item is routed up front into one batch plan -- per-item crews, run order, cross-item conflict flags -- and Approve & clear chains into the go-backlog clear; nothing executes before that approval.
 
-`/muster:run` still works: a one-line heads-up, then identical behavior under the new name. Deprecated as of 2026-07-17, retiring in muster 0.7.0.
-
 ## Hands-off delivery: `/muster:go`
 
 The full lifecycle, hands-off. It shares Plan's scope detection and confirm, then -- for a single outcome -- branches, routes, runs waves (parallel fan-out, tournaments, an adversarial review gate), commits per wave, then presents the merge decision. It only stops for the scope confirmation, that decision, or an escalation.
@@ -55,8 +53,6 @@ You can also hand it a GitHub issue reference as the outcome:
 ```sh
 /muster:go #42
 ```
-
-`/muster:autopilot` still works: a one-line heads-up, then identical behavior under the new name. Deprecated as of 2026-07-17, retiring in muster 0.7.0.
 
 ## Fix a bug: `/muster:diagnose`
 
@@ -109,8 +105,6 @@ The batch counterpart to Go. Plain backlogs run sequentially; annotated file bac
 ```
 
 A backlog item annotated with `{id}`/`{deps}` (the shape `/muster:audit backlog` and an accepted interview decomposition both emit by default) switches go-backlog into **wave mode**. Every ready item builds and reviews in its own worktree, concurrently up to `MUSTER_SPRINT_PARALLEL` (default 5, hard ceiling 10) when the harness supports it. After every completion wake, Muster reconciles all available receipts and dispatches every newly eligible action before waiting again. Disposition/integration remains backlog-ordered after the entire wave's build/review barrier; the next dependency wave waits for that lane. There is no fixed three-runner cap. Go-backlog re-resolves the file after the barrier and ordered lane so items added mid-batch can join the run instead of waiting for the next invocation.
-
-`/muster:sprint` still works: a one-line heads-up, then identical behavior under the new name. Deprecated as of 2026-07-17, retiring in muster 0.7.0.
 
 ## Schedule one cycle at a time: `/muster:runner`
 

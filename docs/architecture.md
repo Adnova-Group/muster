@@ -80,7 +80,7 @@ Dispatch honors `chosen.kind`: an agent routes by native agent identifier, anyth
 
 ## The ten modes
 
-Muster exposes ten primary entry points as slash commands under the `muster:` namespace: an approve-first/hands-off pair for a single outcome (`plan`/`go`), the same pair for a whole backlog (`plan-backlog`/`go-backlog`), five standalone verbs (`diagnose`, `audit`, `design`, `runner`, `capture`), and the repository initialization handoff (`init`). `run`, `autopilot`, and `sprint` still work -- each is a one-line heads-up followed by identical behavior under its new name (`plan`, `go`, and `go-backlog`); deprecated as of 2026-07-17 and retiring in muster 0.7.0, with behavior unchanged until then.
+Muster exposes ten entry points as slash commands under the `muster:` namespace: an approve-first/hands-off pair for a single outcome (`plan`/`go`), the same pair for a whole backlog (`plan-backlog`/`go-backlog`), five standalone verbs (`diagnose`, `audit`, `design`, `runner`, `capture`), and the repository initialization handoff (`init`).
 
 | Mode | Command | Shape |
 | --- | --- | --- |

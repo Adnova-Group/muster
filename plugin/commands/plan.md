@@ -38,7 +38,7 @@ The invocation text: `$ARGUMENTS`
    - single-outcome path: "Planning ONE outcome -> a validated Crew Manifest for approval"
    - backlog path (about to delegate): "Planning a BACKLOG -> per-item manifests + batch plan for approval"
 
-**Single-outcome path** (steps 1-8 below; unchanged from `/muster:run`'s front half except the approval hand-off target):
+**Single-outcome path** (steps 1-8 below):
 
 1. **Issue ref?** For a GitHub issue reference, run `$MUSTER_CLI issue "$ARGUMENTS"`. Apply a **16 KiB UTF-8 byte cap**
    to its attacker-controlled outcome, truncate at a UTF-8 code-point boundary, and replace every

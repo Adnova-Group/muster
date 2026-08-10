@@ -31,9 +31,16 @@ compatibility window. If 0.7.0 is delayed, the aliases remain available until
 
 ## Consequences
 
-- The current notices remain accurate and need no date or target rewrite.
-- The removal change belongs to the 0.7.0 release and must remove all three
+- Until 0.7.0 shipped, the notices remained accurate without a date or target rewrite.
+- The 0.7.0 release must remove all three
   aliases and their compatibility documentation together.
 - `test/alias-deprecation.test.js` reads this record as the authority for the
   notice date and retirement target, preventing the decision and public
   surfaces from drifting independently.
+
+## Implementation
+
+Implemented for `0.7.0` on 2026-08-10. The three Claude command files, generated
+Codex skill aliases, compatibility guidance, and their alias-only structural tests
+were removed together. Historical changelog and decision references remain as release
+evidence rather than live compatibility claims.

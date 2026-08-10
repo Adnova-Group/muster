@@ -681,27 +681,11 @@ const dataset = JSON.parse(await read("eval/modes/dataset.json"));
 // "capture" is a mode prompt (plugin/commands/capture.md) — a conversation-to-backlog
 // generator with no Run-active lifecycle of its own, closed out alongside the others.
 //
-// DECISION (vl-t6, closing the net): run.md/autopilot.md/sprint.md were the original
-// verb prompts; the verb-lexicon work (vl-t2/vl-t3/vl-t4) moved their real behavior to
-// plan.md/plan-backlog.md (run's single-outcome front half + its batch-plan form split
-// into two files) and go.md/go-backlog.md (autopilot's and sprint's hands-off behavior,
-// renamed), leaving run/autopilot/sprint as thin, minimal alias stubs (frontmatter + one
-// guidance line + a Read-and-execute directive) with NO behavior of their own left to
-// grade empirically. MODES therefore names the 8 run-lifecycle verb prompts (the 4 renamed
-// ones plus the 4 unchanged ones); STRUCTURAL_MODES names Init, whose filesystem and receipt
-// lifecycle is covered by init.test.js/init-workflow.test.js instead of response-quality
-// fixtures. ALIASES below documents run/autopilot/sprint's target and
-// gets a structural "alias-class check" instead of dataset.json cases (same posture this
-// eval already takes for prose-only surfaces with no independent behavior to fixture --
-// see the "alias-shape equivalence"/"alias-guidance" tests near the end of this file). No
-// dataset.json case may declare mode:"run"/"autopilot"/"sprint" (enforced below) --
-// PR #5's original run.md cases were migrated to plan/plan-backlog (see the case-count
-// floor test), and the pre-existing autopilot/sprint cases were relabeled to go/go-backlog
-// for the same reason (their `check`s test go.md/go-backlog.md's real deterministic
-// steps, not the alias stub files' 2-line bodies).
+// The original run/autopilot/sprint fixtures were migrated to the canonical
+// plan/plan-backlog/go/go-backlog modes. The aliases themselves retired in 0.7.0.
 const MODES = ["plan", "plan-backlog", "go", "go-backlog", "runner", "audit", "diagnose", "capture"];
 const STRUCTURAL_MODES = ["init", "design"];
-const ALIASES = { run: "plan", autopilot: "go", sprint: "go-backlog" };
+const RETIRED_ALIASES = new Set(["run", "autopilot", "sprint"]);
 // The skill-protocol layer (plugin/skills/*, router excluded — it already has
 // eval:router). Every case's `mode` field names either one of the 8 mode prompts above
 // OR one of these 10 skills — a single field, not a second "skill" key, because grade.mjs
@@ -786,9 +770,9 @@ test("dataset covers all 8 mode prompts with at least 5 cases each, 40+ total", 
   for (const mode of MODES) assert.ok((byMode[mode] || 0) >= 5, `mode "${mode}" has only ${byMode[mode] || 0} cases`);
 });
 
-test("no dataset case declares an alias name as its mode (run/autopilot/sprint are alias-class-checked structurally, not via dataset cases)", () => {
+test("no dataset case declares a retired alias as its mode", () => {
   for (const c of dataset.cases) {
-    assert.ok(!(c.mode in ALIASES), `${c.id}: mode "${c.mode}" is an alias name — alias behavior is graded structurally (see the alias-shape/alias-guidance tests below), not via a dataset case`);
+    assert.ok(!RETIRED_ALIASES.has(c.mode), `${c.id}: mode "${c.mode}" is retired`);
   }
 });
 
@@ -965,15 +949,14 @@ test("the 11 knowledge-pipeline gate-achievability fixtures' gate matches each p
 // The README's coverage table enumerates every prompt surface this eval suite is
 // responsible for. This test asserts the table's own universe (the 5 layers already
 // tracked above: MODES/SKILLS/CONTENT_PIPELINES/BUILTINS/KNOWLEDGE_PIPELINES, plus the
-// router skill counted separately since it has its own eval:router, plus the ALIASES
-// documented above) against the ACTUAL file inventory via glob counts, so a new
+// router skill counted separately since it has its own eval:router) against the ACTUAL
+// file inventory via glob counts, so a new
 // command/skill/builtin/pipeline file added later makes this test fail instead of letting
 // the table silently go stale.
 test("coverage-table surfaces match the actual file inventory (glob counts) — table can't silently stale", async () => {
   const { readdir } = await import("node:fs/promises");
-  const aliasNames = Object.keys(ALIASES);
   const commandFiles = (await readdir(new URL("../plugin/commands", import.meta.url))).filter((f) => f.endsWith(".md"));
-  assert.equal(commandFiles.length, MODES.length + STRUCTURAL_MODES.length + aliasNames.length, `plugin/commands/*.md has ${commandFiles.length} file(s), expected ${MODES.length + STRUCTURAL_MODES.length + aliasNames.length} (${MODES.length} evaluated MODES + ${STRUCTURAL_MODES.length} structural MODES + ${aliasNames.length} ALIASES)`);
+  assert.equal(commandFiles.length, MODES.length + STRUCTURAL_MODES.length, `plugin/commands/*.md has ${commandFiles.length} file(s), expected ${MODES.length + STRUCTURAL_MODES.length}`);
 
   const skillDirs = await readdir(new URL("../plugin/skills", import.meta.url));
   assert.equal(skillDirs.length, SKILLS.length + 1 + STRUCTURAL_SKILLS.length, `plugin/skills/* has ${skillDirs.length} dir(s), expected ${SKILLS.length + 1 + STRUCTURAL_SKILLS.length} (10 SKILLS + router, which has its own eval:router, + ${STRUCTURAL_SKILLS.length} structural SKILLS)`);
@@ -985,61 +968,8 @@ test("coverage-table surfaces match the actual file inventory (glob counts) — 
   assert.equal(pipelineFiles.length, CONTENT_PIPELINES.length + KNOWLEDGE_PIPELINES.length, `pipelines/*.yaml has ${pipelineFiles.length} file(s), expected ${CONTENT_PIPELINES.length + KNOWLEDGE_PIPELINES.length} (9 CONTENT_PIPELINES + 11 KNOWLEDGE_PIPELINES)`);
 
   const readmeText = await read("eval/modes/README.md");
-  for (const name of [...MODES, ...STRUCTURAL_MODES, ...aliasNames, ...SKILLS, ...STRUCTURAL_SKILLS, ...CONTENT_PIPELINES, ...BUILTINS, ...KNOWLEDGE_PIPELINES, "router"]) {
+  for (const name of [...MODES, ...STRUCTURAL_MODES, ...SKILLS, ...STRUCTURAL_SKILLS, ...CONTENT_PIPELINES, ...BUILTINS, ...KNOWLEDGE_PIPELINES, "router"]) {
     assert.ok(readmeText.includes(name), `README's coverage table is missing surface "${name}"`);
-  }
-});
-
-// --- alias-class checks (run.md/autopilot.md/sprint.md) --------------------------------
-// Aliases carry no dataset.json cases (see the DECISION comment above MODES/ALIASES) --
-// these structural checks are their entire eval coverage: (a) shape equivalence pins an
-// alias to ONLY frontmatter + one guidance line + a Read-and-execute directive, so a
-// future edit can't silently fatten an alias back into real logic; (b) the guidance line
-// names the correct replacement command, per alias.
-
-test("alias-shape equivalence: run.md/autopilot.md/sprint.md contain ONLY frontmatter + a guidance line + a Read-and-execute directive whose target file exists", async () => {
-  for (const [alias, target] of Object.entries(ALIASES)) {
-    const text = await read(`plugin/commands/${alias}.md`);
-    const fmMatch = text.match(/^---\n[\s\S]*?\n---\n/);
-    assert.ok(fmMatch, `${alias}.md must open with a --- frontmatter block`);
-    const body = text.slice(fmMatch[0].length).trim();
-    const paragraphs = body.split(/\n\n+/).map((p) => p.trim()).filter(Boolean);
-    assert.equal(paragraphs.length, 2, `${alias}.md body must be exactly 2 paragraphs (a guidance line + a Read-and-execute directive) — found ${paragraphs.length}, alias may have fattened back into real logic`);
-    const [guidance, directive] = paragraphs;
-    assert.match(guidance, /^Heads-up for the user/, `${alias}.md's first paragraph must be the heads-up guidance line`);
-    assert.match(directive, /^Read plugin\/commands\/[\w-]+\.md /, `${alias}.md's second paragraph must be the Read-and-execute directive`);
-    const targetMatch = directive.match(/^Read plugin\/commands\/([\w-]+)\.md /);
-    assert.equal(targetMatch[1], target, `${alias}.md must delegate to ${target}.md — found "${targetMatch[1]}.md"`);
-    assert.match(directive, /execute its instructions exactly, with the arguments given to this command\.$/, `${alias}.md's directive must execute the target's instructions exactly, passing arguments through unchanged`);
-    await read(`plugin/commands/${target}.md`); // throws (ENOENT) if the named target file doesn't exist
-  }
-});
-
-test("alias-guidance: each alias's heads-up line names the correct replacement command", async () => {
-  for (const [alias, target] of Object.entries(ALIASES)) {
-    const text = await read(`plugin/commands/${alias}.md`);
-    assert.match(text, new RegExp(`/muster:${alias} is now /muster:${target}\\b`), `${alias}.md's guidance line must name /muster:${target} as its replacement`);
-  }
-});
-
-// [legacy-alias-retirement] Opens the deprecation window: each alias's frontmatter
-// description now names the same retirement target its guidance-line notice does
-// (see test/alias-deprecation.test.js for the full notice/docs drift-guard suite) --
-// this test just pins that the frontmatter (surfaced in command palettes/help text,
-// independent of the body the model reads) doesn't drift from the body's promise.
-test("alias-deprecation: each alias's frontmatter description names the same retirement target as its body notice", async () => {
-  for (const alias of Object.keys(ALIASES)) {
-    const text = await read(`plugin/commands/${alias}.md`);
-    const fmMatch = text.match(/^---\n([\s\S]*?)\n---\n/);
-    assert.ok(fmMatch, `${alias}.md must open with a --- frontmatter block`);
-    const descMatch = fmMatch[1].match(/description:\s*"([^"]*)"/);
-    assert.ok(descMatch, `${alias}.md's frontmatter must carry a description`);
-    const bodyNoticeMatch = text.match(/retires in ([^\s—-]+(?:\s+[\d.]+)?)/);
-    assert.ok(bodyNoticeMatch, `${alias}.md's body must carry a "retires in <target>" notice`);
-    assert.ok(
-      descMatch[1].includes(bodyNoticeMatch[1]),
-      `${alias}.md's frontmatter description must name the same retirement target ("${bodyNoticeMatch[1]}") as its body notice`,
-    );
   }
 });
 

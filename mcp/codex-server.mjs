@@ -7,7 +7,6 @@ const protocol = [
   "Running Muster in Codex: use the bundled $muster-* skills for orchestration and these MCP tools for deterministic routing, gates, scoring, and wave computation.",
   "Core loop: muster_detect and muster_capabilities; assess and route; validate the manifest; compute waves; gate each wave with muster_fuse or muster_tally; use muster_advise for bounded escalation; state routing evidence.",
   "Plan stops for approval. Go branches first, commits green waves, and presents the merge decision. Batch modes use muster_sprint_protocol. Audit covers all six review dimensions. Diagnose reproduces before fixing.",
-  "Legacy aliases still work: run -> plan, autopilot -> go, sprint -> go-backlog.",
   "CLI-only operations: use the CLI for muster_match_skills --stack and codex-conformance.",
 ].join("\n");
 let sprintProtocol;

@@ -41,7 +41,7 @@ test("capture.md create-or-appends the backlog file and never clobbers existing 
 test("capture.md offers run-first-item / run-whole-backlog / just-save after writing", async () => {
   const cmd = await readFile(new URL("../plugin/commands/capture.md", import.meta.url), "utf8");
   assert.match(cmd, /first item now/i);
-  assert.match(cmd, /muster:sprint/);
+  assert.match(cmd, /muster:go-backlog/);
   assert.match(cmd, /just save/i);
 });
 

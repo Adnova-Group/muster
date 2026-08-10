@@ -23,13 +23,13 @@ export const CODEX_COUNTS = Object.freeze({
   // documentation pillar, composed onto readability + design-ux) -- 21 -> 22.
   nativeSkills: 22,
   builtinSkills: 51,
-  publicSkills: 14,
+  publicSkills: 11,
   // 72 -> 73: nativeSkills (22) + builtinSkills (51).
   internalSkills: 73,
   pipelines: 20,
   mcpTools: 31,
   primaryModes: 10,
-  aliases: 3
+  aliases: 0
 });
 
 async function jsonCommand(execFile, args, runtimeIdentity, allowInjected) {

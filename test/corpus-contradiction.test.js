@@ -174,13 +174,9 @@ test("severity vocabulary: review-gate.md's findings shape matches muster-review
   );
 });
 
-// ── term 4: mode names + legacy-alias mappings ──────────────────────────────
-// Canonical: every plugin/commands/*.md file's frontmatter `name:` field
-// (the registered mode-name vocabulary) plus the three legacy-alias stub
-// files' declared targets.
-const COMMAND_FILES = ["audit", "autopilot", "capture", "diagnose", "go-backlog", "go",
-  "plan-backlog", "plan", "run", "runner", "sprint"];
-const ALIAS_TARGETS = { autopilot: "go", sprint: "go-backlog", run: "plan" };
+// ── term 4: registered mode names ───────────────────────────────────────────
+const COMMAND_FILES = ["audit", "capture", "diagnose", "go-backlog", "go",
+  "plan-backlog", "plan", "runner", "design", "init"];
 
 async function loadCommandNames() {
   const names = new Set();
@@ -193,26 +189,6 @@ async function loadCommandNames() {
   }
   return names;
 }
-
-test("mode names: every legacy-alias stub's frontmatter description and body name the identical target", async () => {
-  for (const [alias, target] of Object.entries(ALIAS_TARGETS)) {
-    const src = await read(`plugin/commands/${alias}.md`);
-    const descMatch = src.match(/description:\s*"Legacy alias of \/muster:(\S+?)\s*—/);
-    assert.ok(descMatch, `${alias}.md's frontmatter description must read "Legacy alias of /muster:<target> —"`);
-    const bodyMatch = src.match(/\/muster:\S+ is now \/muster:(\S+)\s*—/);
-    assert.ok(bodyMatch, `${alias}.md's body must read "/muster:${alias} is now /muster:<target> —"`);
-    assert.equal(descMatch[1], target, `${alias}.md's frontmatter description names the wrong alias target`);
-    assert.equal(bodyMatch[1], target, `${alias}.md's body names the wrong alias target`);
-    assert.equal(descMatch[1], bodyMatch[1], `${alias}.md's frontmatter and body disagree on the alias target`);
-  }
-});
-
-test("mode names: every legacy-alias target is a real registered mode name", async () => {
-  const names = await loadCommandNames();
-  for (const [alias, target] of Object.entries(ALIAS_TARGETS)) {
-    assert.ok(names.has(target), `${alias}.md's alias target "${target}" is not a registered command name`);
-  }
-});
 
 test("mode names: every '(vs /muster:X...)' cross-reference in plugin/commands/*.md names a real registered mode", async () => {
   const names = await loadCommandNames();
@@ -360,7 +336,7 @@ function findPreRenameVerbLines(text) {
   return hitLines;
 }
 
-test("Cowork adapter/prose cite pre-rename verbs (run/autopilot/sprint) only on their one alias-note line", async () => {
+test("Cowork adapter/prose contain no retired verb citations", async () => {
   const targets = [
     "cowork/mcp-server.mjs",
     "cowork/sprint-protocol.md",
@@ -371,8 +347,8 @@ test("Cowork adapter/prose cite pre-rename verbs (run/autopilot/sprint) only on 
     const hitLines = findPreRenameVerbLines(text);
     assert.equal(
       hitLines.length,
-      1,
-      `${path} must cite pre-rename verbs (run/autopilot/sprint) on exactly one alias-note line; found citations on line(s) ${JSON.stringify(hitLines)}`
+      0,
+      `${path} must not cite retired verbs; found citations on line(s) ${JSON.stringify(hitLines)}`
     );
   }
 });

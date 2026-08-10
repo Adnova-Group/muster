@@ -12,7 +12,7 @@ Model work uses the account or subscription of the active Codex session. Muster'
 ## Install
 
 ```sh
-npx -y @adnova-group/muster@0.6.0 install codex --scope project
+npx -y @adnova-group/muster@0.7.0 install codex --scope project
 ```
 
 ## Start in native Plan mode
@@ -52,7 +52,7 @@ If you move from WSL Codex to native Windows Codex, rerun the desired project/us
 With Codex on `PATH`, the installer also registers the `Adnova-Group/muster` marketplace and adds `muster@muster`, idempotently. Without Codex on `PATH` it still installs the profiles and hooks, then prints the exact registration follow-up for you to run.
 
 ```sh
-npx -y @adnova-group/muster@0.6.0 install codex --scope user
+npx -y @adnova-group/muster@0.7.0 install codex --scope user
 ```
 
 ## The canonical-scope hook collapse
@@ -101,7 +101,7 @@ $muster Add rate limiting to the public API with tests
 | `$muster-init` | Prepare repository state and coordinate Codex native Init evidence. |
 | `$muster-design` | Run context-gated Muster Design workflows with explicit `DESIGN.md` provenance. |
 
-All ten modes have a skill: the six above plus `$muster-plan-backlog`, `$muster-go-backlog`, `$muster-diagnose`, and `$muster-runner`. The three legacy aliases remain skills too: `run` maps to `plan`, `autopilot` maps to `go`, and `sprint` maps to `go-backlog`. They are deprecated as of 2026-07-17 and retire in Muster 0.7.0.
+All ten modes have a skill: the six above plus `$muster-plan-backlog`, `$muster-go-backlog`, `$muster-diagnose`, and `$muster-runner`.
 
 Codex native Init uses the canonical instruction pair: `AGENTS.md` is authoritative, and `CLAUDE.md` contains exactly:
 
@@ -123,7 +123,7 @@ For annotated go-backlog files, Codex dispatches every ready implementation/revi
 | Pipelines | all of them |
 | MCP tools | 31 tools: 30 CLI-wrapper tools plus `muster_sprint_protocol` |
 | Custom-agent profiles | 27 |
-| Skills | 87 total: 14 public + 73 internal |
+| Skills | 84 total: 11 public + 73 internal |
 | Internal skill breakdown | 22 native orchestration + 51 capability |
 
 ## Inspecting a Codex install

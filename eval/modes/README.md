@@ -1,10 +1,8 @@
 # Mode-prompt eval harness
 
 An empirical eval of 8 run-lifecycle mode prompts (`plugin/commands/*.md`: `plan`, `plan-backlog`,
-`go`, `go-backlog`, `runner`, `audit`, `diagnose`, `capture`) plus the 3 legacy alias
-stubs that delegate to them (`run` -> `plan`, `autopilot` -> `go`, `sprint` ->
-`go-backlog` — thin, minimal files graded structurally, not via dataset cases; see "Alias
-stubs" below). The ninth and tenth modes, `init` and `design`, are graded structurally
+`go`, `go-backlog`, `runner`, `audit`, `diagnose`, `capture`). The ninth and tenth modes,
+`init` and `design`, are graded structurally
 and through their focused filesystem, receipt, context, and mutation-safety tests rather
 than response-quality fixtures. The harness also covers
 the 10 skill-protocol skills the modes delegate to (`plugin/skills/*` —
@@ -138,7 +136,7 @@ coordination comment thread) grades a **checked-in fixture artifact** instead (s
 ```jsonc
 {
   "id": "plan-parallel-manifest-fences",     // unique
-  "mode": "plan",                            // one of the 8 mode prompts (MODES, incl. capture — NEVER an alias name; run/autopilot/sprint are graded structurally, see "Alias stubs" below), one of the 10 skill names (SKILLS), one of the 7 native-builtin names (BUILTINS), OR one of the 20 pipeline ids split across CONTENT_PIPELINES (9) and KNOWLEDGE_PIPELINES (11) — see test/mode-evals.test.js. A single field, all five layers share it (grade.mjs, frozen, calls `.padEnd()` on `row.mode` unconditionally)
+  "mode": "plan",                            // one of the 8 mode prompts (MODES, incl. capture), one of the 10 skill names (SKILLS), one of the 7 native-builtin names (BUILTINS), OR one of the 20 pipeline ids split across CONTENT_PIPELINES (9) and KNOWLEDGE_PIPELINES (11) — see test/mode-evals.test.js. A single field, all five layers share it (grade.mjs, frozen, calls `.padEnd()` on `row.mode` unconditionally)
   "outcome": "Add JWT auth to the API and update the docs, in parallel.", // the user input this case models (also the literal string fed to a pure fn, when `check` reads `outcome` directly)
   "check": "manifest",                       // which grade-lib.mjs grader to dispatch to
   "artifact": "fixtures/plan/manifest-parallel.json", // OPTIONAL: path (relative to eval/modes/) to a checked-in fixture
@@ -216,7 +214,7 @@ coordination comment thread) grades a **checked-in fixture artifact** instead (s
 
 Unlike `eval:router`, there is no headless harness that fires a mode prompt end-to-end and
 captures its artifacts. **Producing a fixture is manual/session-driven**: run the mode
-(e.g. `/muster:run <outcome>`) in a real Claude Code session, then save the relevant
+(e.g. `/muster:plan <outcome>`) in a real Claude Code session, then save the relevant
 artifact(s) — the written `.muster/manifest.json`, the run STATE's `## Coordination`
 section, an audit findings ledger or backlog write — into `eval/modes/fixtures/<area>/`,
 add/update the matching `dataset.json` case, and re-run the grader.
@@ -244,8 +242,7 @@ mutant-kill-rule cases), 21 content-pipeline cases (>= 2 per pipeline across all
 native-builtin cases (2 per builtin across all 7), and 27 knowledge-pipeline cases (11
 gate-achievability + 16 structural, across the 11 pipelines — see the coverage table below
 for the exact per-pipeline breakdown, including the 2 pipelines with no structural case,
-skipped honestly). The 3 legacy alias stubs (`run`/`autopilot`/`sprint`) carry zero dataset
-cases by design — see "Alias stubs" in the coverage table below.
+skipped honestly).
 
 To refresh the model-graded cases (`grading: "model"`): follow `eval/router/README.md`'s
 "How to run" pattern (a subagent produces the artifact and/or a judge score) — out of
@@ -262,7 +259,7 @@ stale. Tiers: **empirical** (>=1 code-graded dataset case grades it directly),
 **static** (covered only by `muster prompt lint`/`prompt scan` structural linting, not by
 this eval), **deliberate-none** (out of scope for this eval, with a stated reason).
 
-### Mode prompts (`plugin/commands/*.md`, 8 of the 13 files there)
+### Mode prompts (`plugin/commands/*.md`, 8 of the 10 files there)
 
 | surface | tier | cases |
 |---|---|---|
@@ -280,24 +277,6 @@ this eval), **deliberate-none** (out of scope for this eval, with a stated reaso
 `init.md` and `design.md` are covered by prompt lint plus their focused contract suites.
 They perform filesystem and context lifecycle work that the no-I/O response grader does
 not model.
-
-### Alias stubs (`plugin/commands/*.md`, the remaining 3 compatibility files)
-
-`run`, `autopilot`, and `sprint` are legacy names kept working for backward compatibility
-— each is now a minimal delegation stub (frontmatter + one heads-up guidance line + a
-Read-and-execute directive) with no behavior of its own left to grade empirically. They
-carry **zero** `dataset.json` cases by design (see the DECISION comment beside
-`MODES`/`ALIASES` in `test/mode-evals.test.js`) — coverage is a **structural alias-class
-check** instead: alias-shape equivalence (the file is ONLY frontmatter + guidance line +
-a Read-and-execute directive naming a target file that exists — pins the shape so a
-future edit can't silently fatten an alias back into real logic) and alias-guidance (the
-heads-up line names the correct replacement command).
-
-| surface | tier | cases |
-|---|---|---|
-| run.md -> plan.md | structural (alias-class check) | 0 — no independent behavior to grade; see `test/mode-evals.test.js`'s "alias-shape equivalence"/"alias-guidance" tests |
-| autopilot.md -> go.md | structural (alias-class check) | 0 — same alias-class check |
-| sprint.md -> go-backlog.md | structural (alias-class check) | 0 — same alias-class check |
 
 ### Skill-protocol skills (`plugin/skills/*/SKILL.md`, 22: the 10 below + router + improve + 10 audit-pattern-* hunt-list skills)
 

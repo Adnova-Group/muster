@@ -16,7 +16,6 @@ const MCP_OUTPUT_CAP = 256 * 1024;
 const MCP_PROTOCOL_VERSION = "2025-06-18";
 const REQUIRED_DETECT_FIELDS = Object.freeze(["greenfield", "languages", "vcs"]);
 export const CODEX_0146_PUBLIC_SKILLS = Object.freeze([
-  "autopilot",
   "muster",
   "muster-audit",
   "muster-capture",
@@ -28,8 +27,6 @@ export const CODEX_0146_PUBLIC_SKILLS = Object.freeze([
   "muster-plan",
   "muster-plan-backlog",
   "muster-runner",
-  "run",
-  "sprint",
 ]);
 
 function sortedUnique(values) {

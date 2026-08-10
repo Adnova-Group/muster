@@ -17,7 +17,7 @@ Turn a thin outcome into an enriched, criteria-backed one before any routing hap
 - Run when the user explicitly asks to brainstorm/refine the outcome.
 - **Skip** when `clear: true` — hand straight to the router.
 
-**Callers:** `/muster:run` invokes this as its front half before routing; `/muster:autopilot` triggers
+**Callers:** `/muster:plan` invokes this as its front half before routing; `/muster:go` triggers
 it once on an info-gap (attended mode only — unattended skips the interview and proceeds with
 best-effort defaults).
 
@@ -46,7 +46,7 @@ An **ACCEPTED** split writes the backlog:
 - Publish the complete staged create/append on stdin with `$MUSTER_CLI backlog-publish .muster/backlog.md --expect <sha256|absent>`; on a changed-before-publication failure, reread, redo duplicate detection and the append, then retry. Never write or rename the backlog directly.
 - **Write each part** as an unchecked item to `.muster/backlog.md` — create the file if absent, append if
   present. NEVER remove, reorder, or rewrite existing lines.
-- **Item format** (must match `/muster:sprint`'s parser exactly): exactly one line per item —
+- **Item format** (must match `/muster:go-backlog`'s parser exactly): exactly one line per item —
   `- [ ] <outcome text with success criteria folded inline as clauses>`, followed by any of `{id: ...}`,
   `{deps: ...}`, `{disposition: ...}` annotations. Criteria fold inline as clauses, always on the single
   item line rather than as sub-lines or nested bullets — a multi-line item is a format violation.
@@ -65,8 +65,8 @@ An **ACCEPTED** split writes the backlog:
 - **Skip duplicates** — on append, skip any item whose text (compared with every `{key: value}` annotation
   stripped generically) already exists in the file, checked or unchecked; record the skips.
 - **Glass box** — record the written items and the skips in the run STATE.
-- **Then** use **AskUserQuestion** to offer: run the **first item now** (the autopilot lifecycle), run the
-  **whole backlog** now (`/muster:sprint`), or **just save** (stop here).
+- **Then** use **AskUserQuestion** to offer: run the **first item now** (the Go lifecycle), run the
+  **whole backlog** now (`/muster:go-backlog`), or **just save** (stop here).
 
 ## Output
 Produce:

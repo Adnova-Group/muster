@@ -6,8 +6,8 @@ const root = new URL("../", import.meta.url);
 const read = relative => readFile(new URL(relative, root), "utf8");
 const json = async relative => JSON.parse(await read(relative));
 
-test("0.6.0 release metadata is synchronized across published manifests", async () => {
-  const expectedVersion = "0.6.0";
+test("0.7.0 release metadata is synchronized across published manifests", async () => {
+  const expectedVersion = "0.7.0";
   const manifests = [
     "package.json",
     "package-lock.json",
@@ -25,15 +25,15 @@ test("0.6.0 release metadata is synchronized across published manifests", async 
   assert.equal(lock.packages[""].version, expectedVersion, "package-lock root package must carry the release version");
 });
 
-test("0.6.0 changelog metadata closes the release and keeps an Unreleased section", async () => {
+test("0.7.0 changelog metadata closes the release and keeps an Unreleased section", async () => {
   const changelog = await read("CHANGELOG.md");
-  assert.match(changelog, /^## \[Unreleased\]\n\n[\s\S]*?^## \[0\.6\.0\] - 2026-07-31$/m);
+  assert.match(changelog, /^## \[Unreleased\]\n\n[\s\S]*?^## \[0\.7\.0\] - 2026-08-10$/m);
   assert.match(
     changelog,
-    /^\[Unreleased\]: https:\/\/github\.com\/Adnova-Group\/muster\/compare\/v0\.6\.0\.\.\.HEAD$/m
+    /^\[Unreleased\]: https:\/\/github\.com\/Adnova-Group\/muster\/compare\/v0\.7\.0\.\.\.HEAD$/m
   );
   assert.match(
     changelog,
-    /^\[0\.6\.0\]: https:\/\/github\.com\/Adnova-Group\/muster\/compare\/v0\.5\.0\.\.\.v0\.6\.0$/m
+    /^\[0\.7\.0\]: https:\/\/github\.com\/Adnova-Group\/muster\/compare\/v0\.6\.0\.\.\.v0\.7\.0$/m
   );
 });

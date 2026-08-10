@@ -93,7 +93,7 @@ Run the probe with the real installed identity to emit a fresh nonce-bearing run
 ```sh
 node scripts/chatgpt-work-native-probe.mjs \
   --connection-id asdk_app_... --app-json /path/to/installed/.app.json \
-  --plugin-version 0.6.0 --connection-label "Muster ChatGPT Work"
+  --plugin-version 0.7.0 --connection-label "Muster ChatGPT Work"
 ```
 
 - the operator sees a completed native `muster_prioritize` card in Work (web or desktop), with the exact nonce request and deterministic result;
@@ -110,7 +110,7 @@ For an identity-bound grade, provide the normalized ID and exact installed `.app
 ```sh
 node scripts/chatgpt-work-native-probe.mjs --grade receipt.json --nonce <nonce> \
   --server-attestation attestation.json --connection-id asdk_app_... \
-  --app-json /path/to/installed/.app.json --plugin-version 0.6.0 \
+  --app-json /path/to/installed/.app.json --plugin-version 0.7.0 \
   --connection-label "Muster ChatGPT Work" \
   --snapshot-out /private/retained/grade-snapshot.json \
   --owned-plugin-path /exact/owned/plugin-path \

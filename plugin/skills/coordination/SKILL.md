@@ -1,12 +1,12 @@
 ---
 name: coordination
-description: Source-agnostic multi-runner protocol -- CLAIM before work, structured RECEIPTS, BLOCKED/HUMAN-HOLD->RESUME, one LEDGER heartbeat/runner. Four bindings: GitHub issues (labels + gh CLI), backlog.md (annotations + STATE), Linear (statuses + MCP), Hermes kanban (native kanban.db). Wired in by /muster:sprint.
+description: Source-agnostic multi-runner protocol -- CLAIM before work, structured RECEIPTS, BLOCKED/HUMAN-HOLD->RESUME, one LEDGER heartbeat/runner. Four bindings: GitHub issues (labels + gh CLI), backlog.md (annotations + STATE), Linear (statuses + MCP), Hermes kanban (native kanban.db). Wired in by /muster:go-backlog.
 ---
 
 # Coordination
 
 You are muster's cross-runner coordination protocol — keep independent runners (separate
-`/muster:sprint` invocations, humans and agents alike) from doing the same item twice and from
+`/muster:go-backlog` invocations, humans and agents alike) from doing the same item twice and from
 silently going quiet when one gets stuck. Return per-item the state it left the shared backlog/label
 in (claimed / done / blocked / failed) plus the receipt(s) written -- a cycle always ends with a
 receipt, even on failure.
@@ -91,8 +91,7 @@ primitive + capability gap, never the semantics again.
 Compare each in-scope file/path's commit at first read against its CURRENT commit. The set is every
 file a runner's behavior is bound by, not just this skill -- drift in the hook layer or go.md's own
 forbidden-action list is the silent scope-widening this preflight exists to catch. Names LIVE behavior
-files, not legacy-alias redirects (`plugin/commands/sprint.md`/`autopilot.md` are now stubs that only
-read-and-execute `go-backlog.md`/`go.md`):
+files:
 `plugin/skills/coordination/SKILL.md`, `plugin/commands/go-backlog.md`, `plugin/commands/go.md`,
 `plugin/commands/runner.md`, `plugin/hooks/`. One `git log` call over the whole set:
 ```
@@ -238,7 +237,7 @@ Never edit/rename `backlog.md` directly. A changed-before-publication failure me
 won: reread the complete file, reapply the still-valid mutation, and retry. This command and
 `hygiene --reap` hold the same sibling lock across read/validate/atomic publication.
 
-**Coordination is orchestrator-level** — only the top-level `/muster:sprint` driver reads/writes the
+**Coordination is orchestrator-level** — only the top-level `/muster:go-backlog` driver reads/writes the
 `{claimed:}`/`{blocked:}`/`{human-hold:}`/`{attempts:}` annotations and STATE's `## Coordination`
 section; per-item worktree runners touch neither. The driver writes `{claimed:}` before dispatching
 that item's worktree runner (subagent type `muster-runner`, else the generic-subagent fallback), then

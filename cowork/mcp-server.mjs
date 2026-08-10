@@ -23,7 +23,6 @@ const protocol = [
   "- diagnose: reproduce, root-cause, fix, regression-test, and verify.",
   "- design: use muster_design to resolve canonical DESIGN.md context, hold attended initialization, gate human-facing writes, and run one of the 23 pinned workflows. Non-design outcomes skip this tool entirely.",
   "",
-  "Legacy aliases still work: run -> plan, autopilot -> go, sprint -> go-backlog.",
   "CLI-only operations: use the CLI for muster_match_skills --stack and codex-conformance.",
 ].join("\n");
 

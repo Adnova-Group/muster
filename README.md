@@ -18,7 +18,7 @@ It runs on Claude Code, Codex, Kimi, or Cowork with no separate model API, and i
 ## Quickstart
 
 ```sh
-npx -y @adnova-group/muster@0.6.0 install
+npx -y @adnova-group/muster@0.7.0 install
 ```
 
 Pin the reviewed release in automation and copy the current version from `package.json` when updating. `npx` uses npm's execution path and may download the named package from the configured registry before running it. Review the package provenance and release notes before changing the pin.
@@ -41,7 +41,7 @@ Muster's glass-box output style ships inside the plugin and applies automaticall
 Build or install the package, then install Muster's managed Codex profiles and plugin:
 
 ```sh
-npx -y @adnova-group/muster@0.6.0 install codex --scope project
+npx -y @adnova-group/muster@0.7.0 install codex --scope project
 ```
 
 `--scope project` writes Muster-owned profiles and declarations under the project's `.codex/` layer, installs the hook runtime under `.codex/muster/`, and merges owned hook groups into `.codex/hooks.json`. The install also records ownership receipts and registers the plugin. Existing unrelated profiles, configuration, and hook groups are preserved.
@@ -49,7 +49,7 @@ npx -y @adnova-group/muster@0.6.0 install codex --scope project
 Codex CLI, Desktop, and the IDE share `$CODEX_HOME/config.toml`. Even for `--scope project`, the installer ensures the canonical `agents.max_concurrent_threads_per_session` setting exists, defaulting it to `12` only when the user has not configured a canonical or legacy ceiling. Existing positive user ceilings are preserved. A receipt lets the last managed-scope uninstall restore only values Muster changed, including cleanup of legacy `max_threads`/`max_depth` values only when an older Muster receipt proves ownership. The user scope is canonical for hooks: a healthy user install makes a project install skip its own hook merge, avoiding duplicate events. Use `--dry-run` to inspect the complete write, merge, registration, and cleanup plan first:
 
 ```sh
-npx -y @adnova-group/muster@0.6.0 install codex --scope project --dry-run
+npx -y @adnova-group/muster@0.7.0 install codex --scope project --dry-run
 ```
 
 On Windows, install from the same host that runs Codex. Native Windows and WSL have different home directories, Node installations, plugin caches, and normally different `CODEX_HOME` values; an install under `~/.codex` in WSL does not configure native Codex Desktop under `%USERPROFILE%\.codex`. If you switch hosts, rerun the scoped install and `muster doctor --codex` in the new host. Do not point native Desktop at a WSL-only path or assume that a `/mnt/c/...` checkout makes the two user scopes identical.
@@ -57,17 +57,17 @@ On Windows, install from the same host that runs Codex. Native Windows and WSL h
 Codex requires a new trust review when installed hook definitions change. Inspect exact definitions with `/hooks`; update-sensitive trust means a previously trusted hash does not authorize changed code. To remove only Muster-owned project state, preview and then run:
 
 ```sh
-npx -y @adnova-group/muster@0.6.0 uninstall codex --scope project --dry-run
-npx -y @adnova-group/muster@0.6.0 uninstall codex --scope project
+npx -y @adnova-group/muster@0.7.0 uninstall codex --scope project --dry-run
+npx -y @adnova-group/muster@0.7.0 uninstall codex --scope project
 ```
 
 Uninstall preserves unrelated config and Codex's project trust records, removes only receipted Muster declarations and hook groups, prunes Muster-owned hook trust entries, and unregisters the plugin only after the last managed scope is gone. With Codex on `PATH`, install registers `Adnova-Group/muster` and adds `muster@muster` idempotently. Without Codex it installs profiles and hooks, then prints the exact registration follow-up.
 
-Use `$muster` or a mode skill such as `$muster-plan`, `$muster-go`, `$muster-audit`, or `$muster-capture`. The three legacy aliases (`run`, `autopilot`, `sprint`) remain skills. Codex users can inspect live Codex capability state with `muster capabilities --codex` and run `muster doctor --codex`.
+Use `$muster` or a mode skill such as `$muster-plan`, `$muster-go`, `$muster-audit`, or `$muster-capture`. Codex users can inspect live Codex capability state with `muster capabilities --codex` and run `muster doctor --codex`.
 
 From an interactive terminal, `muster codex-plan "<outcome>"` starts a new local App Server session, discovers the advertised Plan preset, invokes the installed `muster-plan` skill with `turn/start.collaborationMode`, and reports the effective mode from `thread/settings/updated`. It relays Muster's structured approval question to that terminal, but never overrides the user's approval policy, reviewer, permissions, or sandbox. It cannot switch an already-running desktop/IDE chat. Non-interactive callers and unavailable or unconfirmed App Server control exit nonzero with the safe in-session path: `/plan $muster-plan <outcome>`.
 
-The Codex plugin bundles the deterministic CLI, all pipelines, 31 MCP tools, 27 custom-agent profiles, and 87 skills: 14 public mode/router/alias skills plus 73 internal skills (22 native orchestration skills and 51 capability skills). The npm installer adds Codex-native lifecycle hooks through the supported project or user `hooks.json` layer, and the Codex plugin itself is deliberately hooks-free so the two never double-fire. These hooks fail open and are diagnostic: they cannot reliably block every unified-shell or subagent action. Todo and spawn enforcement remain advisory, and write-capable waves must use isolated Git worktrees.
+The Codex plugin bundles the deterministic CLI, all pipelines, 31 MCP tools, 27 custom-agent profiles, and 84 skills: 11 public mode/router skills plus 73 internal skills (22 native orchestration skills and 51 capability skills). The npm installer adds Codex-native lifecycle hooks through the supported project or user `hooks.json` layer, and the Codex plugin itself is deliberately hooks-free so the two never double-fire. These hooks fail open and are diagnostic: they cannot reliably block every unified-shell or subagent action. Todo and spawn enforcement remain advisory, and write-capable waves must use isolated Git worktrees.
 
 ### Kimi
 
@@ -91,8 +91,6 @@ ChatGPT Work is a private/local, proof-gated plugin lane: it does not inherit Co
 | Runner | `/muster:runner [source]` | Unattended one-cycle work-picker for a Claude Code Routine or cron: resumes an answered blocked item or claims exactly one available item, drives it through the full Go lifecycle force-coerced to a `pr` disposition, leaves a receipt, and stops. The schedule provides the loop, not the verb. |
 | Capture | `/muster:capture [hint]` | Conversation-to-backlog generator: mines the session's discussion (findings, decisions, review residuals, an explicit directive) into backlog items via the same extract/validate/dedupe/write machinery, gated by your approval before anything is written. Writes only `.muster/backlog.md` -- it never assembles a crew or runs work itself. |
 | Init | `/muster:init [dir]` | Prepare a repository profile and receipt, hand native instruction work to the active runtime, and finalize only after positive evidence or an acknowledged unavailable handoff. |
-
-`/muster:run`, `/muster:autopilot`, and `/muster:sprint` still work: each prints a one-line heads-up, then runs its replacement (`plan`, `go`, and `go-backlog`, respectively) unchanged. Deprecated as of 2026-07-17 and retiring in muster 0.7.0 -- migrate to the replacement verb before then; behavior stays unchanged for the rest of the window.
 
 The mechanics behind this table, including the approval-gate details, task fences (`owns`/`frozen`/`forbiddenActions`), the manifest's `mergeDisposition`, and the wave-mode schedule, are documented in the [mode reference](https://adnova-group.github.io/muster/reference/modes).
 

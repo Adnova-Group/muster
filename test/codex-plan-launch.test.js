@@ -213,7 +213,7 @@ test("native launch reports Plan only after the schema-shaped effective-mode con
   });
   const start = calls.find(call => call.method === "turn/start");
   assert.equal(start.params.collaborationMode.mode, "plan");
-  assert.equal(calls.find(call => call.method === "initialize").params.clientInfo.version, "0.6.0");
+  assert.equal(calls.find(call => call.method === "initialize").params.clientInfo.version, "0.7.0");
 });
 
 test("native launch requires exact nonempty thread and turn receipt correlation", async () => {

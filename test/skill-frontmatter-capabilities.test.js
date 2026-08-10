@@ -62,7 +62,6 @@ test("review-gate/advisor/tournament keep Write/Edit -- each has a documented wr
 
 const EXPECTED_ARGUMENT_HINTS = {
   audit: "[path or empty = whole repo] | backlog [path]",
-  autopilot: "<outcome>",
   capture: "[hint]",
   design: "<init|status|resolve|detect|ignores|provider|workflow> [target]",
   diagnose: "<symptom | paste failing test/CI output>",
@@ -71,9 +70,7 @@ const EXPECTED_ARGUMENT_HINTS = {
   init: "[dir]",
   "plan-backlog": "<backlog ref | raw intent>",
   plan: "<outcome text | backlog text>",
-  run: "<outcome | backlog ref>",
   runner: "[backlog path | issues:<label>]",
-  sprint: "<backlog ref>",
 };
 
 test("every plugin/commands/*.md file carries argument-hint, matching the Usage string already in its description", async () => {

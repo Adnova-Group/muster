@@ -8,6 +8,7 @@
 // missed this file.
 import test from "node:test";
 import assert from "node:assert/strict";
+import { realpathSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, readFile, realpath, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { execFile as execFileCb } from "node:child_process";
 import { tmpdir } from "node:os";
@@ -72,7 +73,9 @@ for (const platform of ["linux", "win32"]) {
     assert.equal(calls[0].file, await realpath(process.execPath));
     assert.deepEqual(calls[0].args, [identity.codex, "--version"]);
     assert.equal(identity.version, "9.8.7");
-    assert.equal(identity.nativeCodex, await realpath(nativePath));
+    // resolveCodexRuntimeIdentity is synchronous; on Windows the synchronous
+    // and promise realpath APIs can return different long/8.3 spellings.
+    assert.equal(identity.nativeCodex, realpathSync(nativePath));
     await assert.rejects(readFile(marker), /ENOENT/);
     assert.equal(env.PATH.startsWith(marker), false);
   });
@@ -129,7 +132,7 @@ test("Codex platform fallback ignores ambient package lookup and requires the ex
   assert.throws(() => resolveCodexRuntimeIdentity({ env, platform: process.platform }), /unexpected name or version/);
   await writeFile(join(nestedRoot, "package.json"), JSON.stringify({ name: "@openai/codex", version: expectedVersion }));
   assert.equal(resolveCodexRuntimeIdentity({ env, platform: process.platform }).nativeCodex,
-    await realpath(join(nestedRoot, "vendor", triple, "bin", executable)));
+    realpathSync(join(nestedRoot, "vendor", triple, "bin", executable)));
 });
 
 test("missing trusted identity performs no Codex PATH execution", async () => {

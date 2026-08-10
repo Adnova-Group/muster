@@ -92,20 +92,41 @@ async function liveManagedHookScripts(home, extraConfigDirs = []) {
 export async function validateManagedHookAliasGraph({ home, cwd, inventoryCwd = cwd, entries, currentDir, currentConfig }) {
   const currentProjectDir = join(cwd, ".codex");
   const invocationProjectDirs = await codexActivationConfigDirs(cwd, inventoryCwd);
-  const registeredDirs = new Set(entries.map(entry => resolve(entry.configDir)));
+  const directoryIdentity = async path => {
+    const configDir = resolve(path);
+    if (!(await ordinaryDirectoryPath(configDir))) {
+      return { configDir, identity: `missing:${process.platform === "win32" ? configDir.toLowerCase() : configDir}` };
+    }
+    const metadata = await lstat(configDir);
+    if (metadata.ino !== 0) return { configDir, identity: `inode:${metadata.dev}:${metadata.ino}` };
+    const canonical = await realpath(configDir);
+    return { configDir, identity: `path:${process.platform === "win32" ? canonical.toLowerCase() : canonical}` };
+  };
+  const currentProject = await directoryIdentity(currentProjectDir);
+  const invocationProjects = await Promise.all(invocationProjectDirs.map(directoryIdentity));
+  const current = currentDir ? await directoryIdentity(currentDir) : null;
+  const user = await directoryIdentity(codexHome(home));
+  const registered = await Promise.all(entries.map(async entry => ({ ...entry, ...await directoryIdentity(entry.configDir) })));
+  const registeredDirs = new Set(registered.map(entry => entry.identity));
   const scopes = [
-    { scope: "user", configDir: codexHome(home) },
-    { scope: "project", configDir: currentProjectDir },
-    ...invocationProjectDirs.filter(dir => resolve(dir) !== resolve(currentProjectDir)).map(configDir => ({ scope: "project", configDir })),
-    ...entries,
-    ...(currentDir ? [{ scope: currentDir === codexHome(home) ? "user" : "project", configDir: currentDir }] : [])
+    { scope: "user", ...user },
+    { scope: "project", ...currentProject },
+    ...invocationProjects.map(entry => ({ scope: "project", ...entry })),
+    ...registered,
+    ...(current ? [{ scope: current.identity === user.identity ? "user" : "project", ...current }] : [])
   ];
-  const unique = new Map(scopes.map(entry => [resolve(entry.configDir), { ...entry, configDir: resolve(entry.configDir) }]));
+  // Windows can expose one directory through both its long name and an 8.3
+  // alias. Treat ownership as a physical-directory property, just as scope
+  // registry reconciliation does, while retaining the caller's path spelling
+  // for reads and diagnostics. The final current-scope entry intentionally
+  // wins so its in-memory candidate config is validated before publication.
+  const unique = new Map(scopes.map(entry => [entry.identity, entry]));
   const runtimeScripts = [...unique.values()].map(entry => join(entry.configDir, "muster", "hooks", "muster-hook.mjs"));
   const projectCwds = [...unique.values()].filter(entry => entry.scope === "project").map(entry => dirname(entry.configDir));
+  const activeProjectDirs = new Set([currentProject, ...invocationProjects].map(entry => entry.identity));
   for (const entry of unique.values()) {
     const configPath = join(entry.configDir, "hooks.json");
-    let config = currentDir && resolve(currentDir) === entry.configDir ? currentConfig : null;
+    let config = current && current.identity === entry.identity ? currentConfig : null;
     if (!config) {
       if (!(await safeExists(configPath))) continue;
       config = await readJson(configPath);
@@ -115,10 +136,10 @@ export async function validateManagedHookAliasGraph({ home, cwd, inventoryCwd = 
     }
     const invocationCwds = invocationProjectDirs.map(dirname);
     const cwds = entry.scope === "user" ? [...new Set([cwd, inventoryCwd, ...invocationCwds, ...projectCwds])]
-      : [currentProjectDir, ...invocationProjectDirs].some(dir => entry.configDir === resolve(dir))
+      : activeProjectDirs.has(entry.identity)
         ? [...new Set([cwd, inventoryCwd, ...invocationCwds])] : [dirname(entry.configDir)];
-    const unownedCurrentProject = [currentProjectDir, ...invocationProjectDirs].some(dir => entry.configDir === resolve(dir))
-      && entry.configDir !== resolve(currentDir || "") && !registeredDirs.has(entry.configDir);
+    const unownedCurrentProject = activeProjectDirs.has(entry.identity)
+      && entry.identity !== current?.identity && !registeredDirs.has(entry.identity);
     if (unownedCurrentProject && Object.values(config.hooks || {}).some(groups => Array.isArray(groups)
       && groups.some(group => groupCommands(group).some(isMusterHookCommand)))) {
       throw new Error(`Codex hook conflict: ${configPath} contains an unmanaged Muster hook in the unregistered current project.`);

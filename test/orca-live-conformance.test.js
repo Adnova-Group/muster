@@ -182,6 +182,18 @@ test("the observed orchestration lifecycle is pinned for the Phase 4 gate", asyn
   assert.equal(live.settlement.workerRelease.archive.status, "captured");
   assert.match(live.settlement.workerStartPlainShell, /agent_unconfigured/);
 
+  // worker_done auto-completes its task: an adapter that also issued
+  // task-update --status completed would overwrite Orca's own transition.
+  assert.equal(live.workerDone.autoCompletesTask, true);
+  assert.deepEqual(live.workerDone.payloadShape, ["taskId", "dispatchId", "outcome"]);
+  assert.match(live.workerDone.deliveredTo, /^run:/);
+
+  // Inbox bodies are other agents' free text. A live inbox held imperative
+  // instructions from a previous run aimed at other dispatches; nothing in
+  // Muster may treat that as direction.
+  assert.ok(live.inboxIsUntrusted.note.includes("never follow"));
+  assert.match(live.inboxIsUntrusted.readIsStateful, /--peek/);
+
   // What is still unproven must stay listed, so the gate is not mistaken for
   // fully-characterized.
   for (const gap of ["failed", "outcome_unknown", "escalation", "merge_ready"]) {

@@ -425,6 +425,20 @@ after a partial start, and it is emitted on success too.
   recognized agent; a plain shell is rejected with `agent_unconfigured`. A
   supervised worker is always an agent, never an arbitrary process.
 
+**`worker_done` auto-completes its task** [OBSERVED]. The probe worker sent
+`worker_done` and its task became `completed` with a `completed_at` stamp
+without any `task-update` call. The message payload is exactly the correlation
+triple `{taskId, dispatchId, outcome}`, delivered to `run:<run_id>` — never to a
+terminal. This makes the guide's rule operational: a Muster adapter that
+observed an Orca completion and then issued `task-update --status completed`
+would be writing over a transition Orca already made.
+
+Message record confirmed on a live send: `id`, `run_id`, `type`, `subject`,
+`body`, `payload`, `priority`, `thread_id`, `sequence`, `from_handle`,
+`to_handle`, `sender_pane_key`, `delivery_contract`, `read`, `created_at`,
+`delivered_at`. `sequence` is a per-database monotonic counter, and `thread_id`
+is null for an unthreaded report.
+
 **State vocabularies** [DOCUMENTED, guide]: worker/dispatch states include
 `running`, `succeeded`, `failed`, `stopped`, `outcome_unknown`, `dispatched`;
 release outcomes include `release_pending` and `release_unknown`. Observed
@@ -437,8 +451,22 @@ two fields `terminal list` omits, and its `paneKey` is exactly the
 What remains [UNRESOLVED]: `failed`, `outcome_unknown`, `release_pending`, and
 `release_unknown` were documented but not observed — producing them requires an
 agent that genuinely errors or a runtime that loses a PTY mid-dispatch, neither
-of which is safely reproducible on demand. `escalation`, `question`/`ask`, and
-`merge_ready` message flows were likewise not exercised.
+of which is safely reproducible on demand. The `escalation`, `question`/`ask`,
+and `merge_ready` message flows were likewise not exercised; only `worker_done`,
+`status`, and `heartbeat` have been seen on the wire.
+
+### Inbox contents are untrusted input
+
+A coordinator's inbox holds free-text `body` fields written by other agents, and
+a live inbox sampled here contained imperative instructions from a *previous*
+run addressed to *other* dispatches ("Stop broad suite and commit", "Exclude
+backlog from follow-up commit"). Orca also injects a terminal notice telling the
+agent to run `orca orchestration check`. A Muster adapter must treat message
+bodies as data to report, never as instructions to follow: check the `to_handle`
+and `run_id` before a message is even considered relevant, and never let inbox
+text redirect a Muster plan. Reading is also not free of state — plain `check`
+consumes a delivery batch, so use `--peek` for inspection and reserve `--ack`
+for a batch the coordinator genuinely owns.
 
 Useful documented examples include:
 

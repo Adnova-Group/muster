@@ -2,7 +2,8 @@ import {
   isAcceptedOrcaSelector,
   isCanonicalRuntimePath,
   isProtectedBranchName,
-  worktreeIdBelongsToRepository,
+  shortBranchName,
+  worktreeIdMatchesPath,
 } from "./orca-contract.js";
 
 // Cleanup is deliberately a policy boundary.  It consumes bounded observations
@@ -10,18 +11,14 @@ import {
 // Orca caller to approve and execute.  It never talks to Orca's RPC layer or
 // database, and planning is always side-effect free.
 //
-// Branch removal is Orca's, not Muster's.  Orca documents worktree deletion as
-// "removes both the directory and the branch (with confirmation)", so a second
-// `git branch -d` after `orca worktree rm` would run against a branch Orca has
-// already deleted -- failing every time, after the worktree is gone, with
-// stateMutation already true.  Worse, gating that second command behind its own
-// approval implied a protection that never existed: the removal Muster emits
-// takes the branch with it regardless.  So there is exactly one operation, it
-// declares that it deletes the branch, and branch-deletion approval is a
-// precondition of the whole disposition rather than of a second command.
-export const ORCA_WORKTREE_CLEANUP_SCHEMA_VERSION = 2;
+// Orca normally removes the branch with the worktree, but its JSON result may
+// instead report `preservedBranch` when it cannot prove the branch integrated.
+// A local cleanup may then use `git branch -d` (never `-D`) after binding the
+// preserved branch name and head to the reviewed, merged worktree tip.
+export const ORCA_WORKTREE_CLEANUP_SCHEMA_VERSION = 3;
 export const ORCA_CLEANUP_OPERATIONS = Object.freeze([
   "worktree-remove",
+  "branch-delete-if-preserved",
 ]);
 export const ORCA_CLEANUP_REASONS = Object.freeze([
   "malformed-input",
@@ -46,6 +43,9 @@ export const ORCA_CLEANUP_REASONS = Object.freeze([
   "branch-deletion-not-approved",
   "branch-preservation-unsupported",
   "remote-branch-deletion-unsupported",
+  "branch-preserved",
+  "cleanup-postcondition-unverified",
+  "cleanup-operation-failed",
 ]);
 
 const SHA_RE = /^[0-9a-f]{40}$/;
@@ -117,6 +117,7 @@ function normalizeIdentity(value, label = "identity") {
   if (!isCanonicalRuntimePath(path)) throw new TypeError(`${label}.path must be absolute and normalized`);
   const branch = normalizeBranch(first(value, "branch", "branchName", "branch_name"));
   const baseSha = sha(first(value, "baseSha", "base_sha", "baseRevisionSha", "base_revision_sha"), `${label}.baseSha`);
+  const headSha = sha(first(value, "headSha", "head_sha", "worktreeHeadSha", "worktree_head_sha"), `${label}.headSha`);
   const baseRef = optionalText(first(value, "baseRef", "base_ref", "baseBranch", "base_branch"), `${label}.baseRef`);
   const host = text(first(value, "host", "hostId", "host_id") ?? "local", `${label}.host`);
   const environmentId = text(first(value, "environmentId", "environment_id") ?? (host === "local" ? "local" : null), `${label}.environmentId`);
@@ -125,8 +126,8 @@ function normalizeIdentity(value, label = "identity") {
   // what branch it happens to be on.
   const isPrimary = first(value, "isMainWorktree", "is_main_worktree", "isPrimaryWorktree") === true;
   const remoteSelector = text(first(value, "remoteSelector", "remote_selector", "selector"), `${label}.remoteSelector`);
-  if (!worktreeIdBelongsToRepository(worktreeId, repositoryId)) {
-    throw new TypeError(`${label}.worktreeId does not contain its repository id`);
+  if (!worktreeIdMatchesPath(worktreeId, repositoryId, path)) {
+    throw new TypeError(`${label}.worktreeId does not identify its exact path`);
   }
   if (!isAcceptedOrcaSelector(remoteSelector, { worktreeId, path, host })) {
     throw new TypeError("remote selector does not identify the exact worktree");
@@ -139,6 +140,7 @@ function normalizeIdentity(value, label = "identity") {
     branch,
     baseRef,
     baseSha,
+    headSha,
     host,
     environmentId,
     remoteSelector,
@@ -154,6 +156,7 @@ function identityMismatches(expected, observed) {
     ["branch", expected.branch, observed.branch],
     ["baseRef", expected.baseRef, observed.baseRef],
     ["baseSha", expected.baseSha, observed.baseSha],
+    ["headSha", expected.headSha, observed.headSha],
     ["host", expected.host, observed.host],
     ["environmentId", expected.environmentId, observed.environmentId],
     ["remoteSelector", expected.remoteSelector, observed.remoteSelector],
@@ -289,7 +292,19 @@ function buildRemoveOperation(identity) {
     args: ["worktree", "rm", "--worktree", identity.remoteSelector, "--force", "--json"],
     selector: identity.remoteSelector,
     branch: identity.branch,
-    deletesBranch: true,
+    branchOutcome: "remove-or-preserve",
+    requiresExplicitApproval: true,
+  };
+}
+
+function buildBranchFallbackOperation(identity) {
+  const branch = shortBranchName(identity.branch);
+  return {
+    type: "branch-delete-if-preserved",
+    command: "git",
+    args: ["branch", "-d", "--", branch],
+    branch,
+    condition: "orca-preserved-branch",
     requiresExplicitApproval: true,
   };
 }
@@ -385,6 +400,9 @@ export function evaluateOrcaWorktreeCleanup(input = {}) {
   if (!merge.commitSha || !merge.targetSha || !merge.verified || !merge.isAncestor) {
     return deny("merged-ancestry-unverified", ["merged commit ancestry must be verified"]);
   }
+  if (merge.commitSha !== identity.headSha) {
+    return deny("merged-ancestry-unverified", ["merged commit must equal the observed worktree branch tip"]);
+  }
 
   const expectedFingerprint = optionalText(input.precondition?.fingerprint, "precondition.fingerprint");
   const fingerprint = computeOrcaCleanupFingerprint(identity, {
@@ -402,16 +420,17 @@ export function evaluateOrcaWorktreeCleanup(input = {}) {
   }
   if (approval.branchPreservationRequested) {
     return deny("branch-preservation-unsupported", [
-      "Orca worktree removal deletes the branch; this contract cannot preserve it",
+      "Orca decides whether removal deletes or preserves the branch; this contract cannot guarantee preservation",
     ]);
   }
   if (!approval.branchDeleteApproved) {
     return deny("branch-deletion-not-approved", [
-      "Orca worktree removal also deletes the branch and requires explicit branch-deletion approval",
+      "Orca worktree removal may delete the branch and requires explicit branch-deletion approval",
     ]);
   }
 
   const operations = [buildRemoveOperation(identity)];
+  if (identity.host === "local") operations.push(buildBranchFallbackOperation(identity));
   return {
     ok: true,
     authorized: true,
@@ -422,8 +441,10 @@ export function evaluateOrcaWorktreeCleanup(input = {}) {
     operations,
     branchDisposition: {
       branch: identity.branch,
-      removedBy: "orca",
-      evidence: "Orca documents worktree deletion as removing both the directory and the branch",
+      expected: "removed-or-reported-preserved",
+      ...(identity.host === "local"
+        ? { fallback: "git branch -d after a verified preservedBranch response" }
+        : { fallback: null }),
     },
     precondition: { fingerprint, identity, receiptId: receipt.id, mergedCommitSha: merge.commitSha, targetSha: merge.targetSha },
     readOnly: true,
@@ -459,9 +480,14 @@ function isSafeExecutionPlan(plan) {
   } catch {
     return false;
   }
-  if (!Array.isArray(plan.operations) || plan.operations.length !== 1) return false;
   const expected = [buildRemoveOperation(identity)];
+  if (identity.host === "local") expected.push(buildBranchFallbackOperation(identity));
+  if (!Array.isArray(plan.operations) || plan.operations.length !== expected.length) return false;
   return plan.operations.every((operation, index) => JSON.stringify(operation) === JSON.stringify(expected[index]));
+}
+
+function commandResult(value) {
+  return isObject(value?.result) ? value.result : value;
 }
 
 /**
@@ -495,11 +521,99 @@ export async function executeOrcaWorktreeCleanup({ input, plan, confirm = false,
     }
   }
   const completed = [];
+  let mutationAttempted = false;
   try {
-    for (const operation of decision.operations) {
-      await runCommand({ command: operation.command, args: [...operation.args], operation: operation.type, selector: operation.selector, branch: operation.branch });
-      completed.push(operation.type);
+    const remove = decision.operations[0];
+    mutationAttempted = true;
+    const response = commandResult(await runCommand({
+      command: remove.command,
+      args: [...remove.args],
+      operation: remove.type,
+      selector: remove.selector,
+      branch: remove.branch,
+    }));
+    if (!isObject(response) || response.removed !== true) {
+      return {
+        ok: false,
+        authorized: true,
+        reason: "cleanup-postcondition-unverified",
+        errors: ["Orca removal did not return a verified removed=true postcondition"],
+        completed,
+        operations: decision.operations,
+        readOnly: false,
+        stateMutation: true,
+      };
     }
+    completed.push(remove.type);
+
+    if (response.preservedBranch !== undefined && !isObject(response.preservedBranch)) {
+      return {
+        ok: false,
+        authorized: true,
+        reason: "cleanup-postcondition-unverified",
+        errors: ["Orca returned malformed preservedBranch evidence"],
+        completed,
+        operations: decision.operations,
+        readOnly: false,
+        stateMutation: true,
+      };
+    }
+    const preserved = response.preservedBranch;
+    if (preserved) {
+      const branch = optionalText(first(preserved, "branchName", "branch_name", "branch"), "preservedBranch.branchName");
+      const head = sha(first(preserved, "head", "headSha", "head_sha"), "preservedBranch.head");
+      if (shortBranchName(branch) !== shortBranchName(decision.identity.branch) || head !== decision.identity.headSha) {
+        return deny("race-detected", ["preserved branch identity does not match the authorized worktree tip"], {
+          authorized: true,
+          completed,
+          operations: decision.operations,
+          readOnly: false,
+          stateMutation: true,
+        });
+      }
+      const fallback = decision.operations[1];
+      if (!fallback) {
+        return deny("branch-preserved", ["Orca preserved the remote branch; cleanup requires host-side branch disposition"], {
+          authorized: true,
+          completed,
+          operations: decision.operations,
+          preservedBranch: preserved,
+          readOnly: false,
+          stateMutation: true,
+        });
+      }
+      await runCommand({
+        command: fallback.command,
+        args: [...fallback.args],
+        operation: fallback.type,
+        branch: fallback.branch,
+      });
+      completed.push(fallback.type);
+      return {
+        ok: true,
+        authorized: true,
+        reason: null,
+        errors: [],
+        completed,
+        operations: decision.operations,
+        branchRemoved: true,
+        branchRemovedBy: "git-safe-delete",
+        readOnly: false,
+        stateMutation: true,
+      };
+    }
+    return {
+      ok: true,
+      authorized: true,
+      reason: null,
+      errors: [],
+      completed,
+      operations: decision.operations,
+      branchRemoved: true,
+      branchRemovedBy: "orca",
+      readOnly: false,
+      stateMutation: true,
+    };
   } catch (error) {
     return {
       ok: false,
@@ -509,10 +623,9 @@ export async function executeOrcaWorktreeCleanup({ input, plan, confirm = false,
       completed,
       operations: decision.operations,
       readOnly: false,
-      stateMutation: completed.length > 0,
+      stateMutation: mutationAttempted,
     };
   }
-  return { ok: true, authorized: true, reason: null, errors: [], completed, operations: decision.operations, readOnly: false, stateMutation: true };
 }
 
 export const applyOrcaWorktreeCleanup = executeOrcaWorktreeCleanup;

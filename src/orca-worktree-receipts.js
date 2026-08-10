@@ -3,7 +3,7 @@ import {
   ORCA_SHARED_CLASSIFICATIONS,
   isAcceptedOrcaSelector,
   isCanonicalRuntimePath,
-  worktreeIdBelongsToRepository,
+  worktreeIdMatchesPath,
 } from "./orca-contract.js";
 
 // Public, versioned metadata carried by a Muster manifest or lifecycle receipt.
@@ -215,8 +215,8 @@ function normalizeTopology(context) {
   topology.host_info = { id: hostId, kind: environmentKind, environment_id: environmentId, runtime_id: runtimeId };
   if (hostId === "local" && environmentId !== "local") throw new Error("local Orca host requires environment_id local");
   if (hostId !== "local" && environmentId === "local") throw new Error("remote Orca host cannot use local environment_id");
-  if (!worktreeIdBelongsToRepository(worktreeId, repoId)) {
-    throw new Error("orca_worktree_id does not contain its repository id");
+  if (!worktreeIdMatchesPath(worktreeId, repoId, path)) {
+    throw new Error("orca_worktree_id does not identify the exact worktree_path");
   }
   if (!isAcceptedOrcaSelector(remoteSelector, { worktreeId, path, host: hostId })) {
     throw new Error("remote_selector does not identify the exact Orca worktree");

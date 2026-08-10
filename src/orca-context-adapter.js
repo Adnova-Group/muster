@@ -5,7 +5,7 @@ import {
   canonicalOrcaSelector,
   isCanonicalRuntimePath,
   isOrcaSharedClassification,
-  worktreeIdBelongsToRepository,
+  worktreeIdMatchesPath,
 } from "./orca-contract.js";
 
 const execFile = promisify(execFileCallback);
@@ -381,8 +381,8 @@ function unwrapWorktree(payload) {
   if (!id || !repoId || !path || !branch || !isCanonicalRuntimePath(path)) {
     throw new AdapterError(REASON.MALFORMED_RESPONSE, "worktree identity is incomplete or not an absolute runtime path");
   }
-  if (!worktreeIdBelongsToRepository(id, repoId)) {
-    throw new AdapterError(REASON.MALFORMED_RESPONSE, "worktree id does not contain its repository id");
+  if (!worktreeIdMatchesPath(id, repoId, path)) {
+    throw new AdapterError(REASON.MALFORMED_RESPONSE, "worktree id does not identify its reported path");
   }
   return { worktree, id, repoId, path, branch };
 }

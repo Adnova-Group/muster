@@ -1,5 +1,9 @@
-import { posix } from "node:path";
 import { types } from "node:util";
+import {
+  isAcceptedOrcaSelector,
+  isCanonicalRuntimePath,
+  worktreeIdMatchesPath,
+} from "./orca-contract.js";
 
 // Versioned, executable metadata for Orca–Muster coexistence. This module is
 // deliberately pure: it describes and validates authority; it never calls Orca,
@@ -74,7 +78,7 @@ const localRecord = {
   changed_files: ["src/orca-authority.js", "test/orca-authority.test.js"],
   verification: ["node --test test/orca-authority.test.js: pass"],
   review_verdict: "PASS",
-  remote_selector: "path:/workspace/muster-authority",
+  remote_selector: "id:repo-001::/workspace/muster-authority",
 };
 
 const remoteRecord = {
@@ -341,13 +345,21 @@ function validateRecord(record, fields) {
   if (typeof record.base_sha === "string" && !/^[0-9a-f]{40}$/.test(record.base_sha)) {
     errors.push("base_sha must be a 40-character lowercase hexadecimal commit id");
   }
-  if (typeof record.worktree_path === "string"
-    && (!posix.isAbsolute(record.worktree_path) || posix.normalize(record.worktree_path) !== record.worktree_path)) {
+  if (typeof record.worktree_path === "string" && !isCanonicalRuntimePath(record.worktree_path)) {
     errors.push("worktree_path must be an absolute normalized worktree_path in the executing runtime");
+  }
+  if (typeof record.orca_worktree_id === "string" && typeof record.orca_repo_id === "string"
+    && typeof record.worktree_path === "string"
+    && !worktreeIdMatchesPath(record.orca_worktree_id, record.orca_repo_id, record.worktree_path)) {
+    errors.push("orca_worktree_id must identify the exact worktree_path");
   }
   if (record.host === "local") {
     if (record.environment_id !== "local") errors.push("local host requires environment_id local");
-    if (record.remote_selector !== `path:${record.worktree_path}`) {
+    if (!isAcceptedOrcaSelector(record.remote_selector, {
+      worktreeId: record.orca_worktree_id,
+      path: record.worktree_path,
+      host: record.host,
+    })) {
       errors.push("local remote_selector must identify the exact worktree_path");
     }
   } else if (typeof record.host === "string") {
@@ -355,8 +367,11 @@ function validateRecord(record, fields) {
     if (typeof record.orca_repo_id === "string" && record.orca_repo_id.includes("::")) {
       errors.push("orca_repo_id must not contain the remote selector delimiter");
     }
-    const expected = `id:${record.orca_repo_id}::${record.worktree_path}`;
-    if (record.remote_selector !== expected) {
+    if (!isAcceptedOrcaSelector(record.remote_selector, {
+      worktreeId: record.orca_worktree_id,
+      path: record.worktree_path,
+      host: record.host,
+    })) {
       errors.push("remote execution requires a repo-qualified remote_selector for the exact runtime worktree_path");
     }
   }

@@ -6,6 +6,7 @@
     "branch": "feature/muster-worker",
     "baseRef": "main",
     "baseSha": "1111111111111111111111111111111111111111",
+    "headSha": "2222222222222222222222222222222222222222",
     "host": "local",
     "environmentId": "local",
     "remoteSelector": "path:/workspace/muster-worker"
@@ -17,6 +18,7 @@
     "branch": "feature/muster-worker",
     "baseRef": "main",
     "baseSha": "1111111111111111111111111111111111111111",
+    "headSha": "2222222222222222222222222222222222222222",
     "host": "local",
     "environmentId": "local",
     "remoteSelector": "path:/workspace/muster-worker"
@@ -49,6 +51,7 @@
       "branch": "feature/muster-worker",
       "baseRef": "main",
       "baseSha": "1111111111111111111111111111111111111111",
+      "headSha": "2222222222222222222222222222222222222222",
       "host": "local",
       "environmentId": "local",
       "remoteSelector": "path:/workspace/muster-worker"

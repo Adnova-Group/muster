@@ -6,6 +6,7 @@
     "branch": "feature/muster-worker-remote",
     "baseRef": "main",
     "baseSha": "4444444444444444444444444444444444444444",
+    "headSha": "5555555555555555555555555555555555555555",
     "host": "ssh:build.example",
     "environmentId": "build-001",
     "remoteSelector": "id:repo-001::/srv/worktrees/muster-worker"
@@ -17,6 +18,7 @@
     "branch": "feature/muster-worker-remote",
     "baseRef": "main",
     "baseSha": "4444444444444444444444444444444444444444",
+    "headSha": "5555555555555555555555555555555555555555",
     "host": "ssh:build.example",
     "environmentId": "build-001",
     "remoteSelector": "id:repo-001::/srv/worktrees/muster-worker"

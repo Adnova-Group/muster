@@ -234,6 +234,15 @@ test("fails closed when CLI and ORCA_WORKTREE_ID disagree", async () => {
   assert.equal(result.reason, "identity-mismatch");
 });
 
+test("fails closed when a worktree id suffix disagrees with its reported path", async () => {
+  const data = await fixture("local");
+  data.worktree.worktree.id = "repo-local::/workspace/other";
+  const result = await discoverOrcaContext({ env: data.env, runCommand: runnerFor(data) });
+  assert.equal(result.available, false);
+  assert.equal(result.reason, "malformed-response");
+  assert.match(result.detail, /worktree id.*path/i);
+});
+
 test("parses wrapped and direct public JSON results without retaining raw output", () => {
   assert.deepEqual(parseOrcaJsonResponse('{"ok":true,"result":{"value":1}}'), { value: 1 });
   assert.deepEqual(parseOrcaJsonResponse({ value: 2 }), { value: 2 });

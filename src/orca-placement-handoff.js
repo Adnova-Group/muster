@@ -375,6 +375,14 @@ export async function startOrcaPlacementHandoff({ request, ledger, startWorker }
       const record = store.put(baseRecord(normalized, "recovery-required", { error: "worker placement identity disagrees with the requested target" }));
       return { outcome: "recovery-required", ok: false, record };
     }
+    if (result.ok === true && !result.worker_id) {
+      const record = store.put(baseRecord(normalized, "recovery-required", {
+        terminal_handle: result.terminal_handle ?? normalized.target.terminal_handle ?? null,
+        remote_selector: result.remote_selector ?? normalized.target.remote_selector,
+        error: "worker start reported success without a durable worker identity",
+      }));
+      return { outcome: "recovery-required", ok: false, record, started: true };
+    }
     if (result.ok === true) {
       const record = store.put(baseRecord(normalized, "placed", {
         worker_id: result.worker_id,

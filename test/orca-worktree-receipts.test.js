@@ -50,6 +50,15 @@ test("identity mismatches fail closed with the exact identity-mismatch reason", 
   assert.deepEqual(compareOrcaWorktreeIdentity(context, mismatch).reason, "identity-mismatch");
 });
 
+test("normalization rejects a worktree id whose suffix disagrees with its path", async () => {
+  const context = await fixture("local");
+  context.orca_worktree_id = "repo-local::/workspace/other";
+  context.remote_selector = `id:${context.orca_worktree_id}`;
+  const normalized = normalizeOrcaWorktreeMetadata(context);
+  assert.equal(normalized.ok, false);
+  assert.match(normalized.error, /worktree_id.*path/i);
+});
+
 test("hibernated topology keeps missing terminal/session explicit", async () => {
   const context = await fixture("hibernated");
   const normalized = normalizeOrcaWorktreeMetadata(context).metadata;

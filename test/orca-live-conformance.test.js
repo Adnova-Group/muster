@@ -78,6 +78,9 @@ test("Orca reports a fully-qualified branch ref, and the protection guard honour
     branch: metadata.branch,
     baseRef: metadata.base_ref,
     baseSha: "1111111111111111111111111111111111111111",
+    headSha: /^[0-9a-f]{40}$/.test(metadata.head_sha ?? "")
+      ? metadata.head_sha
+      : "2222222222222222222222222222222222222222",
     host: metadata.host,
     environmentId: metadata.environment_id,
     remoteSelector: metadata.remote_selector,
@@ -91,7 +94,7 @@ test("Orca reports a fully-qualified branch ref, and the protection guard honour
     ship: { approved: true, status: "merged" },
     merge: {
       merged: true,
-      commitSha: "2222222222222222222222222222222222222222",
+      commitSha: identity.headSha,
       targetSha: "3333333333333333333333333333333333333333",
       verified: true,
       isAncestor: true,
@@ -218,6 +221,9 @@ test("a fully-qualified feature ref on a non-primary worktree is still cleanable
     branch: "refs/heads/feature/orca-worker",
     baseRef: metadata.base_ref,
     baseSha: "1111111111111111111111111111111111111111",
+    headSha: /^[0-9a-f]{40}$/.test(metadata.head_sha ?? "")
+      ? metadata.head_sha
+      : "2222222222222222222222222222222222222222",
     host: metadata.host,
     environmentId: metadata.environment_id,
     remoteSelector: metadata.remote_selector,
@@ -233,7 +239,7 @@ test("a fully-qualified feature ref on a non-primary worktree is still cleanable
     ship: { approved: true, status: "merged" },
     merge: {
       merged: true,
-      commitSha: "2222222222222222222222222222222222222222",
+      commitSha: identity.headSha,
       targetSha: "3333333333333333333333333333333333333333",
       verified: true,
       isAncestor: true,

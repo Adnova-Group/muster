@@ -35,6 +35,9 @@ function adapterContext(fixture) {
 // identity comes from upstream; everything else is a fixed, already-satisfied
 // evidence bundle so that any denial is attributable to the seam under test.
 function cleanupInputFor(metadata) {
+  const headSha = /^[0-9a-f]{40}$/.test(metadata.head_sha ?? "")
+    ? metadata.head_sha
+    : "2222222222222222222222222222222222222222";
   const identity = {
     worktreeId: metadata.worktree_id,
     repositoryId: metadata.repo_id,
@@ -44,6 +47,7 @@ function cleanupInputFor(metadata) {
     // A merge disposition genuinely requires a base SHA; the adapter treats it
     // as optional, so the caller supplies one when Orca did not report it.
     baseSha: metadata.base_sha ?? "1111111111111111111111111111111111111111",
+    headSha,
     host: metadata.host,
     environmentId: metadata.environment_id,
     remoteSelector: metadata.remote_selector,
@@ -59,7 +63,7 @@ function cleanupInputFor(metadata) {
     ship: { approved: true, status: "merged" },
     merge: {
       merged: true,
-      commitSha: "2222222222222222222222222222222222222222",
+      commitSha: headSha,
       targetSha: "3333333333333333333333333333333333333333",
       verified: true,
       isAncestor: true,

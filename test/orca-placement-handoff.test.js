@@ -110,6 +110,20 @@ test("partial worker start is fenced for recovery and cannot be started twice", 
   assert.equal(starts, 1);
 });
 
+test("a successful callback without a durable worker id remains recovery-fenced", async () => {
+  const request = prepareOrcaPlacementHandoff(await setup());
+  const ledger = createOrcaPlacementLedger();
+  const result = await handoffMusterAttemptToOrca({
+    request,
+    ledger,
+    startWorker: async () => ({ ok: true, terminal_handle: "term-local" }),
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.outcome, "recovery-required");
+  assert.equal(result.record.state, "recovery-required");
+  assert.match(result.record.error, /worker identity/i);
+});
+
 test("a no-effect failure can be retried only as a new Muster attempt", async () => {
   const firstOptions = await setup({ attemptId: "attempt-failed", number: 1 });
   const firstRequest = prepareOrcaPlacementHandoff(firstOptions);

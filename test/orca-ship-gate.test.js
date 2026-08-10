@@ -164,10 +164,10 @@ test("merge gate composes cleanup and returns one authorized post-merge disposit
   assert.equal(result.stateMutation, false);
 });
 
-// The merge handoff is the single authorization boundary: it approves the
-// removal, and Orca's removal takes the branch. No second approval, and no
-// second command.
-test("merge gate authorizes the branch removal Orca performs as part of the same act", async () => {
+// The merge handoff is the single authorization boundary. Orca may remove the
+// branch itself or report it preserved, in which case local cleanup uses the
+// safe-delete fallback already covered by that approval.
+test("merge gate authorizes Orca removal and the conditional safe branch fallback", async () => {
   const evidence = await validEvidence();
   const cleanup = await cleanupFixture();
   delete cleanup.approval.branchDeletion;
@@ -182,9 +182,10 @@ test("merge gate authorizes the branch removal Orca performs as part of the same
     receipt: evidence.receipt, handoff: handoff.handoff, cleanup,
   });
   assert.equal(result.allowed, true, result.errors?.join("; "));
-  assert.equal(result.operations.length, 1);
-  assert.equal(result.operations[0].deletesBranch, true);
-  assert.equal(result.cleanup.branchDisposition.removedBy, "orca");
+  assert.equal(result.operations.length, 2);
+  assert.equal(result.operations[0].branchOutcome, "remove-or-preserve");
+  assert.equal(result.operations[1].condition, "orca-preserved-branch");
+  assert.equal(result.cleanup.branchDisposition.expected, "removed-or-reported-preserved");
 });
 
 test("merge gate surfaces a branch-preservation request instead of overriding it", async () => {

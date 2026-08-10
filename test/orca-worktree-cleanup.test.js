@@ -25,10 +25,17 @@ test("local cleanup requires all terminal, tree, receipt, review, ship, and ance
     args: ["worktree", "rm", "--worktree", "path:/workspace/muster-worker", "--force", "--json"],
     selector: "path:/workspace/muster-worker",
     branch: "feature/muster-worker",
-    deletesBranch: true,
+    branchOutcome: "remove-or-preserve",
     requiresExplicitApproval: true,
   });
-  assert.equal(result.operations.length, 1);
+  assert.deepEqual(result.operations[1], {
+    type: "branch-delete-if-preserved",
+    command: "git",
+    args: ["branch", "-d", "--", "feature/muster-worker"],
+    branch: "feature/muster-worker",
+    condition: "orca-preserved-branch",
+    requiresExplicitApproval: true,
+  });
   assert.equal(result.stateMutation, false);
 });
 
@@ -43,17 +50,17 @@ test("remote cleanup uses an exact id selector and never invents a local path co
 // Orca documents worktree deletion as removing the directory AND the branch, so
 // there is no second `git branch -d` to approve -- and no way to keep a branch
 // whose worktree is being removed. Both facts have to be visible in the result.
-test("the single removal operation declares that Orca deletes the branch with it", async () => {
+test("local cleanup plans a safe branch fallback when Orca preserves an integrated branch", async () => {
   const result = evaluateOrcaWorktreeCleanup(await fixture("local-approved"));
   assert.equal(result.ok, true, result.errors?.join("; "));
-  assert.equal(result.operations.length, 1);
-  assert.equal(result.operations[0].deletesBranch, true);
+  assert.equal(result.operations.length, 2);
+  assert.equal(result.operations[0].branchOutcome, "remove-or-preserve");
   assert.deepEqual(result.branchDisposition, {
     branch: "feature/muster-worker",
-    removedBy: "orca",
-    evidence: "Orca documents worktree deletion as removing both the directory and the branch",
+    expected: "removed-or-reported-preserved",
+    fallback: "git branch -d after a verified preservedBranch response",
   });
-  assert.equal(result.operations.some((operation) => operation.command === "git"), false);
+  assert.equal(result.operations[1].command, "git");
 });
 
 test("branch deletion must be acknowledged because the removal cannot avoid it", async () => {
@@ -110,6 +117,24 @@ test("malformed or unsafe remote selectors fail closed", async () => {
   assert.equal(result.reason, "remote-selector-invalid");
 });
 
+test("worktree ids must identify the supplied path, not merely share a repository prefix", async () => {
+  const input = await fixture("local-approved");
+  input.identity.worktreeId = "repo-001::/workspace/other";
+  input.observedIdentity.worktreeId = input.identity.worktreeId;
+  input.receipt.identity.worktreeId = input.identity.worktreeId;
+  const result = evaluateOrcaWorktreeCleanup(input);
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join(";"), /worktreeId.*path/i);
+});
+
+test("branch-tip ancestry is required before planning cleanup", async () => {
+  const input = await fixture("local-approved");
+  input.merge.commitSha = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+  const result = evaluateOrcaWorktreeCleanup(input);
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "merged-ancestry-unverified");
+});
+
 test("denied cleanup never invokes the mutating command seam", async () => {
   const input = await fixture("local-approved");
   input.tree.statusPorcelain = "?? untracked";
@@ -148,10 +173,57 @@ test("execution requires confirmation and rechecks the exact precondition before
     input,
     confirm: true,
     readState: async () => input,
-    runCommand: async (command) => { commands.push(command); },
+    runCommand: async (command) => {
+      commands.push(command);
+      return { removed: true };
+    },
   });
   assert.equal(completed.ok, true, completed.errors?.join("; "));
   assert.deepEqual(commands.map((command) => command.args), [plan.operations[0].args]);
+});
+
+test("execution deletes a branch safely only when Orca explicitly reports it preserved", async () => {
+  const input = await fixture("local-approved");
+  const plan = evaluateOrcaWorktreeCleanup(input);
+  const commands = [];
+  const result = await executeOrcaWorktreeCleanup({
+    plan,
+    input,
+    confirm: true,
+    runCommand: async (command) => {
+      commands.push(command);
+      return command.operation === "worktree-remove"
+        ? { ok: true, result: { removed: true, preservedBranch: { branchName: "feature/muster-worker", head: input.identity.headSha } } }
+        : { deleted: true };
+    },
+  });
+  assert.equal(result.ok, true, result.errors?.join("; "));
+  assert.deepEqual(commands.map((command) => command.args), plan.operations.map((operation) => operation.args));
+  assert.equal(result.branchRemoved, true);
+});
+
+test("execution fails closed when Orca removal does not prove its postcondition", async () => {
+  const input = await fixture("local-approved");
+  const result = await executeOrcaWorktreeCleanup({
+    input,
+    confirm: true,
+    runCommand: async () => undefined,
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "cleanup-postcondition-unverified");
+  assert.equal(result.stateMutation, true);
+});
+
+test("remote cleanup reports a preserved branch instead of claiming completion", async () => {
+  const input = await fixture("remote-approved");
+  const result = await executeOrcaWorktreeCleanup({
+    input,
+    confirm: true,
+    runCommand: async () => ({ removed: true, preservedBranch: { branchName: input.identity.branch, head: input.identity.headSha } }),
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "branch-preserved");
+  assert.equal(result.stateMutation, true);
 });
 
 test("execution re-evaluates a supplied plan before allowing protected branch deletion", async () => {

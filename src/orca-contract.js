@@ -78,6 +78,13 @@ export function worktreeIdBelongsToRepository(worktreeId, repositoryId) {
     && worktreeId.startsWith(`${repositoryId}${ORCA_WORKTREE_ID_SEPARATOR}`);
 }
 
+/** Bind the public Orca worktree id to the exact runtime path it names. */
+export function worktreeIdMatchesPath(worktreeId, repositoryId, path) {
+  return worktreeIdBelongsToRepository(worktreeId, repositoryId)
+    && typeof path === "string"
+    && worktreeId === `${repositoryId}${ORCA_WORKTREE_ID_SEPARATOR}${path}`;
+}
+
 /** The one selector every module should emit when it has a choice. */
 export function canonicalOrcaSelector(worktreeId) {
   return `id:${worktreeId}`;

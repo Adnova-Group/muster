@@ -182,6 +182,31 @@ test("remote correlation requires a remote environment and repo-qualified runtim
   assert.match(validateOrcaCorrelationRecord(ambiguousRepo).errors.join("\n"), /orca_repo_id.*selector/i);
 });
 
+test("authority accepts the adapter's canonical id selector for local worktrees", () => {
+  const record = clone(ORCA_AUTHORITY_CONTRACT.correlation.fixtures[0].record);
+  record.remote_selector = `id:${record.orca_worktree_id}`;
+  assert.deepEqual(validateOrcaCorrelationRecord(record), { ok: true, errors: [] });
+});
+
+test("authority accepts canonical Windows and UNC runtime paths", () => {
+  for (const worktreePath of ["C:\\dev\\muster-worker", "\\\\wsl.localhost\\Ubuntu\\home\\ryan\\muster-worker"]) {
+    const record = clone(ORCA_AUTHORITY_CONTRACT.correlation.fixtures[0].record);
+    record.worktree_path = worktreePath;
+    record.orca_worktree_id = `${record.orca_repo_id}::${worktreePath}`;
+    record.remote_selector = `id:${record.orca_worktree_id}`;
+    assert.deepEqual(validateOrcaCorrelationRecord(record), { ok: true, errors: [] });
+  }
+});
+
+test("authority binds a worktree id to the exact runtime path", () => {
+  const record = clone(ORCA_AUTHORITY_CONTRACT.correlation.fixtures[0].record);
+  record.orca_worktree_id = `${record.orca_repo_id}::/workspace/other`;
+  record.remote_selector = `id:${record.orca_worktree_id}`;
+  const result = validateOrcaCorrelationRecord(record);
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join("\n"), /worktree.*exact.*path/i);
+});
+
 test("correlation records reject inherited properties and nested unvalidated metadata", () => {
   const fixture = clone(ORCA_AUTHORITY_CONTRACT.correlation.fixtures[0].record);
   const inherited = Object.assign(Object.create({ auth_token: "secret" }), fixture);

@@ -33,7 +33,7 @@ adapter or user action.
 
 | Concern | Default owner | Allowed observer/integration | Boundary rule |
 |---|---|---|---|
-| Orca-created worktrees | Orca | Muster | Muster records exact path/id and base SHA when Orca reports one; the merge gate may emit an explicit public-CLI cleanup disposition after merge, but never removes implicitly and never deletes a branch itself. |
+| Orca-created worktrees | Orca | Muster | Muster records exact path/id plus branch tip and base SHA when reported; the merge gate may emit an explicit public-CLI cleanup disposition after merge, never removes implicitly, and may safe-delete a locally preserved branch only after Orca reports preservation and the exact tip is proven merged. |
 | Muster-created worktrees | Muster | Orca, after import/registration | Orca may provide terminals/UI; Muster remains responsible for lifecycle and receipts. |
 | Terminal tabs, panes, PTYs | Orca | Muster | Use Orca CLI handles and status; never infer task completion from idle alone. |
 | Session restore/hibernation | Orca | Muster | Reacquire terminal identity after restore; resume is provider-specific. |
@@ -307,27 +307,31 @@ mutating the other's graph.
 Cleanup is part of the existing Muster merge gate, not a second approval flow.
 After the gate proves authority, receipt durability, review PASS, explicit ship
 handoff, exact Orca identity, clean-tree state, terminal release, and merged
-commit ancestry, it composes the cleanup evaluator and returns one bounded
-post-merge disposition:
+commit ancestry, including equality between the reviewed worktree tip and the
+commit whose ancestry was verified, it composes the cleanup evaluator and
+returns a bounded post-merge disposition. The first operation is always:
 
 ```text
 orca worktree rm --worktree <exact-public-selector> --force --json
 ```
 
-That is the whole disposition: exactly one command. This is **verified against a
-live Orca 1.4.177 runtime**, not inferred: creating a throwaway worktree and
-running `orca worktree rm --worktree id:<id> --force --json` returned
-`{"ok":true,"result":{"removed":true}}` and removed the directory, the git
-worktree entry, **and the branch**, with no prompt. The branch is therefore
-Orca's to delete and Muster must not follow with its own `git branch -d` — that
-second command would run against a branch Orca has already removed and would
-fail every time, after the worktree was gone. Gating it behind a separate
-approval advertised a protection that never existed. Branch removal is therefore an acknowledged
-effect of the disposition, not an opt-in: the evaluator requires explicit
-branch-deletion approval before emitting anything, refuses a branch-preservation
-request outright rather than silently ignoring it, and still declines to touch a
-remote-tracking branch. `--force` is required because the command is executed
-non-interactively and deletion otherwise prompts.
+The executor must inspect Orca's JSON result. Two outcomes are **verified
+against live Orca 1.4.177**, not inferred. A throwaway returned `removed:true`
+and Orca removed its directory, git worktree entry, and branch. An integrated
+worker returned `removed:true` plus `preservedBranch:{branchName,head}` and
+retained its branch because the worker tip was not literally ancestral after
+cherry-pick/manual integration. For a local worktree only, the plan therefore
+contains a conditional `git branch -d -- <branch>` fallback. It runs only when
+Orca explicitly reports preservation and that branch name and head match the
+approved identity; `-d` supplies Git's own ancestry safety check, and `-D` is
+never used. A remote preserved branch fails closed for host-side disposition.
+Missing or malformed removal output is not success.
+
+Branch removal remains an acknowledged effect of the single merge handoff: the
+evaluator requires explicit branch-deletion approval before emitting anything,
+refuses a branch-preservation request because Orca controls that outcome, and
+still declines to touch a remote-tracking branch. `--force` is required because
+the Orca command is executed non-interactively and deletion otherwise prompts.
 
 The evaluator returns no operations for dirty, active, unmerged, mismatched,
 raced, protected, malformed, or uncertain state. Execution remains behind the
@@ -338,7 +342,8 @@ The exact worktree selector is `id:<worktree-id>` for every host, with
 `path:<absolute-path>` accepted only for a local worktree. Orca's own
 `worktree create` help states this contract directly: "Worktree ids are the full
 `<repo-id>::<path>` values returned by `orca worktree list --json`." One
-canonical identity contract (`src/orca-contract.js`) owns that rule, the
+canonical identity contract (`src/orca-contract.js`) binds the id to the exact
+runtime path and owns that rule, the
 absolute-runtime-path predicate, the branch-ref normalization, and the
 shared-path classification vocabulary, so the adapter, the receipt normalizer,
 and this evaluator cannot drift into mutually incompatible shapes.

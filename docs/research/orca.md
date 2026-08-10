@@ -285,12 +285,17 @@ kind** [OBSERVED]. Two shapes matter for any guard built on this record:
 accepts the wrapper AND the bare record above, and fails closed on anything
 that is neither (`unwrapWorktree` in `src/orca-context-adapter.js`).
 
-`orca worktree rm --worktree id:<id> --force --json` returns
-`{"ok":true,"result":{"removed":true}}` and removes the directory, the git
-worktree registration, **and the branch**, without prompting [OBSERVED: live
-throwaway worktree, 2026-08-10]. Its help summarises it as "Remove a worktree
-from Orca and git" and notes only that `orca.yaml` archive hooks are skipped
-unless `--run-hooks` is passed.
+`orca worktree rm --worktree id:<id> --force --json` always reports the
+worktree-removal outcome, but branch disposition has two observed shapes. A
+live throwaway returned `{"ok":true,"result":{"removed":true}}` and removed
+the directory, git worktree registration, and branch [OBSERVED: 2026-08-10]. A
+worker whose commit had been integrated by cherry-pick/manual merge instead
+returned `removed:true` plus `preservedBranch:{branchName,head}`: Orca removed
+the worktree but deliberately retained the branch because its literal tip was
+not an ancestor [OBSERVED: 2026-08-10]. Its help summarises the command as
+"Remove a worktree from Orca and git" and notes that `orca.yaml` archive hooks
+are skipped unless `--run-hooks` is passed. Integrations must inspect the JSON
+postcondition rather than assume branch deletion from command success.
 
 **No `ORCA_*` environment variable is documented**, but the set an
 Orca-launched terminal inherits has now been captured from inside one
@@ -752,41 +757,42 @@ All GitHub source links below are pinned to the research commit rather than
 `main`, so future work can diff behavior instead of silently treating it as
 stable.
 
-| Label | Pinned source |
-|---|---|
-| [src: package] | [`package.json`](https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/package.json) |
-| [src: readme] | [`README.md`](https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/README.md) |
-| [src: main-runtime] | [`src/main/runtime`](https://github.com/stablyai/orca/tree/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/main/runtime) |
-| [src: runtime-transport] | [`src/cli/runtime/transport.ts`](https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/cli/runtime/transport.ts) |
-| [src: cli-format] | [`src/cli/format.ts`](https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/cli/format.ts) |
-| [src: cli-spec-index] | [`src/cli/specs`](https://github.com/stablyai/orca/tree/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/cli/specs) |
-| [src: cli-terminal-spec] | [`src/cli/specs/core.ts`](https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/cli/specs/core.ts) |
-| [src: cli-worktree-handler] | [`src/cli/handlers/worktree.ts`](https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/cli/handlers/worktree.ts) |
-| [src: selectors] | [`src/cli/selectors.ts`](https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/cli/selectors.ts) |
-| [src: agent-context] | [`src/cli/agent-context.ts`](https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/cli/agent-context.ts) |
-| [src: orchestration-spec] | [`src/cli/specs/orchestration.ts`](https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/cli/specs/orchestration.ts) |
-| [src: worker-spec] | [`src/cli/specs/orchestration-worker-specs.ts`](https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/cli/specs/orchestration-worker-specs.ts) |
-| [src: orchestration-types] | [`src/main/runtime/orchestration/types.ts`](https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/main/runtime/orchestration/types.ts) |
-| [src: orchestration-db] | [`src/main/runtime/orchestration/db.ts`](https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/main/runtime/orchestration/db.ts) |
-| [src: orchestration-gates] | [`src/main/runtime/rpc/methods/orchestration-gates.ts`](https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/main/runtime/rpc/methods/orchestration-gates.ts) |
-| [src: federation-sync] | [`src/main/runtime/orchestration/federation-sync.ts`](https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/main/runtime/orchestration/federation-sync.ts) |
-| [src: orchestration-environment] | [`src/main/runtime/orchestration/environment-transport.ts`](https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/main/runtime/orchestration/environment-transport.ts) |
-| [src: worker-terminal-ownership] | [`src/main/runtime/orchestration/worker-terminal-ownership.ts`](https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/main/runtime/orchestration/worker-terminal-ownership.ts) |
-| [src: worker-transcript] | [`src/main/runtime/orchestration/worker-transcript-payload.ts`](https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/main/runtime/orchestration/worker-transcript-payload.ts) |
-| [src: cli-worker-spec] | [`src/cli/specs/orchestration-worker-specs.ts`](https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/cli/specs/orchestration-worker-specs.ts) |
-| [src: worktree-include] | [`src/main/git/worktree-include-file.ts`](https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/main/git/worktree-include-file.ts) |
-| [src: worktree-shared] | [`src/main/git/worktree-shared-directories.ts`](https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/main/git/worktree-shared-directories.ts) |
-| [src: worktree-lineage] | [`src/cli/handlers/worktree-lineage-summary.ts`](https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/cli/handlers/worktree-lineage-summary.ts) |
-| [src: daemon-session] | [`src/main/daemon/session.ts`](https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/main/daemon/session.ts) |
-| [src: terminal-history] | [`src/main/daemon/terminal-history-log.ts`](https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/main/daemon/terminal-history-log.ts) |
-| [src: agent-session-history] | [`src/main/ai-vault`](https://github.com/stablyai/orca/tree/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/main/ai-vault) |
-| [src: remote-runtime] | [`src/shared/remote-runtime-client.ts`](https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/shared/remote-runtime-client.ts) |
-| [src: hooks] | [`src/main/agent-hooks`](https://github.com/stablyai/orca/tree/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/main/agent-hooks) |
-| [src: skill-discovery] | [`src/main/skills/discovery.ts`](https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/main/skills/discovery.ts) |
-| [src: automations] | [`src/main/automations`](https://github.com/stablyai/orca/tree/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/main/automations) |
-| [src: review-and-ship] | [`src/main/source-control`, `attribution`, `artifacts`, `browser`](https://github.com/stablyai/orca/tree/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/main) |
-| [src: telemetry] | [`src/main/telemetry`](https://github.com/stablyai/orca/tree/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/main/telemetry) |
-| [src: orchestration-compatibility] | [`src/main/runtime/rpc/orchestration-legacy-compatibility.ts`](https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/main/runtime/rpc/orchestration-legacy-compatibility.ts) |
+### Sources
+
+- package: https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/package.json
+- readme: https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/README.md
+- main-runtime: https://github.com/stablyai/orca/tree/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/main/runtime
+- runtime-transport: https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/cli/runtime/transport.ts
+- cli-format: https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/cli/format.ts
+- cli-spec-index: https://github.com/stablyai/orca/tree/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/cli/specs
+- cli-terminal-spec: https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/cli/specs/core.ts
+- cli-serve: https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/cli/specs/core.ts
+- cli-worktree-handler: https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/cli/handlers/worktree.ts
+- selectors: https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/cli/selectors.ts
+- agent-context: https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/cli/agent-context.ts
+- orchestration-spec: https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/cli/specs/orchestration.ts
+- worker-spec: https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/cli/specs/orchestration-worker-specs.ts
+- orchestration-types: https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/main/runtime/orchestration/types.ts
+- orchestration-db: https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/main/runtime/orchestration/db.ts
+- orchestration-gates: https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/main/runtime/rpc/methods/orchestration-gates.ts
+- federation-sync: https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/main/runtime/orchestration/federation-sync.ts
+- orchestration-environment: https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/main/runtime/orchestration/environment-transport.ts
+- worker-terminal-ownership: https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/main/runtime/orchestration/worker-terminal-ownership.ts
+- worker-transcript: https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/main/runtime/orchestration/worker-transcript-payload.ts
+- cli-worker-spec: https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/cli/specs/orchestration-worker-specs.ts
+- worktree-include: https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/main/git/worktree-include-file.ts
+- worktree-shared: https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/main/git/worktree-shared-directories.ts
+- worktree-lineage: https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/cli/handlers/worktree-lineage-summary.ts
+- daemon-session: https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/main/daemon/session.ts
+- terminal-history: https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/main/daemon/terminal-history-log.ts
+- agent-session-history: https://github.com/stablyai/orca/tree/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/main/ai-vault
+- remote-runtime: https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/shared/remote-runtime-client.ts
+- hooks: https://github.com/stablyai/orca/tree/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/main/agent-hooks
+- skill-discovery: https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/main/skills/discovery.ts
+- automations: https://github.com/stablyai/orca/tree/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/main/automations
+- review-and-ship: https://github.com/stablyai/orca/tree/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/main
+- telemetry: https://github.com/stablyai/orca/tree/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/main/telemetry
+- orchestration-compatibility: https://github.com/stablyai/orca/blob/b09f7bd4314c66fcb2bba492833b53da67fa27a2/src/main/runtime/rpc/orchestration-legacy-compatibility.ts
 
 ### Explicit gaps
 

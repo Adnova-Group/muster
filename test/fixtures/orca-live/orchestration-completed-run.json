@@ -1,0 +1,128 @@
+{
+  "_capture": {
+    "note": "Captured read-only from a COMPLETED Orca 1.4.177 orchestration Run via --run selectors. Nothing was created, bound, or mutated. Free-text fields replaced with <text>; identifiers placeholdered.",
+    "orca_version": "1.4.177",
+    "commands": [
+      "orca orchestration run-show|task-list|worker-list|gate-list --run <id> --json",
+      "orca orchestration inbox --json",
+      "orca skills get orchestration --full"
+    ]
+  },
+  "taskKeys": [
+    "completed_at",
+    "created_at",
+    "created_by_pane_key",
+    "created_by_process_incarnation",
+    "created_by_run_generation",
+    "created_by_terminal_handle",
+    "deps",
+    "display_name",
+    "id",
+    "parent_id",
+    "result",
+    "run_id",
+    "spec",
+    "status",
+    "task_title"
+  ],
+  "workerKeys": [
+    "agentTerminalHandle",
+    "dispatchId",
+    "dispatchStatus",
+    "resource",
+    "runId",
+    "taskId",
+    "terminalState",
+    "workerState"
+  ],
+  "workerResourceKeys": [
+    "archive",
+    "id",
+    "originDispatchId",
+    "ownerDispatchId",
+    "ownershipState",
+    "releaseCompletedAt",
+    "releaseError",
+    "releaseRequestedAt",
+    "releaseState",
+    "retainedReason",
+    "terminalHandle",
+    "worktreeId"
+  ],
+  "vocabularies": {
+    "taskStatus": [
+      "pending",
+      "ready",
+      "dispatched",
+      "completed",
+      "failed",
+      "blocked"
+    ],
+    "messageType": [
+      "status",
+      "dispatch",
+      "worker_done",
+      "merge_ready",
+      "escalation",
+      "handoff",
+      "question",
+      "decision_gate",
+      "heartbeat"
+    ],
+    "observedTaskStatus": [
+      "completed"
+    ],
+    "observedWorkerState": [
+      "succeeded"
+    ],
+    "observedDispatchStatus": [
+      "completed"
+    ],
+    "observedTerminalState": [
+      "released"
+    ]
+  },
+  "sampleTask": {
+    "id": "task_824cc96aff3e",
+    "run_id": "run_d9231ea688d8",
+    "parent_id": null,
+    "created_by_terminal_handle": "term_651b3358-9ca3-49fb-8f49-ca4d89feefd7",
+    "created_by_pane_key": "0b93092e-f912-4fe7-a2c1-8de992eb409a:247b2b19-c796-47e9-826e-848b5bbefd86",
+    "created_by_process_incarnation": "00000000-0000-4000-8000-00000000repo::\\\\wsl.localhost\\Ubuntu\\home\\user\\dev\\muster@@8211b5c8:1cde2207-3701-4e1f-b514-c0d52a04a6fe",
+    "created_by_run_generation": 1,
+    "task_title": "<text>",
+    "display_name": "orca-context-adapter",
+    "spec": "<text>",
+    "status": "completed",
+    "deps": "[]",
+    "result": "<text>",
+    "created_at": "2026-08-10 02:48:14",
+    "completed_at": "2026-08-10 03:02:38"
+  },
+  "sampleWorker": {
+    "dispatchId": "ctx_3ae6562794a1",
+    "taskId": "task_824cc96aff3e",
+    "runId": "run_d9231ea688d8",
+    "workerState": "succeeded",
+    "dispatchStatus": "completed",
+    "agentTerminalHandle": "term_54d77447-c554-45f8-a294-165ae5be9cf3",
+    "terminalState": "released",
+    "resource": {
+      "id": "wtr_b7e77ad9e165",
+      "ownershipState": "released",
+      "releaseState": "released",
+      "retainedReason": null,
+      "terminalHandle": "term_54d77447-c554-45f8-a294-165ae5be9cf3",
+      "worktreeId": "00000000-0000-4000-8000-00000000repo::\\\\wsl.localhost\\Ubuntu\\home\\user\\orca\\workspaces\\muster\\orca-context-adapter-worker",
+      "originDispatchId": "ctx_3ae6562794a1",
+      "ownerDispatchId": "ctx_3ae6562794a1",
+      "releaseRequestedAt": "2026-08-10 03:02:59",
+      "releaseCompletedAt": "2026-08-10 03:02:59",
+      "releaseError": null,
+      "archive": {
+        "source": "terminal",
+        "status": "captured"
+      }
+    }
+  }
+}

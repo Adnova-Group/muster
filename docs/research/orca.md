@@ -314,7 +314,7 @@ A live `terminal list --json` record carries `handle`, `worktreeId`,
 `visualLayouts` tree of `group → tabs[] → panes`, plus `topologyRevisions`,
 `totalCount`, and `truncated`.
 
-### Orchestration surface (Phase 4 prerequisite)
+### Orchestration surface and lifecycle (Phase 4 prerequisite)
 
 The live 1.4.177 CLI exposes 29 `orchestration` commands: `ask`, `check`,
 `coordinator-start`, `coordinator-stop`, `dispatch`, `dispatch-show`,
@@ -322,10 +322,57 @@ The live 1.4.177 CLI exposes 29 `orchestration` commands: `ask`, `check`,
 `run-create`, `run-current`, `run-list`, `run-show`, `run-use`, `send`,
 `task-create`, `task-list`, `task-update`, `worker-abandon`, `worker-list`,
 `worker-read`, `worker-release`, `worker-retain`, `worker-show`,
-`worker-start`, `worker-stop` [OBSERVED]. This is the command inventory only:
-no Run, Task, Dispatch, or worker was created, and the lifecycle/state schemas
-behind these commands remain [UNRESOLVED]. Phase 4 mapping stays gated until
-those are captured the same way the worktree and terminal shapes were.
+`worker-start`, `worker-stop` [OBSERVED].
+
+The schemas below were captured **without creating or mutating anything**: every
+list command accepts an explicit `--run` selector, so a previously completed Run
+(12 tasks, 12 workers, 20 messages) supplied the record shapes, and
+`orca skills get orchestration --full` supplied the state vocabularies. No Run,
+Task, Dispatch, gate, or worker was created, bound, or altered.
+
+**Record shapes** [OBSERVED]:
+
+| Entity | Fields |
+|---|---|
+| Task | `id`, `run_id`, `spec`, `task_title`, `display_name`, `status`, `deps`, `parent_id`, `result`, `created_at`, `completed_at`, `created_by_terminal_handle`, `created_by_pane_key`, `created_by_process_incarnation`, `created_by_run_generation` |
+| Worker | `dispatchId`, `taskId`, `runId`, `workerState`, `dispatchStatus`, `agentTerminalHandle`, `terminalState`, `resource` |
+| Worker resource | `id`, `worktreeId`, `terminalHandle`, `ownershipState`, `releaseState`, `releaseRequestedAt`, `releaseCompletedAt`, `releaseError`, `retainedReason`, `originDispatchId`, `ownerDispatchId`, `archive` |
+| Message | `id`, `run_id`, `type`, `subject`, `body`, `payload`, `priority`, `thread_id`, `sequence`, `from_handle`, `to_handle`, `sender_pane_key`, `delivery_contract`, `read`, `created_at`, `delivered_at` |
+| Run | `id`, `objective`, `home_database`, `coordinator_handle`, `coordinator_pane_key`, `consumer_generation`, `legacy`, `created_at`, `updated_at` |
+
+**Vocabularies** [DOCUMENTED, orchestration skill guide]:
+
+- Task status: `pending`, `ready`, `dispatched`, `completed`, `failed`, `blocked`.
+- Message type: `status`, `dispatch`, `worker_done`, `merge_ready`,
+  `escalation`, `handoff`, `question`, `decision_gate` (legacy/gates),
+  `heartbeat`. Note `merge_ready`, which the pinned-source list did not carry.
+
+**Statements that bear directly on the Muster boundary** [DOCUMENTED]:
+
+- "A Run is only a durable namespace and coordinator inbox; it never schedules
+  or places workers. Lifecycle authority comes from the active Dispatch, and
+  terminal handles remain routing metadata rather than durable identity." This
+  independently confirms the placement-handoff design: correlate on Dispatch,
+  never treat a terminal handle as identity, and keep `orca_mapping` null.
+- "A valid `worker_done` for the active `taskId` + `dispatchId` marks the task
+  and dispatch completed automatically. Do not follow it with `task-update
+  --status completed`." A Muster adapter must not double-complete.
+- "Database provenance, an old-looking terminal, or a legacy Run ID does not
+  prove mutation authority. If the runtime cannot prove liveness, principal
+  ownership, capability, or the exact legacy contract, it degrades to read-only
+  inspection." Orca's own posture matches Muster's fail-closed rule.
+- "A review-only `worker_done` reports findings; it does not authorize
+  coordinator file edits." An Orca completion is not a Muster review PASS.
+- `worker-release` is post-completion cleanup, not cancellation; `worker-stop`
+  closes only the exact supervised terminal and "never deletes the worktree";
+  `worker-abandon` "performs no remote, process, or filesystem action". These
+  are three distinct settlement paths, not synonyms.
+
+What remains [UNRESOLVED] for Phase 4: the non-terminal state transitions were
+not observed (every captured task was `completed`, every worker `succeeded` /
+`released`), and no gate record was available to sample. Mapping Muster entities
+onto these primitives still requires observing a live failure, escalation, and
+gate cycle.
 
 Useful documented examples include:
 

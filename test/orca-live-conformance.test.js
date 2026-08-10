@@ -115,6 +115,33 @@ test("Orca reports a fully-qualified branch ref, and the protection guard honour
   assert.equal(protectedRef.reason, "protected-branch");
 });
 
+// Phase 4 (mapping Muster entities onto Orca Run/Task/Dispatch) is gated on
+// stable schemas. These are the schemas, captured read-only from a completed
+// Run, pinned here so the gate is checked against evidence rather than memory.
+// This test asserts what was OBSERVED; it deliberately does not assert that
+// Muster consumes any of it, because Muster must not until the gate opens.
+test("the captured orchestration schema is pinned for the Phase 4 gate", async () => {
+  const captured = JSON.parse(await readFile(
+    join(process.cwd(), "test/fixtures/orca-live/orchestration-completed-run.json"), "utf8",
+  ));
+  assert.deepEqual(captured.vocabularies.taskStatus, [
+    "pending", "ready", "dispatched", "completed", "failed", "blocked",
+  ]);
+  // `merge_ready` is present in the live guide but absent from the pinned-source
+  // list the research note was originally written from.
+  assert.ok(captured.vocabularies.messageType.includes("merge_ready"));
+  for (const field of ["dispatchId", "taskId", "runId", "workerState", "dispatchStatus"]) {
+    assert.ok(captured.workerKeys.includes(field), `worker record must carry ${field}`);
+  }
+  // Lifecycle authority is the Dispatch, not the terminal handle: the capture
+  // has to show a dispatch id distinct from the terminal it happened to use.
+  assert.ok(captured.workerKeys.includes("agentTerminalHandle"));
+  assert.notEqual(captured.sampleWorker.dispatchId, captured.sampleWorker.agentTerminalHandle);
+  // Only terminal states were observable in a completed Run. Saying so keeps
+  // the gate honest: the failure and escalation paths are still unobserved.
+  assert.deepEqual(captured.vocabularies.observedTaskStatus, ["completed"]);
+});
+
 test("a fully-qualified feature ref on a non-primary worktree is still cleanable", async () => {
   const metadata = normalizeOrcaWorktreeMetadata(contextFrom(await live())).metadata;
   const identity = {

@@ -368,11 +368,77 @@ Task, Dispatch, gate, or worker was created, bound, or altered.
   `worker-abandon` "performs no remote, process, or filesystem action". These
   are three distinct settlement paths, not synonyms.
 
-What remains [UNRESOLVED] for Phase 4: the non-terminal state transitions were
-not observed (every captured task was `completed`, every worker `succeeded` /
-`released`), and no gate record was available to sample. Mapping Muster entities
-onto these primitives still requires observing a live failure, escalation, and
-gate cycle.
+### Observed lifecycle transitions
+
+A disposable probe Run was then created to exercise the transitions a completed
+Run cannot show. Every task status, the dependency scheduler, the full gate
+cycle, and one real supervised worker were observed; the probe worktree,
+terminal, and agent were removed afterwards [OBSERVED, 1.4.177].
+
+**Task scheduling.** A task created with no dependencies is `ready`
+immediately; one created with unmet `deps` is `pending`. Completing the
+dependency flips the dependent task `pending → ready` automatically — Orca owns
+the DAG scheduler, a coordinator does not advance it. All six statuses are
+settable directly through `task-update`.
+
+**Gates block their task.** `gate-create` on a `ready` task moves that task to
+`blocked` and the gate to `pending`. `gate-resolve` sets `status: resolved`,
+records `resolution` and `resolved_at`, and returns the task to `ready`. Gate
+record: `id`, `run_id`, `task_id`, `question`, `options`, `status`,
+`resolution`, `created_at`, `resolved_at`.
+
+**Serialization detail:** `task.deps` and `gate.options` come back as JSON
+**strings** (`"[]"`, `"[\"merge\",\"hold\"]"`), not arrays. Any adapter must
+parse them rather than indexing them.
+
+**Dispatch record** — the durable lifecycle identity: `id`, `run_id`, `task_id`,
+`contract_version`, `launch_token_hash`, `capability_hash`,
+`capability_revoked_at`, `assignee_handle`, `assignee_pane_key`,
+`process_incarnation`, `status`, `failure_count`, `last_failure`,
+`dispatched_at`, `completed_at`, `created_at`, `last_heartbeat_at`. Capability
+is revoked at settlement (`capability_revoked_at` is stamped), which is what
+makes a stale dispatch unusable rather than merely old.
+
+**Worker record**: `dispatch_id`, `runtime_epoch`, `state`, `stage`,
+`agent_terminal_handle`, `worktree_id`, `setup_state`, `effects`,
+`residualResources`, `startOptions`, `last_error`, `created_at`, `updated_at`.
+`worker-show` returns `dispatch`, `worker`, `terminal`, `terminalResource`, and
+`observation` as five separate top-level sections.
+
+**Partial-failure recovery is concrete.** `worker-start` returns an `effects[]`
+array — `{kind: worktree, action: created_child, id}`,
+`{kind: terminal, role: agent, action: reused_agent_terminal, id, tabId, leafId}`,
+`{kind: setup, ...}`, `{kind: dispatch_input, state: accepted}` — plus
+`residualResources[]`, `setup`, `launch` (requested vs effective agent/model/
+effort), and `timeoutMs`. This is the recovery information a coordinator needs
+after a partial start, and it is emitted on success too.
+
+**Settlement paths, observed:**
+
+- `worker-stop` on an already-settled dispatch returns
+  `{state, alreadySettled: true, processAction: "none"}` — idempotent, not an error.
+- `worker-release` returns
+  `{state: "released", processAction: "closed_agent_terminal", archive: {source: "terminal", status: "captured"}}`.
+  Output is archived before the terminal closes, so a released worker stays
+  readable through `worker-read`.
+- `worker-start --terminal <handle>` requires that terminal to be running a
+  recognized agent; a plain shell is rejected with `agent_unconfigured`. A
+  supervised worker is always an agent, never an arbitrary process.
+
+**State vocabularies** [DOCUMENTED, guide]: worker/dispatch states include
+`running`, `succeeded`, `failed`, `stopped`, `outcome_unknown`, `dispatched`;
+release outcomes include `release_pending` and `release_unknown`. Observed
+stages: `input_accepted` at start, `settled` after completion.
+
+Also worth recording: `terminal create` returns `paneKey` and `executionHostId`,
+two fields `terminal list` omits, and its `paneKey` is exactly the
+`<tabId>:<leafId>` form derived elsewhere in this note.
+
+What remains [UNRESOLVED]: `failed`, `outcome_unknown`, `release_pending`, and
+`release_unknown` were documented but not observed — producing them requires an
+agent that genuinely errors or a runtime that loses a PTY mid-dispatch, neither
+of which is safely reproducible on demand. `escalation`, `question`/`ask`, and
+`merge_ready` message flows were likewise not exercised.
 
 Useful documented examples include:
 

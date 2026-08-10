@@ -142,6 +142,53 @@ test("the captured orchestration schema is pinned for the Phase 4 gate", async (
   assert.deepEqual(captured.vocabularies.observedTaskStatus, ["completed"]);
 });
 
+// The transitions a completed Run cannot show, exercised against a disposable
+// probe Run and cleaned up afterwards. These pin the semantics any Phase 4
+// mapping has to respect -- most importantly that Orca, not the coordinator,
+// advances the DAG.
+test("the observed orchestration lifecycle is pinned for the Phase 4 gate", async () => {
+  const { observedLifecycle: live } = JSON.parse(await readFile(
+    join(process.cwd(), "test/fixtures/orca-live/orchestration-completed-run.json"), "utf8",
+  ));
+
+  // Orca owns the scheduler: a dependent task is released by completing its
+  // dependency, not by a coordinator setting it ready.
+  assert.equal(live.taskScheduling.noDepsInitialStatus, "ready");
+  assert.equal(live.taskScheduling.unmetDepsInitialStatus, "pending");
+  assert.equal(live.taskScheduling.dependentReleasedTo, "ready");
+
+  // A pending gate blocks its task, and resolving it unblocks it.
+  assert.equal(live.gate.createMovesTaskTo, "blocked");
+  assert.equal(live.gate.resolveReturnsTaskTo, "ready");
+  assert.equal(live.gate.resolvedStatus, "resolved");
+
+  // deps and options are JSON strings; indexing them as arrays would silently
+  // read characters.
+  assert.equal(live.serialization["task.deps"], "JSON string");
+  assert.equal(live.serialization["gate.options"], "JSON string");
+
+  // The Dispatch is the durable lifecycle identity, and its capability is
+  // revoked at settlement -- that is what makes a stale dispatch unusable.
+  for (const field of ["contract_version", "capability_hash", "capability_revoked_at", "process_incarnation"]) {
+    assert.ok(live.dispatchKeys.includes(field), `dispatch record must carry ${field}`);
+  }
+
+  // Partial-start recovery is concrete, not advisory.
+  assert.deepEqual(live.workerStartEffectKinds, ["worktree", "terminal", "setup", "dispatch_input"]);
+  assert.ok(live.workerKeys.includes("residualResources"));
+
+  // Settlement paths are distinct and idempotent.
+  assert.equal(live.settlement.workerStopAlreadySettled.processAction, "none");
+  assert.equal(live.settlement.workerRelease.archive.status, "captured");
+  assert.match(live.settlement.workerStartPlainShell, /agent_unconfigured/);
+
+  // What is still unproven must stay listed, so the gate is not mistaken for
+  // fully-characterized.
+  for (const gap of ["failed", "outcome_unknown", "escalation", "merge_ready"]) {
+    assert.ok(live.unobserved.includes(gap), `${gap} is still unobserved and must say so`);
+  }
+});
+
 test("a fully-qualified feature ref on a non-primary worktree is still cleanable", async () => {
   const metadata = normalizeOrcaWorktreeMetadata(contextFrom(await live())).metadata;
   const identity = {

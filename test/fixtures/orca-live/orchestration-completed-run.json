@@ -5,7 +5,8 @@
     "commands": [
       "orca orchestration run-show|task-list|worker-list|gate-list --run <id> --json",
       "orca orchestration inbox --json",
-      "orca skills get orchestration --full"
+      "orca skills get orchestration --full",
+      "orchestration run-create|task-create|task-update|gate-create|gate-resolve|worker-start|worker-stop|worker-release (disposable probe Run, cleaned up)"
     ]
   },
   "taskKeys": [
@@ -123,6 +124,145 @@
         "source": "terminal",
         "status": "captured"
       }
+    }
+  },
+  "observedLifecycle": {
+    "note": "Captured from a disposable probe Run; the probe worktree, terminal, and agent were removed afterwards.",
+    "taskScheduling": {
+      "noDepsInitialStatus": "ready",
+      "unmetDepsInitialStatus": "pending",
+      "dependentReleasedTo": "ready",
+      "releasedBy": "completing the dependency (Orca owns the DAG scheduler)",
+      "allStatusesSettableViaTaskUpdate": true
+    },
+    "gate": {
+      "createMovesTaskTo": "blocked",
+      "createdStatus": "pending",
+      "resolvedStatus": "resolved",
+      "resolveReturnsTaskTo": "ready",
+      "keys": [
+        "created_at",
+        "id",
+        "options",
+        "question",
+        "resolution",
+        "resolved_at",
+        "run_id",
+        "status",
+        "task_id"
+      ]
+    },
+    "serialization": {
+      "task.deps": "JSON string",
+      "gate.options": "JSON string"
+    },
+    "dispatchKeys": [
+      "assignee_handle",
+      "assignee_pane_key",
+      "capability_hash",
+      "capability_revoked_at",
+      "completed_at",
+      "contract_version",
+      "created_at",
+      "dispatched_at",
+      "failure_count",
+      "id",
+      "last_failure",
+      "last_heartbeat_at",
+      "launch_token_hash",
+      "process_incarnation",
+      "run_id",
+      "status",
+      "task_id"
+    ],
+    "workerKeys": [
+      "agent_terminal_handle",
+      "created_at",
+      "dispatch_id",
+      "effects",
+      "last_error",
+      "residualResources",
+      "residual_resources",
+      "runtime_epoch",
+      "setup_state",
+      "stage",
+      "startOptions",
+      "start_options",
+      "state",
+      "updated_at",
+      "worktree_id"
+    ],
+    "workerShowSections": [
+      "dispatch",
+      "observation",
+      "terminal",
+      "terminalResource",
+      "worker"
+    ],
+    "workerStartEffectKinds": [
+      "worktree",
+      "terminal",
+      "setup",
+      "dispatch_input"
+    ],
+    "settlement": {
+      "workerStopAlreadySettled": {
+        "alreadySettled": true,
+        "processAction": "none"
+      },
+      "workerRelease": {
+        "state": "released",
+        "processAction": "closed_agent_terminal",
+        "archive": {
+          "source": "terminal",
+          "status": "captured"
+        }
+      },
+      "workerStartPlainShell": "rejected: agent_unconfigured"
+    },
+    "documentedStates": [
+      "running",
+      "succeeded",
+      "failed",
+      "stopped",
+      "outcome_unknown",
+      "dispatched"
+    ],
+    "documentedReleaseOutcomes": [
+      "release_pending",
+      "release_unknown"
+    ],
+    "observedStages": [
+      "input_accepted",
+      "settled"
+    ],
+    "unobserved": [
+      "failed",
+      "outcome_unknown",
+      "release_pending",
+      "release_unknown",
+      "escalation",
+      "question",
+      "merge_ready"
+    ],
+    "sampleDispatch": {
+      "id": "ctx_252b9b0bfef0",
+      "run_id": "run_edac9dca4c62",
+      "task_id": "task_cd80ed59f883",
+      "contract_version": 1,
+      "launch_token_hash": "<hash>",
+      "assignee_handle": "term_22fae9ec-de3d-434f-a192-58821d533f0b",
+      "assignee_pane_key": "01759c37-0241-4b4b-948f-ab392ae164b0:6b969c39-330a-40d4-9c65-c581eb6256d7",
+      "capability_hash": "<hash>",
+      "process_incarnation": "00000000-0000-4000-8000-00000000repo::\\\\wsl.localhost\\Ubuntu\\home\\user\\orca\\workspaces\\muster\\muster-worker-probe@@18799fbc:ea42e2fc-71e3-4355-bb1e-dc5e7dd4c288",
+      "capability_revoked_at": "2026-08-10 15:45:17",
+      "status": "completed",
+      "failure_count": 0,
+      "last_failure": null,
+      "dispatched_at": "2026-08-10 15:44:56",
+      "completed_at": "2026-08-10 15:45:17",
+      "created_at": "2026-08-10 15:44:56",
+      "last_heartbeat_at": null
     }
   }
 }

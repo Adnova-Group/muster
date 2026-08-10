@@ -262,8 +262,8 @@ test("Codex install invokes only the pinned runtime and emits canonical Node in 
   const commands = Object.values(hooks.hooks).flatMap(groups => groups.flatMap(group => group.hooks));
   assert.ok(commands.length > 0);
   for (const hook of commands) {
-    assert.equal(parseHookCommand(hook.command)?.interpreter, identity.node);
-    assert.equal(parseHookCommand(hook.commandWindows, { windows: true })?.interpreter, identity.node);
+    assert.equal(realpathSync(parseHookCommand(hook.command)?.interpreter), identity.node);
+    assert.equal(realpathSync(parseHookCommand(hook.commandWindows, { windows: true })?.interpreter), identity.node);
   }
   await assert.rejects(readFile(marker), /ENOENT/);
 });

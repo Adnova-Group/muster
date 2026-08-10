@@ -1,0 +1,16 @@
+{
+  "orca_runtime_id": "runtime-vm",
+  "orca_repo_id": "repo-vm",
+  "orca_worktree_id": "repo-vm::/cloud/app",
+  "worktree_path": "/cloud/app",
+  "branch": "feature/vm",
+  "base_ref": "origin/main",
+  "base_sha": "5555555555555555555555555555555555555555",
+  "host": "vm:ephemeral-1",
+  "environment_id": "cloud-1",
+  "environment_kind": "vm-cloud",
+  "remote_selector": "id:repo-vm::/cloud/app",
+  "terminal": { "handle": "term-vm", "pane_key": "pane-vm", "session_id": "session-vm", "connected": true },
+  "shared_paths": [{ "path": "/cloud/cache", "classification": "shared-cache" }],
+  "setup_provenance": { "source": "cloud-image", "status": "completed", "id": "image-2026" }
+}

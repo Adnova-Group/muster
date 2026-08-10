@@ -22,7 +22,8 @@
       "baseRef": "origin/main",
       "hostId": "local",
       "runtimeOwnerEnvironmentId": "local",
-      "git": { "path": "/workspace/app", "head": "abc123", "branch": "feature/local" }
+      "baseSha": "1111111111111111111111111111111111111111",
+      "git": { "path": "/workspace/app", "head": "abc123", "branch": "feature/local", "baseSha": "1111111111111111111111111111111111111111" }
     }
   },
   "terminals": {

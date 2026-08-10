@@ -68,6 +68,89 @@ function firstString(...values) {
   return null;
 }
 
+function firstValue(...values) {
+  for (const value of values) {
+    if (value !== undefined && value !== null) return value;
+  }
+  return null;
+}
+
+function boundedString(value, max = 512) {
+  const result = nonEmptyString(value);
+  return result === null ? null : result.slice(0, max);
+}
+
+function normalizeSharedPaths(worktree) {
+  const raw = firstValue(worktree.sharedPaths, worktree.shared_paths, worktree.pathClasses);
+  if (raw === null) return [];
+  if (!Array.isArray(raw)) return null;
+  const paths = [];
+  for (const entry of raw) {
+    if (typeof entry === "string") {
+      const path = boundedString(entry, 1024);
+      if (!path) return null;
+      paths.push({ path, classification: "shared" });
+      continue;
+    }
+    if (!isObject(entry)) return null;
+    const path = boundedString(firstString(entry.path, entry.absolutePath, entry.name), 1024);
+    const classification = boundedString(firstString(entry.classification, entry.kind, entry.type), 64);
+    if (!path || !classification) return null;
+    paths.push({
+      path,
+      classification,
+      ...(boundedString(firstString(entry.owner, entry.ownerSystem), 128) ? {
+        owner: boundedString(firstString(entry.owner, entry.ownerSystem), 128),
+      } : {}),
+      ...(boundedString(firstString(entry.source), 128) ? { source: boundedString(firstString(entry.source), 128) } : {}),
+    });
+  }
+  return paths;
+}
+
+function normalizeSetupProvenance(worktree) {
+  const raw = firstValue(worktree.setupProvenance, worktree.setup_provenance, worktree.setup);
+  if (raw === null) return { source: "unknown", status: "unavailable" };
+  if (!isObject(raw)) return null;
+  const source = boundedString(firstString(raw.source, raw.owner, raw.provider, raw.by), 128);
+  const status = boundedString(firstString(raw.status, raw.result), 64);
+  if (!source || !status) return null;
+  const setup = { source, status };
+  const setupId = boundedString(firstString(raw.id, raw.setupId, raw.setup_id), 256);
+  const version = boundedString(firstString(raw.version, raw.recipeVersion, raw.recipe_version), 128);
+  if (setupId) setup.id = setupId;
+  if (version) setup.version = version;
+  if (Array.isArray(raw.steps)) {
+    if (raw.steps.length > 128 || !raw.steps.every((step) => typeof step === "string" && step.trim())) return null;
+    setup.steps = raw.steps.map((step) => step.trim().slice(0, 256));
+  }
+  return setup;
+}
+
+function normalizeLineage(worktree) {
+  const raw = firstValue(worktree.lineage, worktree.worktreeLineage, worktree.worktree_lineage);
+  const parentWorktreeId = firstString(
+    raw && raw.parentWorktreeId,
+    raw && raw.parent_worktree_id,
+    worktree.parentWorktreeId,
+    worktree.parent_id,
+  );
+  const parentInstanceId = firstString(
+    raw && raw.parentWorktreeInstanceId,
+    raw && raw.parent_instance_id,
+    worktree.parentWorktreeInstanceId,
+  );
+  const origin = firstString(raw && raw.origin, worktree.origin);
+  const relation = firstString(raw && raw.relation, worktree.relation);
+  if (raw !== null && !isObject(raw)) return null;
+  return {
+    ...(parentWorktreeId ? { parent_worktree_id: parentWorktreeId } : {}),
+    ...(parentInstanceId ? { parent_instance_id: parentInstanceId } : {}),
+    ...(origin ? { origin } : {}),
+    ...(relation ? { relation } : {}),
+  };
+}
+
 function unavailable(reason, detail = null, diagnostics = []) {
   return {
     schemaVersion: ORCA_CONTEXT_SCHEMA_VERSION,
@@ -247,6 +330,12 @@ function normalizeContext({ status, worktreeInfo, terminal, env, agentContext })
   const baseRef = firstString(worktree.baseRef, worktree.startFrom, worktree.baseBranch);
   const baseSha = firstString(worktree.baseSha, worktree.startSha, worktree.git?.baseSha);
   const headSha = firstString(worktree.git?.head, worktree.head, worktree.headSha);
+  const sharedPaths = normalizeSharedPaths(worktree);
+  const setupProvenance = normalizeSetupProvenance(worktree);
+  const lineage = normalizeLineage(worktree);
+  if (sharedPaths === null || setupProvenance === null || lineage === null) {
+    throw new AdapterError(REASON.MALFORMED_RESPONSE, "worktree topology metadata is malformed");
+  }
   const remoteSelector = `id:${id}`;
 
   return {
@@ -259,6 +348,9 @@ function normalizeContext({ status, worktreeInfo, terminal, env, agentContext })
     base_ref: baseRef,
     base_sha: baseSha,
     head_sha: headSha,
+    shared_paths: sharedPaths,
+    setup_provenance: setupProvenance,
+    worktree_lineage: lineage,
     host: host.host,
     environment_id: environmentId,
     environment_kind: host.kind,
@@ -286,11 +378,9 @@ function normalizeContext({ status, worktreeInfo, terminal, env, agentContext })
       base_sha: baseSha,
       head_sha: headSha,
       parent_id: firstString(worktree.parentWorktreeId, worktree.parent_id),
-      lineage: isObject(worktree.lineage) ? {
-        parent_worktree_id: firstString(worktree.lineage.parentWorktreeId, worktree.lineage.parent_worktree_id),
-        parent_instance_id: firstString(worktree.lineage.parentWorktreeInstanceId, worktree.lineage.parent_instance_id),
-        origin: firstString(worktree.lineage.origin),
-      } : null,
+      lineage,
+      shared_paths: sharedPaths,
+      setup_provenance: setupProvenance,
     },
     host_info: {
       id: host.host,
@@ -303,6 +393,11 @@ function normalizeContext({ status, worktreeInfo, terminal, env, agentContext })
       pane_key: paneKey,
       session_id: sessionId,
       connected: terminal.connected === true,
+      ...(firstString(terminal.state, terminal.status) ? { state: firstString(terminal.state, terminal.status) } : {}),
+      ...(typeof terminal.resumable === "boolean" ? { resumable: terminal.resumable } : {}),
+      ...(firstString(terminal.restoredFrom, terminal.restored_from) ? {
+        restored_from: firstString(terminal.restoredFrom, terminal.restored_from),
+      } : {}),
       worktree_id: firstString(terminal.worktreeId, terminal.worktree_id),
     } : null,
     selector: {
@@ -407,13 +502,18 @@ export async function discoverOrcaContext({
   }
 
   const terminal = chooseTerminal(terminals, worktreeInfo.id, env);
-  return available(normalizeContext({
-    status,
-    worktreeInfo,
-    terminal,
-    env,
-    agentContext,
-  }), diagnostics);
+  try {
+    return available(normalizeContext({
+      status,
+      worktreeInfo,
+      terminal,
+      env,
+      agentContext,
+    }), diagnostics);
+  } catch (error) {
+    const normalized = normalizeCommandError(error, "worktree topology");
+    return unavailable(normalized.reason, normalized.message, diagnostics);
+  }
 }
 
 export const readOrcaContext = discoverOrcaContext;

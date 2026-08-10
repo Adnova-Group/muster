@@ -1,4 +1,5 @@
 import { lastColonSegment, impliedSurfaceForSkillId } from "./match.js";
+import { validateOrcaManifest } from "./orca-worktree-receipts.js";
 
 const SOURCES = new Set(["installed", "builtin", "dynamic", "inline"]);
 const MODES = new Set(["single", "tournament"]);
@@ -94,6 +95,10 @@ function validateActionArray(v, label, errors) {
 export function validateManifest(m) {
   const errors = [];
   if (!m || typeof m !== "object") return { ok: false, errors: ["manifest must be an object"] };
+  if (m.orca !== undefined) {
+    const orca = validateOrcaManifest(m);
+    if (!orca.ok) errors.push(...orca.errors.map((error) => `orca: ${error}`));
+  }
   if (!m.outcome || typeof m.outcome !== "string") errors.push("outcome: required non-empty string");
   if (!Array.isArray(m.successCriteria) || m.successCriteria.length === 0)
     errors.push("successCriteria: required non-empty array");

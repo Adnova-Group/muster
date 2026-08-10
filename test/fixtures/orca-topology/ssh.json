@@ -1,0 +1,16 @@
+{
+  "orca_runtime_id": "runtime-ssh",
+  "orca_repo_id": "repo-ssh",
+  "orca_worktree_id": "repo-ssh::/srv/app",
+  "worktree_path": "/srv/app",
+  "branch": "feature/ssh",
+  "base_ref": "origin/main",
+  "base_sha": "3333333333333333333333333333333333333333",
+  "host": "ssh:builder",
+  "environment_id": "ssh-builder",
+  "environment_kind": "ssh",
+  "remote_selector": "id:repo-ssh::/srv/app",
+  "terminal": { "handle": "term-ssh", "pane_key": "pane-ssh", "session_id": "session-ssh", "connected": true },
+  "shared_paths": [{ "path": "/srv/cache", "classification": "shared-cache" }],
+  "setup_provenance": { "source": "orca", "status": "completed", "version": "ssh-v2" }
+}

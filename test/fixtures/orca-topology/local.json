@@ -1,0 +1,17 @@
+{
+  "orca_runtime_id": "runtime-local",
+  "orca_repo_id": "repo-local",
+  "orca_worktree_id": "repo-local::/workspace/local",
+  "worktree_path": "/workspace/local",
+  "branch": "feature/local",
+  "base_ref": "origin/main",
+  "base_sha": "1111111111111111111111111111111111111111",
+  "head_sha": "2222222222222222222222222222222222222222",
+  "host": "local",
+  "environment_id": "local",
+  "environment_kind": "local",
+  "remote_selector": "id:repo-local::/workspace/local",
+  "terminal": { "handle": "term-local", "pane_key": "pane-local", "session_id": "session-local", "connected": true },
+  "shared_paths": [{ "path": "/workspace/.cache", "classification": "shared-cache", "owner": "orca" }],
+  "setup_provenance": { "source": "orca", "status": "ready", "id": "setup-local" }
+}

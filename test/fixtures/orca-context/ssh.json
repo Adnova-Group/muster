@@ -1,0 +1,30 @@
+{
+  "agentContext": {
+    "schemaVersion": 1,
+    "commandCount": 4,
+    "commands": [
+      { "command": "agent-context" },
+      { "command": "status" },
+      { "command": "terminal list" },
+      { "command": "worktree current" }
+    ]
+  },
+  "status": {
+    "runtime": { "state": "ready", "reachable": true, "runtimeId": "runtime-ssh" },
+    "graph": { "state": "ready" }
+  },
+  "worktree": {
+    "worktree": {
+      "id": "repo-ssh::/srv/app",
+      "repoId": "repo-ssh",
+      "path": "/srv/app",
+      "branch": "feature/ssh",
+      "baseRef": "origin/main",
+      "hostId": "ssh:build-host",
+      "runtimeOwnerEnvironmentId": "ssh-environment",
+      "git": { "path": "/srv/app", "head": "def456", "branch": "feature/ssh" }
+    }
+  },
+  "terminals": { "terminals": [] },
+  "env": { "ORCA_WORKTREE_ID": "repo-ssh::/srv/app" }
+}

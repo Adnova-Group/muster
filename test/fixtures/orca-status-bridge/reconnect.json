@@ -1,0 +1,26 @@
+{
+  "agentContext": {
+    "schemaVersion": 1,
+    "commandCount": 4,
+    "commands": [
+      { "command": "agent-context" },
+      { "command": "status" },
+      { "command": "terminal list" },
+      { "command": "worktree current" }
+    ]
+  },
+  "status": {
+    "runtime": { "state": "stale_bootstrap", "reachable": false, "runtimeId": "runtime-reconnecting" },
+    "graph": { "state": "reloading" }
+  },
+  "worktree": { "worktree": { "id": "repo-bridge::/gone", "repoId": "repo-bridge", "path": "/gone", "branch": "feature/reconnect" } },
+  "terminals": { "terminals": [] },
+  "env": {},
+  "muster": {
+    "item": { "id": "item-reconnect", "state": "implementation_in_flight" },
+    "attempt": { "id": "attempt-reconnect-1", "number": 1, "state": "in_flight", "phase": "implementation" },
+    "gate": { "state": "pending", "verdict": "UNKNOWN" },
+    "receipt": { "id": "receipt-reconnect", "phase": "implementation", "attempt": 1, "status": "UNKNOWN" }
+  },
+  "profile": "codex"
+}

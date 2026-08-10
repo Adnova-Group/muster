@@ -104,7 +104,7 @@ import {
   writeContainedFile,
 } from "./fs-safe.js";
 import { readDispatchReceipts, runKimiProcess } from "./dispatch-receipts.js";
-import { discoverOrcaContext } from "./orca-context-adapter.js";
+import { discoverOrcaContext, resolveOrcaCliCommand } from "./orca-context-adapter.js";
 import { probeOrcaAgentCapabilities } from "./orca-agent-capability-probe.js";
 import { readOrcaStatusBridge } from "./orca-status-bridge.js";
 import { evaluateOrcaWorktreeCleanup } from "./orca-worktree-cleanup.js";
@@ -463,7 +463,10 @@ async function handleOrcaCommand(cmd, rest) {
   if (cmd !== "orca") return false;
   const usage = "orca <status|context|capabilities [--profile <id>]|bridge [--profile <id>]|cleanup-plan <input.json>> [--command <orca-binary>]";
   const sub = rest[0];
-  const command = flagValue(rest, "--command") || process.env.MUSTER_ORCA_CLI || "orca";
+  // Resolution order: explicit flag, Muster override, then Orca's own contract
+  // (ORCA_CLI_COMMAND, orca-ide on Linux outside Orca terminals) -- never bare
+  // `orca` on Linux, where it resolves to the GNOME screen reader.
+  const command = flagValue(rest, "--command") || process.env.MUSTER_ORCA_CLI || resolveOrcaCliCommand();
   const contextOptions = { command, cwd: process.cwd() };
 
   if (sub === "status" || sub === "context") {

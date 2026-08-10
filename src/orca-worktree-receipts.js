@@ -57,6 +57,10 @@ function rawField(context, ...names) {
   return null;
 }
 
+// ASSUMED shapes, mirroring the adapter: no live worktree record carried a
+// lineage object, shared-path list, or setup provenance. These normalizers
+// bound and validate caller-supplied context; they are not a verified Orca
+// contract.
 function normalizeLineage(context) {
   const raw = rawField(context, "worktree_lineage", "lineage", "worktreeLineage");
   if (raw === null) return {};

@@ -6,6 +6,7 @@
 // facade) can depend on this one without risking a cycle.
 import { constants as fsConstants } from "node:fs";
 import { lstat, open, readFile, readdir, realpath, stat, unlink } from "node:fs/promises";
+import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 import { execFile as execFileCb } from "node:child_process";
 import { promisify } from "node:util";
@@ -16,7 +17,20 @@ export const execFileDefault = promisify(execFileCb);
 
 export const MANIFEST = ".muster-managed.json";
 
-export const codexHome = home => process.env.CODEX_HOME || join(home, ".codex");
+// An explicit non-default home is an isolated fixture or installation root
+// when it is made against the process's startup configuration.  A caller that
+// deliberately changes CODEX_HOME during the process must still get the
+// normal Codex override semantics (for example, a doctor/install migration).
+const startupCodexHome = process.env.CODEX_HOME;
+
+export const codexHome = home => {
+  const defaultHome = homedir();
+  const explicitHome = home && resolve(home) !== resolve(defaultHome);
+  const runtimeOverride = process.env.CODEX_HOME && process.env.CODEX_HOME !== startupCodexHome;
+  return (!explicitHome || runtimeOverride) && process.env.CODEX_HOME
+    ? process.env.CODEX_HOME
+    : join(home || defaultHome, ".codex");
+};
 
 export const configDir = (scope, cwd, home) => scope === "user" ? codexHome(home) : join(cwd, ".codex");
 

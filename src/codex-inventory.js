@@ -11,6 +11,7 @@ import { resolveCodexRuntimeIdentity } from "./codex-runtime-identity.js";
 
 const execFileDefault = promisify(execFileCb);
 const INJECTED_CODEX_RUNNER = "muster:injected-codex-runner";
+const startupCodexHome = process.env.CODEX_HOME;
 
 // Expected contents of one generated Codex bundle. This census belongs with
 // inventory/build validation; model adapters only translate tiers to models.
@@ -462,7 +463,10 @@ export async function codexAvailable({ execFile = execFileDefault, runtimeIdenti
 // caller falls back (resolveCodexMultiAgentVersion defaults to v1, never v2).
 export async function readCodexMultiAgentVersion(model, { home = homedir(), dir } = {}) {
   if (typeof model !== "string" || !model) return null;
-  const root = dir || process.env.CODEX_HOME || join(home, ".codex");
+  const explicitHome = home && resolve(home) !== resolve(homedir());
+  const root = dir || (explicitHome && process.env.CODEX_HOME === startupCodexHome
+    ? join(home, ".codex")
+    : process.env.CODEX_HOME || join(home, ".codex"));
   let catalog;
   try {
     const { bytes } = await readNoFollowRegular(join(root, "models_cache.json"), {

@@ -53,7 +53,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node --test",
+    "test": "node scripts/test.mjs test/*.test.js",
     "pretest": "node scripts/build-codex.mjs",
     "eval:router": "node eval/router/grade.mjs",
     "eval:modes": "node eval/modes/grade.mjs",

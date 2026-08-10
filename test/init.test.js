@@ -634,7 +634,9 @@ test("repository fingerprint recursion does not retain parent directory descript
   const cli = new URL("../src/cli.js", import.meta.url).pathname;
   const { stdout } = await pexecFile(
     "bash",
-    ["-c", 'ulimit -n 64; exec "$1" "$2" init "$3"', "bash", process.execPath, cli, dir],
+    // Leave enough descriptors for Node 20's module-loader baseline. A
+    // recursive leak across the 100 nested directories still exceeds 128.
+    ["-c", 'ulimit -n 128; exec "$1" "$2" init "$3"', "bash", process.execPath, cli, dir],
     { maxBuffer: 1024 * 1024 },
   );
   assert.equal(JSON.parse(stdout).receipt.phase, "prepared");

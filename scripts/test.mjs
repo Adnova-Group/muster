@@ -6,7 +6,11 @@ import { spawn } from "node:child_process";
 const testCodexHome = await mkdtemp(join(tmpdir(), "muster-test-codex-home-"));
 
 try {
-  const child = spawn(process.execPath, ["--test", ...process.argv.slice(2)], {
+  const runtimeFlags = typeof WebSocket === "undefined"
+    && process.allowedNodeEnvironmentFlags.has("--experimental-websocket")
+    ? ["--experimental-websocket"]
+    : [];
+  const child = spawn(process.execPath, [...runtimeFlags, "--test", ...process.argv.slice(2)], {
     env: { ...process.env, CODEX_HOME: testCodexHome },
     stdio: "inherit"
   });

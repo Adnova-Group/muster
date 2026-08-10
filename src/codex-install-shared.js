@@ -88,10 +88,10 @@ export const ordinaryDirectoryPath = (path, options = {}) => walkOrdinaryDirecto
 });
 
 
-export async function regularFileState(path) {
+export async function regularFileState(path, statOptions) {
   await ordinaryDirectoryPath(dirname(path));
   let stat;
-  try { stat = await lstat(path); }
+  try { stat = await lstat(path, statOptions); }
   catch (error) { if (error.code === "ENOENT") return null; throw error; }
   if (stat.isSymbolicLink() || !stat.isFile()) throw new Error(`Codex configuration target must be a regular file: ${path}`);
   return stat;
@@ -248,7 +248,7 @@ export async function atomicWriteSafe(path, content) {
   await atomicWrite(path, content, {
     tempName: (targetPath) => join(parent, `.${basename(targetPath)}.muster-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.tmp`),
     beforeRename: async (temporary) => {
-      const staged = await regularFileState(temporary);
+      const staged = await regularFileState(temporary, { bigint: true });
       stagedIdentity = { dev: String(staged.dev), ino: String(staged.ino) };
       await ordinaryDirectoryPath(parent);
       await regularFileState(path);

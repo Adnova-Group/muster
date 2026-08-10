@@ -171,6 +171,11 @@ function classifyLifecycle({ context, topology, capabilities }) {
   if (["restoring", "restore", "reattaching", "reattach"].includes(terminalState)) return "restoring";
   if (["hibernated", "hibernate", "suspended"].includes(terminalState)) return "hibernated";
   if (terminal.restored_from || ["restored", "resumed", "reconnected"].includes(terminalState)) return "ready";
+  // `orphaned` is the signal a live Orca terminal record actually carries: the
+  // PTY is gone while the record survives. No observed record exposes `state`,
+  // `resumable`, or `restored_from`, so those branches above are for runtimes
+  // that add them and must never be the only way to detect a dead terminal.
+  if (terminal.orphaned === true) return "unknown";
   // Whether a disconnected terminal is hibernated is Orca's decision, not the
   // provider CLI's. Orca hibernates only the providers it lists as eligible and
   // leaves every other terminal running, so a provider's own resume support

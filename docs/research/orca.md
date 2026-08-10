@@ -269,10 +269,63 @@ throwaway worktree, 2026-08-10]. Its help summarises it as "Remove a worktree
 from Orca and git" and notes only that `orca.yaml` archive hooks are skipped
 unless `--run-hooks` is passed.
 
-**No `ORCA_*` environment variable is documented.** Neither the CLI overview nor
-the CLI reference lists one, and the pinned source was not searched for the set
-an agent terminal actually inherits [UNRESOLVED]. Treat any such variable as an
-observational correlation hint whose absence is normal.
+**No `ORCA_*` environment variable is documented**, but the set an
+Orca-launched terminal inherits has now been captured from inside one
+[OBSERVED, 1.4.177, WSL host]:
+
+| Variable | Value shape | Use |
+|---|---|---|
+| `ORCA_WORKTREE_ID` | `<repoId>::<path>` | Authoritative worktree correlation |
+| `ORCA_TERMINAL_HANDLE` | `term_<uuid>` | Matches `terminal list` handle |
+| `ORCA_PANE_KEY` | `<tabId>:<leafId>` | Pane identity; derivable from the terminal record |
+| `ORCA_TAB_ID` | `<uuid>` | Tab identity |
+| `ORCA_ORCHESTRATION_COMPATIBILITY_HOST_{ID,KIND,INCARNATION}` | `local` / `wsl` / `Ubuntu` | Host identity and kind |
+| `ORCA_CLI_COMMAND`, `ORCA_USER_DATA_PATH`, `ORCA_CODEX_HOME` | paths/labels | Environment wiring |
+| `ORCA_AGENT_HOOK_{ENDPOINT,ENV,PORT,VERSION}` | hook endpoint | Provider hook bridge |
+| `ORCA_AGENT_HOOK_TOKEN`, `ORCA_AGENT_LAUNCH_TOKEN` | **secret** | Never record, log, or echo |
+
+`ORCA_WORKSPACE_ID`, `ORCA_HOST_ID`, `ORCA_RUNTIME_ID`, `ORCA_ENVIRONMENT_ID`,
+`ORCA_SESSION_ID`, `ORCA_AGENT_SESSION_ID`, `ORCA_AGENT_PROFILE`, and
+`ORCA_AGENT_PROVIDER` were previously assumed and **do not exist** in a launched
+terminal. Two of the real variables are bearer secrets; the strategy's
+redaction rule applies to them specifically.
+
+A WSL checkout is reported as host `local` with kind `wsl` and a UNC path — the
+runtime is the local desktop even though the filesystem is reached over UNC.
+This answers the research question about WSL identity representation.
+
+### Terminal records
+
+A live `terminal list --json` record carries `handle`, `worktreeId`,
+`worktreePath`, `branch`, `connected`, `writable`, `title`, `preview`,
+`orphaned`, `incarnationId`, `leafId`, `ptyId`, `tabId`, and `lastOutputAt`
+[OBSERVED]. It carries **no** `paneKey`, `sessionId`, `state`, `resumable`, or
+`restoredFrom`. Consequences for a coordinator:
+
+- Pane identity is `<tabId>:<leafId>`, exactly the `ORCA_PANE_KEY` form, so it
+  is derivable from the record without an environment variable.
+- `orphaned` is the detached-PTY signal; `incarnationId` is what a reacquired
+  handle must be compared against after a runtime restart.
+- Hibernation and restore cannot be read from this command. Any lifecycle
+  classification that depends on a `state` or `resumable` field is inert
+  against a real runtime.
+
+`orca terminal list --include-visual-layouts --json` additionally returns a
+`visualLayouts` tree of `group → tabs[] → panes`, plus `topologyRevisions`,
+`totalCount`, and `truncated`.
+
+### Orchestration surface (Phase 4 prerequisite)
+
+The live 1.4.177 CLI exposes 29 `orchestration` commands: `ask`, `check`,
+`coordinator-start`, `coordinator-stop`, `dispatch`, `dispatch-show`,
+`gate-create`, `gate-list`, `gate-resolve`, `inbox`, `reply`, `reset`,
+`run-create`, `run-current`, `run-list`, `run-show`, `run-use`, `send`,
+`task-create`, `task-list`, `task-update`, `worker-abandon`, `worker-list`,
+`worker-read`, `worker-release`, `worker-retain`, `worker-show`,
+`worker-start`, `worker-stop` [OBSERVED]. This is the command inventory only:
+no Run, Task, Dispatch, or worker was created, and the lifecycle/state schemas
+behind these commands remain [UNRESOLVED]. Phase 4 mapping stays gated until
+those are captured the same way the worktree and terminal shapes were.
 
 Useful documented examples include:
 

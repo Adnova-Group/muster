@@ -6,8 +6,11 @@
       "orca status --json",
       "orca worktree list --json",
       "orca agent-context --json",
-      "orca terminal list --json"
-    ]
+      "orca terminal list --json",
+      "env | grep ^ORCA_  (from inside an Orca-launched terminal)",
+      "orca terminal list --include-visual-layouts --json"
+    ],
+    "secrets": "ORCA_*TOKEN* values replaced with <redacted-secret>; never record these."
   },
   "status": {
     "id": "local-status",
@@ -1705,11 +1708,11 @@
           "branch": "refs/heads/main",
           "tabId": "0b93092e-f912-4fe7-a2c1-8de992eb409a",
           "leafId": "247b2b19-c796-47e9-826e-848b5bbefd86",
-          "title": "muster",
+          "title": "<title>",
           "connected": true,
           "writable": true,
           "lastOutputAt": 1786339713074,
-          "preview": " for complex problems\u203a 2. Medium           Balances speed and reasoning depth for everyday tasks  3. High             Greater reasoning depth for complex problems \u203a Summarize recent commits gpt-5.6-sol medium \u00b7 ~/dev/muster \u00b7 gpt-5.6-sol \u00b7 medium \u00b7 muster \u00b7 main\n\u2022 Model changed to gpt-5.6-sol medium"
+          "preview": "<title>"
         },
         {
           "handle": "term_449c76fb-3827-4c69-b450-95e0ad52444a",
@@ -1721,11 +1724,11 @@
           "branch": "refs/heads/main",
           "tabId": "068a0c85-aa2e-4bd5-87f8-a29502496333",
           "leafId": "426d077b-3513-4540-af6f-34c3bc2ebdf8",
-          "title": "\u2810 Audit Muster Orca integration implementation",
+          "title": "<title>",
           "connected": true,
           "writable": true,
           "lastOutputAt": 1786373196741,
-          "preview": "claude '--dangerously-skip-permissions'\nuser@STAR:~/dev/muster$ claude '--dangerously-skip-permissions'\n4"
+          "preview": "<title>"
         }
       ],
       "topologyRevisions": {
@@ -1736,6 +1739,113 @@
     },
     "_meta": {
       "runtimeId": "00000000-0000-4000-8000-0000000runtime"
+    }
+  },
+  "terminalEnv": {
+    "ORCA_AGENT_HOOK_ENDPOINT": "/mnt/c/Users/user/AppData/Roaming/orca/agent-hooks/endpoint.cmd",
+    "ORCA_AGENT_HOOK_ENV": "production",
+    "ORCA_AGENT_HOOK_PORT": "62529",
+    "ORCA_AGENT_HOOK_TOKEN": "<redacted-secret>",
+    "ORCA_AGENT_HOOK_VERSION": "1",
+    "ORCA_AGENT_LAUNCH_TOKEN": "<redacted-secret>",
+    "ORCA_CLI_COMMAND": "orca-ide",
+    "ORCA_CODEX_HOME": "/home/user/.local/share/orca/codex-runtime-home/home",
+    "ORCA_ORCHESTRATION_COMPATIBILITY_HOST_ID": "local",
+    "ORCA_ORCHESTRATION_COMPATIBILITY_HOST_INCARNATION": "Ubuntu",
+    "ORCA_ORCHESTRATION_COMPATIBILITY_HOST_KIND": "wsl",
+    "ORCA_PANE_KEY": "068a0c85-aa2e-4bd5-87f8-a29502496333:426d077b-3513-4540-af6f-34c3bc2ebdf8",
+    "ORCA_TAB_ID": "068a0c85-aa2e-4bd5-87f8-a29502496333",
+    "ORCA_TERMINAL_HANDLE": "term_449c76fb-3827-4c69-b450-95e0ad52444a",
+    "ORCA_USER_DATA_PATH": "/mnt/c/Users/user/AppData/Roaming/orca",
+    "ORCA_WORKTREE_ID": "00000000-0000-4000-8000-00000000repo::\\\\wsl.localhost\\Ubuntu\\home\\user\\dev\\muster"
+  },
+  "terminalLayouts": {
+    "id": "17206610-d11f-4d9d-8ba7-f8bf5baa80c9",
+    "ok": true,
+    "result": {
+      "terminals": [
+        {
+          "handle": "term_651b3358-9ca3-49fb-8f49-ca4d89feefd7",
+          "ptyId": "00000000-0000-4000-8000-00000000repo::\\\\wsl.localhost\\Ubuntu\\home\\user\\dev\\muster@@8211b5c8",
+          "incarnationId": "1cde2207-3701-4e1f-b514-c0d52a04a6fe",
+          "orphaned": false,
+          "worktreeId": "00000000-0000-4000-8000-00000000repo::\\\\wsl.localhost\\Ubuntu\\home\\user\\dev\\muster",
+          "worktreePath": "\\\\wsl.localhost\\Ubuntu\\home\\user\\dev\\muster",
+          "branch": "refs/heads/main",
+          "tabId": "0b93092e-f912-4fe7-a2c1-8de992eb409a",
+          "leafId": "247b2b19-c796-47e9-826e-848b5bbefd86",
+          "title": "<title>",
+          "connected": true,
+          "writable": true,
+          "lastOutputAt": 1786373732985,
+          "preview": "<title>"
+        },
+        {
+          "handle": "term_449c76fb-3827-4c69-b450-95e0ad52444a",
+          "ptyId": "00000000-0000-4000-8000-00000000repo::\\\\wsl.localhost\\Ubuntu\\home\\user\\dev\\muster@@a4531154",
+          "incarnationId": "27006b0a-c646-48d4-b6b6-976eab847ca5",
+          "orphaned": false,
+          "worktreeId": "00000000-0000-4000-8000-00000000repo::\\\\wsl.localhost\\Ubuntu\\home\\user\\dev\\muster",
+          "worktreePath": "\\\\wsl.localhost\\Ubuntu\\home\\user\\dev\\muster",
+          "branch": "refs/heads/main",
+          "tabId": "068a0c85-aa2e-4bd5-87f8-a29502496333",
+          "leafId": "426d077b-3513-4540-af6f-34c3bc2ebdf8",
+          "title": "<title>",
+          "connected": true,
+          "writable": true,
+          "lastOutputAt": 1786373915648,
+          "preview": "<title>"
+        }
+      ],
+      "visualLayouts": [
+        {
+          "worktreeId": "00000000-0000-4000-8000-00000000repo::\\\\wsl.localhost\\Ubuntu\\home\\user\\dev\\muster",
+          "worktreePath": "\\\\wsl.localhost\\Ubuntu\\home\\user\\dev\\muster",
+          "root": {
+            "type": "group",
+            "groupId": "d4dde8f6-635e-40d3-a597-f261bb791bb7",
+            "activeTabId": "068a0c85-aa2e-4bd5-87f8-a29502496333",
+            "tabs": [
+              {
+                "tabId": "068a0c85-aa2e-4bd5-87f8-a29502496333",
+                "title": "<title>",
+                "activeLeafId": "426d077b-3513-4540-af6f-34c3bc2ebdf8",
+                "panes": {
+                  "type": "terminal",
+                  "handle": "term_449c76fb-3827-4c69-b450-95e0ad52444a",
+                  "tabId": "068a0c85-aa2e-4bd5-87f8-a29502496333",
+                  "leafId": "426d077b-3513-4540-af6f-34c3bc2ebdf8",
+                  "title": "<title>",
+                  "connected": true,
+                  "active": true
+                }
+              },
+              {
+                "tabId": "0b93092e-f912-4fe7-a2c1-8de992eb409a",
+                "title": "<title>",
+                "activeLeafId": "247b2b19-c796-47e9-826e-848b5bbefd86",
+                "panes": {
+                  "type": "terminal",
+                  "handle": "term_651b3358-9ca3-49fb-8f49-ca4d89feefd7",
+                  "tabId": "0b93092e-f912-4fe7-a2c1-8de992eb409a",
+                  "leafId": "247b2b19-c796-47e9-826e-848b5bbefd86",
+                  "title": "<title>",
+                  "connected": true,
+                  "active": true
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "topologyRevisions": {
+        "c89e3020-0147-4d7f-8342-b2776f85f03f::\\\\wsl.localhost\\Ubuntu\\home\\ryan\\dev\\muster": 96
+      },
+      "totalCount": 2,
+      "truncated": false
+    },
+    "_meta": {
+      "runtimeId": "ff1211b6-ab4d-41cb-81d9-6f854e45ccd0"
     }
   }
 }

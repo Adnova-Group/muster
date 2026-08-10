@@ -127,6 +127,21 @@ function normalizeTerminal(context) {
   if (isObject(raw) && typeof raw.resumable === "boolean") result.resumable = raw.resumable;
   const restoredFrom = isObject(raw) ? rawField(raw, "restored_from", "restoredFrom") : null;
   if (restoredFrom !== null) result.restored_from = string(restoredFrom, "orca terminal restored_from");
+  // Fields a live Orca terminal record actually carries. `incarnation_id` is the
+  // only durable way to tell a reacquired handle from a stale one across a
+  // runtime restart, so it belongs in the receipt.
+  for (const [field, label] of [
+    ["tab_id", "orca terminal tab_id"],
+    ["leaf_id", "orca terminal leaf_id"],
+    ["pty_id", "orca terminal pty_id"],
+    ["incarnation_id", "orca terminal incarnation_id"],
+  ]) {
+    const value = isObject(raw) ? rawField(raw, field, field.replace(/_(\w)/g, (_, c) => c.toUpperCase())) : null;
+    if (value !== null) result[field] = string(value, label);
+  }
+  for (const flag of ["orphaned", "writable"]) {
+    if (isObject(raw) && typeof raw[flag] === "boolean") result[flag] = raw[flag];
+  }
   return result;
 }
 

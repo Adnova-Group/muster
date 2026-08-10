@@ -42,6 +42,10 @@ const execFile = promisify(execFileCallback);
  *   is never sent to a remote runtime or treated as a remote identity.
  * - Environment variables are correlation hints only. CLI identity wins, and a
  *   conflicting Orca worktree env id fails closed instead of merging identities.
+ *   The set below was captured from inside a live Orca-launched terminal; names
+ *   that were previously guessed and do not exist are gone. Two of the real
+ *   variables -- ORCA_AGENT_HOOK_TOKEN and ORCA_AGENT_LAUNCH_TOKEN -- are
+ *   secrets and are never read, recorded, or echoed by this module.
  *
  * The returned record is intentionally correlation metadata, not authority for
  * either Orca or Muster task state. All fields are bounded and raw CLI output
@@ -61,6 +65,36 @@ const DEFAULT_TIMEOUT_MS = 5_000;
 const DEFAULT_MAX_BUFFER = 2 * 1024 * 1024;
 const READY_RUNTIME_STATES = new Set(["ready"]);
 const RECONNECTING_STATES = new Set(["stale_bootstrap", "reloading", "reconnecting", "restoring"]);
+
+/**
+ * Verified against a live Orca-launched terminal (1.4.177, WSL host).
+ * `observed` names were present; `tolerated` names were not and are read only as
+ * optional fallbacks for hosts this capture could not cover. `secret` names are
+ * present and must never leave this process.
+ */
+export const ORCA_ENVIRONMENT = Object.freeze({
+  observed: Object.freeze([
+    "ORCA_WORKTREE_ID", "ORCA_TERMINAL_HANDLE", "ORCA_PANE_KEY", "ORCA_TAB_ID",
+    "ORCA_CLI_COMMAND", "ORCA_USER_DATA_PATH", "ORCA_CODEX_HOME",
+    "ORCA_ORCHESTRATION_COMPATIBILITY_HOST_ID",
+    "ORCA_ORCHESTRATION_COMPATIBILITY_HOST_KIND",
+    "ORCA_ORCHESTRATION_COMPATIBILITY_HOST_INCARNATION",
+    "ORCA_AGENT_HOOK_ENDPOINT", "ORCA_AGENT_HOOK_ENV", "ORCA_AGENT_HOOK_PORT",
+    "ORCA_AGENT_HOOK_VERSION",
+  ]),
+  tolerated: Object.freeze([
+    "ORCA_RUNTIME_ID", "ORCA_ENVIRONMENT_ID", "ORCA_SESSION_ID",
+    "ORCA_AGENT_SESSION_ID", "ORCA_AGENT_PROFILE", "ORCA_AGENT_PROVIDER",
+  ]),
+  secret: Object.freeze(["ORCA_AGENT_HOOK_TOKEN", "ORCA_AGENT_LAUNCH_TOKEN"]),
+});
+
+/** A live ORCA_PANE_KEY is `<tabId>:<leafId>`, matching the visual layout tree. */
+function panePartsFromKey(paneKey) {
+  if (typeof paneKey !== "string") return null;
+  const [tabId, leafId] = paneKey.split(":");
+  return tabId && leafId ? { tabId, leafId } : null;
+}
 
 const REASON = Object.freeze({
   COMMAND_FAILED: "command-failed",
@@ -337,9 +371,17 @@ function hostIdentity(worktree, env) {
     worktree.connectionId,
     worktree.host,
     worktree.environmentId,
-    env.ORCA_HOST_ID,
+    // The real variable, verified in a live terminal. `ORCA_HOST_ID` was a guess
+    // and does not exist.
+    env.ORCA_ORCHESTRATION_COMPATIBILITY_HOST_ID,
   );
-  if (!raw || /^(local|localhost)$/i.test(raw)) return { host: "local", kind: "local" };
+  // Orca reports a WSL checkout as host `local` with kind `wsl`: the runtime is
+  // the local desktop, but the filesystem is reached over UNC. Treating it as
+  // remote would force a server-side selector Orca does not want here.
+  const declaredKind = firstString(env.ORCA_ORCHESTRATION_COMPATIBILITY_HOST_KIND);
+  if (!raw || /^(local|localhost)$/i.test(raw)) {
+    return { host: "local", kind: declaredKind === "wsl" ? "wsl" : "local" };
+  }
   const lower = raw.toLowerCase();
   if (lower.startsWith("ssh:") || lower === "ssh" || lower.includes("ssh")) {
     return { host: raw, kind: "ssh" };
@@ -365,14 +407,28 @@ function normalizeContext({ status, worktreeInfo, terminal, env, agentContext })
   const { worktree, id, repoId, path, branch } = worktreeInfo;
   const host = hostIdentity(worktree, env);
   const runtimeId = firstString(status.runtime.runtimeId, env.ORCA_RUNTIME_ID);
+  // Environment identity tracks the HOST, not the kind: a WSL checkout is still
+  // hosted locally, so it keeps the `local` environment sentinel that the
+  // receipt and cleanup invariants pair with a `local` host.
   const environmentId = firstString(
     worktree.runtimeOwnerEnvironmentId,
     worktree.environmentId,
     env.ORCA_ENVIRONMENT_ID,
-    host.kind === "local" ? "local" : null,
+    host.host === "local" ? "local" : null,
   );
   const terminalHandle = firstString(env.ORCA_TERMINAL_HANDLE, terminal?.handle);
-  const paneKey = firstString(env.ORCA_PANE_KEY, terminal?.paneKey, terminal?.pane_key);
+  // A live terminal record has no `paneKey`. It has `tabId` and `leafId`, and a
+  // live ORCA_PANE_KEY is exactly `<tabId>:<leafId>` -- so the pane key is
+  // derivable from the record rather than dependent on an environment variable.
+  const derivedPaneKey = terminal?.tabId && terminal?.leafId
+    ? `${terminal.tabId}:${terminal.leafId}`
+    : null;
+  const paneKey = firstString(env.ORCA_PANE_KEY, terminal?.paneKey, terminal?.pane_key, derivedPaneKey);
+  const paneParts = panePartsFromKey(paneKey);
+  const tabId = firstString(env.ORCA_TAB_ID, terminal?.tabId, paneParts?.tabId);
+  const leafId = firstString(terminal?.leafId, paneParts?.leafId);
+  // No live terminal record exposes a provider session id, and no ORCA_SESSION_ID
+  // exists in a launched terminal. This stays null rather than pretending.
   const sessionId = firstString(
     env.ORCA_SESSION_ID,
     env.ORCA_AGENT_SESSION_ID,
@@ -448,6 +504,17 @@ function normalizeContext({ status, worktreeInfo, terminal, env, agentContext })
       pane_key: paneKey,
       session_id: sessionId,
       connected: terminal.connected === true,
+      // Real fields on a live `terminal list` record. `orphaned` is Orca's
+      // actual detached-PTY signal; `incarnationId` changes across a runtime
+      // restart and is what a reacquired handle must be compared against.
+      ...(firstString(terminal.tabId) ? { tab_id: tabId } : {}),
+      ...(firstString(terminal.leafId) ? { leaf_id: leafId } : {}),
+      ...(firstString(terminal.ptyId) ? { pty_id: firstString(terminal.ptyId) } : {}),
+      ...(firstString(terminal.incarnationId) ? { incarnation_id: firstString(terminal.incarnationId) } : {}),
+      ...(typeof terminal.orphaned === "boolean" ? { orphaned: terminal.orphaned } : {}),
+      ...(typeof terminal.writable === "boolean" ? { writable: terminal.writable } : {}),
+      // Retained as optional: no observed record carries these, but a hibernating
+      // or restoring runtime may add them and they must not be silently dropped.
       ...(firstString(terminal.state, terminal.status) ? { state: firstString(terminal.state, terminal.status) } : {}),
       ...(typeof terminal.resumable === "boolean" ? { resumable: terminal.resumable } : {}),
       ...(firstString(terminal.restoredFrom, terminal.restored_from) ? {

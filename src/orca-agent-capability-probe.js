@@ -160,18 +160,54 @@ export function orcaHibernationEligibility(provider) {
 }
 
 /**
- * The value Orca's `--agent` flag expects, per provider profile.
+ * The value Orca's `--agent` flag expects, per provider.
  *
- * A Muster profile id is not an Orca agent name. `cowork` and `chatgpt-work`
- * are Muster-side providers that do not appear in Orca's supported-agent
- * catalog at all, so they map to null and placement must refuse them rather
- * than emit a flag Orca cannot resolve.
+ * A Muster profile id is not an Orca agent name. The catalog below is Orca's
+ * supported-agent list [Orca docs, Supported agents]; membership in it is what
+ * makes a provider placeable. `cowork` and `chatgpt-work` are Muster-side
+ * providers absent from that catalog, so they map to null and placement refuses
+ * them rather than emitting a flag Orca cannot resolve.
+ *
+ * Being placeable is NOT a capability claim. A provider here with no evidence
+ * profile still reports every surface as UNKNOWN; see PLACEABLE_SURFACES below
+ * for the one surface Orca itself can vouch for.
  */
 export const ORCA_AGENT_NAMES = Object.freeze({
   "claude-code": "claude",
+  "claude-agent-teams": "claude-agent-teams",
   codex: "codex",
   kimi: "kimi",
   hermes: "hermes",
+  gemini: "gemini",
+  grok: "grok",
+  copilot: "copilot",
+  opencode: "opencode",
+  pi: "pi",
+  omp: "omp",
+  antigravity: "antigravity",
+  ante: "ante",
+  aider: "aider",
+  goose: "goose",
+  amp: "amp",
+  kilocode: "kilocode",
+  kiro: "kiro",
+  "charm-crush": "charm-crush",
+  auggie: "auggie",
+  autohand: "autohand",
+  cline: "cline",
+  codebuff: "codebuff",
+  "command-code": "command-code",
+  continue: "continue",
+  "cursor-cli": "cursor-cli",
+  devin: "devin",
+  droid: "droid",
+  "mistral-vibe": "mistral-vibe",
+  minimax: "minimax",
+  "mimo-code": "mimo-code",
+  "qwen-code": "qwen-code",
+  "rovo-dev": "rovo-dev",
+  openclaw: "openclaw",
+  trae: "trae",
   cowork: null,
   "chatgpt-work": null,
 });
@@ -180,6 +216,17 @@ export function orcaAgentName(profile) {
   const key = profileKey(profile);
   return key === null ? null : ORCA_AGENT_NAMES[key] ?? null;
 }
+
+/**
+ * The one capability Orca itself establishes for any agent it launches: the
+ * process starts in the selected worktree. Orca's supported-agent page states
+ * the mechanism plainly -- "the agent combobox just launches a process in a
+ * terminal" -- and the read-only context adapter independently proves the
+ * worktree path. Every other surface stays UNKNOWN without a provider profile.
+ */
+const PLACEABLE_SURFACES = Object.freeze({
+  "working-directory": status("SUPPORTED", "Orca launches the selected agent in the worktree it manages"),
+});
 
 function isObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -225,11 +272,22 @@ function normalizeProfile(key, supplied = null) {
   const known = ORCA_AGENT_CAPABILITY_PROFILES[key];
   const source = isObject(supplied) ? supplied : known;
   if (!source || !isObject(source.capabilities)) {
+    // A provider in Orca's catalog with no Muster evidence profile is not a
+    // blank: Orca vouches for the working directory. Everything else stays
+    // UNKNOWN, which is what keeps this from becoming an inferred-support path.
+    const placeable = orcaAgentName(key) !== null;
     return {
       id: key || "unknown",
       provider: key || "unknown",
-      evidence: "unverified provider profile",
-      capabilities: unknownCapabilities("unverified provider profile"),
+      evidence: placeable
+        ? "Orca supported-agent catalog; no Muster evidence profile"
+        : "unverified provider profile",
+      capabilities: {
+        ...unknownCapabilities(placeable
+          ? "no Muster evidence profile for this Orca agent"
+          : "unverified provider profile"),
+        ...(placeable ? PLACEABLE_SURFACES : {}),
+      },
     };
   }
   const capabilities = {};

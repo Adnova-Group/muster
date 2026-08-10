@@ -104,6 +104,10 @@ import {
   writeContainedFile,
 } from "./fs-safe.js";
 import { readDispatchReceipts, runKimiProcess } from "./dispatch-receipts.js";
+import { discoverOrcaContext } from "./orca-context-adapter.js";
+import { probeOrcaAgentCapabilities } from "./orca-agent-capability-probe.js";
+import { readOrcaStatusBridge } from "./orca-status-bridge.js";
+import { evaluateOrcaWorktreeCleanup } from "./orca-worktree-cleanup.js";
 import {
   DESIGN_SOURCE,
   DESIGN_WORKFLOWS,
@@ -160,7 +164,7 @@ const USAGE = [
   // diagnose/audit/issue/assess/steer/scope
   "diagnose <symptom>|--ci <file>|audit [--backlog] [path...]|issue <ref>|assess <outcome>|steer [--harness kimi [--session <id>] [--prompt-id <id>]] <message>|scope [text]|",
   // doctor/conformance/scratchpad/profile/install/signals/hygiene/help
-  "doctor [--codex]|codex-conformance [YYYY/MM/DD | --days N] [--cwd <repo>] [--current-pins-only]|scratchpad <runId>|profile|install <codex [--scope project-or-user]|chatgpt-work --connection-id <id> --profile <pro-safe|full> [--scope project|user] [--allow-full-actions]|kimi [--probe]> [--dry-run]|uninstall <codex [--scope project-or-user]|kimi> [--dry-run]|signals [dir]|hygiene [--reap] [--json] [--backlog <file>] [--worktree-threshold N] [--zombie-stale-min N] [--claim-stale-min N]|help [command]>",
+  "orca <status|context|capabilities [--profile <id>]|bridge [--profile <id>]|cleanup-plan <input.json>> [--command <bin>]|doctor [--codex]|codex-conformance [YYYY/MM/DD | --days N] [--cwd <repo>] [--current-pins-only]|scratchpad <runId>|profile|install <codex [--scope project-or-user]|chatgpt-work --connection-id <id> --profile <pro-safe|full> [--scope project|user] [--allow-full-actions]|kimi [--probe]> [--dry-run]|uninstall <codex [--scope project-or-user]|kimi> [--dry-run]|signals [dir]|hygiene [--reap] [--json] [--backlog <file>] [--worktree-threshold N] [--zombie-stale-min N] [--claim-stale-min N]|help [command]>",
 ].join("");
 
 function out(obj) { process.stdout.write(JSON.stringify(obj, null, 2) + "\n"); }
@@ -448,6 +452,64 @@ async function handleCodexPlanCommand(rest) {
       interrupt: Boolean(launched?.threadId && launched?.turnId && !turnFinished),
     });
   }
+}
+
+// Orca coexistence: every subcommand here is READ-ONLY. Discovery, correlation,
+// and a cleanup DRY-RUN that prints the operations it would authorize without
+// running them. Nothing in this group mutates Orca state, and the mutating
+// cleanup executor is deliberately not exposed: worktree removal takes the
+// branch with it, so it stays behind the merge gate that proved the receipt.
+async function handleOrcaCommand(cmd, rest) {
+  if (cmd !== "orca") return false;
+  const usage = "orca <status|context|capabilities [--profile <id>]|bridge [--profile <id>]|cleanup-plan <input.json>> [--command <orca-binary>]";
+  const sub = rest[0];
+  const command = flagValue(rest, "--command") || process.env.MUSTER_ORCA_CLI || "orca";
+  const contextOptions = { command, cwd: process.cwd() };
+
+  if (sub === "status" || sub === "context") {
+    const result = await discoverOrcaContext(contextOptions);
+    if (sub === "context") { out(result); return true; }
+    out({
+      available: result.available,
+      availability: result.availability,
+      reason: result.reason,
+      detail: result.detail,
+      diagnostics: result.diagnostics,
+      ...(result.context ? {
+        worktree_id: result.context.orca_worktree_id,
+        worktree_path: result.context.worktree_path,
+        branch: result.context.branch,
+        host: result.context.host,
+        environment_kind: result.context.environment_kind,
+        remote_selector: result.context.remote_selector,
+        is_main_worktree: result.context.is_main_worktree,
+        terminal_handle: result.context.terminal_handle,
+        runtime: result.context.runtime,
+      } : {}),
+    });
+    return true;
+  }
+  if (sub === "capabilities") {
+    out(await probeOrcaAgentCapabilities({ profile: flagValue(rest, "--profile"), contextOptions }));
+    return true;
+  }
+  if (sub === "bridge") {
+    out(await readOrcaStatusBridge({ profile: flagValue(rest, "--profile"), contextOptions }));
+    return true;
+  }
+  if (sub === "cleanup-plan") {
+    const file = rest.slice(1).find(a => !a.startsWith("-"));
+    if (!file) fail(`${usage}: cleanup-plan needs an evidence JSON file`);
+    const decision = evaluateOrcaWorktreeCleanup(
+      JSON.parse(await readBoundedCliText(file, MAX_STDIN_BYTES, "orca cleanup evidence")),
+    );
+    // A dry run must never read as an execution. Say so in the payload.
+    out({ dryRun: true, executed: false, ...decision });
+    if (!decision.authorized) process.exitCode = 2;
+    return true;
+  }
+  fail(`${usage}: unknown subcommand ${JSON.stringify(sub ?? "")}`);
+  return true;
 }
 
 async function handleCodexCommand(cmd, rest) {
@@ -1593,6 +1655,7 @@ async function main() {
       process.stdout.write(USAGE + "\n");
       return;
     }
+    if (await handleOrcaCommand(cmd, rest)) return;
     if (await handleKimiCommand(cmd, rest)) return;
     if (await handleCodexCommand(cmd, rest)) return;
     if (await handleChatgptCommand(cmd, rest)) return;

@@ -502,6 +502,16 @@ export function readNoFollowRegularSync(path, { maxBytes, label } = {}) {
 
 // --- Atomic writes -----------------------------------------------------------
 
+// Directory fsync is a POSIX durability barrier with no Windows counterpart:
+// there is no directory-entry sync API, and opening a directory handle to
+// sync() it raises EPERM (verified on Windows node 24.11/26). Left unguarded it
+// failed the WHOLE atomicWrite there -- a lost write, not merely a lost
+// barrier -- taking down every fsyncDir caller (kimi install/uninstall
+// receipts, init.js, design.js). The rename is still atomic and the staged
+// bytes are still fsynced, so the barrier degrades where it cannot exist and
+// stays mandatory everywhere it can.
+export const DIRECTORY_FSYNC_SUPPORTED = process.platform !== "win32";
+
 // Temp-write-then-rename publish: stage the bytes at a fresh exclusive
 // no-follow temp in the target's own directory (same filesystem, so the rename
 // is atomic), fsync the temp, optionally run a caller hook AFTER staging but
@@ -512,7 +522,9 @@ export function readNoFollowRegularSync(path, { maxBytes, label } = {}) {
 //
 // Options:
 //   fsync        fsync the staged temp before rename (default true).
-//   fsyncDir     fsync the parent directory after rename (default false).
+//   fsyncDir     fsync the parent directory after rename (default false), on
+//                the platforms that have such a barrier -- see
+//                DIRECTORY_FSYNC_SUPPORTED.
 //   mode         creation mode for the temp (default 0o600).
 //   tempName     (targetPath) => temp path, to preserve a caller's historical
 //                temp naming (init.js's `.muster-init-tmp-` prefix is load-
@@ -547,7 +559,7 @@ export async function atomicWrite(path, bytes, {
     handle = null;
     if (beforeRename) await beforeRename(temp);
     await rename(temp, path);
-    if (fsyncDir) {
+    if (fsyncDir && DIRECTORY_FSYNC_SUPPORTED) {
       const dirHandle = await open(parent, fsConstants.O_RDONLY);
       try { await dirHandle.sync(); } finally { await dirHandle.close(); }
     }

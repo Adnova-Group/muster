@@ -8,7 +8,7 @@ import { mkdir, open, readFile, readdir, unlink, writeFile } from "node:fs/promi
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { trackedMkdtemp as mkdtemp } from "../test-support/helpers.js";
-import { runCodexStrictConfigCheck } from "../src/codex-strict-config.js";
+import { normalizeStrictConfigDiagnostic, runCodexStrictConfigCheck } from "../src/codex-strict-config.js";
 import { runCodexInstall } from "../src/codex-install.js";
 import { runCodexDoctor } from "../src/codex-doctor.js";
 import { repoRoot } from "../test-support/codex-helpers.js";
@@ -226,7 +226,12 @@ test("strict config: install validates the complete write and restores config by
     runCodexInstall({
       cwd, home, repoRoot,
       execFile: async () => { throw new Error("codex absent"); },
+      // `baseline: true` re-parses the untouched pre-edit bytes to decide
+      // whether muster's own edit caused the rejection. Here it did not exist
+      // before the edit, so the baseline parses clean and the install must
+      // still hard-block.
       strictConfigRunner: async options => {
+        if (options.baseline) return { ok: true, modelTurnEvents: 0 };
         const shared = options.configSnapshots.shared.bytes.toString("utf8");
         const project = options.configSnapshots.project.bytes.toString("utf8");
         observedCompleteWrite = /max_concurrent_threads_per_session/.test(shared)
@@ -730,4 +735,110 @@ test("strict config: doctor reports the same non-billable parser boundary", asyn
   const check = report.checks.find(item => item.name === "codex-config-strict");
   assert.equal(check?.ok, false);
   assert.match(check?.detail || "", /timed out after 2500ms/);
+});
+
+// --- third-party unknown fields must not own muster's install gate -----------
+//
+// The preflight validates the WHOLE candidate config, so a key some other
+// writer put in the shared file blocked every install even though muster's own
+// edit was fine. OpenAI's primary runtime writes `[features] rmcp_client` into
+// ~/.codex/config.toml, and that field is absent from the OSS Codex schema in
+// both 0.147.0 and 0.148.0-alpha.6 (verified against both binaries), so there
+// is no release that resolves it. Muster now re-parses the untouched pre-edit
+// bytes and only owns a failure its own edit introduced.
+
+function installWithParser(fixture, runner) {
+  return runCodexInstall({
+    ...fixture,
+    repoRoot,
+    execFile: async () => { throw new Error("codex absent"); },
+    strictConfigRunner: runner
+  });
+}
+
+async function strictFixture(label) {
+  const tmp = await mkdtemp(join(tmpdir(), `muster-strict-${label}-`));
+  const cwd = join(tmp, "project"), home = join(tmp, "home");
+  const sharedPath = join(home, ".codex", "config.toml");
+  const projectPath = join(cwd, ".codex", "config.toml");
+  await mkdir(join(home, ".codex"), { recursive: true });
+  await mkdir(join(cwd, ".codex"), { recursive: true });
+  await writeFile(sharedPath, "[features]\nrmcp_client = true\n");
+  await writeFile(projectPath, "model = \"project-choice\"\n");
+  return { cwd, home, sharedPath, projectPath };
+}
+
+test("strict config: a pre-existing unknown field muster does not own is reported, not blocking", async () => {
+  const fixture = await strictFixture("preexisting");
+  let baselineParses = 0;
+  const result = await installWithParser(fixture, async options => {
+    if (options.baseline) baselineParses++;
+    // identical diagnostic either way: the field is in the live bytes muster
+    // never touched, so it cannot have been introduced by muster's edit
+    throw new Error(`Codex app-server strict config validation failed: Error: ${fixture.sharedPath}:2:1: unknown configuration field \`features.rmcp_client\``);
+  });
+  assert.equal(baselineParses > 0, true, "a candidate failure must be re-checked against the pre-edit bytes");
+  assert.match(result.strictConfig?.preexisting || "", /unknown configuration field `features\.rmcp_client`/);
+  assert.equal(result.strictConfig?.preexisting.includes(fixture.sharedPath), false, "the run-varying path must be normalised out");
+  // the install actually completed rather than rolling back
+  assert.match(await readFile(join(fixture.cwd, ".codex", "agents", ".muster-managed.json"), "utf8"), /"owner": "muster"/);
+});
+
+test("strict config: an unknown field under a table muster writes still blocks, even when pre-existing", async () => {
+  const fixture = await strictFixture("owned-table");
+  await assert.rejects(installWithParser(fixture, async () => {
+    throw new Error(`Codex app-server strict config validation failed: Error: ${fixture.sharedPath}:2:1: unknown configuration field \`agents.mystery\``);
+  }), /unknown configuration field `agents\.mystery`/);
+  await assert.rejects(readFile(join(fixture.cwd, ".codex", "agents", ".muster-managed.json")), /ENOENT/);
+});
+
+test("strict config: a failure that is not an unknown field still blocks, even when the baseline fails identically", async () => {
+  const fixture = await strictFixture("malformed");
+  await assert.rejects(installWithParser(fixture, async () => {
+    throw new Error(`Codex app-server strict config validation failed: Error: ${fixture.sharedPath}:9:4: unclosed table, expected \`]\``);
+  }), /unclosed table/);
+  await assert.rejects(readFile(join(fixture.cwd, ".codex", "agents", ".muster-managed.json")), /ENOENT/);
+});
+
+test("strict config: a different unknown field before and after the edit is attributed to muster and blocks", async () => {
+  const fixture = await strictFixture("diverging");
+  await assert.rejects(installWithParser(fixture, async options => {
+    throw new Error(options.baseline
+      ? `Error: ${fixture.sharedPath}:2:1: unknown configuration field \`features.rmcp_client\``
+      : `Error: ${fixture.sharedPath}:2:1: unknown configuration field \`features.something_else\``);
+  }), /unknown configuration field `features\.something_else`/);
+  await assert.rejects(readFile(join(fixture.cwd, ".codex", "agents", ".muster-managed.json")), /ENOENT/);
+});
+
+test("normalizeStrictConfigDiagnostic: drops run-varying paths and positions, keeps what the parser objected to", () => {
+  const linux = normalizeStrictConfigDiagnostic(
+    "WARNING: proceeding, even though we could not create PATH aliases: /tmp/muster-codex-strict-stage-AbC123\nError: /home/u/.codex/config.toml:55:1: unknown configuration field `features.rmcp_client`");
+  const windows = normalizeStrictConfigDiagnostic(
+    "WARNING: proceeding, even though we could not create PATH aliases: C:\\Temp\\muster-codex-strict-stage-XyZ789\nError: C:\\Users\\u\\.codex\\config.toml:341:1: unknown configuration field `features.rmcp_client`");
+  assert.equal(linux, windows, "the same objection from two hosts must compare equal");
+  assert.match(linux, /unknown configuration field `features\.rmcp_client`/);
+  assert.equal(/muster-codex-strict-stage/.test(linux), false);
+  assert.notEqual(linux, normalizeStrictConfigDiagnostic("Error: /home/u/.codex/config.toml:55:1: unknown configuration field `features.other`"));
+});
+
+test("strict config: doctor attributes a foreign unknown field instead of implying muster owns it", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-strict-doctor-foreign-"));
+  const base = { root: repoRoot, cwd: join(tmp, "project"), codexHome: join(tmp, "codex-home"),
+    execFile: async () => { throw new Error("codex absent"); } };
+  const diagnostic = field => async () => {
+    throw new Error(`Error: /home/u/.codex/config.toml:63:1: unknown configuration field \`${field}\``);
+  };
+
+  const foreign = await runCodexDoctor({ ...base, strictConfigRunner: diagnostic("features.rmcp_client") });
+  const foreignCheck = foreign.checks.find(item => item.name === "codex-config-strict");
+  // still red: the config really does not strict-parse, and doctor reports reality
+  assert.equal(foreignCheck?.ok, false);
+  assert.match(foreignCheck?.detail || "", /unknown configuration field `features\.rmcp_client`/);
+  assert.match(foreignCheck?.detail || "", /not written by muster/);
+
+  const owned = await runCodexDoctor({ ...base, strictConfigRunner: diagnostic("agents.mystery") });
+  const ownedCheck = owned.checks.find(item => item.name === "codex-config-strict");
+  assert.equal(ownedCheck?.ok, false);
+  assert.equal(/not written by muster/.test(ownedCheck?.detail || ""), false,
+    "a field under a table muster writes must never be attributed away");
 });

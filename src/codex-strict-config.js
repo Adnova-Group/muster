@@ -3,6 +3,39 @@ import { chmod, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/p
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
+export const UNKNOWN_CONFIG_FIELD_PATTERN = /unknown configuration field `([^`]+)`/;
+// Root tables muster writes into, or that exist in the shared config only
+// because muster acted: the thread-limit key and the agent declarations both
+// live under [agents], `codex plugin marketplace add`/`plugin add` write
+// [marketplaces.*] and [plugins.*], and muster reconciles [hooks.state]. An
+// unknown field rooted in any of these could plausibly be muster's doing, so
+// it is never disowned. See preexistingStrictFailure.
+export const MUSTER_OWNED_CONFIG_ROOTS = new Set(["agents", "marketplaces", "plugins", "hooks"]);
+
+// Reduce a native parser diagnostic to WHAT it objected to, dropping the parts
+// that legitimately differ between the candidate and baseline runs: the
+// per-run staging directory named in the PATH-alias WARNING, and the
+// file:line:col position, which shifts when muster's edit changes the file.
+export function normalizeStrictConfigDiagnostic(message) {
+  return String(message || "")
+    .split(/\r?\n/)
+    .filter(line => !/^\s*WARNING\b/.test(line))
+    .join(" ")
+    .replace(/\S*[\\/]\S*/g, "<path>")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Doctor reports the live config as it is, so a foreign unknown field stays a
+// red check -- the config really does not strict-parse. Name the owner so the
+// operator does not read it as muster's to fix, and say that install is not
+// gated on it. Muster-owned roots are never attributed away.
+export function foreignConfigFieldAttribution(message) {
+  const field = String(message || "").match(UNKNOWN_CONFIG_FIELD_PATTERN)?.[1];
+  if (!field || MUSTER_OWNED_CONFIG_ROOTS.has(field.split(".")[0])) return message;
+  return `${message} (\`${field}\` is not written by muster: another Codex config writer owns it, and muster install no longer blocks on it)`;
+}
+
 export const CODEX_STRICT_CONFIG_TIMEOUT_MS = 2_500;
 export const CODEX_STRICT_CONFIG_OUTPUT_CAP = 64 * 1024;
 

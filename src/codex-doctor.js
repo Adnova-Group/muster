@@ -17,7 +17,7 @@ import {
   codexThreadLimitsMeetFloor,
   readCodexThreadLimits
 } from "./codex-thread-limits.js";
-import { runCodexStrictConfigCheck } from "./codex-strict-config.js";
+import { foreignConfigFieldAttribution, runCodexStrictConfigCheck } from "./codex-strict-config.js";
 import { verifyCodexConfigRetirementReceipt } from "./codex-install.js";
 
 // codex-path-shadow (backlog item run4-polish-pair; security-hardened by
@@ -800,7 +800,12 @@ async function initializeDoctorRun({
     checks.push({ name: "codex-config-strict", ok: parsed?.ok === true && parsed?.modelTurnEvents === 0,
       detail: "Codex app-server strict parser accepted shared and project config with zero model-turn events" });
   } catch (error) {
-    checks.push({ name: "codex-config-strict", ok: false, detail: error.message });
+    // Stay red -- the config genuinely does not strict-parse -- but say whose
+    // key it is. An unknown field outside the tables muster writes is another
+    // writer's (OpenAI's primary runtime writes `[features] rmcp_client`, a
+    // field absent from the OSS Codex schema), and install no longer blocks on
+    // it, so the operator should not read this as muster's to fix.
+    checks.push({ name: "codex-config-strict", ok: false, detail: foreignConfigFieldAttribution(error.message) });
   }
   const retirementTargets = [...new Set([
     join(codexHome || env.CODEX_HOME || join(homedir(), ".codex"), "config.toml"),

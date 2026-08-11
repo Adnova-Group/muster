@@ -16,7 +16,7 @@ import {
   ensureCodexThreadLimits,
   restoreCodexThreadLimits
 } from "./codex-thread-limits.js";
-import { runCodexStrictConfigCheck } from "./codex-strict-config.js";
+import { foreignConfigFieldAttribution, MUSTER_OWNED_CONFIG_ROOTS, normalizeStrictConfigDiagnostic, runCodexStrictConfigCheck, UNKNOWN_CONFIG_FIELD_PATTERN } from "./codex-strict-config.js";
 import {
   execFileDefault, MANIFEST, codexHome, configDir,
   codexProjectRoot, codexInvocationRoot, codexActivationConfigDirs, ordinaryDirectoryPath,
@@ -794,6 +794,53 @@ async function writeCodexDeclarationsAndVerifyHookActivation(ctx) {
   }
 }
 
+// A strict-config rejection is muster's to own only when muster's edit CAUSED
+// it. The parser validates the whole candidate, so any key another writer put
+// in the shared config blocked every install: OpenAI's primary runtime writes
+// `[features] rmcp_client`, which is absent from the OSS Codex schema in
+// 0.147.0 and 0.148.0-alpha.6 alike, so no release resolves it and the user is
+// left hand-editing another vendor's file to install muster.
+//
+// Three conditions, all required, before a failure is disowned:
+//   1. it is an `unknown configuration field` rejection -- every other kind
+//      (malformed TOML, type errors, timeouts, model-turn events) stays a hard
+//      block, because muster cannot argue it did not cause those;
+//   2. the field's root table is not one muster writes into, so muster
+//      demonstrably did not introduce the key; and
+//   3. re-parsing the pre-edit bytes fails with the SAME objection, proving it
+//      predates this run.
+// A clean baseline keeps the original hard block in full.
+//
+// `configCandidateSources` is never rewritten (unlike `candidateSnapshots`,
+// which the staged plugin registration replaces), so it is always the config
+// as it was before muster touched anything.
+//
+// Accepted limitation: the native parser reports ONE diagnostic at a time,
+// first in file order, so a muster-introduced fault LATER in the file stays
+// hidden behind a pre-existing one. That is unreachable without a parser that
+// reports every error, and in that state the config is already strict-unusable
+// for reasons muster did not create.
+async function preexistingStrictConfigFailure(candidateError, { configParser, ctx, projectConfigPath, liveExpected }) {
+  const field = String(candidateError?.message || "").match(UNKNOWN_CONFIG_FIELD_PATTERN)?.[1];
+  if (!configParser || !field || MUSTER_OWNED_CONFIG_ROOTS.has(field.split(".")[0])) return null;
+  try {
+    await configParser({
+      cwd: ctx.cwd,
+      codexHome: codexHome(ctx.home),
+      runtimeIdentity: ctx.identity,
+      baseline: true,
+      configSnapshots: {
+        shared: { path: ctx.threadLimitConfigPath, ...ctx.configCandidateSources.get(ctx.threadLimitConfigPath) },
+        project: { path: projectConfigPath, ...liveExpected.get(projectConfigPath) }
+      }
+    });
+  } catch (baselineError) {
+    const normalized = normalizeStrictConfigDiagnostic(candidateError.message);
+    return normalizeStrictConfigDiagnostic(baselineError.message) === normalized ? normalized : null;
+  }
+  return null;
+}
+
 async function validateAndPublishStrictCodexConfig(ctx) {
   // Parse after every shared and scoped config candidate is complete.
   // Plugin registration then runs only against a private CODEX_HOME;
@@ -839,7 +886,11 @@ async function validateAndPublishStrictCodexConfig(ctx) {
     try { await runConfigParser(); }
     catch (error) {
       await verifyLive(`${phase} failure`);
-      throw error;
+      const preexisting = await preexistingStrictConfigFailure(error, { configParser, ctx, projectConfigPath, liveExpected });
+      if (!preexisting) throw error;
+      ctx.strictConfigPreexisting = preexisting;
+      await verifyLive(phase);
+      return;
     }
     await verifyLive(phase);
   };
@@ -1075,6 +1126,7 @@ export async function runCodexInstall(options = {}) {
     hooksSkipped: ctx.hooks.skipped,
     hookTrust: ctx.hookTrust,
     prunedScopes: ctx.prunedScopes, prunedHookState: ctx.prunedHookState, prunedProjectTrust: ctx.prunedProjectTrust,
+    ...(ctx.strictConfigPreexisting ? { strictConfig: { preexisting: ctx.strictConfigPreexisting } } : {}),
     plugin: ctx.present ? { registered: !ctx.dryRun, actions: ctx.actions } : { registered: false, skipped: "codex-not-found" },
     nextSteps: [
       ...(ctx.present ? [] : ["npm install -g @openai/codex", `muster install codex --scope ${ctx.scope}`]),

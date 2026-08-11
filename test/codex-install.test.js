@@ -11,6 +11,7 @@ import { dirname, join } from "node:path";
 import { CODEX_COUNTS } from "../src/codex-inventory.js";
 import { assertContainedProfiles, formatCodexWindowsPath, runCodexInstall, runCodexUninstall } from "../src/codex-install.js";
 import { canonicalMusterMarketplace, localMusterMarketplace, repoRoot, runCodexHook, selectedPlugin, selectedPluginRoot } from "../test-support/codex-helpers.js";
+import { normalizedLocalRoot } from "../src/codex-install-marketplace.js";
 import { trackedMkdtemp as mkdtemp } from "../test-support/helpers.js";
 
 test("Codex project install declares every shipped agent and removes only Muster declarations on uninstall", async () => {
@@ -751,4 +752,72 @@ test("runCodexInstall refuses a manifest whose agent id escapes agentsDir and wr
   await assert.rejects(() => runCodexInstall({ cwd, home, repoRoot: fakeRepo, execFile: absent }), /is not a safe token|outside/);
   // The escaping `<id>.toml` join(agentsDir, "../pwned.toml") == cwd/.codex/pwned.toml must never be written.
   await assert.rejects(readFile(join(cwd, ".codex", "pwned.toml"), "utf8"), "no profile may be materialized outside agentsDir");
+});
+
+// --- Windows marketplace trust (2026-08-11) -----------------------------------
+//
+// A Windows REINSTALL read muster's own correctly-registered marketplace as
+// hostile: `Codex marketplace conflict: "muster" is registered from an
+// unexpected source`. Two independent defects, either of which alone is fatal:
+//
+//   A. normalizedLocalRoot rewrote every drive path to /mnt/<drive>/... That is
+//      a WSL affordance for comparing a Windows path Codex reported against a
+//      WSL path. On a WINDOWS runtime the rewritten path cannot exist, so
+//      realpath ENOENTs and every comparison returns false.
+//   B. trustedMusterMarketplace required marketplaceSource.sourceType, but
+//      `codex plugin marketplace list --json` on Windows omits
+//      marketplaceSource for EVERY marketplace (verified against codex-cli
+//      0.147.0: WSL emits it for the same registration, Windows does not).
+//
+// The root is the always-present field and is what Codex actually loads the
+// plugin from, so it remains a hard requirement in both cases.
+
+test("marketplace roots: the /mnt rewrite is WSL-only and never applies on a Windows runtime", () => {
+  const windowsPath = "C:\\Users\\rnben\\Development\\muster";
+  const extended = "\\\\?\\C:\\Users\\rnben\\Development\\muster";
+  // on win32 the native path must survive intact -- rewriting it to /mnt/c/...
+  // is what made realpath ENOENT and read a valid marketplace as hostile
+  assert.equal(normalizedLocalRoot(windowsPath, "win32"), windowsPath);
+  assert.equal(normalizedLocalRoot(extended, "win32"), windowsPath,
+    "Codex stores Windows sources in the extended-length form; it names the same directory");
+  assert.equal(normalizedLocalRoot("C:\\Users\\rnben\\Development\\muster\\", "win32"), windowsPath);
+  // and the WSL affordance must keep working, for both spellings
+  assert.equal(normalizedLocalRoot(windowsPath, "linux"), "/mnt/c/Users/rnben/Development/muster");
+  assert.equal(normalizedLocalRoot(extended, "linux"), "/mnt/c/Users/rnben/Development/muster");
+  assert.equal(normalizedLocalRoot("/home/ryan/dev/muster", "linux"), "/home/ryan/dev/muster");
+});
+
+test("Codex install trusts its own marketplace when Codex reports no marketplaceSource", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-mp-nosource-")), calls = [];
+  // exactly what codex-cli 0.147.0 emits on Windows: name + root, no source
+  const reported = { name: "muster", root: repoRoot };
+  const execFile = async (_bin, args) => {
+    calls.push(args.join(" "));
+    if (args[0] === "--version") return { stdout: "codex-cli test" };
+    if (args.slice(0, 3).join(" ") === "plugin marketplace list") return { stdout: JSON.stringify({ marketplaces: [reported] }) };
+    if (args.slice(0, 3).join(" ") === "plugin list --available") return { stdout: JSON.stringify({ installed: [] }) };
+    if (args.slice(0, 2).join(" ") === "plugin add") return { stdout: "refreshed" };
+    throw new Error(`unexpected command: ${args.join(" ")}`);
+  };
+  await runCodexInstall({ cwd: join(tmp, "project"), home: join(tmp, "home"), repoRoot, execFile });
+  assert.ok(calls.includes("plugin add muster@muster"));
+});
+
+test("Codex install still rejects an attacker root when Codex reports no marketplaceSource", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-mp-nosource-attacker-"));
+  const attacker = join(tmp, "attacker");
+  await mkdir(attacker, { recursive: true });
+  // no marketplaceSource to disqualify it: the root identity check must still
+  // be what refuses, or the missing-source allowance becomes a hijack path
+  const reported = { name: "muster", root: attacker };
+  const execFile = async (_bin, args) => {
+    if (args[0] === "--version") return { stdout: "codex-cli test" };
+    if (args.slice(0, 3).join(" ") === "plugin marketplace list") return { stdout: JSON.stringify({ marketplaces: [reported] }) };
+    if (args.slice(0, 2).join(" ") === "plugin add") return { stdout: "hijacked" };
+    throw new Error(`unexpected command: ${args.join(" ")}`);
+  };
+  await assert.rejects(
+    () => runCodexInstall({ cwd: join(tmp, "project"), home: join(tmp, "home"), repoRoot, execFile }),
+    /Codex marketplace conflict/
+  );
 });

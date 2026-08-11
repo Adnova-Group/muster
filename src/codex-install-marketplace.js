@@ -3,7 +3,7 @@
 // (split-codex-install). Depends only on node builtins, codex-release.js,
 // and codex-install-shared.js.
 import { lstat, mkdir, readFile, readdir, realpath, rename, cp } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, win32 } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { assertRegularTree, generateCodexProfiles } from "./codex-release.js";
 import { ordinaryDirectoryPath, readJson, run, runJson } from "./codex-install-shared.js";
@@ -217,9 +217,23 @@ export async function verifyPublishedPluginCache(receipt, pluginCacheOptions = {
 }
 
 
-function normalizedLocalRoot(value) {
+// Codex stores a Windows marketplace source in the extended-length `\\?\C:\...`
+// form. It names the same directory as the plain drive path (identical dev/ino
+// under Node), and stripping it is what lets the drive-letter branch below
+// recognise the two spellings as one root.
+const WINDOWS_EXTENDED_LENGTH_PREFIX = /^[\\/]{2}\?[\\/](?=[a-z]:)/i;
+
+export function normalizedLocalRoot(value, platform = process.platform) {
   if (typeof value !== "string" || !value.trim()) return null;
-  const input = value.trim().replaceAll("\\", "/");
+  const raw = value.trim().replace(WINDOWS_EXTENDED_LENGTH_PREFIX, "");
+  // The /mnt/<drive> rewrite is a WSL-only affordance: it lets muster running
+  // under WSL compare a Windows path Codex reported against a WSL path. On a
+  // WINDOWS runtime that rewritten path cannot exist, so realpath ENOENTs and
+  // every comparison came back false -- which read muster's own correctly
+  // registered marketplace as an unexpected source and blocked every reinstall.
+  // A Windows runtime resolves the native path directly instead.
+  if (platform === "win32") return win32.resolve(raw);
+  const input = raw.replaceAll("\\", "/");
   const drive = input.match(/^([a-z]):\/(.*)$/i);
   return (drive ? `/mnt/${drive[1].toLowerCase()}/${drive[2]}` : resolve(input)).replace(/\/+$/, "");
 }
@@ -245,10 +259,21 @@ async function sameLocalRoot(left, right) {
 
 
 async function trustedMusterMarketplace(item, repoRoot) {
+  // The installed root is the authoritative field: it is always reported, and
+  // it is the directory Codex actually loads the plugin from, so identity here
+  // is the guarantee that a marketplace named "muster" serves muster's own
+  // tree. It is required unconditionally.
+  if (!await sameLocalRoot(item?.root, repoRoot)) return false;
   const source = item?.marketplaceSource;
-  return source?.sourceType === "local"
-    && await sameLocalRoot(item.root, repoRoot)
-    && await sameLocalRoot(source.source, repoRoot);
+  // `codex plugin marketplace list --json` does not always report the source:
+  // on Windows codex-cli 0.147.0 omits marketplaceSource for EVERY marketplace,
+  // including one it registered itself moments earlier (WSL emits it for the
+  // same registration). Treat an unreported source as unreported rather than as
+  // a mismatch -- demanding it made muster's own marketplace untrustable on
+  // Windows and blocked every reinstall. When Codex does report it, it is still
+  // verified in full.
+  if (source === undefined || source === null) return true;
+  return source.sourceType === "local" && await sameLocalRoot(source.source, repoRoot);
 }
 
 

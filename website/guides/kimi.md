@@ -5,7 +5,7 @@ Muster installs into Kimi Code CLI as native agents and skills. Kimi loads Claud
 ## Install
 
 ```sh
-npx -y @adnova-group/muster@0.7.0 install kimi
+npx -y @adnova-group/muster@0.7.1 install kimi
 ```
 
 This invokes the pinned reviewed release through npm and may download and execute package code from the configured registry. Review its provenance and release notes before changing the pin.
@@ -43,7 +43,7 @@ Files under the dispatch-receipt store are diagnostic observations. They can hel
 ## Probe the model service
 
 ```sh
-npx -y @adnova-group/muster@0.7.0 install kimi --probe
+npx -y @adnova-group/muster@0.7.1 install kimi --probe
 ```
 
 `--probe` performs a read-only models request and compares the served model IDs with Muster's lane policy. It uses the active Kimi service credentials. Skip it when an offline install is required.
@@ -51,9 +51,9 @@ npx -y @adnova-group/muster@0.7.0 install kimi --probe
 ## Preview and uninstall
 
 ```sh
-npx -y @adnova-group/muster@0.7.0 install kimi --dry-run
-npx -y @adnova-group/muster@0.7.0 uninstall kimi --dry-run
-npx -y @adnova-group/muster@0.7.0 uninstall kimi
+npx -y @adnova-group/muster@0.7.1 install kimi --dry-run
+npx -y @adnova-group/muster@0.7.1 uninstall kimi --dry-run
+npx -y @adnova-group/muster@0.7.1 uninstall kimi
 ```
 
 Dry-run reports the owned-file and permission-rule plan without writing. Uninstall removes only files named by Muster's manifest and its marker-delimited permission block. User agents, skills, and configuration outside that block remain.

@@ -18,7 +18,7 @@ It runs on Claude Code, Codex, Kimi, or Cowork with no separate model API, and i
 ## Quickstart
 
 ```sh
-npx -y @adnova-group/muster@0.7.0 install
+npx -y @adnova-group/muster@0.7.1 install
 ```
 
 Pin the reviewed release in automation and copy the current version from `package.json` when updating. `npx` uses npm's execution path and may download the named package from the configured registry before running it. Review the package provenance and release notes before changing the pin.
@@ -41,7 +41,7 @@ Muster's glass-box output style ships inside the plugin and applies automaticall
 Build or install the package, then install Muster's managed Codex profiles and plugin:
 
 ```sh
-npx -y @adnova-group/muster@0.7.0 install codex --scope project
+npx -y @adnova-group/muster@0.7.1 install codex --scope project
 ```
 
 `--scope project` writes Muster-owned profiles and declarations under the project's `.codex/` layer, installs the hook runtime under `.codex/muster/`, and merges owned hook groups into `.codex/hooks.json`. The install also records ownership receipts and registers the plugin. Existing unrelated profiles, configuration, and hook groups are preserved.
@@ -49,7 +49,7 @@ npx -y @adnova-group/muster@0.7.0 install codex --scope project
 Codex CLI, Desktop, and the IDE share `$CODEX_HOME/config.toml`. Even for `--scope project`, the installer ensures the canonical `agents.max_concurrent_threads_per_session` setting exists, defaulting it to `12` only when the user has not configured a canonical or legacy ceiling. Existing positive user ceilings are preserved. A receipt lets the last managed-scope uninstall restore only values Muster changed, including cleanup of legacy `max_threads`/`max_depth` values only when an older Muster receipt proves ownership. The user scope is canonical for hooks: a healthy user install makes a project install skip its own hook merge, avoiding duplicate events. Use `--dry-run` to inspect the complete write, merge, registration, and cleanup plan first:
 
 ```sh
-npx -y @adnova-group/muster@0.7.0 install codex --scope project --dry-run
+npx -y @adnova-group/muster@0.7.1 install codex --scope project --dry-run
 ```
 
 On Windows, install from the same host that runs Codex. Native Windows and WSL have different home directories, Node installations, plugin caches, and normally different `CODEX_HOME` values; an install under `~/.codex` in WSL does not configure native Codex Desktop under `%USERPROFILE%\.codex`. If you switch hosts, rerun the scoped install and `muster doctor --codex` in the new host. Do not point native Desktop at a WSL-only path or assume that a `/mnt/c/...` checkout makes the two user scopes identical.
@@ -57,8 +57,8 @@ On Windows, install from the same host that runs Codex. Native Windows and WSL h
 Codex requires a new trust review when installed hook definitions change. Inspect exact definitions with `/hooks`; update-sensitive trust means a previously trusted hash does not authorize changed code. To remove only Muster-owned project state, preview and then run:
 
 ```sh
-npx -y @adnova-group/muster@0.7.0 uninstall codex --scope project --dry-run
-npx -y @adnova-group/muster@0.7.0 uninstall codex --scope project
+npx -y @adnova-group/muster@0.7.1 uninstall codex --scope project --dry-run
+npx -y @adnova-group/muster@0.7.1 uninstall codex --scope project
 ```
 
 Uninstall preserves unrelated config and Codex's project trust records, removes only receipted Muster declarations and hook groups, prunes Muster-owned hook trust entries, and unregisters the plugin only after the last managed scope is gone. With Codex on `PATH`, install registers `Adnova-Group/muster` and adds `muster@muster` idempotently. Without Codex it installs profiles and hooks, then prints the exact registration follow-up.

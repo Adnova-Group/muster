@@ -21,7 +21,7 @@ This matrix describes the verified MCP-only distribution in this directory. It d
 | Design | MCP protocol | Use `muster_design` for canonical context, attended initialization, write gates, and pinned workflows. |
 | Runner | Not provided | There is no Runner-mode MCP protocol or tool in this distribution. |
 | Capture | Not provided | There is no Capture-mode MCP protocol or tool in this distribution. |
-| Init | CLI-only | Run `npx -y @adnova-group/muster@0.7.0 init [dir]`; Init is not one of the 31 MCP tools. |
+| Init | CLI-only | Run `npx -y @adnova-group/muster@0.7.1 init [dir]`; Init is not one of the 31 MCP tools. |
 
 ## What you get
 
@@ -127,7 +127,7 @@ npx -y @anthropic-ai/mcpb@2.1.2 validate cowork
 npx -y @anthropic-ai/mcpb@2.1.2 pack cowork muster.mcpb
 ```
 
-Those development checks were originally reviewed with MCPB CLI `@anthropic-ai/mcpb@2.1.2` against Muster package `@adnova-group/muster@0.6.0`; the pins preserve that historical evidence. The current Muster package is `@adnova-group/muster@0.7.0`. The checks do not produce a runnable standalone extension.
+Those development checks were originally reviewed with MCPB CLI `@anthropic-ai/mcpb@2.1.2` against Muster package `@adnova-group/muster@0.6.0`; the pins preserve that historical evidence. The current Muster package is `@adnova-group/muster@0.7.1`. The checks do not produce a runnable standalone extension.
 
 Do not install `muster.mcpb`. Use the verified Route A local MCP configuration above. Making Route B installable requires a bundled runtime plus an unpack-and-initialize test; Windows MSIX virtualized paths must also be covered before this status can change.
 

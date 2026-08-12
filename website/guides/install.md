@@ -12,7 +12,7 @@ Model work uses the account or subscription of the active Claude Code session. M
 ## 1. Run the installer
 
 ```sh
-npx -y @adnova-group/muster@0.7.0 install
+npx -y @adnova-group/muster@0.7.1 install
 ```
 
 `install` mutates nothing in your `~/.claude`. It only prints the steps it cannot do for you, because registering a plugin is a Claude Code action, not a shell command.
@@ -72,7 +72,7 @@ Claude Code exposes all ten modes, including Design and Init.
 Because everything Muster adds lives **inside the plugin**, removal is mostly a matter of removing the plugin. Muster never writes to your `~/.claude/CLAUDE.md` or `settings.json`, so there is nothing tangled to unpick.
 
 ```sh
-npx -y @adnova-group/muster@0.7.0 uninstall
+npx -y @adnova-group/muster@0.7.1 uninstall
 ```
 
 `uninstall` prints the steps it cannot do for you, because removing a plugin is a Claude Code action:

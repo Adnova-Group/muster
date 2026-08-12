@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-08-12
+
+### Fixed
+
+- **Windows: a missing durability barrier no longer fails the whole write.** `atomicWrite`'s `fsyncDir` option opened a directory handle and called `fsync` on it. That is a POSIX barrier with no Windows counterpart, where the call raises `EPERM` — so the entire write failed rather than just the barrier, losing the write instead of the guarantee. Every caller that asks for it was unusable on Windows: `muster init`, `muster design`, and the Kimi install/uninstall receipts. The barrier now degrades only where it cannot exist, and stays mandatory everywhere it can; the rename is still atomic and the staged bytes are still fsynced.
+- **Codex: a config key Muster does not own no longer blocks installation.** The strict-config preflight parsed the whole candidate config, so a key written by another tool refused the install even when Muster's own edit was sound — in practice `[features] rmcp_client`, written by OpenAI's primary runtime and absent from the open-source Codex schema, left no way to install but to hand-edit another vendor's file. A rejection is now re-checked against the untouched pre-edit config and disowned only when it is an unknown-field error, in a table Muster does not write, that was already failing beforehand. Malformed TOML, type errors, timeouts, model-turn events, a clean baseline, or a different field all keep the original hard block. `muster doctor --codex` still reports the condition, and now names its owner.
+- **Codex on Windows: Muster trusts its own marketplace registration.** A reinstall read Muster's correctly registered marketplace as hostile and refused with `marketplace conflict: "muster" is registered from an unexpected source`. Two causes: local roots were rewritten to a WSL `/mnt/<drive>/` path even when running natively on Windows, where that path cannot exist; and the trust check required a marketplace source that `codex plugin marketplace list --json` omits for every marketplace on Windows. The installed root — always reported, and the directory Codex actually loads the plugin from — remains a hard requirement, so an unrelated or attacker-controlled root is still refused.
+- **Codex: a table appended inside Muster's declaration region no longer makes uninstall impossible.** Codex's TOML writer inserts a new table before a document's trailing trivia, and Muster's end marker is a trailing comment, so a table Codex added while that marker was the file's last line landed inside the receipted region — most visibly `[hooks.state]`, written when hooks are trusted through `/hooks`. The integrity digest then failed permanently and `muster uninstall codex` could not run again; removal would also have deleted the other writer's table. Ownership is now decided per TOML table rather than by byte range: a table rooted outside `agents` is excluded from the digest and preserved across removal. A change to Muster's own declarations still fails the check.
+- **Codex: a plugin cache held open by another process reports what to do about it.** Replacing a changed cache requires renaming the live directory aside, which fails with `EBUSY` on Windows while Codex or ChatGPT Desktop holds it open. That lock cannot be renamed around, and an already-identical cache was skipped before. The failure now names the lock and the remedy instead of surfacing a raw filesystem error with a temporary path in it.
+
 ## [0.7.0] - 2026-08-10
 
 ### Added
@@ -519,7 +529,8 @@ publish to carry it.
   pipelines, and the glass-box output style. Runs on bare Claude Code and improves
   as more tools are installed.
 
-[Unreleased]: https://github.com/Adnova-Group/muster/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/Adnova-Group/muster/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/Adnova-Group/muster/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/Adnova-Group/muster/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/Adnova-Group/muster/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Adnova-Group/muster/releases/tag/v0.5.0

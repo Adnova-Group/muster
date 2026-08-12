@@ -2,7 +2,15 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { EventEmitter } from "node:events";
+import { readFileSync } from "node:fs";
 import { PassThrough } from "node:stream";
+
+// The client identifies itself to Codex with the package version. Read it
+// rather than pinning a literal, so a release bump does not fail a test that
+// is asserting the wiring, not the number.
+const packageVersion = JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url), "utf8")
+).version;
 
 import {
   answerPlanUserInput,
@@ -213,7 +221,7 @@ test("native launch reports Plan only after the schema-shaped effective-mode con
   });
   const start = calls.find(call => call.method === "turn/start");
   assert.equal(start.params.collaborationMode.mode, "plan");
-  assert.equal(calls.find(call => call.method === "initialize").params.clientInfo.version, "0.7.0");
+  assert.equal(calls.find(call => call.method === "initialize").params.clientInfo.version, packageVersion);
 });
 
 test("native launch requires exact nonempty thread and turn receipt correlation", async () => {

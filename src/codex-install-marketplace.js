@@ -127,6 +127,24 @@ export async function copyPluginCacheExclusively(source, target, expectedTree, p
 }
 
 
+// Publishing a changed cache requires renaming the live directory aside first
+// (copyPluginCacheExclusively mkdirs the target, so it must be absent). On
+// Windows a running Codex or ChatGPT Desktop holds that directory open and the
+// rename fails EBUSY. muster cannot rename a directory another process has
+// open, and the only avoidable case -- an already-identical published tree --
+// is short-circuited above. What is owed is a diagnosable failure naming the
+// lock and the remedy rather than a raw fs error carrying a temp path.
+const PLUGIN_CACHE_LOCK_CODES = new Set(["EBUSY", "EPERM", "EACCES"]);
+
+export function pluginCacheLockError(error, target) {
+  if (!PLUGIN_CACHE_LOCK_CODES.has(error?.code)) return null;
+  return new Error(
+    `Codex plugin cache is locked by another process: ${target}. A running Codex or ChatGPT Desktop holds the plugin cache open — close it, then rerun muster install codex.`,
+    { cause: error }
+  );
+}
+
+
 export async function publishStagedPluginCache(staged, liveCodexHome, packageVersion, trustedSourceRoot, trustedTree, pluginCacheOptions = {}) {
   const stagedTree = await assertPrivatePluginCache(staged, packageVersion, {
     sourceRoot: trustedSourceRoot, sourceTree: trustedTree
@@ -148,8 +166,10 @@ export async function publishStagedPluginCache(staged, liveCodexHome, packageVer
     // writer could mutate it so the post-rename snapshot no longer matches
     // the pre-rename `expected` read above. Undefined in production: zero
     // behavior change.
-    await pluginCacheOptions.beforeRetire?.({ target, retired, expected });
-    await rename(target, retired);
+    try {
+      await pluginCacheOptions.beforeRetire?.({ target, retired, expected });
+      await rename(target, retired);
+    } catch (error) { throw pluginCacheLockError(error, target) || error; }
     const moved = await stablePluginCacheSnapshot(retired, packageVersion);
     if (!samePluginCacheSnapshot(expected, moved)) {
       try { await copyPluginCacheExclusively(retired, target, moved.tree, packageVersion, pluginCacheOptions); }

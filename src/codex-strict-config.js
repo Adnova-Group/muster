@@ -188,6 +188,56 @@ function runOneStrictConfigCheck({
   });
 }
 
+// A strict-config rejection is muster's to own only when muster's edit CAUSED
+// it. The parser validates the whole candidate, so any key another writer put
+// in the shared config blocked every install: OpenAI's primary runtime writes
+// `[features] rmcp_client`, which is absent from the OSS Codex schema in
+// 0.147.0 and 0.148.0-alpha.6 alike, so no release resolves it and the user is
+// left hand-editing another vendor's file to install muster.
+//
+// Three conditions, all required, before a failure is disowned:
+//   1. it is an `unknown configuration field` rejection -- every other kind
+//      (malformed TOML, type errors, timeouts, model-turn events) stays a hard
+//      block, because muster cannot argue it did not cause those;
+//   2. the field's root table is not one muster writes into, so muster
+//      demonstrably did not introduce the key; and
+//   3. re-parsing the pre-edit bytes fails with the SAME objection, proving it
+//      predates this run.
+// A clean baseline keeps the original hard block in full.
+//
+// `configCandidateSources` is never rewritten (unlike `candidateSnapshots`,
+// which the staged plugin registration replaces), so it is always the config
+// as it was before muster touched anything.
+//
+// Accepted limitation: the native parser reports ONE diagnostic at a time,
+// first in file order, so a muster-introduced fault LATER in the file stays
+// hidden behind a pre-existing one. That is unreachable without a parser that
+// reports every error, and in that state the config is already strict-unusable
+// for reasons muster did not create.
+export async function preexistingStrictConfigFailure(candidateError, {
+  configParser, cwd, codexHome, runtimeIdentity, sharedPath, sharedSnapshot, projectPath, projectSnapshot
+}) {
+  const field = String(candidateError?.message || "").match(UNKNOWN_CONFIG_FIELD_PATTERN)?.[1];
+  if (!configParser || !field || MUSTER_OWNED_CONFIG_ROOTS.has(field.split(".")[0])) return null;
+  try {
+    await configParser({
+      cwd,
+      codexHome,
+      runtimeIdentity,
+      baseline: true,
+      configSnapshots: {
+        shared: { path: sharedPath, ...sharedSnapshot },
+        project: { path: projectPath, ...projectSnapshot }
+      }
+    });
+  } catch (baselineError) {
+    const normalized = normalizeStrictConfigDiagnostic(candidateError.message);
+    return normalizeStrictConfigDiagnostic(baselineError.message) === normalized ? normalized : null;
+  }
+  return null;
+}
+
+
 export async function runCodexStrictConfigCheck(options = {}) {
   const { cwd = process.cwd(), codexHome, runtimeIdentity, spawn = spawnChild } = options;
   if (options.configSnapshots) {

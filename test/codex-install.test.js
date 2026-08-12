@@ -11,7 +11,7 @@ import { dirname, join } from "node:path";
 import { CODEX_COUNTS } from "../src/codex-inventory.js";
 import { assertContainedProfiles, formatCodexWindowsPath, runCodexInstall, runCodexUninstall } from "../src/codex-install.js";
 import { canonicalMusterMarketplace, localMusterMarketplace, repoRoot, runCodexHook, selectedPlugin, selectedPluginRoot } from "../test-support/codex-helpers.js";
-import { normalizedLocalRoot } from "../src/codex-install-marketplace.js";
+import { normalizedLocalRoot, pluginCacheLockError } from "../src/codex-install-marketplace.js";
 import { trackedMkdtemp as mkdtemp } from "../test-support/helpers.js";
 
 test("Codex project install declares every shipped agent and removes only Muster declarations on uninstall", async () => {
@@ -819,5 +819,153 @@ test("Codex install still rejects an attacker root when Codex reports no marketp
   await assert.rejects(
     () => runCodexInstall({ cwd: join(tmp, "project"), home: join(tmp, "home"), repoRoot, execFile }),
     /Codex marketplace conflict/
+  );
+});
+
+// --- foreign tables interleaved into the receipted region (2026-08-12) --------
+//
+// Codex's TOML writer appends a new table BEFORE the document's trailing
+// trivia. muster's end marker is a trailing comment on the last declaration
+// table, so a table Codex adds while that marker is the file's last line lands
+// INSIDE the receipted span -- observed in the wild on 2026-08-10, where
+// `[hooks.state]` (written when hooks were trusted via /hooks) appeared between
+// the last declaration and the end marker on both this machine's Codex homes.
+// The raw-span digest then mismatched forever and `muster uninstall codex`
+// could never run again. Splicing the whole span would also have DELETED the
+// foreign table.
+//
+// Ownership is therefore decided per TOML table, not by byte span: inside the
+// region, a table rooted anywhere but `agents` is someone else's and is both
+// excluded from the integrity digest and preserved across removal.
+
+function interleaveForeignTable(installed) {
+  const end = "# <<< muster managed agent declarations <<<";
+  const foreign = [
+    "[hooks.state]",
+    "",
+    "[hooks.state.\"/home/u/.codex/hooks.json:pre_tool_use:0:0\"]",
+    "trusted_hash = \"sha256:deadbeef\"",
+    ""
+  ].join("\n");
+  return installed.replace(end, `${foreign}${end}`);
+}
+
+test("Codex uninstall tolerates a foreign table Codex appended inside the region, and preserves it", async () => {
+  const absent = async () => { throw new Error("not found"); };
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-region-foreign-uninstall-"));
+  const cwd = join(tmp, "project"), home = join(tmp, "home");
+  const configPath = join(cwd, ".codex", "config.toml");
+  await runCodexInstall({ cwd, home, repoRoot, execFile: absent });
+  const installed = await readFile(configPath, "utf8");
+  const polluted = interleaveForeignTable(installed);
+  assert.notEqual(polluted, installed, "fixture must actually interleave a table");
+  await writeFile(configPath, polluted);
+
+  await runCodexUninstall({ cwd, home, execFile: absent });
+
+  const after = await readFile(configPath, "utf8");
+  assert.match(after, /\[hooks\.state\."\/home\/u\/\.codex\/hooks\.json:pre_tool_use:0:0"\]/,
+    "another writer's table must survive muster's removal");
+  assert.match(after, /trusted_hash = "sha256:deadbeef"/);
+  assert.equal(/muster managed agent declarations/.test(after), false, "muster's markers must be gone");
+  assert.equal(/\[agents\.muster-builder\]/.test(after), false, "muster's declarations must be gone");
+});
+
+test("Codex reinstall tolerates a foreign table inside the region without losing or duplicating it", async () => {
+  const absent = async () => { throw new Error("not found"); };
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-region-foreign-reinstall-"));
+  const cwd = join(tmp, "project"), home = join(tmp, "home");
+  const configPath = join(cwd, ".codex", "config.toml");
+  await runCodexInstall({ cwd, home, repoRoot, execFile: absent });
+  await writeFile(configPath, interleaveForeignTable(await readFile(configPath, "utf8")));
+
+  await runCodexInstall({ cwd, home, repoRoot, execFile: absent });
+
+  const after = await readFile(configPath, "utf8");
+  assert.equal((after.match(/\[hooks\.state\]/g) || []).length, 1, "the foreign table must appear exactly once");
+  assert.equal((after.match(/# >>> muster managed agent declarations >>>/g) || []).length, 1);
+  assert.match(after, /\[agents\.muster-builder\]/, "muster's declarations must be reinstated");
+  // and the round trip still lands back on a config that holds only the foreign table
+  await runCodexUninstall({ cwd, home, execFile: absent });
+  const final = await readFile(configPath, "utf8");
+  assert.match(final, /trusted_hash = "sha256:deadbeef"/);
+  assert.equal(/muster managed agent declarations/.test(final), false);
+});
+
+test("Codex integrity still rejects a tampered declaration even when a foreign table sits in the region", async () => {
+  const absent = async () => { throw new Error("not found"); };
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-region-foreign-tamper-"));
+  const cwd = join(tmp, "project"), home = join(tmp, "home");
+  const configPath = join(cwd, ".codex", "config.toml");
+  await runCodexInstall({ cwd, home, repoRoot, execFile: absent });
+  const tampered = interleaveForeignTable(await readFile(configPath, "utf8"))
+    .replace("description = \"Feature-checkpoint builder", "description = \"Tampered builder");
+  await writeFile(configPath, tampered);
+
+  // tolerating a foreign table must not become tolerance for edits to muster's own
+  await assert.rejects(() => runCodexUninstall({ cwd, home, execFile: absent }), /declaration.*modified|integrity/i);
+  assert.equal(await readFile(configPath, "utf8"), tampered, "a rejected uninstall must not mutate the config");
+});
+
+// --- plugin cache locked by another process (2026-08-12) ---------------------
+//
+// Replacing the published cache needs the live directory renamed aside first
+// (copyPluginCacheExclusively mkdirs the target, so it must be absent). On
+// Windows a running Codex or ChatGPT Desktop holds that directory open and the
+// rename fails EBUSY -- unavoidable at the OS level, and already skipped
+// entirely when the published tree matches what is being published. What muster
+// owes is a diagnosable failure naming the lock and the remedy, not a raw fs
+// error with a temp path in it.
+
+test("plugin cache lock errors are translated into an actionable remedy, other errors are not", () => {
+  const target = "/codex/plugins/cache/muster/muster/0.7.0";
+  for (const code of ["EBUSY", "EPERM", "EACCES"]) {
+    const raw = Object.assign(new Error(`${code}: resource busy or locked, rename '${target}' -> '${target}.retired'`), { code });
+    const translated = pluginCacheLockError(raw, target);
+    assert.ok(translated, `${code} must be recognised as a lock`);
+    assert.match(translated.message, /locked by another process/);
+    assert.match(translated.message, new RegExp(target.replace(/[/\\^$*+?.()|[\]{}]/g, "\\$&")));
+    assert.match(translated.message, /close it, then rerun/i);
+    assert.equal(translated.cause, raw, "the native diagnostic must survive as the cause");
+  }
+  // a genuine fault must not be dressed up as a lock
+  assert.equal(pluginCacheLockError(Object.assign(new Error("ENOSPC: no space left"), { code: "ENOSPC" }), target), null);
+  assert.equal(pluginCacheLockError(new Error("plain failure"), target), null);
+});
+
+test("Codex install reports a locked plugin cache with its remedy instead of a raw fs error", async () => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-cache-locked-"));
+  const cwd = join(tmp, "project"), home = join(tmp, "home");
+  const packageVersion = JSON.parse(await readFile(join(repoRoot, "package.json"), "utf8")).version;
+  const identity = (root, digest) => Promise.all([
+    mkdir(join(root, ".codex-plugin"), { recursive: true }).then(() =>
+      writeFile(join(root, "package.json"), JSON.stringify({ version: packageVersion, inputDigest: digest.repeat(64) }))),
+    mkdir(join(root, ".codex-plugin"), { recursive: true }).then(() =>
+      writeFile(join(root, ".codex-plugin", "plugin.json"), JSON.stringify({ name: "muster", version: packageVersion })))
+  ]);
+  // a published cache whose tree differs from what this run stages, so the
+  // retirement rename is genuinely required and cannot be short-circuited
+  await identity(join(home, ".codex", "plugins", "cache", "muster", "muster", packageVersion), "b");
+  const execFile = async (_bin, args, options) => {
+    if (args[0] === "--version") return { stdout: "codex-cli test" };
+    if (args.slice(0, 3).join(" ") === "plugin marketplace list") return { stdout: JSON.stringify({ marketplaces: [] }) };
+    if (args.slice(0, 3).join(" ") === "plugin marketplace add") return { stdout: "" };
+    if (args.slice(0, 3).join(" ") === "plugin list --available") return { stdout: JSON.stringify({ installed: [], available: [] }) };
+    if (args.slice(0, 2).join(" ") === "plugin add") {
+      await identity(join(options.env.CODEX_HOME, "plugins", "cache", "muster", "muster", packageVersion), "a");
+      return { stdout: "" };
+    }
+    throw new Error(`unexpected command: ${args.join(" ")}`);
+  };
+  await assert.rejects(
+    () => runCodexInstall({
+      cwd, home, repoRoot, execFile,
+      pluginCacheOptions: {
+        forceStaging: true,
+        // fires inside the retirement window, standing in for the OS-level lock
+        beforeRetire: () => { throw Object.assign(new Error("EBUSY: resource busy or locked, rename"), { code: "EBUSY" }); }
+      }
+    }),
+    /locked by another process[\s\S]*close it, then rerun/i
   );
 });

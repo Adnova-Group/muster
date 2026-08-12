@@ -16,7 +16,7 @@ import {
   ensureCodexThreadLimits,
   restoreCodexThreadLimits
 } from "./codex-thread-limits.js";
-import { foreignConfigFieldAttribution, MUSTER_OWNED_CONFIG_ROOTS, normalizeStrictConfigDiagnostic, runCodexStrictConfigCheck, UNKNOWN_CONFIG_FIELD_PATTERN } from "./codex-strict-config.js";
+import { preexistingStrictConfigFailure, runCodexStrictConfigCheck } from "./codex-strict-config.js";
 import {
   execFileDefault, MANIFEST, codexHome, configDir,
   codexProjectRoot, codexInvocationRoot, codexActivationConfigDirs, ordinaryDirectoryPath,
@@ -34,7 +34,7 @@ import {
   hasManagedRuntimeInventoryAlias, inventoryAliasCandidateSnapshot, sameAliasCandidateSnapshot,
   expectedCodexHookInstall, inspectEffectiveUserScopeHooks, userScopeHooksHealthy, prepareHooks
 } from "./codex-install-hooks.js";
-import { decodeTomlQuotedKey } from "./toml-lexer.js";
+import { decodeTomlQuotedKey, inspectTomlHeader, splitTomlLines } from "./toml-lexer.js";
 import { formatCodexWindowsPath, parseHookCommand } from "./shell-command.js";
 import { withScopeRegistryTransaction } from "./codex-install-scope-lock.js";
 import {
@@ -218,6 +218,39 @@ function declarationBounds(text) {
 }
 
 
+// Split a declaration-region span into the lines muster wrote and any TOML
+// tables another writer interleaved.
+//
+// Codex's TOML writer appends a new table BEFORE the document's trailing
+// trivia. muster's end marker is a trailing comment on the last declaration
+// table, so a table Codex adds while that marker is the file's last line lands
+// INSIDE the span -- observed in the wild 2026-08-10, where `[hooks.state]`
+// (written when hooks are trusted via /hooks) appeared between the last
+// declaration and the end marker on both of this machine's Codex homes,
+// permanently failing the raw-span digest and making uninstall impossible.
+//
+// Ownership is therefore per TOML table: inside the region, a table rooted
+// anywhere but `agents` belongs to someone else. It is excluded from the
+// integrity digest (so muster's own content still verifies) and preserved
+// across removal (so muster never deletes another writer's config). The
+// markers themselves are always muster's, and the end marker restores
+// ownership for anything after it.
+function partitionDeclarationRegion(regionText) {
+  const { lines, endings } = splitTomlLines(regionText);
+  const owned = [], foreign = [];
+  let target = owned;
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index];
+    if (line === AGENT_DECLARATIONS_START || line === AGENT_DECLARATIONS_END) target = owned;
+    else if (inspectTomlHeader(line).header) {
+      target = agentDeclarationHeaderPath(line)?.[0] === "agents" ? owned : foreign;
+    }
+    target.push(line + endings[index]);
+  }
+  return { owned: owned.join(""), foreign: foreign.join("") };
+}
+
+
 function declarationRegionReceipt(text) {
   const bounds = declarationBounds(text);
   if (!bounds) throw new Error("Cannot receipt a missing Muster agent declaration region");
@@ -240,11 +273,17 @@ function verifiedDeclarationBounds(text, receipt, manifestPath) {
   if (!bounds) {
     throw new Error(`Codex agent declaration integrity check failed: the receipted region from ${manifestPath} is missing.`);
   }
-  const digest = createHash("sha256").update(text.slice(bounds.start, bounds.end), "utf8").digest("hex");
-  if (digest !== receipt.digest) {
+  const span = text.slice(bounds.start, bounds.end);
+  const digest = createHash("sha256").update(span, "utf8").digest("hex");
+  if (digest === receipt.digest) return { ...bounds, foreign: "" };
+  // The raw span no longer matches, but that is not proof muster's content
+  // changed: another writer may simply have interleaved a table. Re-check the
+  // muster-owned lines alone. Only a change to those is tampering.
+  const { owned, foreign } = partitionDeclarationRegion(span);
+  if (!foreign || createHash("sha256").update(owned, "utf8").digest("hex") !== receipt.digest) {
     throw new Error(`Codex agent declaration integrity check failed: the receipted region from ${manifestPath} was modified.`);
   }
-  return bounds;
+  return { ...bounds, foreign };
 }
 
 
@@ -252,12 +291,15 @@ function removeAgentDeclarations(text, { separatorAdded = false, receipt, manife
   const bounds = verifiedDeclarationBounds(text, receipt, manifestPath);
   if (!bounds) return text;
   let start = bounds.start;
-  if (separatorAdded && bounds.end === text.length) {
+  // The separator is the newline muster added ahead of the region when the file
+  // did not end in one. Reclaim it only when nothing is left in the region's
+  // place; foreign content kept there still needs it.
+  if (separatorAdded && bounds.end === text.length && !bounds.foreign) {
     if (text.slice(Math.max(0, start - 2), start) === "\r\n") start -= 2;
     else if (text[start - 1] === "\n") start -= 1;
     else throw new Error("Codex config.toml Muster agent declaration separator was modified");
   }
-  return text.slice(0, start) + text.slice(bounds.end);
+  return text.slice(0, start) + bounds.foreign + text.slice(bounds.end);
 }
 
 
@@ -794,53 +836,6 @@ async function writeCodexDeclarationsAndVerifyHookActivation(ctx) {
   }
 }
 
-// A strict-config rejection is muster's to own only when muster's edit CAUSED
-// it. The parser validates the whole candidate, so any key another writer put
-// in the shared config blocked every install: OpenAI's primary runtime writes
-// `[features] rmcp_client`, which is absent from the OSS Codex schema in
-// 0.147.0 and 0.148.0-alpha.6 alike, so no release resolves it and the user is
-// left hand-editing another vendor's file to install muster.
-//
-// Three conditions, all required, before a failure is disowned:
-//   1. it is an `unknown configuration field` rejection -- every other kind
-//      (malformed TOML, type errors, timeouts, model-turn events) stays a hard
-//      block, because muster cannot argue it did not cause those;
-//   2. the field's root table is not one muster writes into, so muster
-//      demonstrably did not introduce the key; and
-//   3. re-parsing the pre-edit bytes fails with the SAME objection, proving it
-//      predates this run.
-// A clean baseline keeps the original hard block in full.
-//
-// `configCandidateSources` is never rewritten (unlike `candidateSnapshots`,
-// which the staged plugin registration replaces), so it is always the config
-// as it was before muster touched anything.
-//
-// Accepted limitation: the native parser reports ONE diagnostic at a time,
-// first in file order, so a muster-introduced fault LATER in the file stays
-// hidden behind a pre-existing one. That is unreachable without a parser that
-// reports every error, and in that state the config is already strict-unusable
-// for reasons muster did not create.
-async function preexistingStrictConfigFailure(candidateError, { configParser, ctx, projectConfigPath, liveExpected }) {
-  const field = String(candidateError?.message || "").match(UNKNOWN_CONFIG_FIELD_PATTERN)?.[1];
-  if (!configParser || !field || MUSTER_OWNED_CONFIG_ROOTS.has(field.split(".")[0])) return null;
-  try {
-    await configParser({
-      cwd: ctx.cwd,
-      codexHome: codexHome(ctx.home),
-      runtimeIdentity: ctx.identity,
-      baseline: true,
-      configSnapshots: {
-        shared: { path: ctx.threadLimitConfigPath, ...ctx.configCandidateSources.get(ctx.threadLimitConfigPath) },
-        project: { path: projectConfigPath, ...liveExpected.get(projectConfigPath) }
-      }
-    });
-  } catch (baselineError) {
-    const normalized = normalizeStrictConfigDiagnostic(candidateError.message);
-    return normalizeStrictConfigDiagnostic(baselineError.message) === normalized ? normalized : null;
-  }
-  return null;
-}
-
 async function validateAndPublishStrictCodexConfig(ctx) {
   // Parse after every shared and scoped config candidate is complete.
   // Plugin registration then runs only against a private CODEX_HOME;
@@ -886,7 +881,11 @@ async function validateAndPublishStrictCodexConfig(ctx) {
     try { await runConfigParser(); }
     catch (error) {
       await verifyLive(`${phase} failure`);
-      const preexisting = await preexistingStrictConfigFailure(error, { configParser, ctx, projectConfigPath, liveExpected });
+      const preexisting = await preexistingStrictConfigFailure(error, {
+        configParser, cwd: ctx.cwd, codexHome: codexHome(ctx.home), runtimeIdentity: ctx.identity,
+        sharedPath: ctx.threadLimitConfigPath, sharedSnapshot: ctx.configCandidateSources.get(ctx.threadLimitConfigPath),
+        projectPath: projectConfigPath, projectSnapshot: liveExpected.get(projectConfigPath)
+      });
       if (!preexisting) throw error;
       ctx.strictConfigPreexisting = preexisting;
       await verifyLive(phase);

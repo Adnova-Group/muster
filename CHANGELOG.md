@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Codex waves on macOS report the platform limit instead of a phantom install problem.** The only platform gate lived inside `runProcessWave`, downstream of Codex executable resolution, so a wave on macOS died with `no trusted Codex executable was found outside the repository` — a provenance error that reads as a fixable install problem. Operators (and driving agents) chased a nonexistent trust failure instead of the real one. The check now runs first, and says what it means: containment is unavailable on this platform, the run is refused, and the refusal must not be satisfied by re-hosting the wave in a container, VM, or remote Linux host, nor by forwarding Codex credentials into one. That workaround strips the `tmpfs` masking that keeps `~/.codex` away from the worker, so it is strictly less safe than the refusal it appears to resolve.
+- **Codex executable resolution no longer requires npm packaging.** Resolution demanded a `package.json` naming `@openai/codex` within five ancestors of the binary, which rejected every non-npm install — Homebrew cask, Homebrew-on-Linux, GitHub releases, distro packages. The check authenticated nothing: it read a plaintext field in a file beside the binary, forgeable by anyone able to write the binary itself. The load-bearing checks remain — the binary must come from outside the repository under test, must not be group- or world-writable, and must belong to root or to the running user — and identity is left to the behavioural probe, which requires a parseable version at or above the floor plus the exact flags hermetic dispatch depends on.
+
+### Added
+
+- **`MUSTER_UNCONTAINED_WAVE`: an operator-granted degraded wave.** Where bubblewrap containment cannot exist, the operator may accept a wave without it by setting `MUSTER_UNCONTAINED_WAVE=i-accept-no-process-containment`; the acknowledgement is spelled out rather than a bare flag so it cannot be set by reflex, and it is never honoured to skip a working bubblewrap. The degraded lane switches Codex's own sandbox back on — `danger-full-access` is safe only inside the outer container — mints no fix-loop receipt key, so the wave is unresumable and no key exists for an unmasked worker to read, and stamps `containment: "none"` with the specific guarantees lost onto the result. This exists because a gate with no sanctioned exit gets an unsanctioned one: the absence of this lane produced a wave re-run inside a `--privileged` container with the host's `auth.json` mounted in.
+
 ## [0.7.1] - 2026-08-12
 
 ### Fixed

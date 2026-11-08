@@ -1470,5 +1470,17 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // replaced with a one-liner that survives future appends ("may append further dated,
   // evidenced entries here from run receipts, gated by user approval"); the new
   // audit-pattern-documentation skill already omitted the placeholder and needed no change.
-  assert.equal(hash.digest("hex"), "309eb2df6ff64aa5c92dc73a9a32f673071594424f5326682c6439c575daf383");
+  // Re-pin 2026-08-15 (codex-wave containment-refusal diagnose, content-only, file count
+  // unchanged at 157): plugin/skills/orchestrator/references/codex-dispatch.md gains a
+  // "a refusal is a finding to report" paragraph under the wave-dispatch rule. A macOS run had its
+  // platform gate misreported as a Codex provenance failure (see CHANGELOG Unreleased), and the
+  // driving agent answered that by re-running the wave inside a --privileged container with the
+  // host's auth.json mounted in -- the exact exposure the outer container's tmpfs masking exists
+  // to prevent. The added prose states that a codex-wave refusal is reported rather than
+  // engineered around, that re-hosting inverts the protection it appears to restore, and that only
+  // the operator may accept a degraded uncontained run (MUSTER_UNCONTAINED_WAVE). Phrased
+  // positively with a "say so" qualifier to stay inside ANTH-POS-001's negative budget and
+  // GUARD-IDK-001, per the same convention the pattern skills already use. Deliberate remediation
+  // from that diagnose, surfaced for review alongside it -- not accidental Codex-side drift.
+  assert.equal(hash.digest("hex"), "cd23e21192d0bbe047527bff3c2fea787c1ced64fbf6a788dc73e1009252ecd8");
 });

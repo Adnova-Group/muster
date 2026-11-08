@@ -7,7 +7,7 @@ import { chmod, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { codexFixLoopPrompt, posixContainmentCall, runCodexWave as runCodexWaveImpl, runCodexWaveContinuation as runCodexWaveContinuationImpl, terminateProcess } from "../src/codex-wave-runner.js";
+import { assertSupportedWavePlatform, codexFixLoopPrompt, posixContainmentCall, runCodexWave as runCodexWaveImpl, runCodexWaveContinuation as runCodexWaveContinuationImpl, terminateProcess } from "../src/codex-wave-runner.js";
 import { buildCodexPlugin } from "../scripts/build-codex.mjs";
 
 const execFile = promisify(execFileCb);
@@ -185,6 +185,143 @@ function member(id, cwd) {
     writes: ["result.txt"],
   };
 }
+
+// A macOS operator hit this gate and the driving agent "solved" it by re-running
+// the identical wave inside `docker run --privileged --network host` with the
+// host's ~/.codex/auth.json bind-mounted in -- i.e. it defeated the exact mount
+// masking bubblewrap provides. The refusal has to foreclose that reading in the
+// message itself, because that message is the only thing the agent sees.
+test("the wave platform gate is a hard stop that names and forbids the container workaround", () => {
+  assert.equal(assertSupportedWavePlatform("linux"), undefined);
+  for (const platform of ["darwin", "win32"]) {
+    assert.throws(() => assertSupportedWavePlatform(platform), error => {
+      assert.match(error.message, new RegExp(`containment is unavailable on ${platform}`));
+      assert.match(error.message, /HARD STOP/);
+      assert.match(error.message, /[Dd]o NOT re-run this wave inside a container, VM, or remote Linux host/);
+      assert.match(error.message, /[Dd]o NOT copy, mount, or forward Codex credentials/);
+      assert.match(error.message, /MUSTER_UNCONTAINED_WAVE=i-accept-no-process-containment/);
+      assert.match(error.message, /operator -- not the agent/);
+      assert.match(error.message, /never set it yourself/);
+      return true;
+    });
+  }
+});
+
+// The anchor this replaced demanded a package.json naming @openai/codex within
+// five ancestors, which rejected every non-npm install -- Homebrew cask on the
+// Mac that triggered this, plus Homebrew-on-Linux, GitHub releases and distro
+// packages. The fixture codex has no package.json ancestor anywhere.
+test("a Codex outside the repository resolves without npm packaging metadata", async t => {
+  const fixture = await waveFixture(t);
+  await assert.rejects(readFile(join(dirname(fixture.codex), "package.json"), "utf8"), { code: "ENOENT" });
+
+  // Resolution is what is under test, so the run is kept off the contained lane
+  // and pointed at an empty HOME: it gets past the resolver and then fails on
+  // absent Codex auth, which is enough to prove the resolver accepted a binary
+  // with no npm manifest above it.
+  const hostPlatform = process.platform;
+  Object.defineProperty(process, "platform", { value: "darwin", configurable: true });
+  t.after(() => Object.defineProperty(process, "platform", { value: hostPlatform, configurable: true }));
+
+  const failure = await runCodexWave({
+    members: [member("a", fixture.worktreeA)],
+    repositoryRoot: fixture.repo,
+    baseSha: fixture.baseSha,
+    env: {
+      PATH: dirname(fixture.codex),
+      HOME: fixture.root,
+      MUSTER_UNCONTAINED_WAVE: "i-accept-no-process-containment",
+    },
+  }).then(() => null, error => error);
+  if (failure) assert.doesNotMatch(failure.message, /no trusted Codex executable/);
+});
+
+test("the uncontained override is refused unless the operator spells out the acknowledgement", async t => {
+  const fixture = await waveFixture(t);
+  const hostPlatform = process.platform;
+  Object.defineProperty(process, "platform", { value: "darwin", configurable: true });
+  t.after(() => Object.defineProperty(process, "platform", { value: hostPlatform, configurable: true }));
+
+  for (const value of ["1", "true", "yes", ""]) {
+    await assert.rejects(
+      runCodexWave({
+        members: [member("a", fixture.worktreeA)],
+        codexCommand: fixture.codex,
+        repositoryRoot: fixture.repo,
+        baseSha: fixture.baseSha,
+        env: { ...process.env, MUSTER_UNCONTAINED_WAVE: value },
+      }),
+      /refusing production wave/,
+      `MUSTER_UNCONTAINED_WAVE=${JSON.stringify(value)} must not unlock the wave`,
+    );
+  }
+});
+
+// The sanctioned exit, end to end: it runs, but it runs degraded, it says so in
+// the result, and it mints no receipt key -- an unmasked worker could read that
+// key and forge its own continuation.
+test("an acknowledged uncontained wave runs degraded, is receiptless, and reports what it lost", async t => {
+  const fixture = await waveFixture(t);
+  const hostPlatform = process.platform;
+  Object.defineProperty(process, "platform", { value: "darwin", configurable: true });
+  t.after(() => Object.defineProperty(process, "platform", { value: hostPlatform, configurable: true }));
+
+  const wave = await runCodexWave({
+    members: [member("a", fixture.worktreeA)],
+    codexCommand: fixture.codex,
+    repositoryRoot: fixture.repo,
+    baseSha: fixture.baseSha,
+    env: { ...process.env, MUSTER_UNCONTAINED_WAVE: "i-accept-no-process-containment" },
+  });
+
+  assert.equal(wave.containment, "none");
+  assert.match(wave.warning, /DEGRADED WAVE/);
+  assert.match(wave.degraded.reason, /containment is unavailable on darwin/);
+  assert.ok(wave.degraded.lost.some(loss => /auth\.json/.test(loss)), "the lost credential mask must be named");
+  assert.ok(wave.degraded.lost.some(loss => /cannot be resumed/.test(loss)), "the lost resume capability must be named");
+
+  assert.equal(wave.results.length, 1);
+  assert.equal(wave.results[0].resumable, false);
+  assert.equal(wave.results[0].receiptId, undefined);
+  await assert.rejects(
+    readFile(join(fixture.root, "fix-loop-store", ".receipt-key")),
+    { code: "ENOENT" },
+    "an uncontained wave must never write a receipt key the worker could read",
+  );
+
+  // Codex's own sandbox becomes the only boundary, so it must be switched back
+  // on -- danger-full-access outside bwrap is an unsandboxed agent.
+  const launched = await readFile(fixture.launches, "utf8");
+  assert.match(launched, /--sandbox workspace-write/);
+  assert.doesNotMatch(launched, /danger-full-access/);
+});
+
+// Ordering regression: the platform precondition used to live inside
+// runProcessWave, downstream of resolveTrustedCodexExecutable, so a macOS run
+// died with "no trusted Codex executable" -- a provenance error that reads as a
+// fixable install problem and sends the agent hunting for a trusted binary
+// instead of stopping. The hard stop must be the first thing that fires.
+test("a platform without containment refuses before Codex provenance is ever consulted", async t => {
+  const fixture = await waveFixture(t);
+  const hostPlatform = process.platform;
+  Object.defineProperty(process, "platform", { value: "darwin", configurable: true });
+  t.after(() => Object.defineProperty(process, "platform", { value: hostPlatform, configurable: true }));
+
+  await assert.rejects(
+    runCodexWave({
+      members: [member("a", fixture.worktreeA)],
+      repositoryRoot: fixture.repo,
+      baseSha: fixture.baseSha,
+      env: { PATH: join(fixture.root, "no-such-bin") },
+    }),
+    error => {
+      assert.match(error.message, /refusing production wave/);
+      assert.doesNotMatch(error.message, /no trusted Codex executable/);
+      return true;
+    },
+  );
+  await assert.rejects(readFile(fixture.launches, "utf8"), { code: "ENOENT" });
+});
 
 async function assertRejectedBeforeCodex(fixture, cwd, pattern) {
   await assert.rejects(

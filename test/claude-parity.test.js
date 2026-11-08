@@ -1482,5 +1482,11 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // positively with a "say so" qualifier to stay inside ANTH-POS-001's negative budget and
   // GUARD-IDK-001, per the same convention the pattern skills already use. Deliberate remediation
   // from that diagnose, surfaced for review alongside it -- not accidental Codex-side drift.
-  assert.equal(hash.digest("hex"), "cd23e21192d0bbe047527bff3c2fea787c1ced64fbf6a788dc73e1009252ecd8");
+  // Re-pin 2026-11-08 (Windows hook diagnose, content-only, file count unchanged):
+  // plugin/hooks/bash-write-target.js normalizes write targets with path.posix.normalize instead of
+  // platform path.normalize. On Windows the latter rewrote `/dev/null` to `\\dev\\null`, so every
+  // `2>/dev/null`, `/tmp/*` and `.muster/*` redirect was counted as an inline file write and fired the
+  // border-invitation warning on read-only commands. Regression: test/bash-write-target-posix.test.js
+  // (also added to the Windows CI job). Deliberate fix, not drift.
+  assert.equal(hash.digest("hex"), "d5dad52e8f0158e9cff3e927b55e24f114d878af35e4b813f7b6fcc613f9ab7f");
 });

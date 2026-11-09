@@ -12,7 +12,7 @@ Respond with the candidate list (glass-box, each item quote/decision-traced), th
 
 Run this whenever a discussion has produced actionable outcomes that belong on the backlog and nothing has captured them yet — research findings, design decisions, review residuals, an explicit user directive such as "add those 5". `$ARGUMENTS` optionally narrows which part of the conversation to mine; empty scans the whole session so far.
 
-**Run-active lifecycle:** none. Capture only ever writes `.muster/backlog.md`, and the `PreToolUse` hook's decision order already treats writes under `.muster/` as always-allowed bookkeeping regardless of any `run-active`/`wave-active` marker; capture handles everything inline, with no subagent wave of its own to dispatch. A `run-active` marker here would gate nothing — it was boilerplate copied from the other commands and is deliberately omitted.
+**Run-active lifecycle:** none. Capture only ever writes `.muster/backlog.md` and handles everything inline, with no subagent wave of its own to dispatch and no external action for the action fence to gate. A `run-active` marker here would gate nothing — it was boilerplate copied from the other commands and is deliberately omitted.
 
 0. **Resolve the CLI (once per invocation).** A raw `npx -y <pkg>` re-verifies against the npm registry/cache on EVERY call; resolve `$MUSTER_CLI` ONCE with plain shell (no CLI call, so resolution itself never pays a cold start), preferring a vendored/local install over `npx` — see docs/performance-pass.md:
    ```bash

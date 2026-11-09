@@ -14,7 +14,7 @@ Respond with a ticking checklist on the harness's NATIVE task list per item (Cla
 
 Unlike outcome-anchored modes, an empty `$ARGUMENTS` is not a stop — it defaults to `.muster/backlog.md` (step 1). Otherwise drive the batch:
 
-**Run-active lifecycle:** Write `.muster/run-active` at invocation start (before step 1) -- the whole batch counts as ONE run for the `PreToolUse` hook's scale-gate scoping. Remove it after step 4 (the attended stop), or on the last item finishing in unattended mode. `SessionStart` on a fresh session clears a stale marker automatically. `.muster/run-active` is owned by THIS outer mode (go-backlog), not by any per-item go pass: when step 3 says "run go steps 1-8" per item, that excludes go's own step -1 scope check (each backlog item is already a known single item, so there is nothing to detect) and its run-active preamble — the marker is written once at this mode's own invocation start and removed only at its own exit (step 4 or the last unattended item) — one lifecycle for the whole batch, not one per item.
+**Run-active lifecycle:** Write `.muster/run-active` at invocation start (before step 1) -- the whole batch counts as ONE run for the action fence's scoping. Remove it after step 4 (the attended stop), or on the last item finishing in unattended mode. Nothing clears a stale marker automatically: overwrite one an interrupted run left behind, and delete `.muster/run-active` by hand to disarm a leftover action fence outside a run. `.muster/run-active` is owned by THIS outer mode (go-backlog), not by any per-item go pass: when step 3 says "run go steps 1-8" per item, that excludes go's own step -1 scope check (each backlog item is already a known single item, so there is nothing to detect) and its run-active preamble — the marker is written once at this mode's own invocation start and removed only at its own exit (step 4 or the last unattended item) — one lifecycle for the whole batch, not one per item.
 
 **Isolation preflight:** this is a write-capable run, so it requires a **verified isolated git worktree**
 before writing `.muster/run-active`, STATE, backlog annotations, branches, or integration results. Verify that
@@ -38,9 +38,9 @@ fails closed and leaves the complete authoritative copy in the driver worktree f
 Every per-item implementation/review leg and every integration leg must likewise run from its verified
 isolated worktree; repeat the check after changing cwd and never use the main checkout as a write surface.
 Before dispatching any writer, propagate the batch fence into that writer's cwd as regular files: create
-or renew the isolated worktree's `.muster/run-active` lease and copy the batch's exact top-level set into
+the isolated worktree's `.muster/run-active` marker and copy the batch's exact top-level set into
 its `.muster/forbidden-actions`. Verify both from the worker cwd; never rely on the outer worktree's markers
-and never symlink them. Renew the lease while the worker runs, then remove both propagated files only after
+and never symlink them. Keep both while the worker runs, then remove both propagated files only after
 the worker stops or its wave reaches the barrier.
 
 0. **Resolve the CLI (once per batch).** A raw `npx -y <pkg>` re-verifies against the npm registry/cache on EVERY call; resolve `$MUSTER_CLI` ONCE with plain shell (no CLI call, so resolution itself never pays a cold start), preferring a vendored/local install over `npx` — see docs/performance-pass.md:

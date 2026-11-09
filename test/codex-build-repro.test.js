@@ -506,7 +506,7 @@ test("build-anchor-audit: rewording review-gate/SKILL.md's reviewer-selection pr
   );
 });
 
-test("adapt-command-file-arrays: a new command file carrying the scale-gate boilerplate but missing from SCALE_GATE_MARKER_FILES fails the build loud instead of shipping an unguarded anchor", async t => {
+test("adapt-command-file-arrays: a new command file carrying the run-active boilerplate but missing from RUN_MARKER_FILES fails the build loud instead of shipping an unguarded anchor", async t => {
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-marker-coverage-"));
   t.after(() => rm(tmp, { recursive: true, force: true }));
   const checkout = join(tmp, "checkout");
@@ -515,16 +515,16 @@ test("adapt-command-file-arrays: a new command file carrying the scale-gate boil
   await symlink(await realpath(join(repoRoot, "node_modules")), join(checkout, "node_modules"), "dir");
 
   // The mutation: a NEW command adopts go.md's run-active boilerplate verbatim -- in this
-  // fixture checkout only -- without being added to SCALE_GATE_MARKER_FILES. Before the
+  // fixture checkout only -- without being added to RUN_MARKER_FILES. Before the
   // coverage check, this shipped translated-but-unguarded: a later rewording of THIS
   // file's copy would silently no-op (the exact drift class the build-anchor-audit fixed).
   await writeFile(
     join(checkout, "plugin", "commands", "newmode.md"),
-    "# newmode\n\nWrite `.muster/run-active` at invocation start -- the marker the `PreToolUse` hook uses to scope the scale-gate.\n"
+    "# newmode\n\nWrite `.muster/run-active` at invocation start -- the marker the action fence uses to scope itself to this run.\n"
   );
   await assert.rejects(
     execFile(process.execPath, ["scripts/build-codex.mjs"], { cwd: checkout, timeout: 90_000 }),
-    /newmode\.md: carries the SCALE_GATE_MARKER_FILES boilerplate but is not listed in SCALE_GATE_MARKER_FILES/,
+    /newmode\.md: carries the RUN_MARKER_FILES boilerplate but is not listed in RUN_MARKER_FILES/,
     "an unlisted carrier of the boilerplate must stop the build with the array named"
   );
 });

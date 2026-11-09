@@ -422,7 +422,9 @@ function isFullDocument(html) {
 function wrapInFrame(content) {
   return renderBranding(frameTemplate)
     .replace('<div class="status">Connecting…</div>', '')
-    .replace('<!-- CONTENT -->', content);
+    // Replacer function: a string replacement would expand `$&`, `$'`, `$$` in
+    // screen content. Hand-ported from obra/superpowers v7.0.0 (#2489).
+    .replace('<!-- CONTENT -->', () => content);
 }
 
 function readPinnedContentFile(filePath, encoding = null) {

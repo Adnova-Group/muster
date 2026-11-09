@@ -9,15 +9,15 @@ import { trackedMkdtemp as mkdtemp } from "../test-support/helpers.js";
 
 const repoRoot = fileURLToPath(new URL("../", import.meta.url));
 
-// The output style ships inside the plugin (force-for-plugin auto-apply), so
+// The output style ships inside the plugin, opt-in (not forced), so
 // install does NOT copy anything into ~/.claude. These tests pin that contract:
 // install mutates nothing under home and only surfaces the registration steps.
 describe("runInstall", () => {
-  it("reports the style is plugin-shipped and auto-applied", async () => {
+  it("reports the style is plugin-shipped and opt-in (not forced)", async () => {
     const home = await mkdtemp(join(tmpdir(), "muster-install-"));
     const result = await runInstall({ home, repoRoot });
     assert.equal(result.outputStyle.source, "plugin");
-    assert.equal(result.outputStyle.autoApplied, true);
+    assert.equal(result.outputStyle.autoApplied, false);
   });
 
   it("does NOT write anything under ~/.claude (no global mutation)", async () => {

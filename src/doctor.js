@@ -25,7 +25,7 @@ const KNOWN_HOOK_EVENTS = new Set([
   "TaskCompleted",
 ]);
 
-// Extract the bare filename (e.g. "session-start.js") referenced by a hook
+// Extract the bare filename (e.g. "pre-tool-use.js") referenced by a hook
 // command string.  Commands shipped by muster follow the pattern:
 //   node "${CLAUDE_PLUGIN_ROOT}/hooks/<file>.js"
 // Return null if the command doesn't match the expected pattern.

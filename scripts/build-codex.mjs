@@ -115,14 +115,14 @@ function translatePluginPaths(text) {
 // files whose "Run-active lifecycle" boilerplate actually carries the matching literal.
 // adaptCommandForCodex runs unconditionally over EVERY plugin/commands/*.md file, so a
 // blanket throw-on-miss would false-positive on files that never had the phrase (e.g.
-// capture.md has no scale-gate marker at all); scoping the check to the known carriers
+// capture.md has no run-active marker at all); scoping the check to the known carriers
 // (same `name`-array convention already used below for the --roles-only/manifest-validate
 // rewrites) keeps the guard from firing on files it was never meant to touch, while still
 // failing loud if one of the CARRIER files' own copy of the sentence is reworded.
-const SCALE_GATE_MARKER_FILES = ["go.md", "diagnose.md", "audit.md", "runner.md", "plan.md"];
-const BATCH_SCALE_GATE_FILES = ["go-backlog.md"];
-const PLAN_BACKLOG_SCALE_GATE_FILES = ["plan-backlog.md"];
-const SESSION_START_CLEAR_FILES = ["go.md", "diagnose.md", "audit.md", "runner.md", "plan.md", "go-backlog.md", "plan-backlog.md"];
+const RUN_MARKER_FILES = ["go.md", "diagnose.md", "audit.md", "runner.md", "plan.md"];
+const BATCH_RUN_MARKER_FILES = ["go-backlog.md"];
+const PLAN_BACKLOG_RUN_MARKER_FILES = ["plan-backlog.md"];
+const STALE_MARKER_FILES = ["go.md", "diagnose.md", "audit.md", "runner.md", "plan.md", "go-backlog.md", "plan-backlog.md"];
 const backlogWaveDispatchRe = /This transition is executable and authoritative; actual Agent\/Workflow\/spawn\/wait calls remain adapter-owned\.[\s\S]*?wave-sized concurrency always stays within that ceiling\)\./;
 // build-anchor-audit item: this previously anchored on a literal ending "instead of
 // blocking." that go-backlog.md's own source no longer carries at all (the sentence was
@@ -141,10 +141,10 @@ const captureWritesRe = /capture only ever writes[\s\S]*?deliberately omitted\./
 // Inverse coverage check: a command file CARRYING a marker must be LISTED for
 // it, or the build stops and names the array to update.
 const COMMAND_MARKER_COVERAGE = [
-  ["the `PreToolUse` hook uses to scope the scale-gate", SCALE_GATE_MARKER_FILES, "SCALE_GATE_MARKER_FILES"],
-  ["the whole batch counts as ONE run for the `PreToolUse` hook's scale-gate scoping", BATCH_SCALE_GATE_FILES, "BATCH_SCALE_GATE_FILES"],
-  ["the whole plan-backlog invocation counts as ONE run for the `PreToolUse` hook's scale-gate scoping", PLAN_BACKLOG_SCALE_GATE_FILES, "PLAN_BACKLOG_SCALE_GATE_FILES"],
-  ["`SessionStart` on a fresh session clears a stale marker automatically.", SESSION_START_CLEAR_FILES, "SESSION_START_CLEAR_FILES"],
+  ["the action fence uses to scope itself to this run", RUN_MARKER_FILES, "RUN_MARKER_FILES"],
+  ["the whole batch counts as ONE run for the action fence's scoping", BATCH_RUN_MARKER_FILES, "BATCH_RUN_MARKER_FILES"],
+  ["the whole plan-backlog invocation counts as ONE run for the action fence's scoping", PLAN_BACKLOG_RUN_MARKER_FILES, "PLAN_BACKLOG_RUN_MARKER_FILES"],
+  ["Nothing clears a stale marker automatically: overwrite one an interrupted run left behind, and delete `.muster/run-active` by hand to disarm a leftover action fence outside a run.", STALE_MARKER_FILES, "STALE_MARKER_FILES"],
 ];
 // codex-dispatch-single-source item (audit 2026-07-29, slice D): the skill split left TWO
 // maintained copies of the Codex dispatch contract -- the wholesale-replacement texts below
@@ -251,19 +251,19 @@ function adaptCommandForCodex(text, name, contract) {
       throw new Error(`${name}: carries the ${arrayName} boilerplate but is not listed in ${arrayName} -- add it so its anchor stays fail-loud`);
     }
   }
-  if (SCALE_GATE_MARKER_FILES.includes(name) && !text.includes("the `PreToolUse` hook uses to scope the scale-gate")) throw new Error(`${name}: run-active scale-gate anchor not found for Codex rewrite`);
-  if (BATCH_SCALE_GATE_FILES.includes(name) && !text.includes("the whole batch counts as ONE run for the `PreToolUse` hook's scale-gate scoping")) throw new Error(`${name}: batch scale-gate anchor not found for Codex rewrite`);
-  if (PLAN_BACKLOG_SCALE_GATE_FILES.includes(name) && !text.includes("the whole plan-backlog invocation counts as ONE run for the `PreToolUse` hook's scale-gate scoping")) throw new Error(`${name}: plan-backlog scale-gate anchor not found for Codex rewrite`);
-  if (SESSION_START_CLEAR_FILES.includes(name) && !text.includes("`SessionStart` on a fresh session clears a stale marker automatically.")) throw new Error(`${name}: SessionStart stale-marker anchor not found for Codex rewrite`);
+  if (RUN_MARKER_FILES.includes(name) && !text.includes("the action fence uses to scope itself to this run")) throw new Error(`${name}: run-active marker anchor not found for Codex rewrite`);
+  if (BATCH_RUN_MARKER_FILES.includes(name) && !text.includes("the whole batch counts as ONE run for the action fence's scoping")) throw new Error(`${name}: batch run-marker anchor not found for Codex rewrite`);
+  if (PLAN_BACKLOG_RUN_MARKER_FILES.includes(name) && !text.includes("the whole plan-backlog invocation counts as ONE run for the action fence's scoping")) throw new Error(`${name}: plan-backlog run-marker anchor not found for Codex rewrite`);
+  if (STALE_MARKER_FILES.includes(name) && !text.includes("Nothing clears a stale marker automatically: overwrite one an interrupted run left behind, and delete `.muster/run-active` by hand to disarm a leftover action fence outside a run.")) throw new Error(`${name}: stale-marker anchor not found for Codex rewrite`);
   if (name === "go-backlog.md" && !backlogWaveDispatchRe.test(text)) throw new Error(`${name}: complete wave-dispatch anchor not found for Codex rewrite`);
   if (name === "go-backlog.md" && !runnerCwdRe.test(text)) throw new Error(`${name}: runner-cwd anchor not found for Codex rewrite`);
   if (name === "go-backlog.md" && !backlogFencePropagationRe.test(text)) throw new Error(`${name}: action-fence propagation anchor not found for Codex rewrite`);
   if (name === "capture.md" && !captureWritesRe.test(text)) throw new Error(`${name}: capture-writes anchor not found for Codex rewrite`);
   let result = translatePluginPaths(translateCodexProse(text))
-    .replaceAll("the `PreToolUse` hook uses to scope the scale-gate", "Muster's Codex lifecycle hooks use for state diagnostics")
-    .replaceAll("the whole batch counts as ONE run for the `PreToolUse` hook's scale-gate scoping", "the whole batch counts as ONE run for Muster's Codex lifecycle diagnostics")
-    .replaceAll("the whole plan-backlog invocation counts as ONE run for the `PreToolUse` hook's scale-gate scoping", "the whole plan-backlog invocation counts as ONE run for Muster's Codex lifecycle diagnostics")
-    .replaceAll("`SessionStart` on a fresh session clears a stale marker automatically.", "Codex hooks never delete state markers automatically; on startup, verify and clear only a marker proven stale and owned by the interrupted workflow.")
+    .replaceAll("the action fence uses to scope itself to this run", "Muster's Codex lifecycle hooks use for state diagnostics")
+    .replaceAll("the whole batch counts as ONE run for the action fence's scoping", "the whole batch counts as ONE run for Muster's Codex lifecycle diagnostics")
+    .replaceAll("the whole plan-backlog invocation counts as ONE run for the action fence's scoping", "the whole plan-backlog invocation counts as ONE run for Muster's Codex lifecycle diagnostics")
+    .replaceAll("Nothing clears a stale marker automatically: overwrite one an interrupted run left behind, and delete `.muster/run-active` by hand to disarm a leftover action fence outside a run.", "Codex hooks never delete state markers automatically; on startup, verify and clear only a marker proven stale and owned by the interrupted workflow.")
     .replace(backlogWaveDispatchRe, "This transition is executable and authoritative; Codex production actions are adapter-owned process members. Construct one complete `wave.json` whose members carry the emitted item id, `agentType: \"muster-runner\"`, runner brief as `prompt`, and a distinct freshly created registered linked worktree as `cwd`, then run `node ${PLUGIN_ROOT}/runtime/muster.mjs codex-wave <wave.json> --repository-root <trusted repo root> --base-sha <exact full base SHA>`. Production waves are process-only; never invoke a shared-CWD or inline dispatch path from the backlog or manifest. The runtime authenticates every pristine worktree, loads and digests the installed `muster-runner` policy, pins its model, effort, sandbox, and developer instructions outside the manifest, and owns the all-process barrier; treat missing provenance or any process failure as an item failure. Put the scheduler's cap in `maxConcurrentThreadsPerSession`; the runtime clamps it to trusted Codex capacity.")
     .replace(runnerCwdRe, "Runner cwd is its recorded worktree. Codex hooks provide diagnostics but do not replace the worktree path/base-SHA proof or the post-wave ownership check.")
     .replace(backlogFencePropagationRe, "Do not copy `.muster/run-active` or `.muster/forbidden-actions` into process member worktrees: sealed `codex-wave` admission rejects every ignored artifact. Write the validated fixed-vocabulary member action sets to the separate no-follow fence document; the runtime injects and receipts that policy outside the user brief.\n")

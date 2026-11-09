@@ -33,7 +33,7 @@ Claude Code binds plugins **at session start**. A `/plugin install` in a running
 /plugin install muster@muster
 ```
 
-Then **restart Claude Code or `/clear`**. The slash commands, the agents, the session hooks, and the forced output style all become active in the next fresh session. If they are still missing after a restart, run `muster doctor` and read `install-integrity` and `plugin-staleness`.
+Then **restart Claude Code or `/clear`**. The slash commands, the agents, the run-scoped hooks, and the selectable output style all become available in the next fresh session. If they are still missing after a restart, run `muster doctor` and read `install-integrity` and `plugin-staleness`.
 
 ### An agent is not dispatchable, or a named profile is missing
 

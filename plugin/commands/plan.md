@@ -10,7 +10,7 @@ Respond with a structured markdown Glass Box: the scope confirm (when one fires)
 
 The invocation text: `$ARGUMENTS`
 
-**Run-active lifecycle:** Write `.muster/run-active` at invocation start (before step 0) — the mode/run-in-progress marker the `PreToolUse` hook uses to scope the scale-gate. Remove it on Cancel, when handing off to `plugin/commands/plan-backlog.md` (which owns its own marker from that point forward, exactly like any other delegate hand-off), or when handing off to `/muster:go` (go writes its own on invocation). `SessionStart` on a fresh session clears a stale marker automatically.
+**Run-active lifecycle:** Write `.muster/run-active` at invocation start (before step 0) — the mode/run-in-progress marker the action fence uses to scope itself to this run. Remove it on Cancel, when handing off to `plugin/commands/plan-backlog.md` (which owns its own marker from that point forward, exactly like any other delegate hand-off), or when handing off to `/muster:go` (go writes its own on invocation). Nothing clears a stale marker automatically: overwrite one an interrupted run left behind, and delete `.muster/run-active` by hand to disarm a leftover action fence outside a run.
 
 -1. **Resolve the CLI (once per invocation).** A raw `npx -y <pkg>` re-verifies against the npm registry/cache on EVERY call; resolve `$MUSTER_CLI` ONCE with plain shell (no CLI call, so resolution itself never pays a cold start), preferring a vendored/local install over `npx` — see docs/performance-pass.md:
    ```bash

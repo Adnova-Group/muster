@@ -49,8 +49,11 @@ test("hooks.json top-level keys are all valid hook event names", () => {
 // MCP tool with different casing or wording never even invoked the hook — the
 // action fence was dead for it. classifyToolName's word-boundary+case-insensitive
 // keyword match (action-guard.js) is what actually narrows the class now; the
-// matcher's only job is "get every mcp__* call to the hook at all."
-test("hooks.json: PreToolUse matcher covers Edit|Write|NotebookEdit|Bash|mcp__.* (not a keyword subset)", () => {
+// matcher's only job is "get every shell and mcp__* call to the hook at all".
+// PowerShell is the primary Windows shell tool, so it rides with Bash. Edit/
+// Write/NotebookEdit are deliberately absent: the fence never classifies them,
+// and spawning node for every edit is pure always-on cost.
+test("hooks.json: PreToolUse matcher is exactly Bash|PowerShell|mcp__.* (not a keyword subset)", () => {
   const parsed = JSON.parse(readFileSync(HOOKS_JSON, "utf8"));
   const entry = parsed.hooks.PreToolUse.find((e) =>
     e.hooks.some((h) => h.command.includes("pre-tool-use.js")),
@@ -58,10 +61,17 @@ test("hooks.json: PreToolUse matcher covers Edit|Write|NotebookEdit|Bash|mcp__.*
   assert.ok(entry, "PreToolUse entry running pre-tool-use.js must exist");
   assert.equal(
     entry.matcher,
-    "Edit|Write|NotebookEdit|Bash|mcp__.*",
-    "matcher must route every mcp__* tool to the hook; classification (case-insensitive, " +
+    "Bash|PowerShell|mcp__.*",
+    "matcher must route every shell and mcp__* tool to the hook; classification (case-insensitive, " +
     "word-boundary) happens in action-guard.js, not the matcher",
   );
+});
+
+// Zero cost until invoked: no hook may fire on session start or on every
+// prompt. Only the run-scoped action fence and task gate stay registered.
+test("hooks.json registers no always-on SessionStart/UserPromptSubmit hooks", () => {
+  const parsed = JSON.parse(readFileSync(HOOKS_JSON, "utf8"));
+  assert.deepEqual(Object.keys(parsed.hooks).sort(), ["PreToolUse", "TaskCompleted"]);
 });
 
 test("every hook command's script path exists on disk", () => {

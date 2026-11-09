@@ -67,10 +67,10 @@ main-loop `Edit`/`Write`/`NotebookEdit` calls (and file-writing Bash patterns) w
 hook level (commits 6a1587f, de9e3dd). The enforcement-model redesign removed that deny path
 entirely: it proved unscopable in the field, denying legitimate concurrent work on sessions
 and repos muster never touched. The iron rule is now SKILL discipline, checked only after
-the fact by the review gate, in favor of the border-invitation model. Pinned by
-`test/hook-pre-tool-use-e1.test.js`'s "wave guard gone" sweep, which runs the identical
-payload matrix that used to deny and asserts allow instead, proving the removal rather than
-just describing it.
+the fact by the review gate (the warn-only border invitation that briefly replaced it was
+later removed as well). Pinned by `test/hook-pre-tool-use.test.js`'s T-no-deny sweep, which
+runs the identical payload matrix that used to deny and asserts allow instead, proving the
+removal rather than just describing it.
 
 ## 4. Argument-carried scope
 

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFile as execFileCb } from "node:child_process";
 import { promisify } from "node:util";
-import { chmod, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { access, chmod, link, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -139,7 +139,7 @@ setTimeout(() => {
 }, payload.delayMs);
 `);
   await chmod(codex, 0o755);
-  return { root, repo, baseSha, worktreeA, worktreeB, launches, codex };
+  return { root, runtimeRoot, repo, baseSha, worktreeA, worktreeB, launches, codex };
 }
 
 test("terminateProcess uses Windows taskkill tree termination", () => {
@@ -186,6 +186,29 @@ function member(id, cwd) {
   };
 }
 
+// The operator acknowledgement lives in an operator-owned file under the
+// passwd home, not in an environment variable the driving agent can set on its
+// own command line. Tests reach it through the test-only operatorHome seam.
+// Fixture roots sit under tmpdir(), which the gate forbids (Codex's own
+// workspace-write sandbox can write there), so tests use the /dev/shm root.
+const UNCONTAINED_ACK = "i-accept-no-process-containment\n";
+async function grantUncontained(fixture, { contents = UNCONTAINED_ACK, mode = 0o600, operatorHome } = {}) {
+  const home = operatorHome || join(fixture.runtimeRoot, "operator-home");
+  await mkdir(join(home, ".config", "muster"), { recursive: true, mode: 0o700 });
+  const path = join(home, ".config", "muster", "uncontained-wave");
+  await rm(path, { force: true });
+  await writeFile(path, contents);
+  await chmod(path, mode);
+  return { operatorHome: home, path };
+}
+
+// Every uncontained run in this file points CODEX_HOME at the fixture: the
+// degraded lane deletes the default-store receipt key, and the real one in the
+// developer's ~/.codex must never be touched by a test.
+function uncontainedEnv(fixture, extra = {}) {
+  return { ...process.env, CODEX_HOME: join(fixture.root, "codex-home"), ...extra };
+}
+
 // A macOS operator hit this gate and the driving agent "solved" it by re-running
 // the identical wave inside `docker run --privileged --network host` with the
 // host's ~/.codex/auth.json bind-mounted in -- i.e. it defeated the exact mount
@@ -199,9 +222,13 @@ test("the wave platform gate is a hard stop that names and forbids the container
       assert.match(error.message, /HARD STOP/);
       assert.match(error.message, /[Dd]o NOT re-run this wave inside a container, VM, or remote Linux host/);
       assert.match(error.message, /[Dd]o NOT copy, mount, or forward Codex credentials/);
-      assert.match(error.message, /MUSTER_UNCONTAINED_WAVE=i-accept-no-process-containment/);
       assert.match(error.message, /operator -- not the agent/);
-      assert.match(error.message, /never set it yourself/);
+      assert.match(error.message, /SECURITY\.md, "Uncontained Codex waves"/);
+      assert.match(error.message, /never create it yourself/);
+      // The refusal is read by the gated agent: it must point at operator
+      // documentation, never hand over the literal acknowledgement.
+      assert.doesNotMatch(error.message, /i-accept-no-process-containment/);
+      assert.doesNotMatch(error.message, /MUSTER_UNCONTAINED_WAVE/);
       return true;
     });
   }
@@ -223,37 +250,102 @@ test("a Codex outside the repository resolves without npm packaging metadata", a
   Object.defineProperty(process, "platform", { value: "darwin", configurable: true });
   t.after(() => Object.defineProperty(process, "platform", { value: hostPlatform, configurable: true }));
 
+  const { operatorHome } = await grantUncontained(fixture);
   const failure = await runCodexWave({
     members: [member("a", fixture.worktreeA)],
     repositoryRoot: fixture.repo,
     baseSha: fixture.baseSha,
+    operatorHome,
     env: {
       PATH: dirname(fixture.codex),
       HOME: fixture.root,
-      MUSTER_UNCONTAINED_WAVE: "i-accept-no-process-containment",
     },
   }).then(() => null, error => error);
   if (failure) assert.doesNotMatch(failure.message, /no trusted Codex executable/);
 });
 
-test("the uncontained override is refused unless the operator spells out the acknowledgement", async t => {
-  const fixture = await waveFixture(t);
+function onDarwin(t) {
   const hostPlatform = process.platform;
   Object.defineProperty(process, "platform", { value: "darwin", configurable: true });
   t.after(() => Object.defineProperty(process, "platform", { value: hostPlatform, configurable: true }));
+}
 
-  for (const value of ["1", "true", "yes", ""]) {
-    await assert.rejects(
-      runCodexWave({
-        members: [member("a", fixture.worktreeA)],
-        codexCommand: fixture.codex,
-        repositoryRoot: fixture.repo,
-        baseSha: fixture.baseSha,
-        env: { ...process.env, MUSTER_UNCONTAINED_WAVE: value },
-      }),
-      /refusing production wave/,
-      `MUSTER_UNCONTAINED_WAVE=${JSON.stringify(value)} must not unlock the wave`,
-    );
+async function assertUncontainedRefused(fixture, { operatorHome, env = {} }, message, rejected = null) {
+  await assert.rejects(
+    runCodexWave({
+      members: [member("a", fixture.worktreeA)],
+      codexCommand: fixture.codex,
+      repositoryRoot: fixture.repo,
+      baseSha: fixture.baseSha,
+      operatorHome: operatorHome || join(fixture.runtimeRoot, "no-operator-home"),
+      env: uncontainedEnv(fixture, env),
+    }),
+    error => {
+      assert.match(error.message, /refusing production wave/, message);
+      if (rejected) assert.match(error.message, new RegExp(`found but rejected: ${rejected.source}`), message);
+      else assert.doesNotMatch(error.message, /found but rejected/, message);
+      return true;
+    },
+  );
+  await assert.rejects(readFile(fixture.launches, "utf8"), { code: "ENOENT" }, `${message}: no worker may launch`);
+}
+
+// The driving agent is the principal this gate constrains, and it can set any
+// environment variable on its own command line: the old switch is dead, and
+// HOME / XDG_CONFIG_HOME cannot relocate the acknowledgement either.
+test("the uncontained override is not reachable through environment variables", async t => {
+  const fixture = await waveFixture(t);
+  onDarwin(t);
+  await assertUncontainedRefused(fixture, { env: { MUSTER_UNCONTAINED_WAVE: "i-accept-no-process-containment" } },
+    "MUSTER_UNCONTAINED_WAVE must no longer unlock the wave");
+  const agentHome = join(fixture.runtimeRoot, "agent-home");
+  await grantUncontained(fixture, { operatorHome: agentHome });
+  await assertUncontainedRefused(fixture, { env: { HOME: agentHome, XDG_CONFIG_HOME: join(agentHome, ".config") } },
+    "an acknowledgement under an agent-chosen HOME / XDG_CONFIG_HOME must not unlock the wave");
+});
+
+test("the uncontained acknowledgement is refused unless the operator spells it out", async t => {
+  const fixture = await waveFixture(t);
+  onDarwin(t);
+  for (const contents of ["1\n", "true", "yes\n", ""]) {
+    const { operatorHome } = await grantUncontained(fixture, { contents });
+    await assertUncontainedRefused(fixture, { operatorHome }, `acknowledgement ${JSON.stringify(contents)} must not unlock the wave`, /its contents do not match/);
+  }
+});
+
+test("the uncontained acknowledgement must be an owner-only file outside worker-writable roots", async t => {
+  const fixture = await waveFixture(t);
+  onDarwin(t);
+
+  const groupWritable = await grantUncontained(fixture, { mode: 0o620 });
+  await assertUncontainedRefused(fixture, groupWritable, "a group-writable acknowledgement", /it must be owned by the running user/);
+
+  const real = await grantUncontained(fixture, { operatorHome: join(fixture.runtimeRoot, "real-home") });
+  const linkHome = join(fixture.runtimeRoot, "link-home");
+  await mkdir(join(linkHome, ".config", "muster"), { recursive: true, mode: 0o700 });
+  await symlink(real.path, join(linkHome, ".config", "muster", "uncontained-wave"));
+  await assertUncontainedRefused(fixture, { operatorHome: linkHome }, "a symlinked acknowledgement", /it must be a regular file reached without symlinks/);
+
+  // A symlinked ancestor is how a worker-writable directory would masquerade
+  // as an operator one.
+  const ancestorHome = join(fixture.runtimeRoot, "ancestor-home");
+  await mkdir(ancestorHome, { mode: 0o700 });
+  await symlink(join(real.operatorHome, ".config"), join(ancestorHome, ".config"));
+  await assertUncontainedRefused(fixture, { operatorHome: ancestorHome }, "an acknowledgement behind a symlinked ancestor", /it must be a regular file reached without symlinks/);
+
+  const hardlinkHome = join(fixture.runtimeRoot, "hardlink-home");
+  await mkdir(join(hardlinkHome, ".config", "muster"), { recursive: true, mode: 0o700 });
+  await link(real.path, join(hardlinkHome, ".config", "muster", "uncontained-wave"));
+  await assertUncontainedRefused(fixture, { operatorHome: hardlinkHome }, "a hardlinked acknowledgement", /it must be a regular file reached without symlinks, with a single link/);
+  await rm(hardlinkHome, { recursive: true, force: true });
+
+  // A worker can write its own worktree and the temp dirs Codex's
+  // workspace-write sandbox allows, so an acknowledgement there could be
+  // planted by a previous uncontained wave.
+  for (const operatorHome of [join(fixture.worktreeA, ".home"), join(fixture.repo, ".home"), join(fixture.root, "tmp-home")]) {
+    await grantUncontained(fixture, { operatorHome });
+    await assertUncontainedRefused(fixture, { operatorHome }, `an acknowledgement under ${operatorHome}`, /it must live outside/);
+    await rm(operatorHome, { recursive: true, force: true });
   }
 });
 
@@ -262,16 +354,16 @@ test("the uncontained override is refused unless the operator spells out the ack
 // key and forge its own continuation.
 test("an acknowledged uncontained wave runs degraded, is receiptless, and reports what it lost", async t => {
   const fixture = await waveFixture(t);
-  const hostPlatform = process.platform;
-  Object.defineProperty(process, "platform", { value: "darwin", configurable: true });
-  t.after(() => Object.defineProperty(process, "platform", { value: hostPlatform, configurable: true }));
+  onDarwin(t);
+  const { operatorHome } = await grantUncontained(fixture);
 
   const wave = await runCodexWave({
     members: [member("a", fixture.worktreeA)],
     codexCommand: fixture.codex,
     repositoryRoot: fixture.repo,
     baseSha: fixture.baseSha,
-    env: { ...process.env, MUSTER_UNCONTAINED_WAVE: "i-accept-no-process-containment" },
+    operatorHome,
+    env: uncontainedEnv(fixture),
   });
 
   assert.equal(wave.containment, "none");
@@ -294,6 +386,45 @@ test("an acknowledged uncontained wave runs degraded, is receiptless, and report
   const launched = await readFile(fixture.launches, "utf8");
   assert.match(launched, /--sandbox workspace-write/);
   assert.doesNotMatch(launched, /danger-full-access/);
+});
+
+// An uncontained worker runs under Codex's workspace-write sandbox, which can
+// read outside the workspace. A receipt key left by an earlier contained wave
+// would let it forge continuation receipts, so the key is deleted before the
+// worker launches, and the result says that earlier receipts no longer verify.
+test("an uncontained wave deletes existing receipt keys before any worker launches", async t => {
+  const fixture = await waveFixture(t);
+  onDarwin(t);
+  const { operatorHome } = await grantUncontained(fixture);
+  const env = uncontainedEnv(fixture);
+  // Both the store this wave uses (the test wrapper's override) and the default
+  // store under CODEX_HOME, which CLI-launched contained waves key off.
+  const keyPaths = [];
+  for (const store of [join(fixture.root, "fix-loop-store"), join(env.CODEX_HOME, "muster", "fix-loops")]) {
+    await mkdir(store, { recursive: true, mode: 0o700 });
+    await chmod(store, 0o700);
+    const keyPath = join(store, ".receipt-key");
+    await writeFile(keyPath, Buffer.alloc(32, 7), { mode: 0o600 });
+    keyPaths.push(keyPath);
+  }
+
+  const wave = await runCodexWave({
+    members: [member("a", fixture.worktreeA)],
+    codexCommand: fixture.codex,
+    repositoryRoot: fixture.repo,
+    baseSha: fixture.baseSha,
+    operatorHome,
+    env,
+  });
+
+  assert.equal(wave.containment, "none");
+  for (const keyPath of keyPaths) {
+    await assert.rejects(access(keyPath), { code: "ENOENT" }, `${keyPath} must not survive an uncontained wave`);
+  }
+  assert.ok(
+    wave.degraded.lost.some(loss => /earlier contained waves/.test(loss)),
+    "the result must say that earlier receipts were invalidated",
+  );
 });
 
 // Ordering regression: the platform precondition used to live inside

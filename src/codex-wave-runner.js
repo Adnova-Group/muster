@@ -4,7 +4,8 @@ import { createHash, createHmac, randomBytes } from "node:crypto";
 import { constants as fsConstants } from "node:fs";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
-import { chmod, lstat, open, readdir, realpath } from "node:fs/promises";
+import { chmod, lstat, open, readdir, realpath, unlink } from "node:fs/promises";
+import { tmpdir, userInfo } from "node:os";
 import { delimiter, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { createContainedFile, ensureContainedDirectory, readNoFollowRegular } from "./fs-safe.js";
 import {
@@ -56,8 +57,10 @@ const CONTAINED_CODEX_SANDBOX = "danger-full-access";
 // on Linux) -- the boundary RUNNER_POLICY.sandbox already advertises -- rather
 // than the full-access profile that only makes sense inside bwrap.
 const UNCONTAINED_CODEX_SANDBOX = "workspace-write";
-const UNCONTAINED_WAVE_ENV = "MUSTER_UNCONTAINED_WAVE";
 const UNCONTAINED_WAVE_ACK = "i-accept-no-process-containment";
+const UNCONTAINED_WAVE_DOC = 'SECURITY.md, "Uncontained Codex waves"';
+const UNCONTAINED_WAVE_ACK_MAX_BYTES = 256;
+const RECEIPT_KEY_INVALIDATED_LOSS = "the receipt key left by earlier contained waves, deleted before launch so this unmasked worker cannot read it -- receipts from those waves no longer verify and they cannot be resumed";
 const UNCONTAINED_WAVE_LOSSES = Object.freeze([
   "the tmpfs masks that hide ~/.codex (auth.json), ~/.agents and the fix-loop store from the worker",
   "the PID namespace and --die-with-parent that make a worker non-escapable",
@@ -69,7 +72,7 @@ const uncontainedWave = reason => Object.freeze({
   contained: false,
   reason,
   lost: UNCONTAINED_WAVE_LOSSES,
-  warning: `DEGRADED WAVE -- ${reason}; running under Codex's own ${UNCONTAINED_CODEX_SANDBOX} sandbox with no muster containment, accepted via ${UNCONTAINED_WAVE_ENV}.`,
+  warning: `DEGRADED WAVE -- ${reason}; running under Codex's own ${UNCONTAINED_CODEX_SANDBOX} sandbox with no muster containment, accepted by the operator acknowledgement (${UNCONTAINED_WAVE_DOC}).`,
 });
 const TRUSTED_GIT_COMMAND = "/usr/bin/git";
 const ACTION_CLASSES = new Set(["send", "sign", "submit", "publish", "purchase", "delete-remote"]);
@@ -352,7 +355,7 @@ function runProcess(command, argv, {
 // version of the gate, it is the precise exposure the gate exists to prevent.
 // The refusal names that workaround because the error string is the only thing
 // a driving agent sees before it starts improvising one.
-export function assertSupportedWavePlatform(platform = process.platform, label = "runCodexWave") {
+export function assertSupportedWavePlatform(platform = process.platform, label = "runCodexWave", ackRejection = null) {
   if (platform === "linux") return;
   throw new Error([
     `${label}: non-escapable process containment is unavailable on ${platform}; refusing production wave.`,
@@ -361,8 +364,9 @@ export function assertSupportedWavePlatform(platform = process.platform, label =
     "do NOT copy, mount, or forward Codex credentials or CODEX_HOME into any sandbox to satisfy it:",
     "virtualising the run strips the mount masking that keeps ~/.codex out of the worker,",
     "which makes the workaround strictly less safe than this refusal.",
-    `The operator -- not the agent -- may accept a degraded uncontained run by setting ${UNCONTAINED_WAVE_ENV}=${UNCONTAINED_WAVE_ACK};`,
-    "report the platform limit and let them decide, never set it yourself.",
+    `The operator -- not the agent -- may accept a degraded uncontained run with the operator acknowledgement described in ${UNCONTAINED_WAVE_DOC};`,
+    "report the platform limit and let them decide, never create it yourself.",
+    ...(ackRejection ? [`An operator acknowledgement was found but rejected: ${ackRejection}.`] : []),
   ].join(" "));
 }
 
@@ -372,18 +376,96 @@ export function assertSupportedWavePlatform(platform = process.platform, label =
 // container -- the precise exposure bwrap's masking prevents. A named, degraded,
 // receipted lane is safer than the workarounds its absence provokes.
 //
-// The acknowledgement is a full sentence rather than "1" so it cannot be
-// reached by reflex, and it is read from the host environment (hermeticCodexEnv
-// strips MUSTER_* before the worker ever sees it). It is honoured only where
-// containment genuinely cannot exist -- never to skip a working bwrap.
-function acknowledgedUncontained(hostEnv) {
-  return (hostEnv || {})[UNCONTAINED_WAVE_ENV] === UNCONTAINED_WAVE_ACK;
+// The acknowledgement is an operator-owned file, not an environment variable:
+// the driving agent is the principal this gate constrains, and it can set any
+// variable on its own command line. The file must hold the full sentence (so it
+// cannot be reached by reflex), be a regular single-link file owned by the
+// running user with no group/world write on it or its directory, and resolve
+// outside every root a worker can write -- the repository, its git common dir,
+// each member worktree, and the temp dirs Codex's workspace-write sandbox
+// allows -- so no earlier uncontained wave can plant one for the next. The
+// refusal message points at operator documentation and never prints the
+// sentence. This narrows the gate to a deliberate act; it cannot stop a
+// same-uid agent that sets out to write the file, and does not claim to.
+// It is honoured only where containment genuinely cannot exist -- never to
+// skip a working bwrap.
+// The operator's home comes from the passwd entry, not HOME or XDG_CONFIG_HOME:
+// both are environment variables the driving agent controls, and either would
+// let it move the gate to a directory of its choosing. operatorHome is a
+// test-only seam; the CLI never passes it.
+function defaultOperatorHome() {
+  try { return userInfo().homedir || null; } catch { return null; }
 }
 
-async function resolveWaveContainment({ deadline, env, spawnProcess, hostEnv }) {
-  const acknowledged = acknowledgedUncontained(hostEnv);
+function uncontainedAcknowledgementPath(operatorHome) {
+  return operatorHome ? join(operatorHome, ".config", "muster", "uncontained-wave") : null;
+}
+
+async function realpathOrNull(path) {
+  try { return await realpath(path); } catch { return null; }
+}
+
+// -> { ok: true } | { ok: false, reason: string | null }. reason is null when no
+// acknowledgement exists at all, so the refusal stays generic in that case.
+async function readUncontainedAcknowledgement({ operatorHome = defaultOperatorHome(), hostEnv = {}, writableRoots = [] } = {}) {
+  // Windows reports every file as 0o666 and every directory as 0o777 and has no
+  // uid, so none of the ownership checks below can be expressed there. The
+  // degraded lane is POSIX-only (macOS, or Linux without working bwrap).
+  if (typeof process.getuid !== "function") {
+    return { ok: false, reason: "the degraded lane is unavailable on this platform because file ownership cannot be verified" };
+  }
+  const path = uncontainedAcknowledgementPath(operatorHome);
+  if (!path) return { ok: false, reason: null };
+  // Resolve first, read the canonical path, then resolve again: O_NOFOLLOW only
+  // covers the last component, so an ancestor symlink swapped between the read
+  // and the location checks must not be able to split them.
+  let canonical;
+  try {
+    canonical = await realpath(path);
+  } catch (error) {
+    if (error.code === "ENOENT" || error.code === "ENOTDIR") return { ok: false, reason: null };
+    throw error;
+  }
+  // The home directory itself may be a symlink (automounted or NAS homes);
+  // only components below it must be real.
+  const homeCanonical = await realpathOrNull(operatorHome);
+  if (!homeCanonical || canonical !== join(homeCanonical, ".config", "muster", "uncontained-wave")) {
+    return { ok: false, reason: "it must be a regular file reached without symlinks" };
+  }
+  let read;
+  try {
+    read = await readNoFollowRegular(canonical, { maxBytes: UNCONTAINED_WAVE_ACK_MAX_BYTES, label: "uncontained-wave acknowledgement", requireSingleLink: true });
+  } catch {
+    return { ok: false, reason: "it must be a regular file reached without symlinks, with a single link" };
+  }
+  if (await realpathOrNull(path) !== canonical) {
+    return { ok: false, reason: "it changed while it was being read" };
+  }
+  const uid = process.getuid();
+  if (read.info.uid !== uid || (read.info.mode & 0o022) !== 0) {
+    return { ok: false, reason: "it must be owned by the running user and not group- or world-writable" };
+  }
+  const parent = await lstat(dirname(canonical)).catch(() => null);
+  if (!parent || parent.uid !== uid || (parent.mode & 0o022) !== 0) {
+    return { ok: false, reason: "its directory must be owned by the running user and not group- or world-writable" };
+  }
+  const temps = [tmpdir(), "/tmp", "/var/tmp", hostEnv.TMPDIR, hostEnv.TEMP, hostEnv.TMP].filter(value => typeof value === "string" && isAbsolute(value));
+  const forbidden = (await Promise.all([...temps, ...writableRoots].map(realpathOrNull))).filter(Boolean);
+  if (forbidden.some(root => containedPath(root, canonical))) {
+    return { ok: false, reason: "it must live outside the repository, the member worktrees and the temp directories a worker can write" };
+  }
+  if (read.bytes.toString("utf8").trim() !== UNCONTAINED_WAVE_ACK) {
+    return { ok: false, reason: "its contents do not match the documented acknowledgement" };
+  }
+  return { ok: true };
+}
+
+async function resolveWaveContainment({ deadline, env, spawnProcess, hostEnv, operatorHome, writableRoots = [] }) {
+  const acknowledgement = hostEnv
+    ? await readUncontainedAcknowledgement({ operatorHome, hostEnv, writableRoots })
+    : { ok: false, reason: null };
   if (process.platform !== "linux") {
-    if (!acknowledged) assertSupportedWavePlatform();
+    if (!acknowledgement.ok) assertSupportedWavePlatform(process.platform, "runCodexWave", acknowledgement.reason);
     return uncontainedWave(`process containment is unavailable on ${process.platform}`);
   }
   const result = await runProcess("/usr/bin/bwrap", ["--version"], {
@@ -393,11 +475,12 @@ async function resolveWaveContainment({ deadline, env, spawnProcess, hostEnv }) 
   });
   if (result.code !== 0 || !/bubblewrap/i.test(result.stdout + result.stderr)) {
     const detail = result.stderr.trim() || "version probe failed";
-    if (!acknowledged) {
+    if (!acknowledgement.ok) {
       throw new Error([
         `runCodexWave: bubblewrap PID-namespace containment is required: ${detail}.`,
         "HARD STOP -- do NOT substitute a container, VM, or remote host, and do NOT forward Codex credentials into one.",
-        `The operator -- not the agent -- may accept a degraded uncontained run by setting ${UNCONTAINED_WAVE_ENV}=${UNCONTAINED_WAVE_ACK}.`,
+        `The operator -- not the agent -- may accept a degraded uncontained run with the operator acknowledgement described in ${UNCONTAINED_WAVE_DOC}; report the limit and let them decide, never create it yourself.`,
+        ...(acknowledgement.reason ? [`An operator acknowledgement was found but rejected: ${acknowledgement.reason}.`] : []),
       ].join(" "));
     }
     return uncontainedWave(`bubblewrap is unavailable: ${detail}`);
@@ -626,6 +709,27 @@ async function protectedFixLoopStore({ env, override, authority, members, withRe
   // continuation receipts, so the key is never written rather than written and
   // left exposed. No key means no receipts, which means no resumable wave.
   const secretPath = join(canonical, ".receipt-key");
+  // The worker of an uncontained wave runs under Codex's workspace-write
+  // sandbox, which reads outside the workspace. Not minting a key is not
+  // enough: one left by an earlier contained wave is just as forgeable, so it
+  // is deleted before any worker launches. Receipts it signed stop verifying,
+  // which is the point -- the next contained wave mints a fresh key.
+  // The default store is cleared too when an override is in use: contained
+  // waves and continuations launched from the CLI key off it, and the unmasked
+  // worker can read it wherever the override points.
+  let invalidatedKey = false;
+  if (!withReceiptKey) {
+    const keyPaths = new Set([secretPath]);
+    if (configuredHome) keyPaths.add(join(resolve(configuredHome), "muster", "fix-loops", ".receipt-key"));
+    for (const keyPath of keyPaths) {
+      try {
+        await unlink(keyPath);
+        invalidatedKey = true;
+      } catch (error) {
+        if (error.code !== "ENOENT") throw error;
+      }
+    }
+  }
   const created = withReceiptKey
     && await createContainedFile(canonical, secretPath, randomBytes(FIX_LOOP_SECRET_BYTES), { mode: 0o600 });
   const secretRead = withReceiptKey
@@ -645,7 +749,7 @@ async function protectedFixLoopStore({ env, override, authority, members, withRe
   const maskedRoots = uniqueMasks.filter(path =>
     !uniqueMasks.some(parent => parent !== path && containedPath(parent, path))
   );
-  return { root: canonical, sessionsRoot, mountsRoot, maskedRoots, secret: secretRead.bytes, created };
+  return { root: canonical, sessionsRoot, mountsRoot, maskedRoots, secret: secretRead.bytes, created, invalidatedKey };
 }
 
 async function createIsolatedCodexHome(store, env, { allowMissingAuth = false } = {}) {
@@ -1142,6 +1246,7 @@ async function runProcessWave({
   actionFences,
   fixLoopStoreRoot,
   allowMissingAuth,
+  operatorHome,
 }) {
   // All path checks complete before the first Codex support probe or worker process.
   authority ||= await prepareTrustedRepository(repositoryRoot, baseSha, deadline);
@@ -1162,11 +1267,17 @@ async function runProcessWave({
   // Containment is resolved before the store is built: an uncontained wave must
   // never mint a receipt key, because without the tmpfs mask the worker could
   // read it and forge its own continuation receipts.
-  const containment = await resolveWaveContainment({ deadline, env: childEnv, spawnProcess, hostEnv: env });
+  let containment = await resolveWaveContainment({
+    deadline, env: childEnv, spawnProcess, hostEnv: env, operatorHome,
+    writableRoots: [authority.repositoryRoot, authority.commonDir, ...canonicalMembers.map(member => member.cwd)],
+  });
   const fixLoopStore = await protectedFixLoopStore({
     env: childEnv, override: fixLoopStoreRoot, authority, members: canonicalMembers,
     withReceiptKey: containment.contained,
   });
+  if (fixLoopStore.invalidatedKey) {
+    containment = Object.freeze({ ...containment, lost: Object.freeze([...containment.lost, RECEIPT_KEY_INVALIDATED_LOSS]) });
+  }
   const repositoryHandle = await open(authority.repositoryRoot, fsConstants.O_RDONLY | fsConstants.O_DIRECTORY | fsConstants.O_NOFOLLOW);
   let support;
   try {
@@ -1523,6 +1634,9 @@ export async function runCodexWave({
   trustedActionFences,
   fixLoopStoreRoot,
   workerTimeoutMs = CODEX_WAVE_LIMITS.workerTimeoutMs,
+  // Test-only seam: src/cli.js never passes it, so production always reads the
+  // acknowledgement from the user-database home.
+  operatorHome = defaultOperatorHome(),
 } = {}) {
   // Platform first, ahead of every other precondition. This check used to sit
   // inside runProcessWave, downstream of resolveTrustedCodexExecutable, so a
@@ -1532,7 +1646,10 @@ export async function runCodexWave({
   // environment exists; this early copy only ensures an unacknowledged run on
   // an unsupported platform stops here, with the honest message, instead of
   // dying further down on some incidental symptom like Codex provenance.
-  if (!acknowledgedUncontained(env)) assertSupportedWavePlatform();
+  if (process.platform !== "linux") {
+    const acknowledgement = await readUncontainedAcknowledgement({ operatorHome, hostEnv: env });
+    if (!acknowledgement.ok) assertSupportedWavePlatform(process.platform, "runCodexWave", acknowledgement.reason);
+  }
   if (!Number.isInteger(workerTimeoutMs) || workerTimeoutMs < 1 || workerTimeoutMs > CODEX_WAVE_LIMITS.workerTimeoutMs) {
     throw new Error(`runCodexWave: workerTimeoutMs must be an integer within 1..${CODEX_WAVE_LIMITS.workerTimeoutMs}`);
   }
@@ -1574,5 +1691,6 @@ export async function runCodexWave({
     actionFences,
     fixLoopStoreRoot,
     allowMissingAuth,
+    operatorHome,
   });
 }

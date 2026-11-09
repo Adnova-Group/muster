@@ -24,8 +24,9 @@ masking is what keeps `~/.codex` and `auth.json` away from the worker, and that 
 counterpart on other platforms. Re-hosting a refused wave in a container, VM, or remote Linux host —
 or forwarding `CODEX_HOME` into one — inverts that protection rather than restoring it, so treat
 every such substitute as out of bounds. Surface the refusal to the operator and stop there; where
-containment is genuinely unavailable, they alone may accept a degraded uncontained run by setting
-`MUSTER_UNCONTAINED_WAVE`. If it is unclear whether a gate applies, say so and ask.
+containment is genuinely unavailable, they alone may accept a degraded uncontained run through the
+operator acknowledgement in `SECURITY.md`. That file is theirs to create, so leave it to them. If it
+is unclear whether a gate applies, say so and ask.
 
 Codex has no `Workflow`-tool counterpart. The following versioned subagent collaboration packets
 are reserved for explicit non-wave leaf delegation and never authorize a production wave.

@@ -1488,5 +1488,11 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // `2>/dev/null`, `/tmp/*` and `.muster/*` redirect was counted as an inline file write and fired the
   // border-invitation warning on read-only commands. Regression: test/bash-write-target-posix.test.js
   // (also added to the Windows CI job). Deliberate fix, not drift.
-  assert.equal(hash.digest("hex"), "d5dad52e8f0158e9cff3e927b55e24f114d878af35e4b813f7b6fcc613f9ab7f");
+  // Re-pin 2026-11-09 (codex-wave security-review follow-up, content-only, file count unchanged):
+  // plugin/skills/orchestrator/references/codex-dispatch.md now names the operator acknowledgement
+  // file in SECURITY.md in place of the MUSTER_UNCONTAINED_WAVE environment variable. The driving
+  // agent is the principal the gate constrains and could set that variable itself, so the degraded
+  // lane moved to an operator-owned file outside every worker-writable root. Phrased positively ("That
+  // file is theirs to create") to stay inside ANTH-POS-001's negative budget. Deliberate, not drift.
+  assert.equal(hash.digest("hex"), "6b88fb16dd776b49be17ef559928abd2b587fe453d39e9fffae4dfb7c6010952");
 });

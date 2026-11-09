@@ -18,6 +18,21 @@ upstream:
     path: null
     license: MIT
     relation: inspired-by
+  - kind: article
+    title: AICMO marketing prompt collection; MaxsPrompts
+    author: null
+    url: null
+    relation: inspired-by
+  - kind: article
+    title: Sales Battlecards 101
+    author: Klue
+    url: https://klue.com/blog/competitive-battlecards-101
+    relation: inspired-by
+  - kind: article
+    title: Modern battlecard blueprint
+    author: Crayon
+    url: null
+    relation: inspired-by
 phases:
   - { id: intake,    role: brainstorm,    desc: "competitor, segment, deal context" }
   - { id: research,  role: docs-research, desc: "competitor facts, pricing, strengths/weaknesses (cited)" }

@@ -35,7 +35,43 @@ upstream:
     ref: d165f267a0ffd34f3b0a70a8a72ac38cb8e4a542
     path: null
     license: NONE
-    relation: mechanism-port
+    relation: inspired-by
+  - kind: unknown
+    title: PAS (Problem-Agitate-Solution) and BAB (Before-After-Bridge) copywriting formulas
+    author: null
+    url: null
+    relation: inspired-by
+    note: "2026-11-09: named in muster-author, social-post, lead-magnet and book. Neither muster's history nor a primary source found on this date names who originated either formula."
+  - kind: book
+    title: Building a StoryBrand (SB7)
+    author: Donald Miller
+    url: https://storybrand.com/
+    relation: inspired-by
+  - kind: book
+    title: The Pyramid Principle (SCQA, MECE)
+    author: Barbara Minto
+    url: null
+    relation: inspired-by
+  - kind: book
+    title: Save the Cat!
+    author: Blake Snyder
+    url: null
+    relation: inspired-by
+  - kind: book
+    title: The Story Grid
+    author: Shawn Coyne
+    url: null
+    relation: inspired-by
+  - kind: book
+    title: Techniques of the Selling Writer (scene and sequel)
+    author: Dwight V. Swain
+    url: null
+    relation: inspired-by
+  - kind: article
+    title: Chapter Blog nonfiction outline; ProWritingAid non-fiction structure
+    author: null
+    url: null
+    relation: inspired-by
 phases:
   - id: intake
     role: brainstorm

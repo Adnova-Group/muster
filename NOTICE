@@ -23,16 +23,25 @@ Per-item detail (upstream path, ref, relation) is in each item's `upstream:` fie
 - jalaalrd/anti-ai-slop-writing @ 63255f9bbb75a265dc5786a04535cd033f487756 (NONE)
 - aaaronmiller/humanize-writing @ c07a2a8dab1f6033ad0da713766df43d0dc374b9 (MIT)
   Copyright (c) 2025 Aaron Miller
+- linexjlin/GPTs @ 3adfb7b38423b64a995057483c1f9007ed5f4da5 (NONE)
 - hermes-labs-ai/lintlang @ dd17238643817f3d7fd3ece69e6fdbafe8676a98 (Apache-2.0)
   Copyright 2026 Hermes Labs
 - promptfoo/promptfoo @ 3901d3949df32c087465bce39626c460d8590034 (MIT)
   Copyright (c) Promptfoo 2025
 - shobrook/promptimal @ e03cbc1db19c7ec6c310605a9819e35c2baed023 (MIT)
   Copyright (c) 2024 Jonathan Shobrook
+- gepa-ai/gepa @ 92dadfffbe98c8ecf508179a1cab09c1bb85cd32 (MIT)
+  Copyright © 2025 Lakshya A Agrawal
 - felipelobomotta-blip/book-genesis-studio @ a43a429bdec1770232ee64e7de634c5ce5109b80 (MIT)
   formerly: felipelobomotta-blip/book-genesis-v4
   Copyright (c) 2026 Felipe Lobo
 - NousResearch/autonovel @ d165f267a0ffd34f3b0a70a8a72ac38cb8e4a542 (NONE)
+- CSHaitao/Awesome-LLMs-as-Judges @ d89ed4241b8199ff504aea009920c1cf4dded2f1 (NONE)
+- llm-as-a-judge/Awesome-LLM-as-a-judge @ ad3b4ce1d869129f8527d4c6bcf2a8111582cb98 (NONE)
+- microsoft/LLM-Rubric @ 70d56fc4e9a26e60642bc14b62b96d2d0a500edd (MIT)
+  Copyright (c) Microsoft Corporation.
+- assafelovic/gpt-researcher @ 409b8b60b477d50f2f844bc9598d1bcb7b056eee (Apache-2.0)
+- mbzuai-nlp/qraft @ 3bbea66c832d87dcd0977f74573ecdaa7344ec7e (NONE)
 - damusix/atomic-claude (MIT)
   Copyright (c) 2026 Danilo Alonso
 - VoltAgent/awesome-claude-code-subagents @ 14bbcf5d984c8ce61a0aa17f897b7d8e63739783 (MIT)
@@ -40,23 +49,129 @@ Per-item detail (upstream path, ref, relation) is in each item's `upstream:` fie
 - humanlayer/12-factor-agents @ d20c728368bf9c189d6d7aab704744decb6ec0cc (Apache-2.0 AND CC-BY-SA-4.0)
 - contains-studio/agents @ a5a480c324cac64b9c569bca0b2f297d517240cb (NONE)
 - disler/infinite-agentic-loop @ 6e9a012f81ef2291faf174d67176f7e69832cc0a (NONE)
-- hesreallyhim/awesome-claude-code (CC-BY-NC-ND-4.0)
-- deanpeters/product-manager-prompts (CC-BY-NC-SA-4.0)
-- deanpeters/Product-Manager-Skills (CC-BY-NC-SA-4.0)
-- phuryn/pm-skills (MIT)
+- hesreallyhim/awesome-claude-code @ 957922fca4cc76739eb36ca5388d6295e815fef4 (CC-BY-NC-ND-4.0)
+- deanpeters/product-manager-prompts @ 418049a6485852600d350038b5a96c2cb53ca93f (CC-BY-NC-SA-4.0)
+- deanpeters/Product-Manager-Skills @ 70fb6c4e41637047e7e4976d39145b1a78397464 (CC-BY-NC-SA-4.0)
+- phuryn/pm-skills @ d384f0c9eb81fe74656a4f6da168587836939edb (MIT)
   Copyright (c) 2026 Pawel Huryn
-- anthropics/knowledge-work-plugins (Apache-2.0)
-- joelparkerhenderson/objectives-and-key-results (NONE)
-- architecture-decision-record/architecture-decision-record (CC-BY-NC-SA-4.0)
+- anthropics/knowledge-work-plugins @ ca4618669075c133a8f437310775428a5c664e09 (Apache-2.0)
+- joelparkerhenderson/objectives-and-key-results @ f7269521672a63f25fbf01cd4deb652ee181f45c (NONE)
+- architecture-decision-record/architecture-decision-record @ a36c53f49517fc55ceadd459d3e59770c9074416 (CC-BY-NC-SA-4.0)
+- adr/madr @ 8cb64d7e8a85699ed090661ca3224c8889e2a224 (MIT OR CC0-1.0)
+  Copyright (c) 2017-2022 Oliver Kopp, Olaf Zimmermann
+- olivierlacan/keep-a-changelog @ 37364f7ae516f0bb1309c4f3f6a7f7fbd4778af4 (MIT)
+  Copyright (c) 2014 Olivier Lacan
+- gcamilo/management-consulting @ dd2d099dc390811015c16ecac306415d62b31008 (MIT)
+  Copyright (c) 2026
+- reasoncommons/issuetrees @ 56ad78e0ce784ca7c97214ae96cd57188e50387b (NONE)
+  formerly: life-itself/issuetrees
+- cdeust/ai-prd-generator @ 4189d41b102de79ab57d96cab80028a6055b87d2 (LicenseRef-proprietary)
 - coreyhaines31/marketingskills (MIT)
   Copyright (c) 2025 Corey Haines
 - CosmoBlk/email-marketing-bible (MIT)
   Copyright (c) 2026 George Hartley
 - AgriciDaniel/claude-email (MIT)
   Copyright (c) 2026 Daniel Agrici
-- SkeltonThatcher/run-book-template (NONE)
+- SkeltonThatcher/run-book-template @ 7014714b602152c5ade6989bca8282d23522dcfc (NONE)
 - dastergon/awesome-sre (CC0-1.0)
 - runbear-io/awesome-runbook (CC0-1.0)
+- Scoutflo/Scoutflo-SRE-Playbooks @ acc55da0224fda5eda580939a15bc60990e8e69f (MIT)
+  Copyright (c) 2026 Scoutflo
+- WynterJones/CoppieGPT @ 96fc78149f031f309e57fcd77632e309e67f979e (NONE)
+- boraoztunc/skills @ c5c5dea7cebaaf801a90a04e1f15123d29de61c1 (Apache-2.0)
+
+Items are also based on the works below. Muster takes ideas, frameworks or structure
+from them and carries none of their text; they are credited, not reproduced.
+
+- Unlock AI: Open Engine and Open Skills, Nate B. Jones (person)
+  https://unlock-ai.natebjones.com/
+- Building effective agents, Erik Schluntz and Barry Zhang (Anthropic) (article)
+  https://www.anthropic.com/research/building-effective-agents
+- Create custom subagents (Claude Code docs), Anthropic (article)
+  https://code.claude.com/docs/en/sub-agents
+- LLM-Blender: Ensembling Large Language Models with Pairwise Ranking and Generative Fusion, Dongfu Jiang, Xiang Ren and Bill Yuchen Lin (ACL 2023) (paper)
+  https://arxiv.org/abs/2306.02561
+- Prompting best practices (Claude Docs), Anthropic (article)
+  https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices
+- Reduce hallucinations (Claude Docs, Strengthen guardrails), Anthropic (article)
+  https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations
+- Define success criteria and build evaluations (Claude Docs), Anthropic (article)
+  https://platform.claude.com/docs/en/test-and-evaluate/develop-tests
+- The new rules of context engineering for Claude 5 generation models, Anthropic (article)
+  https://claude.com/blog/the-new-rules-of-context-engineering-for-claude-5-generation-models
+- LLM-Cite (paper)
+- Wikipedia:Signs of AI writing, WikiProject AI Cleanup (Wikipedia editors) (article)
+  https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing
+- AIDA (Attention, Interest, Desire, Action), E. St. Elmo Lewis (person)
+- The QUEST copywriting formula, Michel Fortin (article)
+  https://michelfortin.com/the-quest-copywriting-formula/
+- How to Write Copy That Sells (the PASTOR framework), Ray Edwards (book)
+- Breakthrough Advertising (awareness and sophistication), Eugene M. Schwartz (book)
+- Search Quality Rater Guidelines (E-E-A-T), Google (standard)
+  https://guidelines.raterhub.com/searchqualityevaluatorguidelines.pdf
+- Creating helpful, reliable, people-first content, Google Search Central (article)
+  https://developers.google.com/search/docs/fundamentals/creating-helpful-content
+- GEO: Generative Engine Optimization, Pranjal Aggarwal et al. (KDD 2024) (paper)
+  https://arxiv.org/abs/2311.09735
+- AICMO marketing prompt collection; MaxsPrompts (article)
+- Sales Battlecards 101, Klue (article)
+  https://klue.com/blog/competitive-battlecards-101
+- Modern battlecard blueprint, Crayon (article)
+- Challenge-Solution-Results case study structure, libril.com and geisheker.com (article)
+- Email deliverability guidance, Litmus and Validity (article)
+- The Hero with a Thousand Faces, Joseph Campbell (book)
+- Building a StoryBrand (SB7), Donald Miller (book)
+  https://storybrand.com/
+- The Pyramid Principle (SCQA, MECE), Barbara Minto (book)
+- Save the Cat!, Blake Snyder (book)
+- The Story Grid, Shawn Coyne (book)
+- Techniques of the Selling Writer (scene and sequel), Dwight V. Swain (book)
+- Chapter Blog nonfiction outline; ProWritingAid non-fiction structure (article)
+- Competing Against Luck (Jobs to Be Done), Clayton M. Christensen, Taddy Hall, Karen Dillon and David S. Duncan (book)
+- Lean UX (hypothesis statements, proto-personas), Jeff Gothelf and Josh Seiden (book)
+- The Humanizing Work Guide to Splitting User Stories, Richard Lawrence and Peter Green (article)
+  https://www.humanizingwork.com/the-humanizing-work-guide-to-splitting-user-stories/
+- User Story Mapping, Jeff Patton (book)
+  https://www.jpattonassociates.com/user-story-mapping/
+- User Stories Applied (As a / I want / So that), Mike Cohn (book)
+- INVEST in Good Stories, and SMART Tasks, Bill Wake (article)
+  https://xp123.com/invest-in-good-stories-and-smart-tasks/
+- Essential XP: Card, Conversation, Confirmation, Ron Jeffries (article)
+  https://ronjeffries.com/xprog/articles/expcardconversationconfirmation/
+- Gherkin reference (Given / When / Then), Cucumber (article)
+  https://cucumber.io/docs/gherkin/reference/
+- Designing features using job stories, Alan Klement (Intercom) (article)
+  https://www.intercom.com/blog/using-job-stories-design-features-ui-ux/
+- Working Backwards (PR/FAQ), Colin Bryar and Bill Carr (book)
+  https://workingbackwards.com/
+- Semantic Versioning 2.0.0, Tom Preston-Werner (standard)
+  https://semver.org/
+- Measure What Matters (OKRs), John Doerr (book)
+- High Output Management, Andrew S. Grove (book)
+- RICE: simple prioritization for product managers, Sean McBride (Intercom) (article)
+  https://www.intercom.com/blog/rice-simple-prioritization-for-product-managers/
+- The Now-Next-Later roadmap, Janna Bastow (ProdPad) (article)
+  https://www.prodpad.com/blog/invented-now-next-later-roadmap/
+- Documenting Architecture Decisions, Michael Nygard (article)
+  https://www.cognitect.com/blog/2011/11/15/documenting-architecture-decisions
+- ISO/IEC/IEEE 29119-3, Software testing: Test documentation, ISO/IEC/IEEE (standard)
+- IEEE 829, Standard for Software and System Test Documentation (withdrawn), IEEE (standard)
+  https://standards.ieee.org/ieee/829/3787/
+- Site Reliability Engineering (Managing Incidents), Betsy Beyer, Chris Jones, Jennifer Petoff and Niall Richard Murphy (Google) (book)
+  https://sre.google/sre-book/managing-incidents/
+- PagerDuty Incident Response documentation, PagerDuty (article)
+  https://response.pagerduty.com/
+- Runbook practice articles (preconditions, observability, escalation, cleanup, idempotency), emmer.dev, The Good Shell and Rootly (article)
+- 10 Usability Heuristics for User Interface Design, Jakob Nielsen (Nielsen Norman Group) (article)
+  https://www.nngroup.com/articles/ten-usability-heuristics/
+- Timeless documentation (Google developer documentation style guide), Google (article)
+  https://developers.google.com/style/timeless-documentation
+- Diátaxis, Daniele Procida (article)
+  https://diataxis.fr/
+- Cognitive Complexity, Because Testability != Understandability, G. Ann Campbell (SonarSource) (article)
+  https://www.sonarsource.com/blog/cognitive-complexity-because-testability-understandability/
+- OWASP Top 10:2021 A08, Software and Data Integrity Failures, OWASP Foundation (standard)
+  https://owasp.org/Top10/2021/A08_2021-Software_and_Data_Integrity_Failures/
 
 For each source above licensed under MIT, the following permission notice applies:
 

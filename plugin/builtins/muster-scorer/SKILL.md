@@ -11,6 +11,21 @@ upstream:
     relation: inspired-by
     formerly:
       - felipelobomotta-blip/book-genesis-v4
+  - repo: CSHaitao/Awesome-LLMs-as-Judges
+    ref: d89ed4241b8199ff504aea009920c1cf4dded2f1
+    path: README.md
+    license: NONE
+    relation: inspired-by
+  - repo: llm-as-a-judge/Awesome-LLM-as-a-judge
+    ref: ad3b4ce1d869129f8527d4c6bcf2a8111582cb98
+    path: README.md
+    license: NONE
+    relation: inspired-by
+  - repo: microsoft/LLM-Rubric
+    ref: 70d56fc4e9a26e60642bc14b62b96d2d0a500edd
+    path: null
+    license: MIT
+    relation: inspired-by
 ---
 
 # Scorer (built-in)

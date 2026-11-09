@@ -18,6 +18,27 @@ upstream:
     path: null
     license: MIT
     relation: inspired-by
+  - kind: person
+    title: "Unlock AI: Open Engine and Open Skills"
+    author: Nate B. Jones
+    url: https://unlock-ai.natebjones.com/
+    relation: inspired-by
+  - kind: unknown
+    title: The "high-signal sources" behind the first content rubrics
+    author: null
+    url: null
+    relation: inspired-by
+    note: '2026-11-09: commit b99599a (2026-06-07) says the blog, social, lead-magnet, newsletter, case-study and runbook rubrics were "grounded in AIDA/PAS/BAB/QUEST + E-E-A-T from high-signal sources" without naming them; no doc was committed with it. The 2026-06-08 research note (b122ed9) names later sources for most of these pipelines, recorded here as their own entries; the original set is not recoverable.'
+  - kind: article
+    title: AICMO marketing prompt collection; MaxsPrompts
+    author: null
+    url: null
+    relation: inspired-by
+  - kind: article
+    title: Email deliverability guidance
+    author: Litmus and Validity
+    url: null
+    relation: inspired-by
 phases:
   - { id: intake,                  role: brainstorm,    desc: "audience, goal, one theme, CTA; resolve the target audience to a named profile in docs/profiles/AUDIENCES.md (create/extend the profile on first use)" }
   - { id: curate,                  role: docs-research, desc: "gather items, links, and insights worth sending; cross-run diff: load persisted baseline at docs/newsletter/signal-baseline.md (create-on-first-run if absent); report ONLY new or materially-changed signals vs baseline — unchanged signals get one summary count line, not re-reporting; append this run's reported signals with dates to the baseline file" }

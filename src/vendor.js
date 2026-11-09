@@ -12,7 +12,8 @@ import { modelForRole, maxTier, floorAtCore, normalizeTier } from "./model.js";
 import { claudeModelForTier, claudeProfileForAgentId } from "./claude.js";
 import { matchFrontmatter } from "./frontmatter.js";
 import {
-  RELATIONS, ITEM_PATHS, WAIVER_STATUSES, isValidLicense, isVendoredItem, isFetchedSource, SYNC_MODES, isFileItem,
+  RELATIONS, ITEM_PATHS, WAIVER_STATUSES, WORK_KINDS, LICENSE_REVIEW_FINDINGS, isWorkSource,
+  isValidLicense, isVendoredItem, isFetchedSource, SYNC_MODES, isFileItem,
   upstreamEntry, renderUpstreamBlock, generateNotice as generateManifestNotice, NOTICE_PATHS
 } from "./provenance.js";
 
@@ -144,8 +145,26 @@ export function validateVendorManifest(doc) {
     } else if (!ID_RE.test(s.id)) {
       errors.push(`sources[${i}].id: invalid — must match /^[a-zA-Z0-9_-]+$/`);
     }
-    if (!s.license) errors.push(`sources[${i}].license: required`);
-    if (!["local", "github"].includes(s.kind)) errors.push(`sources[${i}].kind: must be local|github`);
+    // A work (article, book, paper, standard, talk, person, unknown) is credited, never
+    // fetched, and only ever inspired-by: it names a title/author instead of a repo.
+    const work = isWorkSource(s);
+    if (!work && !s.license) errors.push(`sources[${i}].license: required`);
+    if (!["local", "github", ...WORK_KINDS].includes(s.kind)) errors.push(`sources[${i}].kind: must be local|github|${WORK_KINDS.join("|")}`);
+    if (work) {
+      if (s.repo !== undefined || s.ref !== undefined) errors.push(`sources[${i}]: a ${s.kind} source has no repo or ref`);
+      if (s.fetch !== false) errors.push(`sources[${i}].fetch: a ${s.kind} source must be fetch: false`);
+      const named = [s.title, s.author].some(v => typeof v === "string" && v.trim());
+      if (s.kind === "unknown" ? !(typeof s.title === "string" && s.title.trim() && /\b\d{4}-\d{2}-\d{2}\b/.test(String(s.note ?? ""))) : !named)
+        errors.push(`sources[${i}]: ${s.kind === "unknown" ? "an unknown origin needs a title and a dated note (YYYY-MM-DD)" : "a work needs a title or an author"}`);
+      if (s.url !== undefined && !(typeof s.url === "string" && /^https:\/\//.test(s.url))) errors.push(`sources[${i}].url: a work's url must be https://`);
+      const relations = [s.relation, ...(s.items || []).map(it => it?.relation)].filter(r => r !== undefined);
+      if (s.relation === undefined || relations.some(r => r !== "inspired-by")) errors.push(`sources[${i}].relation: a ${s.kind} source can only be inspired-by`);
+    }
+    if (s.licenseReview !== undefined) {
+      const r = s.licenseReview;
+      if (!r || !/^\d{4}-\d{2}-\d{2}$/.test(String(r.date ?? "")) || !LICENSE_REVIEW_FINDINGS.includes(r.finding) || typeof r.evidence !== "string" || !r.evidence.trim())
+        errors.push(`sources[${i}].licenseReview: needs date (YYYY-MM-DD), finding (${LICENSE_REVIEW_FINDINGS.join("|")}) and evidence`);
+    }
     if (s.repo !== undefined && !REPO_RE.test(s.repo))
       errors.push(`sources[${i}].repo: invalid — must be owner/name (alphanumeric, dash, dot, underscore only)`);
     if (s.ref !== undefined) {

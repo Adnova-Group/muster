@@ -3,35 +3,20 @@ domain: pm
 title: Launch Plan
 match: [launch plan, go-to-market plan, go-to-market, product launch, launch checklist]
 upstream:
-  - repo: deanpeters/product-manager-prompts
-    ref: null
-    path: null
-    license: CC-BY-NC-SA-4.0
-    relation: inspired-by
   - repo: deanpeters/Product-Manager-Skills
-    ref: null
+    ref: 70fb6c4e41637047e7e4976d39145b1a78397464
     path: null
     license: CC-BY-NC-SA-4.0
     relation: inspired-by
   - repo: phuryn/pm-skills
-    ref: null
+    ref: d384f0c9eb81fe74656a4f6da168587836939edb
     path: null
     license: MIT
     relation: inspired-by
-  - repo: anthropics/knowledge-work-plugins
-    ref: null
-    path: null
-    license: Apache-2.0
-    relation: inspired-by
-  - repo: joelparkerhenderson/objectives-and-key-results
-    ref: null
-    path: null
-    license: NONE
-    relation: inspired-by
-  - repo: architecture-decision-record/architecture-decision-record
-    ref: null
-    path: null
-    license: CC-BY-NC-SA-4.0
+  - kind: book
+    title: Working Backwards (PR/FAQ)
+    author: Colin Bryar and Bill Carr
+    url: https://workingbackwards.com/
     relation: inspired-by
 phases:
   - { id: intake,       role: brainstorm,  desc: "what's launching, audience, goals, date" }

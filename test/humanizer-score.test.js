@@ -10,7 +10,7 @@ test("clean human text scores high and passes", () => {
 });
 
 test("AI-slop text scores low and fails", () => {
-  const slop = "Moreover, it's important to note that we leverage a robust, seamless tapestry — a testament to our holistic paradigm. Indeed, this serves as a pivotal game-changer. 🚀";
+  const slop = "Moreover, it's important to note that we leverage a robust, seamless tapestry — a testament to our holistic paradigm. Notably, this serves as a pivotal game-changer. 🚀";
   const r = scoreHumanness(slop);
   assert.ok(r.score < 60, `expected low score, got ${r.score}`);
   assert.equal(r.passing, false);

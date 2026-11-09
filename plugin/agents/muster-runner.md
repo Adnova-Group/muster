@@ -29,16 +29,26 @@ upstream:
     ref: a5a480c324cac64b9c569bca0b2f297d517240cb
     path: null
     license: NONE
-    relation: mechanism-port
+    relation: inspired-by
   - repo: disler/infinite-agentic-loop
     ref: 6e9a012f81ef2291faf174d67176f7e69832cc0a
     path: null
     license: NONE
-    relation: mechanism-port
+    relation: inspired-by
   - repo: hesreallyhim/awesome-claude-code
-    ref: null
+    ref: 957922fca4cc76739eb36ca5388d6295e815fef4
     path: null
     license: CC-BY-NC-ND-4.0
+    relation: inspired-by
+  - kind: article
+    title: Building effective agents
+    author: Erik Schluntz and Barry Zhang (Anthropic)
+    url: https://www.anthropic.com/research/building-effective-agents
+    relation: inspired-by
+  - kind: article
+    title: Create custom subagents (Claude Code docs)
+    author: Anthropic
+    url: https://code.claude.com/docs/en/sub-agents
     relation: inspired-by
 ---
 <!-- Clean-room synthesis from docs/research/lifecycle-agent-patterns.md: mechanisms adapted

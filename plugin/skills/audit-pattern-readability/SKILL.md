@@ -1,7 +1,12 @@
 ---
 name: audit-pattern-readability
 description: Hunt-list pattern skill for muster's readability audit dimension -- oversized functions, misleading structure, and hand-rolled reimplementation of an existing primitive in muster's own repo. Loaded by the audit orchestrator as a REQUIRED SKILLS binding on the code-review dimension task; read on demand, never dispatched standalone.
-upstream: []
+upstream:
+  - kind: article
+    title: Cognitive Complexity, Because Testability != Understandability
+    author: G. Ann Campbell (SonarSource)
+    url: https://www.sonarsource.com/blog/cognitive-complexity-because-testability-understandability/
+    relation: inspired-by
 ---
 
 <!-- prompt-lint-disable ANTH-ROLE-001: reference hunt-list loaded ON DEMAND into an already
@@ -98,7 +103,7 @@ as a skill (the other is `audit-pattern-dead-code-duplication`).
 
 ## Appended patterns
 
-- (2026-08-04, source: SonarSource, Cognitive Complexity, quoted verbatim: "Increment when there is a break in the linear (top-to-bottom, left-to-right) flow of the code" / "Increment when structures that break the flow are nested" — https://www.sonarsource.com/blog/cognitive-complexity-because-testability-understandability/) Nesting-weighted split ranking: rank oversized-function candidates by depth-weighted flow breaks (count if/for/catch/&&/|| with a nesting multiplier via a simple scan), not raw lines — this formalizes the existing flat-switch false-positive note: `src/cli.js`'s dispatch chain ranks low, `runCodexDoctor`-shaped nested flows rank high, so the split effort lands where comprehension actually suffers. — false-positive note: generated or vendored code is out of scope; a high score on a linear switch means the scan is miscounting, not the code.
+- (2026-08-04, source: SonarSource, Cognitive Complexity, paraphrased: score one for each break in the straight top-to-bottom reading of the code, and more again when such breaks sit inside one another — https://www.sonarsource.com/blog/cognitive-complexity-because-testability-understandability/) Nesting-weighted split ranking: rank oversized-function candidates by depth-weighted flow breaks (count if/for/catch/&&/|| with a nesting multiplier via a simple scan), not raw lines — this formalizes the existing flat-switch false-positive note: `src/cli.js`'s dispatch chain ranks low, `runCodexDoctor`-shaped nested flows rank high, so the split effort lands where comprehension actually suffers. — false-positive note: generated or vendored code is out of scope; a high score on a linear switch means the scan is miscounting, not the code.
 
 (`muster-improver` may append further dated, evidenced entries here from run receipts, gated by
 user approval; see `plugin/skills/improve/SKILL.md`.)

@@ -1,7 +1,12 @@
 ---
 name: review-gate
 description: Adversarial review gate for a completed wave — dispatch all available reviewers in parallel, tally verdicts, and loop fixes until clean or escalate.
-upstream: []
+upstream:
+  - kind: person
+    title: "Unlock AI: Open Engine and Open Skills"
+    author: Nate B. Jones
+    url: https://unlock-ai.natebjones.com/
+    relation: inspired-by
 ---
 
 <!-- muster-brief-template:start -->

@@ -3,35 +3,15 @@ domain: pm
 title: Release Briefing
 match: [release notes, changelog, what's new, patch notes, release briefing]
 upstream:
-  - repo: deanpeters/product-manager-prompts
-    ref: null
-    path: null
-    license: CC-BY-NC-SA-4.0
-    relation: inspired-by
-  - repo: deanpeters/Product-Manager-Skills
-    ref: null
-    path: null
-    license: CC-BY-NC-SA-4.0
-    relation: inspired-by
-  - repo: phuryn/pm-skills
-    ref: null
+  - repo: olivierlacan/keep-a-changelog
+    ref: 37364f7ae516f0bb1309c4f3f6a7f7fbd4778af4
     path: null
     license: MIT
     relation: inspired-by
-  - repo: anthropics/knowledge-work-plugins
-    ref: null
-    path: null
-    license: Apache-2.0
-    relation: inspired-by
-  - repo: joelparkerhenderson/objectives-and-key-results
-    ref: null
-    path: null
-    license: NONE
-    relation: inspired-by
-  - repo: architecture-decision-record/architecture-decision-record
-    ref: null
-    path: null
-    license: CC-BY-NC-SA-4.0
+  - kind: standard
+    title: Semantic Versioning 2.0.0
+    author: Tom Preston-Werner
+    url: https://semver.org/
     relation: inspired-by
 phases:
   - { id: intake,   role: brainstorm,    desc: "release scope; identify the three audiences: developers (technical changelog), users (briefing), public (announcement)" }

@@ -3,35 +3,20 @@ domain: pm
 title: Implementation Spec
 match: [implementation spec, technical spec, ai implementation spec, tech spec, design doc, RFC, system design]
 upstream:
-  - repo: deanpeters/product-manager-prompts
-    ref: null
-    path: null
-    license: CC-BY-NC-SA-4.0
-    relation: inspired-by
-  - repo: deanpeters/Product-Manager-Skills
-    ref: null
-    path: null
-    license: CC-BY-NC-SA-4.0
-    relation: inspired-by
-  - repo: phuryn/pm-skills
-    ref: null
-    path: null
-    license: MIT
-    relation: inspired-by
-  - repo: anthropics/knowledge-work-plugins
-    ref: null
-    path: null
-    license: Apache-2.0
-    relation: inspired-by
-  - repo: joelparkerhenderson/objectives-and-key-results
-    ref: null
-    path: null
-    license: NONE
-    relation: inspired-by
   - repo: architecture-decision-record/architecture-decision-record
-    ref: null
+    ref: a36c53f49517fc55ceadd459d3e59770c9074416
     path: null
     license: CC-BY-NC-SA-4.0
+    relation: inspired-by
+  - repo: adr/madr
+    ref: 8cb64d7e8a85699ed090661ca3224c8889e2a224
+    path: null
+    license: MIT OR CC0-1.0
+    relation: inspired-by
+  - kind: article
+    title: Documenting Architecture Decisions
+    author: Michael Nygard
+    url: https://www.cognitect.com/blog/2011/11/15/documenting-architecture-decisions
     relation: inspired-by
 phases:
   - { id: intake,       role: brainstorm,  desc: "feature, constraints, success criteria" }

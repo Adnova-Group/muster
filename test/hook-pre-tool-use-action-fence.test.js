@@ -10,9 +10,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  mkdirSync, writeFileSync, readFileSync, utimesSync, statSync,
-} from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import os from "node:os";
 import { cleanDir, makeRunActive, spawnHook } from "./test-support/hook-helpers.js";
 import { classifyToolName, classifyBashCommand, classifyAction } from "../plugin/hooks/action-guard.js";
@@ -150,6 +148,12 @@ test("classifyAction: dispatches Bash payloads through classifyBashCommand", () 
   assert.equal(classifyAction({ tool_name: "Bash", tool_input: { command: "npm publish" } }), "publish");
 });
 
+test("classifyAction: dispatches PowerShell payloads through classifyBashCommand", () => {
+  assert.equal(classifyAction({ tool_name: "PowerShell", tool_input: { command: "npm publish" } }), "publish");
+  assert.equal(classifyAction({ tool_name: "PowerShell", tool_input: { command: "git push origin --delete foo" } }), "delete-remote");
+  assert.equal(classifyAction({ tool_name: "PowerShell", tool_input: { command: "Get-ChildItem" } }), null);
+});
+
 test("classifyAction: dispatches non-Bash payloads through classifyToolName", () => {
   assert.equal(classifyAction({ tool_name: "mcp__gmail__send_email", tool_input: {} }), "send");
 });
@@ -180,6 +184,21 @@ test("deny: npm publish Bash command when 'publish' is forbidden and a run is ac
     const out = JSON.parse(stdout).hookSpecificOutput;
     assert.equal(out.permissionDecision, "deny", "forbidden publish action must be denied");
     assert.match(out.permissionDecisionReason, /publish/i, "reason names the forbidden class");
+  } finally {
+    cleanDir(tmpDir);
+  }
+});
+
+test("deny: PowerShell gh release create when 'publish' is forbidden and a run is active", async () => {
+  const tmpDir = makeRunDir();
+  writeForbidden(tmpDir, ["publish"]);
+  try {
+    const { stdout, code } = await runRaw(JSON.stringify({
+      tool_name: "PowerShell", tool_input: { command: "gh release create v1.0.0" }, cwd: tmpDir,
+    }));
+    assert.equal(code, 0);
+    const out = JSON.parse(stdout).hookSpecificOutput;
+    assert.equal(out.permissionDecision, "deny", "PowerShell is fenced exactly like Bash");
   } finally {
     cleanDir(tmpDir);
   }
@@ -330,20 +349,6 @@ test("allow: action class classified but not in the forbidden set", async () => 
     assert.equal(code, 0);
     const out = JSON.parse(stdout).hookSpecificOutput;
     assert.notEqual(out.permissionDecision, "deny", "unlisted class must be allowed");
-  } finally {
-    cleanDir(tmpDir);
-  }
-});
-
-test("live marker lease is renewed by hook activity", async () => {
-  const tmpDir = makeRunDir();
-  const marker = path.join(tmpDir, ".muster", "run-active");
-  const old = new Date(Date.now() - (2 * 60 * 60 * 1000));
-  utimesSync(marker, old, old);
-  try {
-    const before = statSync(marker).mtimeMs;
-    await runRaw(mcpPayload("mcp__calendar__list_events", tmpDir));
-    assert.ok(statSync(marker).mtimeMs > before, "activity refreshes the marker lease");
   } finally {
     cleanDir(tmpDir);
   }

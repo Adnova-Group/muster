@@ -38,9 +38,9 @@ test("README documents current install, lifecycle, and configuration boundaries"
   assert.match(readme, /uninstall codex --scope project/);
   assert.match(readme, /Claude Code-only lifecycle hooks|Claude-only lifecycle hooks/i);
   assert.match(readme, /classifies every payload[\s\S]{0,260}agent_id/i);
-  assert.match(readme, /one hour[\s\S]{0,120}(?:stale|lease)/i);
-  assert.match(readme, /directive-shaped prompt[\s\S]{0,220}corroborates orchestration scale/i);
-  assert.match(readme, /15-minute cooldown[\s\S]{0,220}60 minutes/i);
+  assert.match(readme, /costs nothing[\s\S]{0,200}never invokes it/i);
+  assert.doesNotMatch(readme, /\*\*`(?:SessionStart|UserPromptSubmit)`\*\*/, "README must not document removed always-on hooks");
+  assert.doesNotMatch(readme, /MUSTER_INLINE_SCALE|force-for-plugin/, "README must not promise the removed border counter or forced style");
   assert.match(readme, /full configuration reference/i);
   assert.match(readme, /active harness subscription/i);
 });

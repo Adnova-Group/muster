@@ -8,8 +8,7 @@ Integer variables are parsed strictly: a non-numeric or out-of-range value falls
 
 | Variable | Default | Semantics | Read by |
 | --- | --- | --- | --- |
-| `MUSTER_INLINE_SCALE` | `3` | Border-invitation threshold: the Nth distinct file edited inline across turns, with no muster run active, warns once per crossing. Never denies. Minimum `2`. | `PreToolUse` hook (`plugin/hooks/inline-budget.js`) |
-| `MUSTER_INVITE_COOLDOWN_MS` | `900000` (15 min) | Suppresses a repeat border invitation for this long after the last one actually fired, so a session is never nagged twice in quick succession. | `UserPromptSubmit` + `PreToolUse` hooks |
+| `MUSTER_INLINE_SCALE` | `3` | Codex only: border-invitation threshold for the Codex lifecycle hook, the Nth distinct file edited inline with no muster run active warns once per crossing. Never denies. Claude Code has no border invitation. | Codex hook (`codex/hooks/muster-hook.mjs`) |
 | `MUSTER_ACTION_GUARD` | `deny` | The action-class fence, active only while a run is live and `.muster/forbidden-actions` lists a class: `deny` blocks a matching send/sign/submit/publish/purchase/delete-remote tool call, `warn` allows it with a reminder, `off` disables the fence. The only hard-deny surface in the stack. | `PreToolUse` hook (`plugin/hooks/pre-tool-use.js`) |
 | `MUSTER_TASK_GATE` | _(unset — gate on)_ | Ties a native task board "completed" tick to a recorded review-gate PASS for muster-tracked tasks; a `pending` or `escalated` entry is denied. `off` allows unconditionally. Fail-open for any task muster did not create. | `TaskCompleted` hook (`plugin/hooks/task-completed-gate.js`) |
 | `MUSTER_MAX_TIER` | _(unset)_ | Caps the conceptual model tier policy (`prime` excludes apex, `core` enables budget mode); unset means no cap. Static agent frontmatter pins are unaffected on direct invocation; in Muster runs the dispatch override honors the cap. | CLI (`src/model.js`) |
@@ -48,7 +47,7 @@ MUSTER_MAX_TIER=core npx -y @adnova-group/muster capabilities
 export MUSTER_ENABLE_APEX=1
 ```
 
-For the hook-side variables (`MUSTER_INLINE_SCALE`, `MUSTER_INVITE_COOLDOWN_MS`, `MUSTER_ACTION_GUARD`, `MUSTER_TASK_GATE`), set them where the harness can see them when it spawns a hook — the `env` block of your Claude Code `settings.json`, or the environment Codex itself was launched from. A variable exported inside a session after the hook has already fired does not retroactively change that firing.
+For the hook-side variables (`MUSTER_INLINE_SCALE`, `MUSTER_ACTION_GUARD`, `MUSTER_TASK_GATE`), set them where the harness can see them when it spawns a hook — the `env` block of your Claude Code `settings.json`, or the environment Codex itself was launched from. A variable exported inside a session after the hook has already fired does not retroactively change that firing.
 
 To confirm a value is actually reaching the CLI, read it back off a command that reports it: `muster capabilities` shows the effective per-role model (proving `MUSTER_MAX_TIER` and `MUSTER_ENABLE_APEX`), and `muster gate-cadence <manifest.json> --changed-lines N` shows the resolved `reviewerCount` (proving `MUSTER_REVIEW_DIFF_THRESHOLD`).
 
@@ -60,10 +59,10 @@ Compatibility only: legacy input aliases `haiku`, `sonnet`, `opus`, and `fable` 
 
 ## Not user knobs
 
-Three more `MUSTER_*` names appear in the tree and are deliberately absent from the tables above:
+Two more `MUSTER_*` names appear in the tree and are deliberately absent from the tables above:
 
 - `MUSTER_CLI` is a **run-local shell variable**, not a setting. Each mode resolves the cheapest way to invoke the CLI once per run (a vendored plugin runtime, a local checkout, a `muster` bin, or an `npx` fallback) and reuses the answer, so a run never pays a cold `npx -y` start per call. Use `muster resolve-cli` to see what it would resolve to.
-- `MUSTER_TEST_NOW_MS` and `MUSTER_COWORK_TEST_CLI` are **test-only injection points** (a frozen clock for the hook cooldown tests; a CLI path override honored only under `NODE_ENV=test`). Neither affects a real run.
+- `MUSTER_COWORK_TEST_CLI` is a **test-only injection point** (a CLI path override honored only under `NODE_ENV=test`). It never affects a real run.
 
 Next: [Troubleshooting](/guides/troubleshooting) for what to do when a setting is not taking effect.
 

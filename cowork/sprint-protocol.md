@@ -9,14 +9,13 @@ where they port; the gaps below are named, not papered over.
 
 ## What this session lacks — be honest about it
 
-- **No hooks.** No `SessionStart`, `UserPromptSubmit`, or `PreToolUse`. Concretely: no automatic
-  `.muster/run-active` marker, no **action-class fence** (the one hook-level hard deny Claude Code's
-  `PreToolUse` still enforces, on a matched send/sign/submit/publish/purchase/delete-remote call), no
-  warn-only **border invitation** (the value-toned nudge that sells a crew run instead of commanding
-  one), and no `TaskCompleted` gate tying a native task-board completion tick to a recorded
-  review-gate PASS. Wave-guard, the post-run scale-gate, and the transcript-scanned todo-gate are not
-  things this session merely lacks — they are DELETED outright, on every harness including Claude
-  Code, not just absent here (field evidence made each unscopable; see `docs/architecture.md`'s
+- **No hooks.** No `PreToolUse` or `TaskCompleted`. Concretely: no **action-class fence** (the one
+  hook-level hard deny Claude Code's `PreToolUse` still enforces during a run, on a matched
+  send/sign/submit/publish/purchase/delete-remote call), and no `TaskCompleted` gate tying a native
+  task-board completion tick to a recorded review-gate PASS. Wave-guard, the post-run scale-gate,
+  the transcript-scanned todo-gate, and the always-on session/prompt hooks with their border
+  invitation are not things this session merely lacks — they are DELETED outright, on every
+  harness including Claude Code, not just absent here (field evidence made each unscopable; see `docs/architecture.md`'s
   "Enforcement model: gates vs conventions"). None of that exists here — this session's own
   discipline is the only enforcement there is.
 - **No slash verbs.** There is no `/muster:go-backlog` grammar; drive this protocol in prose against

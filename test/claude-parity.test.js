@@ -40,7 +40,7 @@ test("Claude orchestration surface remains byte-identical outside release metada
     hash.update(await readFile(join(root, path)));
     hash.update("\0");
   }
-  assert.equal(paths.length, 152); // 0.7.0 retired the run/autopilot/sprint command files; 2026-11-09 removed five always-on hook files.
+  assert.equal(paths.length, 151); // 0.7.0 retired the run/autopilot/sprint command files; 2026-11-09 removed five always-on hook files; stage 1 removed references/kimi-dispatch.md.
   // Previous 159-file surface +1: audit-pattern-batch2's new
   // plugin/skills/audit-pattern-documentation/SKILL.md (the 10th pattern skill, approved via the
   // second improver batch, composed onto readability + design-ux). The batch also appended 19
@@ -1502,5 +1502,11 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // --project-dir, wsh-signed-audit-trails-recipe stdin hooks and pinned tooling); and command and
   // skill prose drops promises about the deleted hooks. Owner decision recorded in
   // docs/strategy/2026-11-revival-review.md. Deliberate, not drift.
-  assert.equal(hash.digest("hex"), "e0a60a23d47cbe4c036fbff0b7dd65dccb60c956ec6a9db4a10b4d78ecbd9ab4");
+  // Re-pin 2026-11-09c (revival stage 1, 152 -> 151 files): the Kimi and Orca harness lanes are
+  // removed, including plugin/skills/orchestrator/references/kimi-dispatch.md and the Kimi clauses
+  // in skill and command prose; and every plugin item gains a generated `upstream:` provenance
+  // field from vendor/manifest.yaml (adapted_from / inspired_by retired), checked by
+  // test/provenance.test.js. Owner decisions in docs/strategy/2026-11-revival-review.md.
+  // Deliberate, not drift.
+  assert.equal(hash.digest("hex"), "8a253eae9b51d79ff66d33f58403642b29a307ccd540448a87feedd53ce28569");
 });

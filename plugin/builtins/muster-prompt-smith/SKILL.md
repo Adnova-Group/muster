@@ -19,6 +19,31 @@ upstream:
     path: null
     license: MIT
     relation: inspired-by
+  - repo: gepa-ai/gepa
+    ref: 92dadfffbe98c8ecf508179a1cab09c1bb85cd32
+    path: null
+    license: MIT
+    relation: inspired-by
+  - kind: article
+    title: Prompting best practices (Claude Docs)
+    author: Anthropic
+    url: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices
+    relation: inspired-by
+  - kind: article
+    title: Reduce hallucinations (Claude Docs, Strengthen guardrails)
+    author: Anthropic
+    url: https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations
+    relation: inspired-by
+  - kind: article
+    title: Define success criteria and build evaluations (Claude Docs)
+    author: Anthropic
+    url: https://platform.claude.com/docs/en/test-and-evaluate/develop-tests
+    relation: inspired-by
+  - kind: article
+    title: The new rules of context engineering for Claude 5 generation models
+    author: Anthropic
+    url: https://claude.com/blog/the-new-rules-of-context-engineering-for-claude-5-generation-models
+    relation: inspired-by
 ---
 
 # Prompt Smith (built-in)

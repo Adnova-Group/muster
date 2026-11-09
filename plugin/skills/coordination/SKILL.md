@@ -1,7 +1,12 @@
 ---
 name: coordination
 description: Source-agnostic multi-runner protocol -- CLAIM before work, structured RECEIPTS, BLOCKED/HUMAN-HOLD->RESUME, one LEDGER heartbeat/runner. Four bindings: GitHub issues (labels + gh CLI), backlog.md (annotations + STATE), Linear (statuses + MCP), Hermes kanban (native kanban.db). Wired in by /muster:go-backlog.
-upstream: []
+upstream:
+  - kind: person
+    title: "Unlock AI: Open Engine and Open Skills"
+    author: Nate B. Jones
+    url: https://unlock-ai.natebjones.com/
+    relation: inspired-by
 ---
 
 # Coordination

@@ -5,34 +5,44 @@ title: Product Requirements Document
 match: [prd, product requirements, product spec, feature spec, product brief, requirements doc]
 upstream:
   - repo: deanpeters/product-manager-prompts
-    ref: null
+    ref: 418049a6485852600d350038b5a96c2cb53ca93f
     path: null
     license: CC-BY-NC-SA-4.0
     relation: inspired-by
   - repo: deanpeters/Product-Manager-Skills
-    ref: null
-    path: null
+    ref: 70fb6c4e41637047e7e4976d39145b1a78397464
+    path: skills/prd-development/SKILL.md
     license: CC-BY-NC-SA-4.0
     relation: inspired-by
   - repo: phuryn/pm-skills
-    ref: null
+    ref: d384f0c9eb81fe74656a4f6da168587836939edb
     path: null
     license: MIT
     relation: inspired-by
   - repo: anthropics/knowledge-work-plugins
-    ref: null
-    path: null
+    ref: ca4618669075c133a8f437310775428a5c664e09
+    path: product-management/skills/write-spec/SKILL.md
     license: Apache-2.0
     relation: inspired-by
-  - repo: joelparkerhenderson/objectives-and-key-results
-    ref: null
+  - repo: cdeust/ai-prd-generator
+    ref: 4189d41b102de79ab57d96cab80028a6055b87d2
     path: null
-    license: NONE
+    license: LicenseRef-proprietary
     relation: inspired-by
-  - repo: architecture-decision-record/architecture-decision-record
-    ref: null
-    path: null
-    license: CC-BY-NC-SA-4.0
+  - kind: person
+    title: "Unlock AI: Open Engine and Open Skills"
+    author: Nate B. Jones
+    url: https://unlock-ai.natebjones.com/
+    relation: inspired-by
+  - kind: book
+    title: Competing Against Luck (Jobs to Be Done)
+    author: Clayton M. Christensen, Taddy Hall, Karen Dillon and David S. Duncan
+    url: null
+    relation: inspired-by
+  - kind: book
+    title: Lean UX (hypothesis statements, proto-personas)
+    author: Jeff Gothelf and Josh Seiden
+    url: null
     relation: inspired-by
 phases:
   - { id: intake,   role: brainstorm,    desc: "clarify problem, audience, success metrics; confidence-gated clarification — keep asking until you can state the problem and metrics with high confidence before drafting, don't draft on guesses; when intake ingests raw notes/brain-dumps/transcripts, extract a structured row per item — {decision|action|fact, owner, deadline, source-anchor}; unowned actions and undated deadlines are flagged, not silently dropped" }

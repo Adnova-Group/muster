@@ -1,7 +1,17 @@
 ---
 name: audit-pattern-documentation
 description: Hunt-list pattern skill for the documentation pillar -- decision-record receipt drift, citation drift, count-claim guard coverage, timeless language, and Diátaxis quadrant-mixing in muster's own repo. Loaded by the audit orchestrator as a REQUIRED SKILLS binding on BOTH the readability (unconditional) and design-ux (conditional, information-architecture half) dimension tasks; read on demand, never dispatched standalone.
-upstream: []
+upstream:
+  - kind: article
+    title: Timeless documentation (Google developer documentation style guide)
+    author: Google
+    url: https://developers.google.com/style/timeless-documentation
+    relation: inspired-by
+  - kind: article
+    title: Diátaxis
+    author: Daniele Procida
+    url: https://diataxis.fr/
+    relation: inspired-by
 ---
 
 <!-- prompt-lint-disable ANTH-ROLE-001: reference hunt-list loaded ON DEMAND into an already

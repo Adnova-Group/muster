@@ -1,7 +1,12 @@
 ---
 name: tournament
 description: Run a competing-solutions tournament for one high-uncertainty task -- N approach agents, a judge scoring each against the run's success criteria and producing a fusion map, then deterministic fusion via `muster fuse` (synthesized result) or winner-take-all fallback when candidates agree.
-upstream: []
+upstream:
+  - kind: paper
+    title: "LLM-Blender: Ensembling Large Language Models with Pairwise Ranking and Generative Fusion"
+    author: Dongfu Jiang, Xiang Ren and Bill Yuchen Lin (ACL 2023)
+    url: https://arxiv.org/abs/2306.02561
+    relation: inspired-by
 ---
 
 # Tournament

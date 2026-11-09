@@ -1,7 +1,17 @@
 ---
 name: roadmap-prioritization
 description: Turn goals into a RICE-prioritized now/next/later roadmap — generate candidate initiatives, gather market+customer-feedback evidence, estimate RICE factors, let `muster prioritize` do the math, render a roadmap doc (+ optional GitHub issues).
-upstream: []
+upstream:
+  - kind: article
+    title: "RICE: simple prioritization for product managers"
+    author: Sean McBride (Intercom)
+    url: https://www.intercom.com/blog/rice-simple-prioritization-for-product-managers/
+    relation: inspired-by
+  - kind: article
+    title: The Now-Next-Later roadmap
+    author: Janna Bastow (ProdPad)
+    url: https://www.prodpad.com/blog/invented-now-next-later-roadmap/
+    relation: inspired-by
 ---
 
 # Roadmap prioritization

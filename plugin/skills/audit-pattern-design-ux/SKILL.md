@@ -7,6 +7,11 @@ upstream:
     path: null
     license: Apache-2.0
     relation: inspired-by
+  - kind: article
+    title: 10 Usability Heuristics for User Interface Design
+    author: Jakob Nielsen (Nielsen Norman Group)
+    url: https://www.nngroup.com/articles/ten-usability-heuristics/
+    relation: inspired-by
 ---
 
 <!-- prompt-lint-disable ANTH-ROLE-001: reference hunt-list loaded ON DEMAND into an already

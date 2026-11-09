@@ -3,7 +3,12 @@ name: muster-image
 description: Built-in image-prompt authoring provider — reads the brand profile and drafts self-contained, brand-constrained image-generation prompts. Used by content/doc pipelines for the image role.
 muster_builtin: true
 license: Apache-2.0
-upstream: []
+upstream:
+  - kind: person
+    title: "Unlock AI: Open Engine and Open Skills"
+    author: Nate B. Jones
+    url: https://unlock-ai.natebjones.com/
+    relation: inspired-by
 ---
 
 # Image (built-in)

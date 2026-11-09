@@ -3,35 +3,20 @@ domain: business
 title: OKRs
 match: [okr, okrs, objectives and key results, objectives, key results, quarterly goals]
 upstream:
-  - repo: deanpeters/product-manager-prompts
-    ref: null
-    path: null
-    license: CC-BY-NC-SA-4.0
-    relation: inspired-by
-  - repo: deanpeters/Product-Manager-Skills
-    ref: null
-    path: null
-    license: CC-BY-NC-SA-4.0
-    relation: inspired-by
-  - repo: phuryn/pm-skills
-    ref: null
-    path: null
-    license: MIT
-    relation: inspired-by
-  - repo: anthropics/knowledge-work-plugins
-    ref: null
-    path: null
-    license: Apache-2.0
-    relation: inspired-by
   - repo: joelparkerhenderson/objectives-and-key-results
-    ref: null
+    ref: f7269521672a63f25fbf01cd4deb652ee181f45c
     path: null
     license: NONE
     relation: inspired-by
-  - repo: architecture-decision-record/architecture-decision-record
-    ref: null
-    path: null
-    license: CC-BY-NC-SA-4.0
+  - kind: book
+    title: Measure What Matters (OKRs)
+    author: John Doerr
+    url: null
+    relation: inspired-by
+  - kind: book
+    title: High Output Management
+    author: Andrew S. Grove
+    url: null
     relation: inspired-by
 phases:
   - { id: intake,          role: brainstorm,  desc: "strategy context, time horizon, scope" }

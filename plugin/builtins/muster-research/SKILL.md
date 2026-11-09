@@ -3,7 +3,27 @@ name: muster-research
 description: Built-in research provider — gather and synthesize evidence with sources. Used by domain pipelines for the research role.
 muster_builtin: true
 license: Apache-2.0
-upstream: []
+upstream:
+  - repo: assafelovic/gpt-researcher
+    ref: 409b8b60b477d50f2f844bc9598d1bcb7b056eee
+    path: null
+    license: Apache-2.0
+    relation: inspired-by
+  - repo: mbzuai-nlp/qraft
+    ref: 3bbea66c832d87dcd0977f74573ecdaa7344ec7e
+    path: null
+    license: NONE
+    relation: inspired-by
+  - kind: person
+    title: "Unlock AI: Open Engine and Open Skills"
+    author: Nate B. Jones
+    url: https://unlock-ai.natebjones.com/
+    relation: inspired-by
+  - kind: paper
+    title: LLM-Cite
+    author: null
+    url: null
+    relation: inspired-by
 ---
 
 # Research (built-in)

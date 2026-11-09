@@ -3,7 +3,53 @@ name: muster-author
 description: Built-in authoring provider — draft persuasive, audience-first copy using proven frameworks. Used by content/doc pipelines for the author role.
 muster_builtin: true
 license: Apache-2.0
-upstream: []
+upstream:
+  - repo: WynterJones/CoppieGPT
+    ref: 96fc78149f031f309e57fcd77632e309e67f979e
+    path: null
+    license: NONE
+    relation: inspired-by
+  - repo: boraoztunc/skills
+    ref: c5c5dea7cebaaf801a90a04e1f15123d29de61c1
+    path: null
+    license: Apache-2.0
+    relation: inspired-by
+  - kind: person
+    title: AIDA (Attention, Interest, Desire, Action)
+    author: E. St. Elmo Lewis
+    url: null
+    relation: inspired-by
+  - kind: article
+    title: The QUEST copywriting formula
+    author: Michel Fortin
+    url: https://michelfortin.com/the-quest-copywriting-formula/
+    relation: inspired-by
+  - kind: book
+    title: How to Write Copy That Sells (the PASTOR framework)
+    author: Ray Edwards
+    url: null
+    relation: inspired-by
+  - kind: book
+    title: Breakthrough Advertising (awareness and sophistication)
+    author: Eugene M. Schwartz
+    url: null
+    relation: inspired-by
+  - kind: unknown
+    title: PAS (Problem-Agitate-Solution) and BAB (Before-After-Bridge) copywriting formulas
+    author: null
+    url: null
+    relation: inspired-by
+    note: "2026-11-09: named in muster-author, social-post, lead-magnet and book. Neither muster's history nor a primary source found on this date names who originated either formula."
+  - kind: standard
+    title: Search Quality Rater Guidelines (E-E-A-T)
+    author: Google
+    url: https://guidelines.raterhub.com/searchqualityevaluatorguidelines.pdf
+    relation: inspired-by
+  - kind: book
+    title: Competing Against Luck (Jobs to Be Done)
+    author: Clayton M. Christensen, Taddy Hall, Karen Dillon and David S. Duncan
+    url: null
+    relation: inspired-by
 ---
 
 # Author (built-in)

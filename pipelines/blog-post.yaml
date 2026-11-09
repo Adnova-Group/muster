@@ -1,7 +1,33 @@
 id: blog-post
 domain: blog
 title: Blog Post
-upstream: []
+upstream:
+  - kind: person
+    title: "Unlock AI: Open Engine and Open Skills"
+    author: Nate B. Jones
+    url: https://unlock-ai.natebjones.com/
+    relation: inspired-by
+  - kind: unknown
+    title: The "high-signal sources" behind the first content rubrics
+    author: null
+    url: null
+    relation: inspired-by
+    note: '2026-11-09: commit b99599a (2026-06-07) says the blog, social, lead-magnet, newsletter, case-study and runbook rubrics were "grounded in AIDA/PAS/BAB/QUEST + E-E-A-T from high-signal sources" without naming them; no doc was committed with it. The 2026-06-08 research note (b122ed9) names later sources for most of these pipelines, recorded here as their own entries; the original set is not recoverable.'
+  - kind: standard
+    title: Search Quality Rater Guidelines (E-E-A-T)
+    author: Google
+    url: https://guidelines.raterhub.com/searchqualityevaluatorguidelines.pdf
+    relation: inspired-by
+  - kind: article
+    title: Creating helpful, reliable, people-first content
+    author: Google Search Central
+    url: https://developers.google.com/search/docs/fundamentals/creating-helpful-content
+    relation: inspired-by
+  - kind: paper
+    title: "GEO: Generative Engine Optimization"
+    author: Pranjal Aggarwal et al. (KDD 2024)
+    url: https://arxiv.org/abs/2311.09735
+    relation: inspired-by
 phases:
   - { id: intake,   role: brainstorm,    desc: "audience, search intent, angle, target keyword, success metric; resolve the target audience to a named profile in docs/profiles/AUDIENCES.md (create/extend the profile on first use)" }
   - { id: research, role: docs-research, desc: "evidence, sources, competitor posts, E-E-A-T signals — incl. a named author with first-hand experience and 'how it was made' accountability (2025 helpful-content guidance)" }

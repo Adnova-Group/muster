@@ -1,7 +1,12 @@
 ---
 name: audit-pattern-security
 description: Hunt-list pattern skill for muster's security audit dimension -- fs-safe routing, path-traversal/symlink guards, and prompt-injection separation in muster's own repo. Loaded by the audit orchestrator as a REQUIRED SKILLS binding on the security-review dimension task; read on demand, never dispatched standalone.
-upstream: []
+upstream:
+  - kind: standard
+    title: OWASP Top 10:2021 A08, Software and Data Integrity Failures
+    author: OWASP Foundation
+    url: https://owasp.org/Top10/2021/A08_2021-Software_and_Data_Integrity_Failures/
+    relation: inspired-by
 ---
 
 <!-- prompt-lint-disable ANTH-ROLE-001: reference hunt-list loaded ON DEMAND into an already

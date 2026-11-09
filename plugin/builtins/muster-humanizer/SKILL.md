@@ -23,12 +23,27 @@ upstream:
     ref: 63255f9bbb75a265dc5786a04535cd033f487756
     path: skills/anti-ai-slop-writing
     license: NONE
-    relation: adapted
+    relation: inspired-by
   - repo: aaaronmiller/humanize-writing
     ref: c07a2a8dab1f6033ad0da713766df43d0dc374b9
     path: SKILL.md
     license: MIT
     relation: adapted
+  - repo: linexjlin/GPTs
+    ref: 3adfb7b38423b64a995057483c1f9007ed5f4da5
+    path: prompts/Humanizer Pro.md
+    license: NONE
+    relation: inspired-by
+  - kind: person
+    title: "Unlock AI: Open Engine and Open Skills"
+    author: Nate B. Jones
+    url: https://unlock-ai.natebjones.com/
+    relation: inspired-by
+  - kind: article
+    title: Wikipedia:Signs of AI writing
+    author: WikiProject AI Cleanup (Wikipedia editors)
+    url: https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing
+    relation: inspired-by
 ---
 
 # Humanizer (built-in)

@@ -84,6 +84,9 @@ import { envInt, isTruthyFlag } from "./env-util.js";
 import { scoreOutcomeForFastPath, buildFastPathManifest } from "./fast-path.js";
 import { detectReviewTriggers, lightBriefEligible } from "./review-brief.js";
 import { BACKLOG_PUBLICATION_MAX_BYTES } from "./backlog-publication.js";
+import { runPreflight } from "./preflight.js";
+import { mergeWave } from "./merge-wave.js";
+import { nextForRun } from "./run-next.js";
 import {
   codexThreadLimitConfigPath,
   resolveCodexThreadCeiling,
@@ -141,6 +144,8 @@ const USAGE = [
   "Usage: muster <detect|capabilities [--cowork] [--codex] [--work] [--agent-plugins] [--role <role>] [--roles-only]|match [--skills] <task> [--stack <csv>] [--work]|",
   // manifest + waves: validate, order, and drive a plan
   "manifest validate <file> [--work]|wave <file>|next <manifest.json> [--done a,b]|",
+  // stage-2 run steps: one-call preflight, deterministic wave merge, run position
+  "preflight <outcome> [--json] [--run <id>]|merge-wave <runId> --result <build-result.json>|next --run <id>|",
   // performance pass + gate helpers
   "resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|codex-wave <wave.json> --fence-file <action-fence.json> --repository-root <repo> --base-sha <sha>|codex-wave-resume <receipt-id> --review-state <file>|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex>|plan-surface <runtime>|codex-plan <outcome> [--cwd <dir>]|desktop-harness <chatgpt-desktop|codex-desktop|gpt-work>|receipt-verify <sha> --cwd <repo>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|",
   // sprint waves, review tally, tournament pick/fuse, advisor
@@ -1437,7 +1442,49 @@ async function handleCoreCommandPart5(cmd, rest) {
   return false;
 }
 
+function renderPreflight(s) {
+  const yn = (b) => (b ? "yes" : "no");
+  const models = Object.entries(s.models).map(([k, v]) => `${k} ${v.model}/${v.effort}`).join(", ");
+  return [
+    `run ${s.runId}: scope ${s.scope}, clear ${yn(s.clear)}${s.clear ? "" : ` (${s.unclear.join(", ")})`}, fast-path ${yn(s.fastPath)}`,
+    `project ${s.project.languages.join("/") || "unknown"}, tests ${s.project.testRunner}, branch ${s.project.branch ?? "-"}${s.project.dirty ? " (dirty)" : ""}`,
+    `models ${models}`,
+    `candidates ${s.candidates.join(", ") || "-"}`,
+    `gsd ${yn(s.detected.gsd)}, plugins ${s.detected.plugins.join(", ") || "-"}, memory ${s.memory.join(", ") || "-"}`,
+    `detail ${s.detail}`,
+  ].join("\n") + "\n";
+}
+
+// Stage-2 run steps (docs/strategy/stage-2-contracts.md).
+async function handleRunCommand(cmd, rest) {
+  if (cmd === "preflight") {
+    const runId = flagValue(rest, "--run");
+    const outcome = rest.filter((a, i) => a !== "--json" && a !== "--run" && rest[i - 1] !== "--run").join(" ");
+    if (!outcome.trim()) fail("preflight <outcome> [--json] [--run <id>]: missing outcome");
+    const summary = await runPreflight({ outcome, cwd: process.cwd(), home: homedir(), catalogDir: CATALOG_DIR, runId });
+    if (rest.includes("--json")) process.stdout.write(JSON.stringify(summary) + "\n");
+    else process.stdout.write(renderPreflight(summary));
+    return true;
+  } else if (cmd === "merge-wave") {
+    const usage = "merge-wave <runId> --result <build-result.json>";
+    const resultFile = flagValue(rest, "--result");
+    const runId = rest.find((a, i) => !a.startsWith("-") && rest[i - 1] !== "--result");
+    if (!runId || !resultFile) fail(`${usage}: missing ${runId ? "--result" : "runId"}`);
+    const report = await mergeWave({ cwd: process.cwd(), runId, resultFile: resolve(resultFile) });
+    out(report);
+    if (!report.ok) process.exit(1);
+    return true;
+  } else if (cmd === "next" && rest.includes("--run")) {
+    const runId = flagValue(rest, "--run");
+    if (!runId) fail("next --run <id>: missing run id");
+    out(await nextForRun({ cwd: process.cwd(), runId }));
+    return true;
+  }
+  return false;
+}
+
 async function handleCoreCommand(cmd, rest) {
+  if (await handleRunCommand(cmd, rest)) return true;
   if (await handleCoreCommandPart1(cmd, rest)) return true;
   if (await handleCoreCommandPart2(cmd, rest)) return true;
   if (await handleCoreCommandPart6(cmd, rest)) return true;

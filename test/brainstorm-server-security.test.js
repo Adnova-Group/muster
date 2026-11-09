@@ -365,6 +365,43 @@ test("screen CSP permits authenticated same-origin image and stylesheet assets",
   }
 });
 
+test("framed screen content survives String.replace special patterns verbatim", async (t) => {
+  // Regression: wrapInFrame used a string replacement, so `$&` re-inserted the
+  // placeholder and `$'` / `` $` `` spliced in the surrounding frame template.
+  const session = await mkdtemp(join(tmpdir(), "muster-brainstorm-dollar-"));
+  await chmod(session, 0o700);
+  const { child, info } = await launchServer(session);
+  t.after(async () => { child.kill(); await rm(session, { recursive: true, force: true }); });
+  const payload = "<p id=\"dollar\">price $& tail $' head $` literal $$ group $1</p>";
+  await writeFile(join(session, "content", "screen.html"), payload, { mode: 0o600 });
+  const controller = await (await fetch(info.url)).text();
+  const view = controller.match(/\/screen\?view=([0-9a-f]{64})&channel=/)?.[1];
+  const channel = controller.match(/&channel=([0-9a-f]{32})/)?.[1];
+  assert.ok(view && channel);
+  const screenResponse = await fetch(`http://127.0.0.1:${info.port}/screen?view=${view}&channel=${channel}`);
+  assert.equal(screenResponse.status, 200);
+  const screen = await screenResponse.text();
+  assert.ok(screen.includes(payload), "the fragment must be inserted byte-for-byte");
+  assert.equal(screen.includes("<!-- CONTENT -->"), false);
+});
+
+test("a relative --project-dir resolves against the caller's directory, not the script's", { skip: process.platform === "win32" }, async (t) => {
+  const parent = await mkdtemp(join(tmpdir(), "muster-brainstorm-relproj-"));
+  let pid = null;
+  t.after(async () => {
+    if (pid) { try { process.kill(pid); } catch { /* already exited */ } }
+    await rm(parent, { recursive: true, force: true });
+  });
+  const env = { ...process.env };
+  delete env.CODEX_CI;
+  const { stdout } = await exec(launcher, ["--project-dir", "proj", "--background", "--idle-timeout-minutes", "1"], { cwd: parent, env, timeout: 10000 });
+  const started = JSON.parse(stdout.trim().split("\n")[0]);
+  assert.equal(started.type, "server-started", stdout);
+  const expectedRoot = join(parent, "proj", ".superpowers", "brainstorm") + "/";
+  assert.ok(started.screen_dir.startsWith(expectedRoot), `${started.screen_dir} must live under ${expectedRoot}`);
+  pid = Number((await readFile(join(started.state_dir, "server.pid"), "utf8")).trim());
+});
+
 test("replacing the content directory cannot serve an outside screen", async (t) => {
   const session = await mkdtemp(join(tmpdir(), "muster-brainstorm-dir-swap-"));
   const outside = await mkdtemp(join(tmpdir(), "muster-brainstorm-outside-"));

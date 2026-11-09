@@ -326,7 +326,7 @@ test("CHANGELOG.md contains a heading for the current version", async () => {
 const GATED_PROSE = ["README.md", "docs/architecture.md", "CONTRIBUTING.md", "docs/anti-patterns.md"];
 
 test("public prose carries no sycophancy AI-tells (humanizer gate)", async () => {
-  // "great question", "as an AI", "happy to help" never belong in technical docs.
+  // "great question", "you're absolutely right", "happy to help" never belong in technical docs.
   for (const f of GATED_PROSE) {
     const hit = scoreHumanness(await read(f)).findings.find(x => x.category === "sycophancy");
     assert.equal(hit, undefined,
@@ -345,8 +345,8 @@ test("public prose carries no AI-tell signposting (humanizer gate)", async () =>
 });
 
 test("public prose carries no AI-tell banned sentence-openers (humanizer gate)", async () => {
-  // "Certainly", "Moreover", "Additionally", "Furthermore", "Indeed", "Notably",
-  // "Importantly", "Ultimately", "Overall" at line/paragraph starts are AI-tell patterns.
+  // "Certainly", "Moreover", "Additionally", "Furthermore", "Notably", "Importantly",
+  // "Interestingly", "Undoubtedly", "Ultimately" at line/paragraph starts are AI-tell patterns.
   // The regex only fires on line-start matches, keeping false-positive risk very low.
   for (const f of GATED_PROSE) {
     const hit = scoreHumanness(await read(f)).findings.find(x => x.category === "banned-opener");

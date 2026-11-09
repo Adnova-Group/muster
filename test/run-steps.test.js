@@ -25,11 +25,16 @@ function sh(cwd, cmd, args) {
 const git = (cwd, ...args) => sh(cwd, "git", args);
 const cli = (cwd, args, env = {}) => spawnSync(process.execPath, [CLI, ...args], { cwd, encoding: "utf8", env: { ...process.env, ...GIT_ENV, ...env } });
 
-// A repo with two task branches in kept worktrees, as build.js leaves them.
-async function repoWithTasks() {
+// A repo with two task branches in kept worktrees, as build.js leaves them, and the
+// approved build args committed at HEAD (the trusted source of order and verify commands).
+async function repoWithTasks({ verify = {} } = {}) {
   const root = await trackedMkdtemp(join(tmpdir(), "muster-merge-wave-"));
   git(root, "init", "-q", "-b", "main");
   await writeFile(join(root, "README.md"), "base\n");
+  await writeFile(join(root, ".gitignore"), ".claude/worktrees/\n");
+  const waves = [["A", "B"].map((id) => ({ taskId: id, title: `task ${id}`, files: [`${id}.txt`], verify: verify[id] || [`grep -q ${id} ${id}.txt`] }))];
+  await mkdir(join(root, ".muster/runs/r1"), { recursive: true });
+  await writeFile(join(root, ".muster/runs/r1/build-args.json"), JSON.stringify({ runId: "r1", waves }));
   git(root, "add", ".");
   git(root, "commit", "-q", "-m", "base");
   const base = git(root, "rev-parse", "HEAD");
@@ -43,7 +48,7 @@ async function repoWithTasks() {
     const commit = git(wt, "rev-parse", "HEAD");
     tasks.push({
       taskId: id, title: `task ${id}`, wave: 1, status: "done", branch: `worktree-wf_${id}`, commit, worktree: wt,
-      filesChanged: [`${id}.txt`], testsRun: [`test -f ${id}.txt`], testsPassed: true, selfCheck: "PASSED", deviations: [],
+      filesChanged: [`${id}.txt`], testsRun: [`grep -q ${id} ${id}.txt`], testsPassed: true, selfCheck: "PASSED", deviations: [],
       verify: [`grep -q ${id} ${id}.txt`],
       review: { taskId: id, verdict: "PASS", commitReviewed: commit, findings: [], testsRun: [], testsPassed: true },
     });
@@ -53,18 +58,50 @@ async function repoWithTasks() {
 
 const NOW = () => new Date("2026-11-09T12:00:00Z");
 
-test("merge-wave: merges --no-ff in manifest order, re-runs verify, removes worktrees and branches", async () => {
+test("merge-wave: merges --no-ff in plan order, re-runs planned verify, removes worktrees and branches", async () => {
   const { root, base, result } = await repoWithTasks();
+  result.tasks.reverse(); // the build result's order is not trusted; the build args decide
   const report = await mergeWave({ cwd: root, runId: "r1", result, now: NOW });
   assert.equal(report.ok, true, JSON.stringify(report.problems));
-  assert.deepEqual(report.merged.map((m) => [m.taskId, m.commands, m.passed]), [["A", 2, 2], ["B", 2, 2]]);
+  assert.deepEqual(report.merged.map((m) => [m.taskId, m.commands, m.passed]), [["A", 1, 1], ["B", 1, 1]]);
   assert.deepEqual(git(root, "log", "--first-parent", "--format=%s", `${base}..HEAD`).split("\n"), ["merge(r1): B task B", "merge(r1): A task A"]);
   assert.equal(git(root, "rev-list", "--merges", "--count", `${base}..HEAD`), "2");
   assert.ok(existsSync(join(root, "A.txt")) && existsSync(join(root, "B.txt")));
   assert.equal(hasBranch(root, "worktree-wf_A") || hasBranch(root, "worktree-wf_B"), false);
   assert.equal(git(root, "worktree", "list").split("\n").length, 1);
+  assert.deepEqual(report.notes, []);
   const state = await readFile(join(root, ".muster/runs/r1/STATE.md"), "utf8");
-  assert.match(state, /## Log\n- 2026-11-09T12:00:00.000Z merge-wave: merged A [0-9a-f]{10} as [0-9a-f]{10}; verify 2\/2 passed\n- .* merged B /);
+  assert.match(state, /## Log\n- 2026-11-09T12:00:00.000Z merge-wave: merged A [0-9a-f]{10} as [0-9a-f]{10}; verify 1\/1 passed\n- .* merged B /);
+  assert.match(await readFile(join(root, ".muster/runs/r1/SUMMARY-A.md"), "utf8"), /Recorded by `muster merge-wave`[\s\S]*verify `grep -q A A.txt`: exit 0/);
+});
+
+test("merge-wave: agent-reported testsRun and verify are never executed", async () => {
+  const { root, result } = await repoWithTasks();
+  const marker = join(root, "..", `${root.split("/").pop()}-pwned`);
+  result.tasks[0].testsRun.push(`touch ${marker}`);
+  result.tasks[0].verify = [`touch ${marker}`];
+  const report = await mergeWave({ cwd: root, runId: "r1", result, now: NOW });
+  assert.equal(report.ok, true, JSON.stringify(report.problems));
+  assert.equal(existsSync(marker), false, "a command from the build result ran");
+  assert.deepEqual(report.verify.map((v) => v.cmd), ["grep -q A A.txt", "grep -q B B.txt"]);
+  assert.match(report.notes.join("\n"), /A: agent-reported testsRun not in the plan \(not executed\): touch /);
+});
+
+test("merge-wave: the build args must be committed, and result tasks must match them", async () => {
+  const { root, result } = await repoWithTasks();
+  result.tasks.push({ ...result.tasks[0], taskId: "Z" });
+  const extra = await mergeWave({ cwd: root, runId: "r1", result, now: NOW });
+  assert.match(extra.problems.join("\n"), /Z: not a task in the approved build args/);
+  result.tasks.splice(1);
+  const missing = await mergeWave({ cwd: root, runId: "r1", result, now: NOW });
+  assert.match(missing.problems.join("\n"), /B: planned task is missing from the build result/);
+
+  git(root, "rm", "-q", ".muster/runs/r1/build-args.json");
+  git(root, "commit", "-q", "-m", "drop args");
+  await mkdir(join(root, ".muster/runs/r1"), { recursive: true });
+  await writeFile(join(root, ".muster/runs/r1/build-args.json"), JSON.stringify({ runId: "r1", waves: [] }));
+  const uncommitted = await mergeWave({ cwd: root, runId: "r1", result, now: NOW });
+  assert.match(uncommitted.problems.join("\n"), /build-args\.json is not committed at HEAD/);
 });
 
 test("merge-wave CLI: a missing commit is refused before anything merges", async () => {
@@ -83,9 +120,8 @@ test("merge-wave CLI: a missing commit is refused before anything merges", async
   assert.match(await readFile(join(root, ".muster/runs/r1/STATE.md"), "utf8"), /merge-wave: REFUSED: B: commit ffffffffff does not exist/);
 });
 
-test("merge-wave: a failing verify rolls every merge back and keeps the worktrees", async () => {
-  const { root, base, result } = await repoWithTasks();
-  result.tasks[1].verify = ["test -f does-not-exist.txt"];
+test("merge-wave: a failing planned verify rolls every merge back and keeps the worktrees", async () => {
+  const { root, base, result } = await repoWithTasks({ verify: { B: ["test -f does-not-exist.txt"] } });
   const report = await mergeWave({ cwd: root, runId: "r1", result, now: NOW });
   assert.equal(report.ok, false);
   assert.match(report.problems.join("\n"), /B: verify failed after merge: `test -f does-not-exist.txt` exited 1/);
@@ -112,6 +148,39 @@ test("merge-wave: unreviewed commits, non-PASS reviews and mismatched review sha
   assert.equal(git(root, "rev-parse", "HEAD"), base);
 });
 
+test("merge-wave: worktrees outside .claude/worktrees/, on another branch, or dirty are left untouched", async () => {
+  const { root, result } = await repoWithTasks();
+  // A: the result points at a worktree outside .claude/worktrees/ that has A's branch.
+  const outside = await trackedMkdtemp(join(tmpdir(), "muster-merge-wave-outside-"));
+  const realA = result.tasks[0].worktree;
+  git(root, "worktree", "move", realA, join(outside, "wt"));
+  result.tasks[0].worktree = join(outside, "wt");
+  // B: the result points at an unrelated worktree under .claude/worktrees/ on another branch.
+  const other = join(root, ".claude", "worktrees", "other");
+  git(root, "worktree", "add", "-q", "-b", "other", other);
+  const realB = result.tasks[1].worktree;
+  result.tasks[1].worktree = other;
+
+  const report = await mergeWave({ cwd: root, runId: "r1", result, now: NOW });
+  assert.equal(report.ok, true, JSON.stringify(report.problems));
+  const cleanup = report.cleanup.join("\n");
+  assert.match(cleanup, /kept worktree .*wt: not under \.claude\/worktrees\//);
+  assert.match(cleanup, /kept worktree .*other: it does not have worktree-wf_B checked out/);
+  assert.ok(existsSync(join(outside, "wt", "A.txt")) && existsSync(other) && existsSync(realB));
+  assert.equal(hasBranch(root, "other"), true);
+  assert.equal(hasBranch(root, "worktree-wf_A"), true, "branch -d refuses a branch still checked out");
+  assert.match(cleanup, /kept branch worktree-wf_A/);
+
+  // Dirty: an untracked file in an otherwise valid task worktree keeps it.
+  const dirty = await repoWithTasks();
+  await writeFile(join(dirty.result.tasks[0].worktree, "scratch.log"), "x\n");
+  const dirtyReport = await mergeWave({ cwd: dirty.root, runId: "r1", result: dirty.result, now: NOW });
+  assert.equal(dirtyReport.ok, true, JSON.stringify(dirtyReport.problems));
+  assert.match(dirtyReport.cleanup.join("\n"), /kept worktree .*wf_A: it has uncommitted or untracked changes/);
+  assert.ok(existsSync(join(dirty.result.tasks[0].worktree, "scratch.log")));
+  assert.match(dirtyReport.cleanup.join("\n"), /removed worktree .*wf_B/);
+});
+
 test("merge-wave: refuses a dirty tracked tree and a run inside .claude/worktrees/", async () => {
   const { root, result } = await repoWithTasks();
   await writeFile(join(root, "README.md"), "dirty\n");
@@ -133,6 +202,7 @@ test("merge-wave: accepts a backlog.js result and picks the item by runId", asyn
   assert.equal(report.ok, true, JSON.stringify(report.problems));
   await assert.rejects(mergeWave({ cwd: root, runId: "nope", result, now: NOW }), /result is for run r1/);
 });
+
 
 test("next --run derives the position from the run files", async () => {
   const cwd = await trackedMkdtemp(join(tmpdir(), "muster-next-run-"));

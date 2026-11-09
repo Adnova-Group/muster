@@ -1,13 +1,20 @@
 // `muster merge-wave <runId> --result <build-result.json>` (docs/strategy/stage-2-contracts.md).
-// Workflow verdicts are evidence, not truth: before anything is merged, every claimed
-// commit must exist, sit at the tip of its branch, and match the reviewed sha. Then the
-// branches merge --no-ff in manifest order, each task's verify/testsRun commands re-run,
-// and the worktrees and branches are removed. Any mismatch leaves HEAD where it was
-// and exits non-zero.
+//
+// Workflow verdicts are evidence, not truth, and the build result is agent output, so it is
+// never trusted to say what to run or what to delete:
+// - Merge order, titles and the commands re-run after each merge come from the approved build
+//   args, committed at HEAD as .muster/runs/<id>/build-args.json (the exact args the main
+//   thread passed to muster:build). Agent-reported testsRun is compared, never executed.
+// - Before anything merges, every claimed commit must exist, sit at the tip of its branch,
+//   and be the sha the reviewer passed.
+// - A worktree is removed only when it is under <root>/.claude/worktrees/, has the merged
+//   task branch checked out, and is clean; branches are deleted with `branch -d` only.
+// Any mismatch rolls HEAD back and the CLI exits non-zero.
 import { spawnSync } from "node:child_process";
 import { readFileSync, realpathSync } from "node:fs";
-import { resolve, sep } from "node:path";
-import { appendStateLog, assertRunId } from "./run-dir.js";
+import { join, resolve, sep } from "node:path";
+import { appendStateLog, assertRunId, ensureRunDir } from "./run-dir.js";
+import { createContainedFile } from "./fs-safe.js";
 
 const VERIFY_TIMEOUT_MS = 10 * 60 * 1000;
 
@@ -18,6 +25,8 @@ function git(cwd, args) {
 
 const short = (sha) => String(sha || "").slice(0, 10);
 const tail = (s, n = 600) => (s.length > n ? `...${s.slice(-n)}` : s);
+const list = (xs) => (Array.isArray(xs) ? xs : xs ? [xs] : []).map((c) => String(c).trim()).filter(Boolean);
+const realOrNull = (p) => { try { return realpathSync(p); } catch { return null; } };
 
 export function isClaudeWorktree(path) {
   return `${path}${sep}`.includes(`${sep}.claude${sep}worktrees${sep}`);
@@ -34,20 +43,30 @@ export function tasksFor(result, runId) {
   throw new Error(`result has no tasks for run ${runId}`);
 }
 
-function commandsFor(task) {
-  const cmds = [...(task.verify || []), ...(task.testsRun || [])].map((c) => String(c).trim()).filter(Boolean);
-  return [...new Set(cmds)];
+export const buildArgsPath = (runId) => `.muster/runs/${runId}/build-args.json`;
+
+// The trusted task list, in manifest order, from the build args committed at HEAD.
+function plannedTasks(root, runId) {
+  const shown = git(root, ["show", `HEAD:${buildArgsPath(runId)}`]);
+  if (!shown.ok) return { problem: `${buildArgsPath(runId)} is not committed at HEAD; commit the exact muster:build args before building` };
+  let args;
+  try { args = JSON.parse(shown.out); } catch (e) { return { problem: `${buildArgsPath(runId)} is not valid JSON: ${e.message}` }; }
+  const own = Array.isArray(args?.items) ? args.items.find((i) => i && i.runId === runId) : args;
+  if (!own || !Array.isArray(own.waves)) return { problem: `${buildArgsPath(runId)} has no waves for run ${runId}` };
+  const tasks = own.waves.flatMap((w) => (Array.isArray(w) ? w : [])).map((t) => ({ taskId: t?.taskId, title: t?.title || "", verify: list(t?.verify) }));
+  return { tasks };
 }
 
 // Pre-merge evidence checks. Returns a list of problems; empty means safe to merge.
-function checkTask(root, task, i) {
-  const id = task?.taskId || `#${i}`;
+function checkTask(root, plan, task) {
+  const id = plan.taskId;
   const p = [];
-  if (task?.status !== "done") p.push(`${id}: status is ${task?.status}, not done`);
-  if (task?.selfCheck !== "PASSED") p.push(`${id}: selfCheck is ${task?.selfCheck}, not PASSED`);
-  if (task?.review?.verdict !== "PASS") p.push(`${id}: review verdict is ${task?.review?.verdict ?? "missing"}, not PASS`);
-  if (task && !commandsFor(task).length) p.push(`${id}: no verify or testsRun commands to re-run`);
-  if (!task?.commit || !task?.branch) return [...p, `${id}: missing commit or branch`];
+  if (!task) return [`${id}: planned task is missing from the build result`];
+  if (task.status !== "done") p.push(`${id}: status is ${task.status}, not done`);
+  if (task.selfCheck !== "PASSED") p.push(`${id}: selfCheck is ${task.selfCheck}, not PASSED`);
+  if (task.review?.verdict !== "PASS") p.push(`${id}: review verdict is ${task.review?.verdict ?? "missing"}, not PASS`);
+  if (!plan.verify.length) p.push(`${id}: the plan has no verify commands to re-run`);
+  if (!task.commit || !task.branch) return [...p, `${id}: missing commit or branch`];
   const commit = git(root, ["rev-parse", "--verify", "--quiet", `${task.commit}^{commit}`]);
   if (!commit.ok) return [...p, `${id}: commit ${short(task.commit)} does not exist`];
   const tip = git(root, ["rev-parse", "--verify", "--quiet", `refs/heads/${task.branch}`]);
@@ -57,13 +76,24 @@ function checkTask(root, task, i) {
   } else if (tip.out !== commit.out) {
     p.push(`${id}: branch ${task.branch} has commits after ${short(commit.out)} that were not reviewed (tip ${short(tip.out)})`);
   }
-  const reviewed = task?.review?.commitReviewed
+  const reviewed = task.review?.commitReviewed
     ? git(root, ["rev-parse", "--verify", "--quiet", `${task.review.commitReviewed}^{commit}`])
     : { ok: false };
   if (!reviewed.ok || reviewed.out !== commit.out) {
-    p.push(`${id}: reviewed commit ${short(task?.review?.commitReviewed) || "(none)"} is not the claimed commit ${short(commit.out)}`);
+    p.push(`${id}: reviewed commit ${short(task.review?.commitReviewed) || "(none)"} is not the claimed commit ${short(commit.out)}`);
   }
   return p;
+}
+
+// Agent-reported testsRun is evidence only: report where it differs from the plan.
+function testsRunNotes(plan, task) {
+  const ran = list(task.testsRun);
+  const notes = [];
+  const extra = ran.filter((c) => !plan.verify.includes(c));
+  const missing = plan.verify.filter((c) => !ran.includes(c));
+  if (extra.length) notes.push(`${plan.taskId}: agent-reported testsRun not in the plan (not executed): ${extra.join(" ; ")}`);
+  if (missing.length) notes.push(`${plan.taskId}: planned verify the agent did not report running: ${missing.join(" ; ")}`);
+  return notes;
 }
 
 function runCommand(root, cmd) {
@@ -71,34 +101,62 @@ function runCommand(root, cmd) {
   return { cmd, ok: r.status === 0, status: r.status, output: tail(`${r.stdout || ""}${r.stderr || ""}`.trim()) };
 }
 
-function cleanup(root, task, worktrees) {
+// Map of real worktree path -> checked-out ref, from `git worktree list --porcelain`.
+function worktreeRefs(root) {
+  const refs = new Map();
+  for (const block of git(root, ["worktree", "list", "--porcelain"]).out.split(/\n\s*\n/)) {
+    const path = block.match(/^worktree (.+)$/m)?.[1];
+    const ref = block.match(/^branch (.+)$/m)?.[1] || null;
+    const real = path && realOrNull(path);
+    if (real) refs.set(real, ref);
+  }
+  return refs;
+}
+
+function cleanup(root, task, refs) {
   const done = [];
+  const keep = (why) => done.push(`kept worktree ${task.worktree}: ${why}`);
+  const merged = git(root, ["merge-base", "--is-ancestor", `refs/heads/${task.branch}`, "HEAD"]).ok;
   if (task.worktree) {
-    const wt = resolve(root, task.worktree);
-    if (worktrees.has(wt)) {
-      git(root, ["worktree", "unlock", wt]);
-      const rm = git(root, ["worktree", "remove", "--force", wt]);
-      done.push(rm.ok ? `removed worktree ${task.worktree}` : `could not remove worktree ${task.worktree}: ${rm.err}`);
+    const real = realOrNull(resolve(root, task.worktree));
+    const allowed = join(realOrNull(root) || root, ".claude", "worktrees") + sep;
+    if (!real) keep("path does not exist");
+    else if (!real.startsWith(allowed)) keep("not under .claude/worktrees/");
+    else if (refs.get(real) !== `refs/heads/${task.branch}`) keep(`it does not have ${task.branch} checked out`);
+    else if (!merged) keep(`${task.branch} is not merged`);
+    else {
+      const status = git(real, ["status", "--porcelain"]);
+      if (!status.ok || status.out) keep("it has uncommitted or untracked changes");
+      else {
+        const rm = git(root, ["worktree", "remove", real]);
+        if (rm.ok) done.push(`removed worktree ${task.worktree}`);
+        else keep(rm.err);
+      }
     }
   }
-  const current = git(root, ["rev-parse", "--abbrev-ref", "HEAD"]).out;
-  if (task.branch !== current && git(root, ["merge-base", "--is-ancestor", `refs/heads/${task.branch}`, "HEAD"]).ok) {
-    const del = git(root, ["branch", "-D", task.branch]);
-    done.push(del.ok ? `deleted branch ${task.branch}` : `could not delete branch ${task.branch}: ${del.err}`);
-  }
+  const del = git(root, ["branch", "-d", task.branch]);
+  done.push(del.ok ? `deleted branch ${task.branch}` : `kept branch ${task.branch}: ${del.err}`);
   return done;
 }
 
-function listWorktrees(root) {
-  const set = new Set();
-  for (const line of git(root, ["worktree", "list", "--porcelain"]).out.split("\n")) {
-    if (line.startsWith("worktree ")) {
-      const p = line.slice("worktree ".length);
-      set.add(p);
-      try { set.add(realpathSync(p)); } catch { /* already gone */ }
-    }
-  }
-  return set;
+// Executors cannot always write SUMMARY files (Claude Code steers subagents away from report
+// files), so merge-wave records one per merged task unless the branch brought its own.
+async function writeSummary(root, runId, plan, task, merged, runs) {
+  const dir = await ensureRunDir(root, runId);
+  const body = [
+    `# SUMMARY ${plan.taskId}: ${plan.title}`,
+    "",
+    "Recorded by `muster merge-wave` from the executor's result and the re-run verify commands.",
+    "",
+    `- commit: ${task.commit}`,
+    `- merged as: ${merged}`,
+    `- files: ${list(task.filesChanged).join(", ") || "-"}`,
+    `- review: ${task.review?.verdict} (${list(task.review?.findings?.map((f) => `${f.severity} ${f.file}: ${f.summary}`)).join("; ") || "no findings"})`,
+    ...runs.map((r) => `- verify \`${r.cmd}\`: exit ${r.status}`),
+    ...list(task.deviations).map((d) => `- deviation: ${d}`),
+    "",
+  ].join("\n");
+  await createContainedFile(root, join(dir, `SUMMARY-${plan.taskId}.md`), body);
 }
 
 // `result` is the parsed build result; the CLI passes `resultFile` instead so the
@@ -112,7 +170,7 @@ export async function mergeWave({ cwd, runId, result, resultFile, now = () => ne
     return { ok: false, runId, problems: [`refusing to run inside a .claude/worktrees/ checkout (${root}); run merge-wave from the main checkout`] };
   }
   const { tasks, base } = tasksFor(result ?? JSON.parse(readFileSync(resultFile, "utf8")), runId);
-  const report = { ok: false, runId, merged: [], verify: [], cleanup: [], problems: [] };
+  const report = { ok: false, runId, merged: [], verify: [], cleanup: [], notes: [], problems: [] };
   const finish = async (ok) => {
     report.ok = ok;
     const stamp = now().toISOString();
@@ -127,11 +185,26 @@ export async function mergeWave({ cwd, runId, result, resultFile, now = () => ne
   const dirty = git(root, ["status", "--porcelain", "--untracked-files=no"]).out
     .split("\n").filter(Boolean).filter((l) => !l.slice(3).startsWith(runPrefix));
   if (dirty.length) report.problems.push(`working tree has uncommitted tracked changes: ${dirty.join(", ")}`);
-  if (!tasks.length) report.problems.push("result has no tasks");
   if (base && !git(root, ["merge-base", "--is-ancestor", base, "HEAD"]).ok) {
     report.problems.push(`build base ${short(base)} is not an ancestor of HEAD`);
   }
-  tasks.forEach((t, i) => report.problems.push(...checkTask(root, t, i)));
+  const planned = plannedTasks(root, runId);
+  if (planned.problem) {
+    report.problems.push(planned.problem);
+    return finish(false);
+  }
+  const byId = new Map();
+  for (const t of tasks) {
+    if (byId.has(t?.taskId)) report.problems.push(`${t?.taskId}: appears twice in the build result`);
+    byId.set(t?.taskId, t);
+  }
+  const plannedIds = new Set(planned.tasks.map((p) => p.taskId));
+  for (const id of byId.keys()) if (!plannedIds.has(id)) report.problems.push(`${id}: not a task in the approved build args`);
+  if (!planned.tasks.length) report.problems.push("the approved build args have no tasks");
+  for (const plan of planned.tasks) {
+    report.problems.push(...checkTask(root, plan, byId.get(plan.taskId)));
+    if (byId.get(plan.taskId)) report.notes.push(...testsRunNotes(plan, byId.get(plan.taskId)));
+  }
   if (report.problems.length) return finish(false);
 
   const preHead = git(root, ["rev-parse", "HEAD"]).out;
@@ -141,27 +214,31 @@ export async function mergeWave({ cwd, runId, result, resultFile, now = () => ne
     if (!reset.ok) report.problems.push(`ROLLBACK FAILED, HEAD is not ${short(preHead)}: ${reset.err}`);
     report.merged = [];
   };
-  for (const task of tasks) {
-    const title = String(task.title || "").replace(/\s+/g, " ").slice(0, 72);
-    const merge = git(root, ["merge", "--no-ff", "--no-edit", "-m", `merge(${runId}): ${task.taskId}${title ? ` ${title}` : ""}`, task.commit]);
+  const summaries = [];
+  for (const plan of planned.tasks) {
+    const task = byId.get(plan.taskId);
+    const title = plan.title.replace(/\s+/g, " ").slice(0, 72);
+    const merge = git(root, ["merge", "--no-ff", "--no-edit", "-m", `merge(${runId}): ${plan.taskId}${title ? ` ${title}` : ""}`, task.commit]);
     if (!merge.ok) {
       git(root, ["merge", "--abort"]);
-      rollback(`${task.taskId}: merge of ${short(task.commit)} failed: ${tail(merge.err || merge.out, 300)}`);
+      rollback(`${plan.taskId}: merge of ${short(task.commit)} failed: ${tail(merge.err || merge.out, 300)}`);
       return finish(false);
     }
-    const commands = commandsFor(task);
-    const runs = commands.map((cmd) => ({ taskId: task.taskId, ...runCommand(root, cmd) }));
+    const runs = plan.verify.map((cmd) => ({ taskId: plan.taskId, ...runCommand(root, cmd) }));
     report.verify.push(...runs);
     const failed = runs.filter((r) => !r.ok);
-    report.merged.push({ taskId: task.taskId, commit: task.commit, merge: git(root, ["rev-parse", "HEAD"]).out, commands: runs.length, passed: runs.length - failed.length });
+    const mergeSha = git(root, ["rev-parse", "HEAD"]).out;
+    report.merged.push({ taskId: plan.taskId, commit: task.commit, merge: mergeSha, commands: runs.length, passed: runs.length - failed.length });
     if (failed.length) {
-      rollback(`${task.taskId}: verify failed after merge: ${failed.map((f) => `\`${f.cmd}\` exited ${f.status}`).join(", ")}`);
+      rollback(`${plan.taskId}: verify failed after merge: ${failed.map((f) => `\`${f.cmd}\` exited ${f.status}`).join(", ")}`);
       return finish(false);
     }
+    summaries.push([plan, task, mergeSha, runs]);
   }
 
-  const worktrees = listWorktrees(root);
-  for (const task of tasks) report.cleanup.push(...cleanup(root, task, worktrees));
+  for (const s of summaries) await writeSummary(root, runId, ...s);
+  const refs = worktreeRefs(root);
+  for (const plan of planned.tasks) report.cleanup.push(...cleanup(root, byId.get(plan.taskId), refs));
   git(root, ["worktree", "prune"]);
   return finish(true);
 }

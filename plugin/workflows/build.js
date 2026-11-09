@@ -124,7 +124,7 @@ function execBrief(cfg, t, prior) {
     prior.length
       ? `3. Integrate the earlier waves first. For each commit C of ${prior.map((p) => p.commit).join(' ')}: git merge-base --is-ancestor C HEAD || git merge --no-ff --no-edit C`
       : '3. (first wave: nothing to integrate)',
-    `4. Implement the task, run the verify commands, write .muster/runs/${cfg.runId}/SUMMARY-${t.taskId}.md, and commit everything with a message containing ${tag}.`,
+    `4. Implement the task, run the verify commands, and commit with a message containing ${tag}. Do not write a SUMMARY file: merge-wave records SUMMARY-${t.taskId}.md from your result, so put anything a reader needs in deviations.`,
     'Return: branch = git rev-parse --abbrev-ref HEAD, commit = full git rev-parse HEAD, worktree = pwd, testsRun = the exact commands you ran, plus testsPassed, selfCheck and deviations.',
   ]
   return steps.filter(Boolean).join('\n')
@@ -153,7 +153,7 @@ function fixBrief(cfg, t, ex, review, round) {
     `1. Check git state first: git rev-parse --abbrev-ref HEAD must print ${ex.branch}, otherwise return status "blocked". If git log --oneline ${ex.commit}..HEAD already shows a commit containing ${tag}, do not redo it: re-run the verify commands and report it.`,
     '2. Address exactly these findings, nothing else:',
     ...findings,
-    `3. Re-run the verify commands (${list(t.verify).join(' ; ') || 'see PLAN.md'}), update SUMMARY-${t.taskId}.md, and commit with a message containing ${tag}.`,
+    `3. Re-run the verify commands (${list(t.verify).join(' ; ') || 'see PLAN.md'}) and commit with a message containing ${tag}.`,
     'Return the ExecResult for the new HEAD (same branch and worktree).',
   ].join('\n')
 }

@@ -1,6 +1,7 @@
 ---
 name: interview
 description: Interactive requirements interview — one question at a time via the AskUserQuestion selection UI — that turns a thin outcome into an enriched, criteria-backed outcome the router can run.
+upstream: []
 ---
 
 # Interview (requirements)

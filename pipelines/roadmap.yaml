@@ -2,6 +2,7 @@ id: roadmap
 domain: pm
 title: Roadmap Prioritization
 match: [roadmap, prioritize, prioritization, roadmap prioritization, product roadmap, backlog prioritization, rice]
+upstream: []
 phases:
   - { id: generate,   role: brainstorm,    desc: "surface candidate initiatives from goals/strategy/themes" }
   - { id: research,   role: docs-research, desc: "gather evidence per initiative: market, competitor, and customer-feedback signals" }

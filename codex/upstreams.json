@@ -37,7 +37,8 @@
     },
     {
       "id": "book-genesis-codex",
-      "repository": "https://github.com/felipelobomotta-blip/book-genesis-v4",
+      "repository": "https://github.com/felipelobomotta-blip/book-genesis-studio",
+      "formerly": ["https://github.com/felipelobomotta-blip/book-genesis-v4"],
       "version": "4.2.0",
       "ref": "a43a429bdec1770232ee64e7de634c5ce5109b80",
       "codex": "Portable book-genesis-codex skill package with OpenAI agent metadata, pipeline manifest, prompts, and scoring references.",
@@ -47,7 +48,7 @@
       "id": "humanizer-sources",
       "repository": "https://github.com/blader/humanizer",
       "version": "2.8.2",
-      "ref": null,
+      "ref": "1b48564898e999219882660237fde01bf4843a0f",
       "codex": "Portable any-agent skill. Corroborating Codex-ready sources: avoid-ai-writing v3.15.0 at 500ff59006f19c27120c5ddbd9b56fc3d937b6bf and anti-ai-slop-writing at 63255f9bbb75a265dc5786a04535cd033f487756.",
       "musterStrategy": "Keep muster-humanizer and deterministic humanize-score because they synthesize multiple sources and add Muster-specific gates."
     },

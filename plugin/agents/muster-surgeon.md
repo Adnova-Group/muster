@@ -4,6 +4,12 @@ description: Surgical 1-2 file edits — typos, single-function rewrites, mechan
 tools: Read, Edit, Bash, Grep, Glob
 model: sonnet
 maxTurns: 15
+upstream:
+  - repo: damusix/atomic-claude
+    ref: null
+    path: null
+    license: MIT
+    relation: inspired-by
 ---
 <!-- Role concept inspired by atomic-claude (github); authored fresh for muster, not copied. -->
 

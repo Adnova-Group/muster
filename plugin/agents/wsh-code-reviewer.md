@@ -5,8 +5,13 @@ model: sonnet
 maxTurns: 35
 tools: Read, Grep, Glob, Edit, Bash
 muster_builtin: true
-adapted_from: wshobson/agents plugins/code-documentation/agents/code-reviewer.md
 license: MIT
+upstream:
+  - repo: wshobson/agents
+    ref: cf6059d030bf4fe96623ae2e596d2f31e35fedc0
+    path: plugins/code-documentation/agents/code-reviewer.md
+    license: MIT
+    relation: vendored
 ---
 
 You are muster's elite code reviewer, specializing in modern code analysis techniques, AI-powered review tools, and production-grade quality assurance.

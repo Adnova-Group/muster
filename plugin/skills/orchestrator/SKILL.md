@@ -1,6 +1,7 @@
 ---
 name: orchestrator
 description: Execute a validated Crew Manifest in dependency-ordered waves, with a barrier + adversarial review gate between waves. Glass-box: every wave/decision appended to the run STATE.
+upstream: []
 ---
 
 # Orchestrator (wave executor)
@@ -74,18 +75,12 @@ doing the work.
       - **Model (authoritative):** agent policy is the canonical `{tier, effort?}` profile in
         `catalog/agents.manifest.json`; do not embed or maintain a concrete model/version catalog in
         this prompt. Use the captured capabilities' resolved dispatch profile for the active harness
-        (`claudeProfile`, `codexModel`, or `kimiModel`) exactly as emitted by its adapter, and never
+        (`claudeProfile` or `codexModel`) exactly as emitted by its adapter, and never
         pass the neutral profile raw. The harness-specific dispatch reference below owns call shape
         and fallback behavior; record any adapter-reported degradation in STATE.
       - **Subagent failure:** never a silent stop -- record a deterministic error/progress fingerprint
         and re-dispatch with the error appended while `dispatchRetryState` in `src/loop.js` reports
         progress. Stop deterministically at the configured repeated-identical/no-progress threshold.
-        **On Kimi the re-dispatch is
-        a native RESUME, never a fresh spawn** -- the Agent tool's `resume` for a per-agent
-        dispatch, AgentSwarm's `resume_agent_ids` for a swarm dispatch (both modeled by
-        `kimiAgentCall`/`kimiSwarmCall` in `src/kimi-dispatch.js`): the failed subagent keeps its
-        prior context and only the error is appended, so the retry never pays the full
-        prompt/context cost a fresh agent would. Non-Kimi harnesses keep the fresh re-dispatch.
         A no-progress result records to STATE and enters the truthful terminal path (step 4e); the wave's other tasks still
         complete. A reviewer dispatched inside the review gate (step 4c) that is killed, exhausted, or
         never starts before returning a verdict is not retried under this generic path -- see
@@ -139,7 +134,7 @@ REPLACEMENT for the pending/in_progress/completed tracking that used to be re-li
 too, not a second place that same status also lives. Create one harness-visible task per work
 item via the harness's native task-tracking primitive when present -- **Claude Code CLI/Desktop:**
 `TaskCreate`/`TaskUpdate`/`TaskList` (docs/research/reference-harness-design.md's `cc-plan`);
-**Codex:** `update_plan`; **Kimi Code CLI:** `TodoList` (both detailed below) --
+**Codex:** `update_plan` (detailed below) --
 create at dispatch (subject: the task/item id plus a short description), `in_progress`
 when the builder launches, `completed` only after its disposition executes AND the review gate
 has recorded PASS for it (below) -- `TaskList` is the live query, and STATE never re-lists that
@@ -171,9 +166,6 @@ execution limit: parallel execution remains live. Project exactly one representa
 mean queued or not running. Record every actual positive-attempt `inFlight` member in STATE and
 dispatch receipts, rotate the representative when it finishes, and keep reconciling all receipts at
 the barrier. Emit the full plan at dispatch and on each transition (the tool takes the whole list).
-
-Kimi Code CLI's counterpart is `TodoList` (`{todos: [{title, status}]}`, auto-allowed,
-session-scoped; omitting `todos` queries, `[]` clears) -- see docs/research/kimi-code-cli.md.
 
 Only a harness with genuinely none of these falls back to the STATE-carried status line below.
 
@@ -232,15 +224,6 @@ contract, receipts rule, and fail-closed rejected-profile rule); the Codex build
 contract blocks verbatim rather than maintaining a second copy here. Progressive disclosure: a
 non-Codex session never pays that file's tokens.
 
-### Kimi-native dispatch: AgentSwarm waves + per-agent calls
-
-**On Kimi, read `references/kimi-dispatch.md` (in this skill's directory) BEFORE dispatching
-wave 1** -- it is the canonical statement of this harness's dispatch mechanics (the
-swarm-vs-calls selection, pre-dispatch validation, lane binding, the attended-session process
-lane, the resume retry shapes, and the background-vs-barrier rule). Step 4b's barrier and step
-4c's review gate are UNCHANGED in both of its modes -- only the fan-out mechanism moves off the
-prose loop. Progressive disclosure: a non-Kimi session never pays that file's tokens.
-
 ### Worktree isolation per harness + base-SHA receipts
 
 Step 4a's "Parallel isolation" bullet already names Claude Code CLI's mechanism (the Agent tool's
@@ -258,21 +241,16 @@ capability checks above):
 - **Codex** -- production waves use muster's process lane: a separate authenticated registered
   worktree passed to each `codex exec -C` process. Explicit non-wave `spawn_agent` delegation has
   no cwd field and therefore never substitutes for this wave isolation.
-- **Kimi** -- exactly the Codex floor: its subagent dispatch carries no cwd/isolation parameter
-  (docs/research/kimi-code-cli.md sec 7). muster supplies the worktree itself
-  (`git worktree add .worktrees/<item-branch>` before dispatch), and the base-SHA receipt below
-  verifies the branch/base from the runner's return receipt.
 
 **Every harness records the same base-SHA receipt, regardless of which mechanism (or none)
-isolated the work.** None of the five self-report a fork point, so capture one per dispatched crew
+isolated the work.** None of the four self-report a fork point, so capture one per dispatched crew
 member at dispatch time: `buildBaseShaReceipt({ taskId, mechanism, baseSha, worktreePath })`
 (`src/wave-dispatch.js`) refuses to build one over a missing or non-hex `baseSha` -- a receipt that
 isn't provably a real fork point is worse than no receipt. Append it to STATE alongside the
 per-task dispatch line (step 4a's "Announce before acting"); one receipt per dispatched crew
 member, not per wave. `test/worktree-isolation.test.js` proves the builder enforces a real SHA
 shape (against this checkout's own live `git rev-parse HEAD`) and that every harness above resolves
-to its declared mechanism -- each native mechanism a distinct string, with Kimi deliberately sharing
-Codex's receipts-only floor -- never a silent default.
+to its declared mechanism -- each native mechanism a distinct string -- never a silent default.
 
 **Shape is not proof.** A fabricated-but-well-formed SHA passes the shape check above exactly like
 a real commit does. Immediately after appending the receipt, run
@@ -347,20 +325,6 @@ free-interpret. Map the returned action:
 - **retarget** -- a scope change: do NOT silently re-scope the run; log it as a follow-up and reply
   that it's logged for the human to confirm (the manifest stays the single source).
 - **unknown** -- say so rather than guess: ask the human to rephrase (approve/stop/status/retarget).
-
-**On Kimi the same message arrives through the harness's native steer seam.** Kimi's agent loop
-queues user interjections in its steer queue and injects them BETWEEN STEPS without ending the
-turn (docs/research/kimi-code-cli.md sec 1 "Steer") -- so a steered correction shows up as an
-injected user message at a step boundary, not a `<channel>` event. Classify it with
-`muster steer "<msg>"` exactly as above; the action mapping is unchanged. The surfaces into that
-queue: TUI `Ctrl-S` (interactive only), Wire `steer` (gen1 kimi-cli only), ACP mid-turn (gen2),
-and `kimi web`'s HTTP API -- `POST /sessions/{session_id}/prompts` then
-`POST /sessions/{session_id}/prompts:steer` ("Steer queued prompts into the active turn"; single
-colon, mounted under `/api/v1` -- and a `/goal` run is
-steerable over this route: a mid-pursuit message is queued, not rejected, sec 11.11). `muster steer --harness kimi "<msg>"` constructs that
-native delivery (`kimiSteerDelivery` in `src/kimi-steer.js`) for the driver holding the live
-session; muster's own `kimi -p` run loop holds no session handle, so the CLI builds the delivery
-and names the seam -- it does not open the connection itself.
 
 ## Enforcement model: gates vs conventions
 

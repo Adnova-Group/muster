@@ -189,7 +189,7 @@ test("resolveCapabilities tags every role with a model", async () => {
 
 // The conceptual tier is NEVER dispatched raw on Claude Code — capabilities
 // attaches the Claude adapter's concrete value beside it, unconditionally
-// (pure tier function; codexModel/kimiModel need inventories, this does not).
+// (pure tier function; codexModel needs inventories, this does not).
 test("resolveCapabilities attaches claudeModel — the Agent tool's concrete override", async () => {
   const { resolveCapabilities } = await import("../src/capabilities.js");
   const caps = resolveCapabilities([], { plugins: [], skills: [], mcpServers: [] });

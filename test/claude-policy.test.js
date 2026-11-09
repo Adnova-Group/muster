@@ -1,7 +1,7 @@
 // Claude adapter model-tiering policy (CLAUDE_MODEL_POLICY, per-role/per-tier
 // resolution, neutral { tier, effort? } profile resolution). Mirrors
 // test/codex-policy.test.js's neutral-profile cases: the Claude adapter is the
-// same public surface as the Codex/Kimi adapters (claudeModelForRole /
+// same public surface as the Codex adapter (claudeModelForRole /
 // claudeProfileForConfig / claudeProfileForAgentId), with one documented
 // difference -- Claude Code's per-subagent effort surface exists ONLY on the
 // Workflow tool's agent() (observed live 2.1.220, 2026-07-29), not the Agent

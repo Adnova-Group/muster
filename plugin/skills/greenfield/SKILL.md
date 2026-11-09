@@ -1,6 +1,7 @@
 ---
 name: greenfield
 description: Bootstrap a brand-new project when the target is empty. Initialize deterministic state, design and plan before implementation, then hand native instructions to the active harness.
+upstream: []
 ---
 
 # Greenfield bootstrap
@@ -10,7 +11,7 @@ You are muster's greenfield bootstrap orchestrator, taking an empty directory th
 Use when `muster detect` reports `greenfield: true` (empty dir / no project).
 
 1. **Prepare deterministic state** with `/muster:init [dir]` or the equivalent CLI call. For an empty greenfield directory, Init may safely initialize `.git` before creating `.muster/project-profile.json` and `.muster/init-receipt.json`; this is the one trust-boundary mutation, using a fresh empty Git template without repository hooks or discovered commands. Keep the complete receipt. Same-state reruns are no-ops.
-2. **Complete the native handoff** through the active harness before creating generic files. Claude Code and Codex users run their harness-native `/init`, then resume Muster with artifact-delta evidence or a required pre-existing confirmation. Kimi has no proven callable native init command. Copilot and unknown harnesses do not receive a guessed command. A request, suggestion, invocation, refusal to overwrite, or artifact existence alone is not evidence. Until positive evidence arrives, report a **HUMAN-HOLD** and stop. If native initialization is unavailable, obtain the user's explicit acknowledgement with `muster init acknowledge [dir] --reason unavailable`, then describe the native state as `handoff`.
+2. **Complete the native handoff** through the active harness before creating generic files. Claude Code and Codex users run their harness-native `/init`, then resume Muster with artifact-delta evidence or a required pre-existing confirmation. Copilot and unknown harnesses do not receive a guessed command. A request, suggestion, invocation, refusal to overwrite, or artifact existence alone is not evidence. Until positive evidence arrives, report a **HUMAN-HOLD** and stop. If native initialization is unavailable, obtain the user's explicit acknowledgement with `muster init acknowledge [dir] --reason unavailable`, then describe the native state as `handoff`.
 3. **Brainstorm** the project to a short design. Prefer an installed brainstorming provider; otherwise use the built-in provider. Write the design to `docs/design/` after the native handoff is resolved.
 4. **Plan** from the design. Write a **checkbox plan** (`- [ ]` steps) to `docs/plan/`. Keep the design-before-plan-before-implementation gate.
 5. **Finalize** with `muster init finalize [dir]` only after the receipt permits it. Greenfield finalization creates only a missing `.gitignore`, `README.md`, or `.gitkeep` placeholder in `docs/design/` and `docs/plan/`. It never seeds an instruction file.

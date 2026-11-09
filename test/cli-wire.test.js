@@ -222,7 +222,7 @@ test("cli wire: capabilities --role returns one compact role without the skill i
 // audit S3 (2026-07-30, architecture P1): `capabilities [home]` documents a
 // positional home-dir override, and readInstalled(home) honored it -- but the
 // default/--cowork/--work lanes then called resolveCapabilities WITHOUT it (only
-// --codex/--kimi threaded it through), so the skills inventory reported names
+// --codex threaded it through), so the skills inventory reported names
 // from the override home while resolving their descriptions against the REAL
 // homedir: every description came back "". Pinned end to end through the CLI.
 test("cli wire: capabilities resolves installed skill descriptions from the positional home override", async () => {

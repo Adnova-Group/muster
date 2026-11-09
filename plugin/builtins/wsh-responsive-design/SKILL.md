@@ -2,8 +2,13 @@
 name: responsive-design
 description: Implement modern responsive layouts using container queries, fluid typography, CSS Grid, and mobile-first breakpoint strategies. Use when building adaptive interfaces, implementing fluid layouts, or creating component-level responsive behavior.
 muster_builtin: true
-adapted_from: wshobson/agents plugins/ui-design/skills/responsive-design/SKILL.md
 license: MIT
+upstream:
+  - repo: wshobson/agents
+    ref: cf6059d030bf4fe96623ae2e596d2f31e35fedc0
+    path: plugins/ui-design/skills/responsive-design/SKILL.md
+    license: MIT
+    relation: adapted
 ---
 
 # Responsive Design

@@ -2,8 +2,13 @@
 name: wcag-audit-patterns
 description: Conduct WCAG 2.2 accessibility audits with automated testing, manual verification, and remediation guidance. Use when auditing websites for accessibility, fixing WCAG violations, or implementing accessible design patterns.
 muster_builtin: true
-adapted_from: wshobson/agents plugins/accessibility-compliance/skills/wcag-audit-patterns/SKILL.md
 license: MIT
+upstream:
+  - repo: wshobson/agents
+    ref: cf6059d030bf4fe96623ae2e596d2f31e35fedc0
+    path: plugins/accessibility-compliance/skills/wcag-audit-patterns/SKILL.md
+    license: MIT
+    relation: vendored
 ---
 
 # WCAG Audit Patterns

@@ -4,6 +4,12 @@ description: Read-only code locator. Answers "where is X / what calls Y / map th
 tools: Read, Bash, Grep, Glob
 model: haiku
 maxTurns: 15
+upstream:
+  - repo: damusix/atomic-claude
+    ref: null
+    path: null
+    license: MIT
+    relation: inspired-by
 ---
 <!-- Role concept inspired by atomic-claude (github); authored fresh for muster, not copied. -->
 

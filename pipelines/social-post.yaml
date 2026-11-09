@@ -1,6 +1,7 @@
 id: social-post
 domain: social
 title: Social Media Post
+upstream: []
 phases:
   - { id: intake,   role: brainstorm,  desc: "platform, audience, goal, one core idea, CTA; resolve the target audience to a named profile in docs/profiles/AUDIENCES.md (create/extend the profile on first use)" }
   - { id: angle,    role: author,      desc: "choose an angle + framework (AIDA / PAS / BAB / QUEST)" }

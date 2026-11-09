@@ -3,7 +3,7 @@
 // path-containment guards (lexical + canonical), and the traversal-token guard
 // that used to be re-implemented -- with subtly divergent semantics -- across
 // init.js, install.js, codex-release.js, codex-doctor.js, vendor.js,
-// codex-install.js, kimi-install.js, scope.js, and batch-plan.js.
+// codex-install.js, scope.js, and batch-plan.js.
 //
 // Each primitive below carries the exact contract its original call sites
 // pinned (error messages included -- tests match on them); the call sites now
@@ -23,7 +23,7 @@ import { withCodexFileLock } from "./codex-lock.js";
 // createHash("sha256").update(value).digest("hex") one-liner that used to be
 // independently redefined -- byte-for-byte identical -- as sha256/digest/
 // sprintStateHash across codex-release.js, chatgpt-work-install.js, design.js,
-// init.js, kimi-install.js, sprint-waves.js, install.js, and
+// init.js, sprint-waves.js, install.js, and
 // sprint-broker-state.js. Callers needing a domain-specific alias (e.g.
 // sprintStateHash) re-export this same function under that name rather than
 // redefining the chain. A call site with an explicit second .update() argument
@@ -37,7 +37,7 @@ export function sha256(value) {
 // this module's own sha256() output shape. Collapses the equivalent regex that
 // used to be independently declared or inlined across sprint-broker-state.js,
 // sprint-evidence-broker.js, init.js (as HEX64), sprint-waves.js (as
-// DIGEST_RE), kimi-install.js, and loop.js. The pattern carries no g/y flag,
+// DIGEST_RE), and loop.js. The pattern carries no g/y flag,
 // so it has no mutable lastIndex state and sharing this one instance across
 // files and call sites is safe. A pattern that also accepts a 40-character git
 // SHA, carries an algorithm prefix, or uses different flags/length is NOT this
@@ -506,8 +506,7 @@ export function readNoFollowRegularSync(path, { maxBytes, label } = {}) {
 // there is no directory-entry sync API, and opening a directory handle to
 // sync() it raises EPERM (verified on Windows node 24.11/26). Left unguarded it
 // failed the WHOLE atomicWrite there -- a lost write, not merely a lost
-// barrier -- taking down every fsyncDir caller (kimi install/uninstall
-// receipts, init.js, design.js). The rename is still atomic and the staged
+// barrier -- taking down every fsyncDir caller (init.js, design.js). The rename is still atomic and the staged
 // bytes are still fsynced, so the barrier degrades where it cannot exist and
 // stays mandatory everywhere it can.
 export const DIRECTORY_FSYNC_SUPPORTED = process.platform !== "win32";

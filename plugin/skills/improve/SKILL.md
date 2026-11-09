@@ -2,6 +2,7 @@
 name: improve
 description: Background retrospective -- mines a just-completed run's STATE, escalations, and review-gate fix-loops for recurring friction, then proposes user-gated edits to muster's own skills, agents, and rules. Triggers on requests to reflect, retrospect, review, or improve muster after a run finishes.
 context: fork
+upstream: []
 ---
 
 # Improve

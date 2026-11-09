@@ -11,18 +11,21 @@ const AGENTS_DIR = new URL("../plugin/agents/", import.meta.url);
 // Agent layer: provenance is honored per source, the ladder prefers installed > agent > skill,
 // every agent file has a catalog entry (and vice versa), and the dispatch docs wire chosen.kind.
 
-test("muster agents credit atomic as inspiration; vendored agents carry MIT provenance", async () => {
+test("muster agents credit atomic-claude as inspiration; vendored agents carry MIT provenance", async () => {
   const catalog = await loadCatalog(CATALOG);
   const agents = catalog.filter(e => e.kind === "agent");
   assert.ok(agents.length >= 13, "expected the muster + vendored agents");
   for (const a of agents) {
+    assert.ok(!("adapted_from" in a.provenance) && !("inspired_by" in a.provenance), `${a.id}: adapted_from/inspired_by are retired`);
     if (a.id.startsWith("muster-")) {
       assert.equal(a.provenance.license, "Apache-2.0", `${a.id} should be Apache-2.0`);
-      assert.ok(a.provenance.inspired_by, `${a.id} must credit inspiration, not copy`);
-      assert.ok(!a.provenance.adapted_from, `${a.id} is clean-room — no adapted_from`);
+      // muster-runner is a multi-source clean-room synthesis; the role specialists
+      // take only the role concept from atomic-claude (full record: vendor/manifest.yaml).
+      if (a.id !== "muster-runner") assert.deepEqual(a.provenance.upstream, ["damusix/atomic-claude"], `${a.id} must credit atomic-claude`);
+      else assert.ok(a.provenance.upstream.includes("obra/superpowers"), "muster-runner credits its mechanism sources");
     } else {
       assert.equal(a.provenance.license, "MIT", `${a.id} vendored agent should be MIT`);
-      assert.ok(a.provenance.adapted_from, `${a.id} must record its upstream source`);
+      assert.deepEqual(a.provenance.upstream, ["wshobson/agents"], `${a.id} must record its upstream source`);
     }
   }
 });

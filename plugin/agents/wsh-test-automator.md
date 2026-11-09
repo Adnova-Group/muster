@@ -5,8 +5,13 @@ model: sonnet
 maxTurns: 25
 tools: Read, Grep, Glob, Edit, Bash
 muster_builtin: true
-adapted_from: wshobson/agents plugins/backend-development/agents/test-automator.md
 license: MIT
+upstream:
+  - repo: wshobson/agents
+    ref: cf6059d030bf4fe96623ae2e596d2f31e35fedc0
+    path: plugins/backend-development/agents/test-automator.md
+    license: MIT
+    relation: vendored
 ---
 
 You are a test automation engineer specializing in creating comprehensive test suites during feature development.

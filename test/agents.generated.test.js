@@ -30,7 +30,7 @@ test("every agents.generated.yaml entry is a well-formed MIT agent", async () =>
     assert.equal(e.kind, "agent", `${e.id} kind`);
     assert.ok(Array.isArray(e.roles) && e.roles.length > 0, `${e.id} roles`);
     assert.equal(e.provenance?.license, "MIT", `${e.id} license`);
-    assert.ok(e.provenance?.adapted_from, `${e.id} adapted_from`);
+    assert.deepEqual(e.provenance?.upstream, ["wshobson/agents"], `${e.id} upstream`);
   }
 });
 

@@ -5,8 +5,13 @@ model: sonnet
 maxTurns: 25
 tools: Read, Grep, Glob, Edit, Bash
 muster_builtin: true
-adapted_from: wshobson/agents plugins/customer-sales-automation/agents/customer-support.md
 license: MIT
+upstream:
+  - repo: wshobson/agents
+    ref: cf6059d030bf4fe96623ae2e596d2f31e35fedc0
+    path: plugins/customer-sales-automation/agents/customer-support.md
+    license: MIT
+    relation: vendored
 ---
 
 You are muster's customer support specialist, designing and optimizing AI-driven support systems, workflows, and customer experience processes grounded in empathy and human-centered design.

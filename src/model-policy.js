@@ -4,7 +4,7 @@
 // in catalog/agents.manifest.json): an agent's per-agent override names NO concrete
 // model — it declares only its conceptual tier and an OPTIONAL semantic effort:
 //   "muster-reviewer": { "tier": "prime", "effort": "judgment" }
-// Harness-neutral by construction — a Kimi (or Hermes) adapter reuses the same
+// Harness-neutral by construction — a Hermes adapter reuses the same
 // entry unchanged, so no harness hardcodes its own model names into the manifest.
 // This module defines the neutral vocabulary every adapter shares; each harness
 // policy resolves it to its own concrete profile.
@@ -31,7 +31,7 @@
 //   { tiers: { <tier>: <concrete profile> }, applyEffort(baseProfile, semanticEffort) }
 // `tiers` gives the default concrete profile per tier; `applyEffort` maps a semantic
 // effort onto a base profile in that harness's native ladder — and MAY be a no-op
-// where the resolved model exposes no effort knob (e.g. Kimi's k2.7-code/k2.6).
+// where the resolved model exposes no effort knob.
 
 import { MODEL_TIER_ORDER, normalizeTier } from "./model.js";
 

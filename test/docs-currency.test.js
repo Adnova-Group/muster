@@ -95,14 +95,12 @@ test("docs/architecture.md points at the anti-pattern ledger (docs/anti-patterns
 const ownedCurrencyDocs = [
   "docs/research/codex-cli.md",
   "docs/research/codex-desktop.md",
-  "docs/research/kimi-code-cli.md",
   "docs/fast-path-token-gap.md"
 ];
 
 test("current research docs identify the shared live agent manifest", async () => {
   for (const path of [
     "docs/research/codex-cli.md",
-    "docs/research/kimi-code-cli.md",
     "docs/fast-path-token-gap.md",
   ]) {
     const text = await read(path);

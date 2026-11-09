@@ -2,6 +2,12 @@
 name: design
 description: "Resolve and gate canonical DESIGN.md context, initialize it with attended confirmation, run bounded design detection, manage the internal provider and ignores, or execute one of 23 pinned Impeccable-inspired design workflows. Usage: /muster:design <init|status|resolve|detect|ignores|provider|workflow> ..."
 argument-hint: "<init|status|resolve|detect|ignores|provider|workflow> [target]"
+upstream:
+  - repo: pbakaus/impeccable
+    ref: 32930818a109fafa87199babe92fa8e530cff5d3
+    path: null
+    license: Apache-2.0
+    relation: inspired-by
 ---
 
 # Muster Design

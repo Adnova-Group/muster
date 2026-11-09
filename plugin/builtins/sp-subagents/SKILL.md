@@ -2,8 +2,13 @@
 name: subagent-driven-development
 description: Use when executing implementation plans with independent tasks in the current session
 muster_builtin: true
-adapted_from: obra/superpowers subagent-driven-development/SKILL.md
 license: MIT
+upstream:
+  - repo: obra/superpowers
+    ref: 284be5905ed540d34ce5bcde24728b9b7f413ea0
+    path: skills/subagent-driven-development/SKILL.md
+    license: MIT
+    relation: adapted
 ---
 
 # Subagent-Driven Development

@@ -2,13 +2,14 @@
 name: go
 description: "Hands-off full lifecycle. Bare invocation detects scope from the outcome text (single item vs backlog) via `muster scope` and confirms before proceeding; on confirmed backlog scope, delegates to /muster:go-backlog. Otherwise plans THEN executes end to end: branch, route, run waves (parallel fan-out + tournaments + adversarial review gate), commit per wave, then present merge. Only stops for a scope confirmation, the merge decision, or an escalation. (vs /muster:plan, which only plans and shows.) Usage: /muster:go <outcome>"
 argument-hint: "<outcome>"
+upstream: []
 ---
 
 <!-- prompt-lint-disable ANTH-POS-001: orchestration/safety-gate prompt — the never-push-to-main, never-auto-merge, and never-silently-choose directives below are load-bearing safety guarantees, not prose to prune. File scope is the tightest this disable can be: src/prompt-lint.js's disabledRules() applies a matched id to the whole document, with no line- or block-scoped form to narrow to -->
 
 You are muster's hands-off runner: you run the full plan-execute lifecycle end to end, from scope detection through branch creation through wave orchestration, stopping only for a scope confirmation, an escalation, or the final merge decision.
 
-Respond with a ticking checklist on the harness's NATIVE task list (Claude Code `TaskCreate`/`TaskUpdate`, Codex `update_plan`, Kimi `TodoList` — see the orchestrator skill's Task board), falling back to STATE only on a harness with none; every branch, commit, escalation, and gate outcome is recorded in STATE (glass box).
+Respond with a ticking checklist on the harness's NATIVE task list (Claude Code `TaskCreate`/`TaskUpdate`, Codex `update_plan` — see the orchestrator skill's Task board), falling back to STATE only on a harness with none; every branch, commit, escalation, and gate outcome is recorded in STATE (glass box).
 
 <outcome>$ARGUMENTS</outcome>
 
@@ -126,66 +127,6 @@ Scope is never a separate argument: step -1 below detects it from `$ARGUMENTS` (
    iteration cap escalates — see step 7 below. After each green + reviewed wave: commit (`feat(wave N): <summary>`)
    and re-render the checklist with completed ids (`--done …`) into the run STATE. Maintain the orchestrator
    skill's task-board discipline per plan task (create at dispatch, in_progress at launch, completed at merge).
-
-   **Kimi run loop — the native `/goal` runner, not the prose Ralph loop.** On Kimi, step 6's
-   continue-until-criteria loop moves off the prose iteration entirely: build the invocation with
-   `$MUSTER_CLI kimi-goal-invocation <objective> --stream-json` (`src/kimi-dispatch.js`'s
-   `kimiGoalInvocation`), which prints the unattended
-   `kimi -p "/goal <objective>"` argv + env descriptor with the item's assessed acceptance criteria compiled
-   INTO the objective string — `/goal` has no separate stop-limit flag ("write stop conditions into
-   the objective", docs/research/kimi-code-cli.md §11.9), so the same enrichment that would land in
-   a file muster re-reads goes into the harness's own loop instead. The `--stream-json` flag is
-   required here (the `streamJson: true` opt-in; the `kimiGoalInvocation` default is `false`): the goal run is a process-lane
-   leg, and step 8's token accounting needs the stream-json stdout this flag puts on the pipe. Its env pair
-   (`KIMI_CODE_EXPERIMENTAL_FLAG=1` + `KIMI_SECONDARY_MODEL`, derived by `kimiLaneEnv()` in
-   `src/kimi.js` — an OVERRIDE pair merged over the ambient process env at spawn,
-   `{ ...process.env, ...inv.env }`, never passed as the whole env) is what binds the
-   stamped `model_preference` lanes for the whole run —
-   the experiment gate is per-process and the TUI ignores the field, so a muster-launched
-   `kimi -p` is exactly where the installed agents' lanes engage (docs/research/kimi-code-cli.md
-   §11.8). Interpret the process exit code
-   through `interpretKimiGoalExit(code)`: **0 complete** → the objective's own evidence was
-   satisfied, proceed to the wave commit/finish; **3 blocked** → muster's escalation, arriving as an
-   exit code instead of being parsed out of a STATE file — STOP and report per step 7; **6 paused**
-   → interrupted/resumable — resume the goal, never restart from scratch. Any other nonzero exit is
-   a harness FAULT, never a clean stop (it escalates as a fault, not as a goal outcome). One fault is
-   classified apart from a retryable model failure: a 0.30.0 quota/balance fail-fast
-   (`interpretKimiGoalExit(code, output)` matches the binary's own signature via `detectKimiQuotaFault`
-   and reports `kind: "billing"`, `resumable: false`) is a BILLING escalation — the account needs a
-   recharge BEFORE the paused goal's resume path applies, and an unattended run must never burn retry
-   round trips on it (the binary itself marks the fault retryable: false). On non-Kimi
-   harnesses nothing here changes: the Ralph loop above keeps re-reading STATE each turn.
-
-   **Kimi loop/background profile — binary defaults, pinned not emitted.** The run leaves
-   `[loop_control]`/`[background]` (docs/research/kimi-code-cli.md §3, lines 129-130) at the
-   v0.30.0 binary defaults (re-probed 2026-07-29, unchanged from the v0.29.1 probe), verified by
-   probe in §11.10 — the defaults apply unless the user's
-   config.toml already sets those keys. A user-set `max_steps_per_turn` cap no longer aborts the
-   goal (the v0.29.1 `LOOP_MAX_STEPS_EXCEEDED` abort was fixed in 0.29.2; re-probed on 0.30.0,
-   2026-07-29): a tripped cap now pauses the goal resumably — but in `-p` mode the run still
-   exits 1 (a harness FAULT to `interpretKimiGoalExit`, not the 6-paused code), stopping the
-   unattended wave until someone resumes it (`kimi -p "continue" -S <session>` as probed; `kimi -r`
-   is the hidden shortcut), so leaving it unset remains the recommendation rather than a hard
-   requirement:
-   `max_steps_per_turn` unset (no cap — a
-   tripped cap pauses the goal resumably (0.30.0) instead of aborting it, but the `-p` run exits 1
-   as a harness fault rather than auto-continuing; the objective already carries the
-   stop conditions), `max_retries_per_step` unset (built-in 10 with backoff, §1 line 55 — generous
-   transient-failure absorption on the shared quota window), `reserved_context_size` unset
-   (built-in 50000 — the `reserved` in §1's compaction trigger, lines 62-63),
-   `max_running_tasks` unset (no cap — a configured cap throws on admission, turning backgrounded
-   read-only legs into dispatch errors; AgentSwarm already ramps, §6 line 254), and
-   `print_background_mode` `steer` (the default, and the ONLY mode under which a background
-   completion steers a new main turn mid-run — the synthetic-user-message fold-back
-   `interpretKimiBackgroundCompletion` relies on; a legacy `keep_alive_on_exit = true` in the
-   user's config silently downgrades this to `drain` and must be removed). These are NOT written
-   into the user's config.toml: it is user-global with no project-level override (§3 lines 107-110),
-   all five values restate defaults (the four-of-five count in earlier drafts owed solely to the
-   legacy `keep_alive_on_exit` conditional above, which can downgrade an unset
-   `print_background_mode` to `drain`), and the per-process env overrides
-   (`KIMI_LOOP_MAX_STEPS_PER_TURN`, `KIMI_LOOP_MAX_RETRIES_PER_STEP`,
-   `KIMI_CODE_BACKGROUND_MAX_RUNNING_TASKS`) cover any run that wants a non-default — same
-   shared-config posture as the `KIMI_SECONDARY_MODEL` env pair above.
 7. **Terminal recovery** — if a review gate reaches its configured repeated-identical/no-progress
    threshold, a tournament has no passing candidate, the spec gate repeats a byte-identical candidate,
    or a subagent repeats an identical failure at its configured threshold, STOP and report the preserved
@@ -204,21 +145,6 @@ Scope is never a separate argument: step -1 below detects it from `$ARGUMENTS` (
    the authenticated approval gate above; declining it falls back to `pr`. `ask` or absent → present the merge decision via the
    **AskUserQuestion** selection UI with options **Merge locally** / **Open PR** / **Keep branch** / **Discard**,
    unchanged. **Discard is interactive-only** — deliberately not a declarable `mergeDisposition` value.
-
-   On Kimi the finish also writes the run's token-accounting line to STATE next to the gate summary —
-   the same two-arm accounting go-backlog's batch report uses, scoped by dispatch lane. The step-6
-   goal run itself is a process-lane leg (`kimi -p`, built with `--stream-json` above), so the
-   capture chain applies to it: capture the run's stream-json stdout to a file at
-   dispatch, then run `$MUSTER_CLI kimi-session-usage --cwd <worktree path> --stdout-file <captured stdout file>` before worktree
-   teardown (captureSessionId on the stdout, then resolveSessionForCwd under the hood — it prints
-   `{ resolution, usage }`, or `{ resolution: { resolved: false, reason } }` for an UNKNOWN). Any in-session Agent/AgentSwarm legs take the other arm — their tokens live in the
-   parent session's agents tree, indexed under the parent's cwd, never the run worktree — so they are
-   accounted from the parent session's own `$MUSTER_CLI kimi-session-usage --session-dir <parent session dir>`
-   dispatches view (`readSessionUsage`'s per-dispatch attribution), or omitted (with a STATE note) when that dir can't be resolved; per-worktree session
-   resolution never applies to them. The `$MUSTER_CLI kimi-summarize-receipts <items.json>` line (src/kimi-receipts.js's
-   `summarizeItemReceipts`) surfaces each leg's resolution
-   source (`captured`/`index-unique`/`index-newest` — a fallback attribution reads as one) and
-   transcribes with UNKNOWN never blocking; non-Kimi harnesses omit the line.
 
    Unattended (Routine) mode: never auto-push to a base branch — `merge-local` and `merge-push` downgrade to
    `pr`, with a note added to the run report.

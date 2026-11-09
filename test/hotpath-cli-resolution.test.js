@@ -17,8 +17,8 @@
 // delegate to go.md/go-backlog.md's own instructions), so they need no snippet of their
 // own and are deliberately not in this list.
 //
-// audit S6: runner.md hardcoded two `node src/cli.js ...` call sites (hygiene --reap,
-// kimi-goal-invocation) with no resolution step of its own, unlike every sibling entry
+// audit S6: runner.md hardcoded `node src/cli.js ...` call sites (hygiene --reap and a
+// since-removed harness verb) with no resolution step of its own, unlike every sibling entry
 // point above — it now carries the identical binding and joins this list so the guard
 // covers it too.
 

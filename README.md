@@ -1,6 +1,6 @@
 # Muster
 
-Glass-box, multi-domain agentic orchestrator for Claude Code, Codex, Kimi, and Cowork. Give it an outcome; it assembles the right crew and shows its reasoning before it acts.
+Glass-box, multi-domain agentic orchestrator for Claude Code, Codex, and Cowork. Give it an outcome; it assembles the right crew and shows its reasoning before it acts.
 
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Node >= 20](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](package.json)
@@ -13,7 +13,7 @@ Glass-box, multi-domain agentic orchestrator for Claude Code, Codex, Kimi, and C
 
 Muster turns an outcome into finished work. It detects your project, discovers the capabilities you already have installed, picks the best tool for each piece of the job, and runs a crew of specialists toward your success criteria. Every decision is inspectable: which role resolved to which provider, on which model, and why.
 
-It runs on Claude Code, Codex, Kimi, or Cowork with no separate model API, and it gets better as you install more tools. Runtime support differs: Claude Code and Codex expose the full native command surface, Kimi uses namespaced native skills, and Cowork's verified MCP lane has a seven-mode protocol subset. ChatGPT Work is a separate, conditional local/private MCP lane: configuration alone is not proof that the active Work host invoked Muster. The work is not limited to code. Product, business, content, and operations are first-class.
+It runs on Claude Code, Codex, or Cowork with no separate model API, and it gets better as you install more tools. Runtime support differs: Claude Code and Codex expose the full native command surface, and Cowork's verified MCP lane has a seven-mode protocol subset. ChatGPT Work is a separate, conditional local/private MCP lane: configuration alone is not proof that the active Work host invoked Muster. The work is not limited to code. Product, business, content, and operations are first-class.
 
 ## Quickstart
 
@@ -68,10 +68,6 @@ Use `$muster` or a mode skill such as `$muster-plan`, `$muster-go`, `$muster-aud
 From an interactive terminal, `muster codex-plan "<outcome>"` starts a new local App Server session, discovers the advertised Plan preset, invokes the installed `muster-plan` skill with `turn/start.collaborationMode`, and reports the effective mode from `thread/settings/updated`. It relays Muster's structured approval question to that terminal, but never overrides the user's approval policy, reviewer, permissions, or sandbox. It cannot switch an already-running desktop/IDE chat. Non-interactive callers and unavailable or unconfirmed App Server control exit nonzero with the safe in-session path: `/plan $muster-plan <outcome>`.
 
 The Codex plugin bundles the deterministic CLI, all pipelines, 31 MCP tools, 27 custom-agent profiles, and 84 skills: 11 public mode/router skills plus 73 internal skills (22 native orchestration skills and 51 capability skills). The npm installer adds Codex-native lifecycle hooks through the supported project or user `hooks.json` layer, and the Codex plugin itself is deliberately hooks-free so the two never double-fire. These hooks fail open and are diagnostic: they cannot reliably block every unified-shell or subagent action. Todo and spawn enforcement remain advisory, and write-capable waves must use isolated Git worktrees.
-
-### Kimi
-
-Kimi installs the same ten primary modes as namespaced `/muster-*` skills. In-session native subagents are the supported execution path. `kimi-process-dispatch` remains descriptor-only, and the attended `kimi-process-run` lane is report-only on every platform until Muster can bootstrap a trusted immutable, kernel-bound broker. Filesystem dispatch receipts and worktree paths are diagnostic only; they never authorize signaling a process.
 
 ### ChatGPT Work (private/local plugin lane)
 

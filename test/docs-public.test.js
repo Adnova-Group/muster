@@ -28,7 +28,7 @@ test("README documents current install, lifecycle, and configuration boundaries"
   const readme = await read("README.md");
   const pkg = JSON.parse(await read("package.json"));
   const escapedVersion = pkg.version.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  for (const harness of ["Claude Code", "Codex", "Kimi", "Cowork"]) {
+  for (const harness of ["Claude Code", "Codex", "Cowork"]) {
     assert.match(readme, new RegExp(harness), `README must name the ${harness} lane`);
   }
   assert.match(readme, new RegExp(`@adnova-group/muster@${escapedVersion}`));
@@ -58,8 +58,7 @@ test("contributor and architecture docs describe the current build and dispatch 
   assert.match(architecture, /harness-neutral[\s\S]{0,220}(?:tier|effort|readOnly)/i);
   assert.match(architecture, /three nonredundant read-only briefs|three read-only briefs/i);
   assert.match(architecture, /system quality[\s\S]{0,220}coverage[\s\S]{0,180}security/i);
-  assert.match(architecture, /five boundaries[^\n]*opt-in adapter probe[^\n]*native planning launcher/i);
-  assert.match(architecture, /### Kimi adapter:[\s\S]*`install kimi --probe`/i);
+  assert.match(architecture, /four boundaries[^\n]*native planning launcher/i);
   assert.match(architecture, /### Codex adapter:[\s\S]*`codex-plan`/i);
   const voice = await read("docs/profiles/VOICE.md");
   assert.doesNotMatch(voice, /single runtime dependency/i);

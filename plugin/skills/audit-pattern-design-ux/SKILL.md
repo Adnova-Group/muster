@@ -1,6 +1,12 @@
 ---
 name: audit-pattern-design-ux
 description: Hunt-list pattern skill for muster's UX/design audit dimension -- points into the pinned Impeccable design-workflow vocabulary and muster's design-gate machinery rather than duplicating it. Loaded by the audit orchestrator as a REQUIRED SKILLS binding on the frontend (design-ux) dimension task; read on demand, never dispatched standalone.
+upstream:
+  - repo: pbakaus/impeccable
+    ref: 32930818a109fafa87199babe92fa8e530cff5d3
+    path: null
+    license: Apache-2.0
+    relation: inspired-by
 ---
 
 <!-- prompt-lint-disable ANTH-ROLE-001: reference hunt-list loaded ON DEMAND into an already

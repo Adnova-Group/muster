@@ -4,6 +4,12 @@ description: Read-only diff/branch reviewer. One severity-tagged line per findin
 tools: Read, Bash, Grep, Glob
 model: sonnet
 maxTurns: 35
+upstream:
+  - repo: damusix/atomic-claude
+    ref: null
+    path: null
+    license: MIT
+    relation: inspired-by
 ---
 <!-- Role concept inspired by atomic-claude (github); authored fresh for muster, not copied. -->
 

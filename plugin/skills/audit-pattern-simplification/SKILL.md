@@ -1,6 +1,7 @@
 ---
 name: audit-pattern-simplification
 description: Hunt-list pattern skill for muster's simplification audit dimension -- reuse opportunities and missed abstraction in muster's own repo. Loaded by the audit orchestrator as a REQUIRED SKILLS binding on the refactor dimension task; read on demand, never dispatched standalone.
+upstream: []
 ---
 
 <!-- prompt-lint-disable ANTH-ROLE-001: reference hunt-list loaded ON DEMAND into an already

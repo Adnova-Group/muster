@@ -3,6 +3,7 @@ name: audit
 description: "Autopilot-style whole-codebase review-and-fix. Sweeps architecture, tech-debt, test-coverage, simplification/reuse/duplication, readability/maintainability, and security in parallel via the best available provider per dimension, consolidates a ranked findings ledger, then fixes everything (TDD) and verifies. Usage: /muster:audit [path or empty = whole repo]; /muster:audit backlog [path] to sweep read-only into a ranked backlog instead of fixing."
 argument-hint: "[path or empty = whole repo] | backlog [path]"
 disable-model-invocation: true
+upstream: []
 ---
 
 <!-- prompt-lint-disable ANTH-POS-001: whole-codebase remediation prompt — branch isolation, read-only sweep boundaries, and failed-gate stops are load-bearing safety guarantees -->

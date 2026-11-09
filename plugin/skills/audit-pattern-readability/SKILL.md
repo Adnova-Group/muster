@@ -1,6 +1,7 @@
 ---
 name: audit-pattern-readability
 description: Hunt-list pattern skill for muster's readability audit dimension -- oversized functions, misleading structure, and hand-rolled reimplementation of an existing primitive in muster's own repo. Loaded by the audit orchestrator as a REQUIRED SKILLS binding on the code-review dimension task; read on demand, never dispatched standalone.
+upstream: []
 ---
 
 <!-- prompt-lint-disable ANTH-ROLE-001: reference hunt-list loaded ON DEMAND into an already

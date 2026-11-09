@@ -280,10 +280,10 @@ both numbers on every test run from the live prose tree, so this table cannot si
 stale:
 
 ```
-AskUserQuestion    files=14  mentions=36
-dispatch (Agent/Task tool)  files=7  mentions=18
+AskUserQuestion    files=14  mentions=35
+dispatch (Agent/Task tool)  files=7  mentions=17
 hook (PreToolUse/SessionStart/UserPromptSubmit)  files=10  mentions=26
-worktree   files=7  mentions=61
+worktree   files=7  mentions=54
 ```
 
 Counts refreshed for the release action-fence follow-up: `go.md`, `go-backlog.md`, and the
@@ -329,34 +329,9 @@ at that same rule, on its own already-counted line, adding none of its own -- fi
 unchanged (still the same 5 files); AskUserQuestion, dispatch, and hook counts are untouched by
 this item.
 
-Counts refreshed again for the kimi-worktree-isolation item: `plugin/skills/orchestrator/
-SKILL.md`'s "Worktree isolation per harness + base-SHA receipts" list gained a **Kimi** bullet
-(exactly the Codex receipts-only floor -- its subagent dispatch carries no cwd/isolation
-parameter, so muster supplies the worktree itself before dispatch), and step 4a's "Parallel
-isolation" bullet gained a harness-neutral clause pointing at that per-harness selection -- three
-more `worktree` mentions on their own lines (23 -> 26). File counts unchanged (still the same 5
-files); AskUserQuestion, dispatch, and hook counts are untouched by this item.
-
-Counts refreshed again for the kimi-plan-flow-lane item: `plugin/commands/plan.md`'s step 7
-per-harness surface list gained a **Kimi session** bullet (native Plan mode approve/reject/
-revise gate mapped onto Approve & run / Adjust the plan / Cancel, with the AskUserQuestion
-fallback named for anything the gate can't express) -- one more `AskUserQuestion` mention on
-its own line (35 -> 36). File counts unchanged (still the same 13 files); dispatch, hook, and
-worktree counts are untouched by this item.
-
-Counts refreshed again for the kimi-subagent-resume-retry item: `plugin/skills/orchestrator/
-SKILL.md`'s step 4a "Subagent failure" bullet gained the Kimi native-resume branch (naming "the
-Agent tool's `resume`" for a per-agent dispatch) and its Kimi-native dispatch subsection gained
-the matching failure-retry paragraph (naming `subagent_type`'s mutual exclusion with `resume`)
--- two more dispatch mentions on their own lines (17 -> 19). File counts unchanged (still the
-same 5 files); AskUserQuestion, hook, and worktree counts are untouched by this item.
-
-Counts refreshed again for the kimi-batch-token-reporting item: `plugin/commands/go-backlog.md`'s
-step 4 batch report gained the Kimi token-accounting clause (session resolution runs "before the
-item's worktree teardown") and `plugin/commands/go.md`'s step 8 gained the single-outcome
-equivalent (resolution "before worktree teardown") -- two more `worktree` mentions on their own
-lines (26 -> 28). File counts unchanged (still the same 5 files); AskUserQuestion, dispatch, and
-hook counts are untouched by this item.
+Four later refreshes recorded Kimi-lane prose (worktree isolation, the plan-flow surface, the
+resume retry, and batch token reporting). That prose was removed with the Kimi lane on
+2026-11-09; the counts above reflect the removal.
 
 Counts refreshed again for the audit-pillar-pattern-library item (composed base branch,
 2026-08-04): the item's 9 new `plugin/skills/audit-pattern-architecture/SKILL.md`-shaped
@@ -392,7 +367,13 @@ command files' run-active boilerplate no longer names the `PreToolUse` hook or `
 reflowed (hook 15/33 -> 10/26, worktree 7/62 -> 7/61). AskUserQuestion and dispatch counts are
 untouched by this item.
 
-Every one of those 141 mentions accounted for above: AskUserQuestion under Ask; Agent/Task tool
+Counts refreshed again for the Kimi and Orca lane removal (2026-11-09): the orchestrator's Kimi
+worktree bullet, Kimi-native dispatch subsection and Kimi resume clause, `plan.md`'s Kimi
+session bullet, and the Kimi run-loop and token-accounting prose in `go.md` and `go-backlog.md`
+were deleted (AskUserQuestion 14/36 -> 14/35, dispatch 7/18 -> 7/17, worktree 7/61 -> 7/54).
+The hook count is untouched by this item.
+
+Every one of those 132 mentions accounted for above: AskUserQuestion under Ask; Agent/Task tool
 and `subagent_type` under Dispatch; hook/PreToolUse/SessionStart/UserPromptSubmit under
 Enforce; worktree under Isolate. Receipts and Capability scan bind to mechanisms (the native
 todo tool, the plugin registry) that plugin prose refers to by their STATE/task-board/`muster

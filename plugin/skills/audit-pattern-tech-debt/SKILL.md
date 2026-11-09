@@ -1,6 +1,7 @@
 ---
 name: audit-pattern-tech-debt
 description: Hunt-list pattern skill for muster's tech-debt audit dimension -- dead exports, orphaned modules, outdated patterns, and fs-safe/trackedMkdtempSync convention drift in muster's own repo. Loaded by the audit orchestrator as a REQUIRED SKILLS binding on the tech-debt dimension task; read on demand, never dispatched standalone.
+upstream: []
 ---
 
 <!-- prompt-lint-disable ANTH-ROLE-001: reference hunt-list loaded ON DEMAND into an already
@@ -28,7 +29,7 @@ Hunt-list for the **tech-debt** audit dimension (`buildAuditManifest`, `src/audi
   `assertRegularFile` (`src/codex-release.js`), `parseCodexTurnUsage`
   (`src/codex-wave-runner.js`), `DESKTOP_HARNESS_SURFACES` (`src/desktop-harness.js`) all traced
   zero-reference; `src/brief-lint.js` traced as a wholly orphaned module; a 4-function
-  `kimi-dispatch.js` interpretation cluster and `codex-fix-loop.js`'s orphaned binding functions
+  interpretation cluster in a since-removed harness lane and `codex-fix-loop.js`'s orphaned binding functions
   traced the same way. See backlog item `cleanup-dead-exports` for the exact success criteria (a
   contract-surface check proving 0 invocations from plugin skills, generated runtimes, or docs).
 - **Convention drift sweep** (`test-tmpdir-convention` survey, 2026-08-04): `grep -rln

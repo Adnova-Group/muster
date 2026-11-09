@@ -1,6 +1,6 @@
 # Architecture
 
-Muster is a glass-box, multi-runtime, multi-domain agentic orchestrator. Supported native lanes include Claude Code, Codex, Kimi, and Cowork. The deterministic CLI makes no model calls and those native lanes need no Muster-specific model API. The private/local ChatGPT Work lane is the exception: Secure MCP Tunnel uses a separately billed OpenAI Platform API key and remains proof-gated. This page is the source-level map. For the gentler tour, start with [Concepts](/reference/concepts).
+Muster is a glass-box, multi-runtime, multi-domain agentic orchestrator. Supported native lanes include Claude Code, Codex, and Cowork. The deterministic CLI makes no model calls and those native lanes need no Muster-specific model API. The private/local ChatGPT Work lane is the exception: Secure MCP Tunnel uses a separately billed OpenAI Platform API key and remains proof-gated. This page is the source-level map. For the gentler tour, start with [Concepts](/reference/concepts).
 
 ## Two layers
 
@@ -11,7 +11,7 @@ Muster is split into two layers with a hard boundary between them.
 | Deterministic CLI | `src/*.js` | Plain Node ESM | No |
 | Model-facing | `plugin/` (commands, skills, agents) | Claude Code and Codex | Yes |
 
-The **CLI layer** is ordinary Node. The published package has two runtime dependencies, `yaml` and `esbuild`, requires Node 20 or newer, and normally makes no model calls. Direct CLI verbs need no precompile, while tests, publishing, and Codex plugin installation run the Codex build pipeline. Most verbs are fully local; five boundaries can use the network or the active model account. `issue` shells out to `gh issue view` for an explicit GitHub issue reference. `vendor` fetches sources declared with `kind: github` in `vendor/manifest.yaml` (local sources stay offline). `doctor` uses `gh api` to verify vendor note SHAs against pinned refs; if that remote check is unavailable, it reports the check as skipped offline, while a missing, unreadable, or invalid local vendor manifest still fails health. The opt-in `install kimi --probe` performs an authenticated models request; omit `--probe` for an offline install. `codex-plan` starts `codex app-server --stdio` and begins one model turn on the active Codex account. The remaining deterministic verbs run without network access.
+The **CLI layer** is ordinary Node. The published package has two runtime dependencies, `yaml` and `esbuild`, requires Node 20 or newer, and normally makes no model calls. Direct CLI verbs need no precompile, while tests, publishing, and Codex plugin installation run the Codex build pipeline. Most verbs are fully local; four boundaries can use the network or the active model account. `issue` shells out to `gh issue view` for an explicit GitHub issue reference. `vendor` fetches sources declared with `kind: github` in `vendor/manifest.yaml` (local sources stay offline). `doctor` uses `gh api` to verify vendor note SHAs against pinned refs; if that remote check is unavailable, it reports the check as skipped offline, while a missing, unreadable, or invalid local vendor manifest still fails health. `codex-plan` starts `codex app-server --stdio` and begins one model turn on the active Codex account. The remaining deterministic verbs run without network access.
 
 The **model-facing layer** is what the harness loads as a plugin — Claude Code's plugin format, and a built Codex plugin (skills and custom-agent profiles) generated from the same sources. It is markdown: slash commands, skills, and agents. These files instruct the model how to drive a run. They call the CLI for every deterministic decision, then use the harness's built-in subagent dispatch to do the judgment work. The split is deliberate. Routing, scoring, and validation are reproducible because code owns them. Drafting, reviewing, and classifying are the model's job.
 
@@ -47,7 +47,7 @@ Each resolved role carries a model, picked to fit the work (`src/model.js`):
 | prime | fallback for apex | Frontier judgment when apex is disabled |
 | apex | the tournament `judge`, `architecture-review`, `improve`, `advisor` | Rare peak judgment |
 
-The conceptual tier comes back as `roles[<role>].model` from `muster capabilities`, with the harness-concrete dispatch value for that lane beside it: `claudeModel` (plus `claudeProfile` for an agent-backed role) on the Claude Code and Cowork lanes, `codexModel` or `kimiModel` under their flags. Where a role's chosen agent has a profile in `catalog/agents.manifest.json`, that profile is the authoritative pin and `claudeModel` equals its `claudeProfile.model`; the role's own tier is the fallback for roles with no agent-backed profile. The orchestrator dispatches on the concrete value, never the raw tier. Set `MUSTER_MAX_TIER=core` for budget mode or `MUSTER_MAX_TIER=prime` to exclude apex. Apex is disabled by default; `modelForRole` degrades it to prime deterministically unless `MUSTER_ENABLE_APEX=1` is set.
+The conceptual tier comes back as `roles[<role>].model` from `muster capabilities`, with the harness-concrete dispatch value for that lane beside it: `claudeModel` (plus `claudeProfile` for an agent-backed role) on the Claude Code and Cowork lanes, `codexModel` under `--codex`. Where a role's chosen agent has a profile in `catalog/agents.manifest.json`, that profile is the authoritative pin and `claudeModel` equals its `claudeProfile.model`; the role's own tier is the fallback for roles with no agent-backed profile. The orchestrator dispatches on the concrete value, never the raw tier. Set `MUSTER_MAX_TIER=core` for budget mode or `MUSTER_MAX_TIER=prime` to exclude apex. Apex is disabled by default; `modelForRole` degrades it to prime deterministically unless `MUSTER_ENABLE_APEX=1` is set.
 
 <!-- legacy-tier-compat:start -->
 Compatibility only: legacy input aliases `haiku`, `sonnet`, `opus`, and `fable` normalize to `scout`, `core`, `prime`, and `apex`; they are not a second conceptual ladder. `MUSTER_ENABLE_FABLE` remains an alias for `MUSTER_ENABLE_APEX`.
@@ -80,7 +80,7 @@ See [Pipelines](/reference/pipelines) for the full set and the prioritization mo
 
 ## Execution model
 
-Model work uses the account or subscription of the active runtime. On Claude Code it goes through built-in subagent dispatch, not the Agent SDK. Codex, Kimi, and Cowork use their documented native or MCP dispatch lanes. The CLI itself makes no model calls. The practical consequences:
+Model work uses the account or subscription of the active runtime. On Claude Code it goes through built-in subagent dispatch, not the Agent SDK. Codex and Cowork use their documented native or MCP dispatch lanes. The CLI itself makes no model calls. The practical consequences:
 
 - Muster draws the active runtime's normal quota. On Claude Code it does not hit a separate Agent-SDK credit pool.
 - Fan-out spends that same quota faster, since parallel subagents are parallel quota.

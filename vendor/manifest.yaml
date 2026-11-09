@@ -1,11 +1,39 @@
+# Single source of truth for every external repository a Muster item is based on.
+#
+# `muster vendor` fetches the `fetch: true` sources (the default) and regenerates their
+# items; `muster provenance --write` (offline) stamps every item's `upstream:` field,
+# the catalog provenance summary and NOTICE / cowork/NOTICE from this file, and
+# `muster provenance` (check mode) fails on drift. test/provenance.test.js enforces it.
+#
+# Source fields:
+#   repo       owner/name, canonical (post-rename); `formerly` lists old names
+#   ref        40-hex commit SHA, or omitted only for inspired-by sources
+#   license    SPDX id | NONE (no license file: all rights reserved) | LicenseRef-*
+#   relation   default relation for the source's items:
+#                vendored        upstream text carried essentially unchanged
+#                adapted         upstream text edited
+#                mechanism-port  mechanism re-implemented in new text
+#                inspired-by     idea, structure or framework named, no text carried
+#   copyright  the upstream copyright line, reproduced in NOTICE
+#   fetch      false = attribution only, never fetched by `muster vendor`
+# Item fields: id, from (upstream path; null = repository-wide), and for non-fetched
+# sources `kind` (builtin | agent | skill | command | output-style | pipeline |
+# codex-fallback); optional relation / ref overrides. Items of a fetched source carry
+# roles and are vendored. Refs for non-fetched sources with no recorded pin were
+# resolved as the upstream default-branch HEAD on the date of the Muster change that
+# introduced the item; each such source says so.
 sources:
   - id: impeccable
     kind: github
     repo: pbakaus/impeccable
     ref: 32930818a109fafa87199babe92fa8e530cff5d3
     license: Apache-2.0
-    attributionOnly: true
-    items: []
+    copyright: "Copyright 2025 Paul Bakaus"
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: design, kind: command, from: null }
+      - { id: audit-pattern-design-ux, kind: skill, from: null }
   - id: superpowers
     kind: github
     repo: obra/superpowers
@@ -53,9 +81,12 @@ sources:
     #     plugin/output-styles/muster.md.
     ref: 284be5905ed540d34ce5bcde24728b9b7f413ea0
     license: MIT
+    copyright: "Copyright (c) 2025 Jesse Vincent"
+    relation: vendored
     items:
       - from: skills/brainstorming/SKILL.md
         id: sp-brainstorm
+        relation: adapted
         roles: [brainstorm]
       - from: skills/writing-plans/SKILL.md
         id: sp-plan
@@ -65,6 +96,7 @@ sources:
         roles: [test-author]
       - from: skills/requesting-code-review/SKILL.md
         id: sp-review
+        relation: adapted
         roles: [code-review]
       - from: skills/receiving-code-review/SKILL.md
         id: sp-review-recv
@@ -72,15 +104,18 @@ sources:
         rank: 48
       - from: skills/systematic-debugging/SKILL.md
         id: sp-debug
+        relation: adapted
         roles: [debug]
       - from: skills/verification-before-completion/SKILL.md
         id: sp-verify
         roles: [test-author]
       - from: skills/subagent-driven-development/SKILL.md
         id: sp-subagents
+        relation: adapted
         roles: [plan]
       - from: skills/dispatching-parallel-agents/SKILL.md
         id: sp-parallel
+        relation: adapted
         roles: [plan]
   - id: wshobson
     kind: github
@@ -88,13 +123,17 @@ sources:
     # pinned SHA — resolve a new one deliberately when updating, and review the regenerated diff before committing
     ref: cf6059d030bf4fe96623ae2e596d2f31e35fedc0
     license: MIT
+    copyright: "Copyright (c) 2024 Seth Hobson"
+    relation: vendored
     items:
       # security-review
       - from: plugins/security-scanning/skills/stride-analysis-patterns/SKILL.md
         id: wsh-stride-analysis-patterns
+        relation: adapted
         roles: [security-review]
       - from: plugins/security-scanning/skills/attack-tree-construction/SKILL.md
         id: wsh-attack-tree-construction
+        relation: adapted
         roles: [security-review]
       - from: plugins/security-scanning/skills/sast-configuration/SKILL.md
         id: wsh-sast-configuration
@@ -104,6 +143,9 @@ sources:
         roles: [security-review]
       - from: plugins/signed-audit-trails/skills/signed-audit-trails-recipe/SKILL.md
         id: wsh-signed-audit-trails-recipe
+        # adapted: later upstream correctness/security fixes were hand-ported into the
+        # body (2026-11-09) without moving this pin; the item body records them.
+        relation: adapted
         roles: [security-review]
       # code-review
       - from: plugins/developer-essentials/skills/code-review-excellence/SKILL.md
@@ -128,6 +170,7 @@ sources:
         roles: [frontend]
       - from: plugins/frontend-mobile-development/skills/react-state-management/SKILL.md
         id: wsh-react-state-management
+        relation: adapted
         roles: [frontend]
       - from: plugins/frontend-mobile-development/skills/tailwind-design-system/SKILL.md
         id: wsh-tailwind-design-system
@@ -150,15 +193,18 @@ sources:
         roles: [implement]
       - from: plugins/javascript-typescript/skills/nodejs-backend-patterns/SKILL.md
         id: wsh-nodejs-backend-patterns
+        relation: adapted
         roles: [implement]
       - from: plugins/python-development/skills/python-design-patterns/SKILL.md
         id: wsh-python-design-patterns
+        relation: adapted
         roles: [implement]
       - from: plugins/python-development/skills/async-python-patterns/SKILL.md
         id: wsh-async-python-patterns
         roles: [implement]
       - from: plugins/systems-programming/skills/go-concurrency-patterns/SKILL.md
         id: wsh-go-concurrency-patterns
+        relation: adapted
         roles: [implement]
       - from: plugins/developer-essentials/skills/debugging-strategies/SKILL.md
         id: wsh-debugging-strategies
@@ -179,6 +225,7 @@ sources:
         roles: [implement, architecture-review]
       - from: plugins/documentation-generation/skills/openapi-spec-generation/SKILL.md
         id: wsh-openapi-spec-generation
+        relation: adapted
         roles: [implement]
       # accessibility (frontend)
       - from: plugins/accessibility-compliance/skills/wcag-audit-patterns/SKILL.md
@@ -186,6 +233,7 @@ sources:
         roles: [frontend]
       - from: plugins/ui-design/skills/responsive-design/SKILL.md
         id: wsh-responsive-design
+        relation: adapted
         roles: [frontend]
       # performance (no skills/ dir — using primary agent file)
       - from: plugins/application-performance/agents/performance-engineer.md
@@ -208,6 +256,7 @@ sources:
         as: agent
       - from: plugins/debugging-toolkit/agents/debugger.md
         id: wsh-debugger
+        relation: adapted
         roles: [debug]
         as: agent
       - from: plugins/backend-development/agents/security-auditor.md
@@ -262,6 +311,7 @@ sources:
         as: agent
       - from: plugins/llm-application-dev/agents/prompt-engineer.md
         id: wsh-prompt-engineer
+        relation: adapted
         roles: [implement]
         as: agent
       # knowledge-work (PM/business/content)
@@ -298,6 +348,8 @@ sources:
     #     boundaries) -> gsd-execute-phase (upstream gsd-core@4eca5ac, #1452)
     ref: 18995380ce8d85bccd8a3c64973664348b29cab8
     license: MIT
+    copyright: "Copyright (c) 2026 Open GSD"
+    relation: adapted
     items:
       - from: gsd-core/workflows/plan-phase.md
         id: gsd-plan-phase
@@ -309,3 +361,426 @@ sources:
         id: gsd-verify-work
         roles: [plan]
         description: "Built-in for verify — UAT + gap-closure verification of completed work"
+
+  # ===== Attribution-only sources (fetch: false) =====================================
+  # Never fetched or regenerated by `muster vendor`; recorded so every item based on an
+  # external repository names it. Hand-maintained items stay hand-maintained.
+
+  # --- Codex fallback skills: self-contained Codex rewrites (codex/fallback-skills) ---
+  # Pinned at the refs of the Codex compatibility survey (codex/upstreams.json) they
+  # were written against, not at the vendored-body pins above.
+  - id: gsd-core-codex
+    kind: github
+    repo: open-gsd/gsd-core
+    ref: 1c352d1ea37b010e99b8353905eb5def4f784100
+    license: MIT
+    copyright: "Copyright (c) 2026 Open GSD"
+    relation: mechanism-port
+    fetch: false
+    items:
+      - { id: muster-gsd-plan-phase, kind: codex-fallback, from: gsd-core/workflows/plan-phase.md }
+      - { id: muster-gsd-execute-phase, kind: codex-fallback, from: gsd-core/workflows/execute-phase.md }
+      - { id: muster-gsd-verify-work, kind: codex-fallback, from: gsd-core/workflows/verify-work.md }
+  - id: wshobson-codex
+    kind: github
+    repo: wshobson/agents
+    ref: 2de74ac1c8f6669821dcef13153332c3168033c1
+    license: MIT
+    copyright: "Copyright (c) 2024 Seth Hobson"
+    relation: mechanism-port
+    fetch: false
+    items:
+      - { id: wsh-signed-audit-trails-recipe, kind: codex-fallback, from: plugins/signed-audit-trails/skills/signed-audit-trails-recipe/SKILL.md }
+
+  # --- muster-humanizer: AI-tell removal, tell taxonomy and tiered vocabulary ---
+  - id: blader-humanizer
+    kind: github
+    repo: blader/humanizer
+    # No v2.8.2 tag exists upstream. SKILL.md `version: 2.8.2` first appears at this
+    # commit (2026-06-29), which was the default-branch HEAD on the 2026-07-13 survey
+    # date recorded in codex/upstreams.json.
+    ref: 1b48564898e999219882660237fde01bf4843a0f
+    license: MIT
+    copyright: "Copyright (c) 2025 Siqi Chen"
+    relation: adapted
+    fetch: false
+    items:
+      - { id: muster-humanizer, kind: builtin, from: SKILL.md }
+  - id: stealthhumanizer
+    kind: github
+    repo: rudra496/StealthHumanizer
+    ref: 1aacbda6e2f66afbdcb6714a85347307068373e9
+    license: MIT
+    copyright: "Copyright (c) 2025-2026 Rudra Sarker"
+    relation: adapted
+    fetch: false
+    items:
+      - { id: muster-humanizer, kind: builtin, from: null }
+  - id: avoid-ai-writing
+    kind: github
+    repo: conorbronsdon/avoid-ai-writing
+    ref: 500ff59006f19c27120c5ddbd9b56fc3d937b6bf
+    license: MIT
+    copyright: "Copyright (c) 2026 Conor Bronsdon"
+    relation: adapted
+    fetch: false
+    items:
+      - { id: muster-humanizer, kind: builtin, from: SKILL.md }
+  - id: anti-ai-slop-writing
+    kind: github
+    repo: jalaalrd/anti-ai-slop-writing
+    ref: 63255f9bbb75a265dc5786a04535cd033f487756
+    # NO LICENSE upstream (all rights reserved). See licenseWaivers below.
+    license: NONE
+    relation: adapted
+    fetch: false
+    items:
+      - { id: muster-humanizer, kind: builtin, from: skills/anti-ai-slop-writing }
+  - id: humanize-writing
+    kind: github
+    repo: aaaronmiller/humanize-writing
+    # No recorded pin: default-branch HEAD on 2026-06-23 (the humanizer enrichment).
+    # Still the upstream HEAD on 2026-11-09.
+    ref: c07a2a8dab1f6033ad0da713766df43d0dc374b9
+    license: MIT
+    copyright: "Copyright (c) 2025 Aaron Miller"
+    relation: adapted
+    fetch: false
+    items:
+      - { id: muster-humanizer, kind: builtin, from: SKILL.md }
+
+  # --- muster-prompt-smith: lint rule taxonomy and eval/optimizer patterns ---
+  - id: lintlang
+    kind: github
+    repo: hermes-labs-ai/lintlang
+    # No recorded pin: default-branch HEAD on 2026-06-18 (the structural prompt linter).
+    ref: dd17238643817f3d7fd3ece69e6fdbafe8676a98
+    license: Apache-2.0
+    copyright: "Copyright 2026 Hermes Labs"
+    relation: mechanism-port
+    fetch: false
+    items:
+      - { id: muster-prompt-smith, kind: builtin, from: src/lintlang/patterns.py }
+  - id: promptfoo
+    kind: github
+    repo: promptfoo/promptfoo
+    ref: 3901d3949df32c087465bce39626c460d8590034
+    license: MIT
+    copyright: "Copyright (c) Promptfoo 2025"
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: muster-prompt-smith, kind: builtin, from: null }
+  - id: promptimal
+    kind: github
+    repo: shobrook/promptimal
+    # Owner confirmed with gh on 2026-11-09 (muster only ever wrote "promptimal").
+    # No recorded pin: the upstream has had no commits since 2025-01-05, so this HEAD
+    # is the only version that could have been read on 2026-06-18.
+    ref: e03cbc1db19c7ec6c310605a9819e35c2baed023
+    license: MIT
+    copyright: "Copyright (c) 2024 Jonathan Shobrook"
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: muster-prompt-smith, kind: builtin, from: null }
+
+  # --- book pipeline and muster-scorer ---
+  - id: book-genesis-studio
+    kind: github
+    repo: felipelobomotta-blip/book-genesis-studio
+    formerly: [felipelobomotta-blip/book-genesis-v4]
+    ref: a43a429bdec1770232ee64e7de634c5ce5109b80
+    license: MIT
+    copyright: "Copyright (c) 2026 Felipe Lobo"
+    relation: mechanism-port
+    fetch: false
+    items:
+      # premise-forge gate + per-chapter scored loop
+      - { id: book, kind: pipeline, from: null }
+      # Genesis Score floor principle
+      - { id: muster-scorer, kind: builtin, from: null, relation: inspired-by }
+  - id: autonovel
+    kind: github
+    repo: NousResearch/autonovel
+    # No recorded pin: default-branch HEAD on 2026-06-23 (continuity-ledger adoption);
+    # unchanged since 2026-03-20. NO LICENSE upstream; see licenseWaivers.
+    ref: d165f267a0ffd34f3b0a70a8a72ac38cb8e4a542
+    license: NONE
+    relation: mechanism-port
+    fetch: false
+    items:
+      # fiction phase order + continuity-propagation ledger
+      - { id: book, kind: pipeline, from: null }
+
+  # --- atomic-claude: role taxonomy (clean-room agents) and structure-first output style ---
+  - id: atomic-claude
+    kind: github
+    repo: damusix/atomic-claude
+    license: MIT
+    copyright: "Copyright (c) 2026 Danilo Alonso"
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: muster-surgeon, kind: agent, from: null }
+      - { id: muster-builder, kind: agent, from: null }
+      - { id: muster-reviewer, kind: agent, from: null }
+      - { id: muster-investigator, kind: agent, from: null }
+      - { id: muster-strategist, kind: agent, from: null }
+      - { id: muster-improver, kind: agent, from: null }
+      - { id: muster, kind: output-style, from: null }
+
+  # --- muster-runner: clean-room synthesis (docs/research/lifecycle-agent-patterns.md) ---
+  # No recorded pins: each ref is the upstream default-branch HEAD on 2026-07-07, the
+  # date of the lifecycle-agent research and the muster-runner agent.
+  - id: superpowers-lifecycle
+    kind: github
+    repo: obra/superpowers
+    ref: d884ae04edebef577e82ff7c4e143debd0bbec99
+    license: MIT
+    copyright: "Copyright (c) 2025 Jesse Vincent"
+    relation: mechanism-port
+    fetch: false
+    items:
+      - { id: muster-runner, kind: agent, from: null }
+  - id: wshobson-lifecycle
+    kind: github
+    repo: wshobson/agents
+    ref: 511f8345cf42f84676e0ad56ddfdee33c90a666f
+    license: MIT
+    copyright: "Copyright (c) 2024 Seth Hobson"
+    relation: mechanism-port
+    fetch: false
+    items:
+      - { id: muster-runner, kind: agent, from: null }
+  - id: voltagent-subagents
+    kind: github
+    repo: VoltAgent/awesome-claude-code-subagents
+    ref: 14bbcf5d984c8ce61a0aa17f897b7d8e63739783
+    license: MIT
+    copyright: "Copyright (c) 2025 VoltAgent"
+    relation: mechanism-port
+    fetch: false
+    items:
+      - { id: muster-runner, kind: agent, from: null }
+  - id: twelve-factor-agents
+    kind: github
+    repo: humanlayer/12-factor-agents
+    ref: d20c728368bf9c189d6d7aab704744decb6ec0cc
+    # Code Apache-2.0; content (the twelve factors) CC BY-SA 4.0, per the upstream README.
+    license: Apache-2.0 AND CC-BY-SA-4.0
+    relation: mechanism-port
+    fetch: false
+    items:
+      - { id: muster-runner, kind: agent, from: null }
+  - id: contains-studio-agents
+    kind: github
+    repo: contains-studio/agents
+    ref: a5a480c324cac64b9c569bca0b2f297d517240cb
+    # NO LICENSE upstream; mechanisms only (clean-room). See licenseWaivers.
+    license: NONE
+    relation: mechanism-port
+    fetch: false
+    items:
+      - { id: muster-runner, kind: agent, from: null }
+  - id: infinite-agentic-loop
+    kind: github
+    repo: disler/infinite-agentic-loop
+    ref: 6e9a012f81ef2291faf174d67176f7e69832cc0a
+    # NO LICENSE upstream; mechanisms only (clean-room). See licenseWaivers.
+    license: NONE
+    relation: mechanism-port
+    fetch: false
+    items:
+      - { id: muster-runner, kind: agent, from: null }
+  - id: awesome-claude-code
+    kind: github
+    repo: hesreallyhim/awesome-claude-code
+    # CC BY-NC-ND 4.0: used as an index of pointers only, never as a copy source.
+    license: CC-BY-NC-ND-4.0
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: muster-runner, kind: agent, from: null }
+
+  # --- Research-grounded pipelines (2026-06-08 pipeline research note) ---
+  # The note (recoverable from git history, docs/pipeline-research-2026-06-08.md) mapped
+  # sources per pipeline GROUP, not per pipeline, so every pipeline in a group carries
+  # the group's full GitHub source list. Narrowing it per pipeline needs owner review.
+  # Non-GitHub sources it also cites (keepachangelog.com, Amazon PR-FAQ, IEEE-829, Klue,
+  # Crayon, Litmus, PagerDuty, ...) are not repositories and are not recorded here.
+  - id: pm-prompts
+    kind: github
+    repo: deanpeters/product-manager-prompts
+    license: CC-BY-NC-SA-4.0
+    relation: inspired-by
+    fetch: false
+    items: &pm-group
+      - { id: prd, kind: pipeline, from: null }
+      - { id: epic, kind: pipeline, from: null }
+      - { id: user-story, kind: pipeline, from: null }
+      - { id: launch-plan, kind: pipeline, from: null }
+      - { id: release-notes, kind: pipeline, from: null }
+      - { id: okrs, kind: pipeline, from: null }
+      - { id: executive-summary, kind: pipeline, from: null }
+      - { id: ai-implementation-spec, kind: pipeline, from: null }
+      - { id: ai-test-plan, kind: pipeline, from: null }
+  - id: pm-skills-deanpeters
+    kind: github
+    repo: deanpeters/Product-Manager-Skills
+    license: CC-BY-NC-SA-4.0
+    relation: inspired-by
+    fetch: false
+    items: *pm-group
+  - id: pm-skills-phuryn
+    kind: github
+    repo: phuryn/pm-skills
+    license: MIT
+    copyright: "Copyright (c) 2026 Pawel Huryn"
+    relation: inspired-by
+    fetch: false
+    items: *pm-group
+  - id: knowledge-work-plugins
+    kind: github
+    repo: anthropics/knowledge-work-plugins
+    license: Apache-2.0
+    relation: inspired-by
+    fetch: false
+    items: *pm-group
+  - id: okr-guide
+    kind: github
+    repo: joelparkerhenderson/objectives-and-key-results
+    # NO LICENSE upstream. See licenseWaivers.
+    license: NONE
+    relation: inspired-by
+    fetch: false
+    items: *pm-group
+  - id: adr
+    kind: github
+    repo: architecture-decision-record/architecture-decision-record
+    # The maintainer's own work (README) is CC BY-NC-SA 4.0; included templates vary.
+    license: CC-BY-NC-SA-4.0
+    relation: inspired-by
+    fetch: false
+    items: *pm-group
+  - id: marketingskills
+    kind: github
+    repo: coreyhaines31/marketingskills
+    license: MIT
+    copyright: "Copyright (c) 2025 Corey Haines"
+    relation: inspired-by
+    fetch: false
+    items: &marketing-group
+      - { id: competitive-battlecard, kind: pipeline, from: null }
+      - { id: lead-magnet, kind: pipeline, from: null }
+      - { id: case-study, kind: pipeline, from: null }
+      - { id: newsletter, kind: pipeline, from: null }
+  - id: email-marketing-bible
+    kind: github
+    repo: CosmoBlk/email-marketing-bible
+    license: MIT
+    copyright: "Copyright (c) 2026 George Hartley"
+    relation: inspired-by
+    fetch: false
+    items: *marketing-group
+  - id: claude-email
+    kind: github
+    repo: AgriciDaniel/claude-email
+    license: MIT
+    copyright: "Copyright (c) 2026 Daniel Agrici"
+    relation: inspired-by
+    fetch: false
+    items: *marketing-group
+  - id: run-book-template
+    kind: github
+    repo: SkeltonThatcher/run-book-template
+    # NO LICENSE upstream. See licenseWaivers.
+    license: NONE
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: runbook, kind: pipeline, from: null }
+  - id: awesome-sre
+    kind: github
+    repo: dastergon/awesome-sre
+    license: CC0-1.0
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: runbook, kind: pipeline, from: null }
+  - id: awesome-runbook
+    kind: github
+    repo: runbear-io/awesome-runbook
+    license: CC0-1.0
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: runbook, kind: pipeline, from: null }
+
+# Sources with no license (NONE: all rights reserved by default) or a NonCommercial
+# license. test/provenance.test.js requires a waiver for each, and fails any NONE
+# source that Muster carries vendored or adapted text from unless it is waived here.
+# A waiver records a known risk; `pending-owner-decision` means nobody has accepted it.
+licenseWaivers:
+  - source: anti-ai-slop-writing
+    status: pending-owner-decision
+    risk: high
+    reason: >-
+      muster-humanizer's tell taxonomy and tiered vocabulary were adapted (text, not
+      just ideas) from a repository with no license. Needs a clean-room rewrite of the
+      affected vocabulary or written permission from the author.
+  - source: autonovel
+    status: pending-owner-decision
+    risk: medium
+    reason: >-
+      book.yaml ports autonovel's fiction phase order and continuity-propagation
+      ledger. Mechanism only; confirm no autonovel text reached the pipeline.
+  - source: contains-studio-agents
+    status: pending-owner-decision
+    risk: low
+    reason: >-
+      muster-runner adopts description-trigger and per-agent constraint mechanisms
+      (clean-room). Confirm no contains-studio text was carried over.
+  - source: infinite-agentic-loop
+    status: pending-owner-decision
+    risk: low
+    reason: >-
+      muster-runner adopts filesystem-as-state and dispatch-template mechanisms
+      (clean-room). Confirm no upstream text was carried over.
+  - source: okr-guide
+    status: pending-owner-decision
+    risk: low
+    reason: >-
+      PM pipelines name the OKR framing (output vs outcome, Verb + Metric X to Y by
+      Date). Framework names only; confirm no text was carried over.
+  - source: run-book-template
+    status: pending-owner-decision
+    risk: low
+    reason: >-
+      runbook.yaml's phase structure was informed by this template. Structure only;
+      confirm no text was carried over.
+  - source: pm-prompts
+    status: pending-owner-decision
+    risk: low
+    reason: >-
+      CC BY-NC-SA 4.0 (NonCommercial). PM pipelines name its frameworks (JTBD,
+      persona-first) only; confirm no text reached the pipelines.
+  - source: pm-skills-deanpeters
+    status: pending-owner-decision
+    risk: low
+    reason: >-
+      CC BY-NC-SA 4.0 (NonCommercial). PM pipelines name its frameworks (8-phase PRD,
+      epic hypothesis, story splitting, Gherkin ACs, PR-FAQ) only; confirm no text
+      reached the pipelines.
+  - source: adr
+    status: pending-owner-decision
+    risk: low
+    reason: >-
+      CC BY-NC-SA 4.0 (NonCommercial). ai-implementation-spec names the ADR sections
+      (Context / Decision / Consequences / Alternatives) only.
+  - source: awesome-claude-code
+    status: pending-owner-decision
+    risk: low
+    reason: >-
+      CC BY-NC-ND 4.0 (NonCommercial, NoDerivatives). Used as an index of pointers for
+      the lifecycle-agent research only; nothing derived from its text.

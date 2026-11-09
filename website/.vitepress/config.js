@@ -16,7 +16,6 @@ const guideItems = [
   { text: "Quickstart", link: "/guides/quickstart" },
   { text: "Harness support", link: "/guides/harnesses" },
   { text: "Codex", link: "/guides/codex" },
-  { text: "Kimi", link: "/guides/kimi" },
   { text: "Cowork", link: "/guides/cowork" },
   { text: "ChatGPT Work", link: "/guides/chatgpt-work" },
   { text: "Security", link: "/guides/security" },
@@ -46,7 +45,7 @@ const sidebarGroups = [
 export default defineConfig({
   title: "Muster",
   description:
-    "Glass-box agentic orchestrator for Claude Code, Codex, Kimi, and Cowork. Give it an outcome; it assembles the right crew and shows its reasoning before it acts.",
+    "Glass-box agentic orchestrator for Claude Code, Codex, and Cowork. Give it an outcome; it assembles the right crew and shows its reasoning before it acts.",
   lang: "en-US",
   base: "/muster/",
   cleanUrls: true,
@@ -72,7 +71,7 @@ export default defineConfig({
       {
         property: "og:description",
         content:
-          "Glass-box agentic orchestrator for Claude Code, Codex, Kimi, and Cowork. Give it an outcome; it assembles the right crew and shows its reasoning before it acts.",
+          "Glass-box agentic orchestrator for Claude Code, Codex, and Cowork. Give it an outcome; it assembles the right crew and shows its reasoning before it acts.",
       },
     ],
     ["meta", { name: "twitter:description", content: "Glass-box agentic orchestrator across agent harnesses." }],

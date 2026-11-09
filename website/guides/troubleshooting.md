@@ -105,7 +105,7 @@ npx -y @adnova-group/muster hygiene           # report only
 npx -y @adnova-group/muster hygiene --reap    # act
 ```
 
-`hygiene` reports three things: orphaned `codex`/`claude`/`kimi` processes, live worktrees over the threshold (default 10) plus git-prunable candidates, and `.muster/backlog.md` claims whose heartbeat is stale (default 60 minutes).
+`hygiene` reports three things: orphaned `codex`/`claude` processes, live worktrees over the threshold (default 10) plus git-prunable candidates, and `.muster/backlog.md` claims whose heartbeat is stale (default 60 minutes).
 
 Provider-process hygiene is always report-only. A cwd under `.worktrees/` and an identity-matching filesystem dispatch receipt are useful diagnostic context, but both are same-user forgeable and neither authorizes a signal. With no live trusted broker holding kernel-bound process-group authority, `--reap` skips every provider process. It can rewrite the backlog to release eligible stale claims; it never deletes worktrees. End a confirmed orphan through the host's own process controls only after independently verifying ownership.
 

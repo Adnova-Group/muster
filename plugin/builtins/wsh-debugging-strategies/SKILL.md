@@ -2,8 +2,13 @@
 name: debugging-strategies
 description: Master systematic debugging techniques, profiling tools, and root cause analysis to efficiently track down bugs across any codebase or technology stack. Use when investigating bugs, performance issues, or unexpected behavior.
 muster_builtin: true
-adapted_from: wshobson/agents plugins/developer-essentials/skills/debugging-strategies/SKILL.md
 license: MIT
+upstream:
+  - repo: wshobson/agents
+    ref: cf6059d030bf4fe96623ae2e596d2f31e35fedc0
+    path: plugins/developer-essentials/skills/debugging-strategies/SKILL.md
+    license: MIT
+    relation: vendored
 ---
 
 # Debugging Strategies

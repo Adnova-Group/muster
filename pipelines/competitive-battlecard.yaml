@@ -2,6 +2,22 @@ id: competitive-battlecard
 domain: sales
 title: Competitive Battlecard
 match: [battlecard, competitive battlecard, competitor comparison, win-loss, objection handling, competitive intelligence, displacement]
+upstream:
+  - repo: coreyhaines31/marketingskills
+    ref: null
+    path: null
+    license: MIT
+    relation: inspired-by
+  - repo: CosmoBlk/email-marketing-bible
+    ref: null
+    path: null
+    license: MIT
+    relation: inspired-by
+  - repo: AgriciDaniel/claude-email
+    ref: null
+    path: null
+    license: MIT
+    relation: inspired-by
 phases:
   - { id: intake,    role: brainstorm,    desc: "competitor, segment, deal context" }
   - { id: research,  role: docs-research, desc: "competitor facts, pricing, strengths/weaknesses (cited)" }

@@ -6,10 +6,9 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 // `--fast` (npm run test:fast) drops the slow, environment-heavy files: real
-// installs, live Codex/Kimi probes, large filesystem fixtures, many CLI spawns.
+// installs, live Codex probes, large filesystem fixtures, many CLI spawns.
 // The full `npm test` (and CI) still runs every file.
 const SLOW_TEST_FILES = [
-  "cli-wire-kimi-dispatch.test.js",
   "cli-wire.test.js",
   "codex-cache-package.test.js",
   "codex-doctor.test.js",
@@ -21,7 +20,6 @@ const SLOW_TEST_FILES = [
   "codex-live-wave.test.js",
   "cowork.test.js",
   "init.test.js",
-  "kimi-install.test.js",
   "prompt-scan.test.js",
 ];
 

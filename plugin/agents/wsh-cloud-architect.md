@@ -5,8 +5,13 @@ model: opus
 maxTurns: 35
 tools: Read, Grep, Glob, Edit, Bash
 muster_builtin: true
-adapted_from: wshobson/agents plugins/cloud-infrastructure/agents/cloud-architect.md
 license: MIT
+upstream:
+  - repo: wshobson/agents
+    ref: cf6059d030bf4fe96623ae2e596d2f31e35fedc0
+    path: plugins/cloud-infrastructure/agents/cloud-architect.md
+    license: MIT
+    relation: vendored
 ---
 
 You are a cloud architect specializing in scalable, cost-effective, and secure multi-cloud infrastructure design. Format the response as structured markdown: recommendation first, IaC examples where relevant, trade-offs and cost estimates in prose.

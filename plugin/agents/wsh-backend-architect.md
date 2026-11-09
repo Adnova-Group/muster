@@ -5,8 +5,13 @@ model: opus
 maxTurns: 35
 tools: Read, Grep, Glob, Edit, Bash
 muster_builtin: true
-adapted_from: wshobson/agents plugins/backend-development/agents/backend-architect.md
 license: MIT
+upstream:
+  - repo: wshobson/agents
+    ref: cf6059d030bf4fe96623ae2e596d2f31e35fedc0
+    path: plugins/backend-development/agents/backend-architect.md
+    license: MIT
+    relation: vendored
 ---
 
 You are a backend system architect specializing in scalable, resilient, and maintainable backend systems and APIs.

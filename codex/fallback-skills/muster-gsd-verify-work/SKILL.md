@@ -2,6 +2,12 @@
 name: muster-gsd-verify-work
 description: "Codex-compatible Muster workflow. Verify completed work against stated outcomes with fresh tests, regression checks, UAT evidence, and an honest pass/fail ledger. Use as Muster's self-contained GSD-style verification fallback when the official GSD Codex skill is not enabled."
 license: MIT
+upstream:
+  - repo: open-gsd/gsd-core
+    ref: 1c352d1ea37b010e99b8353905eb5def4f784100
+    path: gsd-core/workflows/verify-work.md
+    license: MIT
+    relation: mechanism-port
 ---
 
 # Muster GSD work verification fallback

@@ -2,6 +2,12 @@
 name: muster-gsd-execute-phase
 description: "Codex-compatible Muster workflow. Execute an approved implementation phase task by task with worktree isolation, TDD, review gates, commits, and receipts. Use as Muster's self-contained GSD-style execution fallback when the official GSD Codex skill is not enabled."
 license: MIT
+upstream:
+  - repo: open-gsd/gsd-core
+    ref: 1c352d1ea37b010e99b8353905eb5def4f784100
+    path: gsd-core/workflows/execute-phase.md
+    license: MIT
+    relation: mechanism-port
 ---
 
 # Muster GSD phase execution fallback

@@ -245,14 +245,6 @@ test("cli wire: worktree-isolation --harness codex selects the receipts-only flo
   assert.equal(parsed.receiptRequired, true);
 });
 
-test("cli wire: worktree-isolation --harness kimi resolves cleanly to the same receipts-only floor as codex (kimi-worktree-isolation item)", async () => {
-  const { stdout } = await run(["worktree-isolation", "--harness", "kimi"]);
-  const parsed = JSON.parse(stdout);
-  assert.equal(parsed.harness, "kimi");
-  assert.equal(parsed.mechanism, "receipts-only");
-  assert.equal(parsed.receiptRequired, true);
-});
-
 test("cli wire: worktree-isolation with no --harness fails loud (exit 1), never guesses a mechanism", async () => {
   try {
     await run(["worktree-isolation"]);
@@ -310,14 +302,6 @@ test("cli wire: plan-surface cowork resolves to the prose degradation (no native
   assert.equal(parsed.runtime, "cowork");
   assert.equal(parsed.surface, "prose");
   assert.equal(parsed.primitive, null);
-});
-
-test("cli wire: plan-surface kimi selects the native plan-mode-gate surface", async () => {
-  const { stdout } = await run(["plan-surface", "kimi"]);
-  const parsed = JSON.parse(stdout);
-  assert.equal(parsed.runtime, "kimi");
-  assert.equal(parsed.surface, "native");
-  assert.equal(parsed.primitive, "plan-mode-gate");
 });
 
 test("cli wire: plan-surface with an unknown runtime resolves to the AskUserQuestion fallback (exit 0, never throws)", async () => {

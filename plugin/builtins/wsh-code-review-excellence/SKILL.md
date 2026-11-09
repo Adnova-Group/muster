@@ -2,8 +2,13 @@
 name: code-review-excellence
 description: Master effective code review practices to provide constructive feedback, catch bugs early, and foster knowledge sharing while maintaining team morale. Use when reviewing pull requests, establishing review standards, or mentoring developers.
 muster_builtin: true
-adapted_from: wshobson/agents plugins/developer-essentials/skills/code-review-excellence/SKILL.md
 license: MIT
+upstream:
+  - repo: wshobson/agents
+    ref: cf6059d030bf4fe96623ae2e596d2f31e35fedc0
+    path: plugins/developer-essentials/skills/code-review-excellence/SKILL.md
+    license: MIT
+    relation: vendored
 ---
 
 # Code Review Excellence

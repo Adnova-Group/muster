@@ -22,7 +22,9 @@ export function validateCatalog(entries) {
     else if (e.kind === "external" && e.detect && e.detect.kind && !DETECT_KINDS.has(e.detect.kind))
       errors.push(`${at}: unknown detect.kind "${e.detect.kind}" (must be plugin|skill|mcp_server|agent)`);
     if ((e.kind === "builtin" || e.kind === "agent") && (!e.provenance || !e.provenance.license))
-      errors.push(`${at}: ${e.kind} entry needs provenance.license (adapted_from for vendored, inspired_by for clean-room)`);
+      errors.push(`${at}: ${e.kind} entry needs provenance.license (plus provenance.upstream: the upstream repos, [] for clean-room)`);
+    if (e.provenance?.upstream !== undefined && (!Array.isArray(e.provenance.upstream) || !e.provenance.upstream.every(r => typeof r === "string")))
+      errors.push(`${at}: provenance.upstream must be a list of owner/name repositories`);
     if (e.description !== undefined && typeof e.description !== "string")
       errors.push(`${at}: description must be a string`);
   });

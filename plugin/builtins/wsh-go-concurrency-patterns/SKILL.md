@@ -2,8 +2,13 @@
 name: go-concurrency-patterns
 description: Master Go concurrency with goroutines, channels, sync primitives, and context. Use when building concurrent Go applications, implementing worker pools, or debugging race conditions.
 muster_builtin: true
-adapted_from: wshobson/agents plugins/systems-programming/skills/go-concurrency-patterns/SKILL.md
 license: MIT
+upstream:
+  - repo: wshobson/agents
+    ref: cf6059d030bf4fe96623ae2e596d2f31e35fedc0
+    path: plugins/systems-programming/skills/go-concurrency-patterns/SKILL.md
+    license: MIT
+    relation: adapted
 ---
 
 # Go Concurrency Patterns

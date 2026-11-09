@@ -38,7 +38,6 @@ import { computeWaves } from "./wave.js";
 import { execFileSync } from "node:child_process";
 import { compareStringsForEnvironment } from "./locale-order.js";
 import { sha256, SHA256_HEX_RE } from "./fs-safe.js";
-import { normalizeOrcaWorktreeMetadata } from "./orca-worktree-receipts.js";
 
 export const SPRINT_PARALLEL_DEFAULT = 5;
 export const SPRINT_PARALLEL_MAX = 10;
@@ -221,6 +220,11 @@ function canonicalDigest(kind, fields, value) {
   return sha256(JSON.stringify([kind, ...fields.map((field) => [field, value[field]])]));
 }
 
+// The trailing "orca" slot is frozen: it hashed the removed Orca lane's
+// worktree metadata, and no receipt carries that field any more, so it always
+// digests as null. Dropping the slot would change every
+// muster-lifecycle-receipt-v1 digest and invalidate receipts already signed by
+// in-flight runs.
 const RECEIPT_DIGEST_FIELDS = [
   "id", "itemId", "phase", "status", "attempt", "candidateSha", "implementationAttempt",
   "progressFingerprint", "terminalReason", "approvalDigest", "orca",
@@ -235,8 +239,7 @@ export function lifecycleReceiptDigest(receipt) {
 }
 
 export function buildSprintReceipt({ id, itemId, phase, status = "completed", attempt = 1,
-  candidateSha, findings = [], terminalReason, implementationAttempt, approvalDigest, worktreePath, signReceipt,
-  orcaContext, orca: orcaMetadata } = {}) {
+  candidateSha, findings = [], terminalReason, implementationAttempt, approvalDigest, worktreePath, signReceipt } = {}) {
   if (!["implementation", "review", "integration"].includes(phase)) throw new TypeError("invalid sprint receipt phase");
   if (!CANDIDATE_SHA_RE.test(candidateSha ?? "")) throw new TypeError("candidateSha must be a git object id");
   if (typeof worktreePath !== "string" || !worktreePath
@@ -251,12 +254,6 @@ export function buildSprintReceipt({ id, itemId, phase, status = "completed", at
     ...(implementationAttempt === undefined ? {} : { implementationAttempt }),
     ...(approvalDigest === undefined ? {} : { approvalDigest }),
   };
-  const suppliedOrcaContext = orcaContext === undefined ? orcaMetadata : orcaContext;
-  if (suppliedOrcaContext !== undefined) {
-    const normalizedOrca = normalizeOrcaWorktreeMetadata(suppliedOrcaContext);
-    if (!normalizedOrca.ok) throw new TypeError(`invalid Orca receipt context: ${normalizedOrca.error}`);
-    receipt.orca = normalizedOrca.metadata;
-  }
   if (typeof signReceipt !== "function") throw new TypeError("trusted receipt signer is required");
   const evidence = signReceipt(lifecycleReceiptDigest(receipt));
   if (typeof evidence !== "string" || !evidence) throw new TypeError("trusted receipt signer returned no evidence");
@@ -498,7 +495,6 @@ function canonicalReceipts(receipts, itemIds, environment = process.env) {
       ...(raw.approvalDigest === undefined ? {} : { approvalDigest: raw.approvalDigest }),
       ...(raw.implementationAttempt === undefined ? {} : { implementationAttempt: raw.implementationAttempt }),
       ...(raw.evidence === undefined ? {} : { evidence: raw.evidence }),
-      ...(raw.orca === undefined ? {} : { orca: raw.orca }),
     };
     let valid = true;
     if (typeof receipt.id !== "string" || !receipt.id.trim() || receipt.id.length > SPRINT_RECONCILE_LIMITS.idLength) {
@@ -549,15 +545,6 @@ function canonicalReceipts(receipts, itemIds, environment = process.env) {
     if (receipt.terminalReason !== undefined && !TERMINAL_RECOVERY_REASONS.includes(receipt.terminalReason)) {
       errors.push(`receipt '${receipt.id}' has invalid terminalReason '${receipt.terminalReason}'`);
       valid = false;
-    }
-    if (receipt.orca !== undefined) {
-      const normalizedOrca = normalizeOrcaWorktreeMetadata(receipt.orca);
-      if (!normalizedOrca.ok) {
-        errors.push(`receipt '${receipt.id}' has invalid Orca worktree metadata: ${normalizedOrca.error}`);
-        valid = false;
-      } else {
-        receipt.orca = normalizedOrca.metadata;
-      }
     }
     if (!valid) continue;
     const normalized = { ...receipt };

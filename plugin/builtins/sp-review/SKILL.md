@@ -2,8 +2,13 @@
 name: requesting-code-review
 description: Use when completing tasks, implementing major features, or before merging to verify work meets requirements
 muster_builtin: true
-adapted_from: obra/superpowers requesting-code-review/SKILL.md
 license: MIT
+upstream:
+  - repo: obra/superpowers
+    ref: 284be5905ed540d34ce5bcde24728b9b7f413ea0
+    path: skills/requesting-code-review/SKILL.md
+    license: MIT
+    relation: adapted
 ---
 
 # Requesting Code Review

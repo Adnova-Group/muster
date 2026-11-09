@@ -486,6 +486,8 @@ function classifyKimiLiveProbeFailure(error) {
   if (error?.killed) return `kimi -p timed out (killed with ${error.signal ?? "a signal"})`;
   const quotaSignal = detectKimiQuotaFault(quotaFaultLines(`${error?.stdout ?? ""}\n${error?.stderr ?? ""}`));
   if (quotaSignal) return `kimi -p failed on a quota/balance fault (matched ${JSON.stringify(quotaSignal)})`;
+  const credential = /provider (\S+) has no credential configured/.exec(`${error?.stdout ?? ""}\n${error?.stderr ?? ""}`);
+  if (credential) return `kimi -p has no credential configured (provider ${credential[1]})`;
   return null;
 }
 
@@ -577,6 +579,19 @@ test("runKimiLiveSessionIdProbe: a quota-fault exec rejection skips with the cla
   });
   assert.equal(result.skip, true);
   assert.match(result.reason, /quota\/balance fault/);
+});
+
+test("runKimiLiveSessionIdProbe: an unconfigured-credential exec rejection skips with the classified reason", async () => {
+  const credentialError = Object.assign(new Error("Command failed"), {
+    code: 1, stdout: "",
+    stderr: "error: failed to run prompt: provider managed:kimi-code has no credential configured\nSee log: /home/u/.kimi-code/logs/kimi-code.log\n"
+  });
+  const result = await runKimiLiveSessionIdProbe({
+    exec: async () => { throw credentialError; },
+    hasBinary: async () => true,
+    args: []
+  });
+  assert.deepEqual(result, { skip: true, reason: "kimi -p has no credential configured (provider managed:kimi-code)" });
 });
 
 test("runKimiLiveSessionIdProbe: a timed-out exec rejection skips with the classified reason", async () => {

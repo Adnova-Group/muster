@@ -1438,6 +1438,13 @@ async function handleCoreCommandPart5(cmd, rest) {
 }
 
 async function handleCoreCommand(cmd, rest) {
+  if (cmd === "plan-lint") {
+    // Deterministic plan gates ported from gsd (src/plan-lint.js). Exit 0 = no blockers,
+    // 1 = blockers, 2 = not evaluated; set via exitCode so a usage error never reads as exit 1.
+    const { runPlanLintCli } = await import("./plan-lint.js");
+    process.exitCode = runPlanLintCli(rest);
+    return true;
+  }
   if (await handleCoreCommandPart1(cmd, rest)) return true;
   if (await handleCoreCommandPart2(cmd, rest)) return true;
   if (await handleCoreCommandPart6(cmd, rest)) return true;

@@ -93,6 +93,37 @@ re-runs `testsRun` before merging, through `muster merge-wave`.
 - `muster plan-lint <PLAN.md>`: deterministic gates ported from gsd (failing-direction, verify
   commands present, deps acyclic, files declared). Exit 1 with issues in the CheckResult shape.
 
+## Amendments from the workflows track (live smoke, 2026-11-09)
+
+1. **Trusted plan args.** The main thread writes the exact `muster:build` args to
+   `.muster/runs/<id>/build-args.json` and **commits it before building**. `merge-wave` reads verify
+   commands, merge order and titles only from that committed file. Agent-reported `testsRun` /
+   `verify` are never executed; mismatches are reported in `notes`.
+2. **SUMMARY files** are written by `merge-wave` from the ExecResult after a green merge. Executors
+   do not write report files: in the smoke they declined to, citing Claude Code's subagent rule. The
+   gsd self-check now lives in the returned `selfCheck` and the commits/files it verifies.
+3. **Models:** `args.models[seat] = {model, effort}` for the seats
+   planner | checker | executor | reviewer | verifier. Unset keys are omitted, so agents inherit.
+   `muster preflight` computes `models`.
+4. **Agent types** are `muster:muster-<name>`. Fixers reuse `muster-executor` with a fix brief.
+   `agentHint` goes into the brief as a domain lens, not as the agent type.
+5. **plan.js** returns `{runId, planPath, verdict: PASS|ISSUES|ERROR, revisions, issues, escalated:
+   null|cap|stall|planner|checker}`. The planner returns `{status, planPath, taskCount, summary}`.
+   The checker runs `muster plan-lint` itself; there is no separate lint stage.
+6. **build.js** runs waves sequentially. A failed wave blocks later waves, and verification is then
+   recorded as ABSTAIN. Wave N>1 executors first merge the earlier waves' reviewed commits. The
+   verifier works in `.claude/worktrees/verify-<runId>` and writes VERIFICATION.md into the main
+   checkout. The review cap is 2 fix rounds.
+7. **Optional fields:** ReviewResult finding `line` is optional and `severity` is a free string;
+   CheckResult `required_property` is optional.
+8. **Task ids in PLAN.md** use `<task id="...">`, `taskId:` or `- id:`. STATE.md is a header that
+   `next --run` rewrites, above a `## Log` section that only `merge-wave` appends to.
+
+`merge-wave` removes a worktree only if all of these hold: its real path is under
+`.claude/worktrees/`; the porcelain listing shows the task branch checked out there; that branch is
+merged; and the worktree is clean. It never unlocks a worktree or uses `--force`, and it deletes
+branches with `branch -d` only.
+
 ## Sync model (vendor/)
 
 - `vendor/manifest.yaml` gsd source: `ref: 9385f46`, `tag: v1.20.1`. Each item records `{from,

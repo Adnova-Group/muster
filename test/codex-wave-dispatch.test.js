@@ -111,8 +111,7 @@ test("assertCodexSpawnAgentAccepted: only an explicit rejected:false status with
 });
 
 // ── prose guards: orchestrator references/codex-dispatch.md ───────────────
-// The Kimi sibling reference carries guards like these (test/kimi-dispatch.test.js);
-// this reference had none, so the contracts the wave-dispatch mechanics depend on
+// This reference had no prose guards, so the contracts the wave-dispatch mechanics depend on
 // could rot silently. Pin NAMES, never sentences, so prose edits stay free.
 const CODEX_DISPATCH_REF = new URL("../plugin/skills/orchestrator/references/codex-dispatch.md", import.meta.url);
 

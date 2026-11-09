@@ -145,7 +145,7 @@ Claude Code and Codex use one canonical instruction pair: `AGENTS.md` is authori
 @AGENTS.md
 ```
 
-If conflicting instruction files existed at the preparation baseline, Init leaves a HUMAN-HOLD instead of overwriting or merging them. Kimi has no proven callable native Init action, so Muster records an unavailable handoff and waits for an explicit acknowledgement instead of inventing a command. See [The ten modes](/reference/modes#init) for the evidence and finalization states.
+If conflicting instruction files existed at the preparation baseline, Init leaves a HUMAN-HOLD instead of overwriting or merging them. See [The ten modes](/reference/modes#init) for the evidence and finalization states.
 
 ## Inspect the routing yourself
 

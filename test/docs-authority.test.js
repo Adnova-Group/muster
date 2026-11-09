@@ -43,7 +43,7 @@ test("shared architecture is harness-neutral and adapters are explicitly scoped"
     } else if (line.startsWith("### ")) {
       h3 = line;
     }
-    if (/\b(?:Claude Code|Codex|Kimi|Cowork)\b/.test(line)) {
+    if (/\b(?:Claude Code|Codex|Cowork)\b/.test(line)) {
       assert.match(
         `${h2} ${h3}`,
         /(?:Harness-specific bindings|adapter)/i,

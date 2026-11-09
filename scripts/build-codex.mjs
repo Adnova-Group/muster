@@ -454,34 +454,17 @@ function adaptOrchestratorForCodex(text, contract) {
   const denyMatchingAnchor = "the `PreToolUse` hook reads this\nfile to deny matching tool calls";
   if (!result.includes(denyMatchingAnchor)) throw new Error("orchestrator deny-matching anchor not found for Codex rewrite");
   result = result.replaceAll(denyMatchingAnchor, "the trusted Codex `PreToolUse` hook reads this\nfile to surface supported policy warnings for matching tool calls");
-  // kimi-subagent-resume-retry item: the step-4a "Subagent failure" bullet's Kimi
-  // native-resume branch ships verbatim into this build (it sits below the
-  // `      - **Subagent failure` anchor, outside every wholesale-replace span),
-  // and the upstream word-swap rewrites its "the Agent tool's `resume`" into
-  // "the Codex subagent dispatcher's `resume`" -- fabricating a Codex resume
-  // primitive that does not exist (spawn_agent has no resume field; there is no
-  // AgentSwarm on this harness). On Codex the generic fresh re-dispatch IS the
-  // whole rule, so replace the entire Kimi clause with exactly that. Guarded:
-  // if the Claude-side clause drifts and this stops matching, fail the build
-  // rather than ship the fabricated claim.
-  const kimiResumeClause = /\*\*On Kimi the re-dispatch is\s+a native RESUME, never a fresh spawn\*\*[\s\S]*?Non-Kimi harnesses keep the fresh re-dispatch\.\s+/;
-  if (!kimiResumeClause.test(result)) throw new Error("orchestrator Kimi resume clause not found for Codex rewrite");
-  result = result.replace(kimiResumeClause, "Retry the failed member once in a fresh bounded process-wave invocation with the error appended; never switch lanes.\n        ");
-  if (result.includes("Codex subagent dispatcher's `resume`")) throw new Error("orchestrator Kimi resume clause leaked into the Codex build");
-  // kimi-native-steer-binding item: the Channel steering section's Kimi
-  // paragraph ships verbatim into this build (the section sits above the
-  // enforcement-cut below, outside every wholesale-replace span) and would
-  // tell a Codex-hosted run to deliver steers through Kimi's steer queue /
-  // Wire / ACP / `kimi web` routes -- mechanisms that do not exist on this
-  // harness. On Codex a steering message arrives as ordinary user input and
-  // the classify-and-map rule above the paragraph is the whole story, so
-  // replace the paragraph with exactly that. Guarded: if the Claude-side
-  // paragraph drifts and this stops matching, fail the build rather than ship
-  // the fabricated claim.
-  const kimiSteerParagraph = /\*\*On Kimi the same message arrives through the harness's native steer seam\.\*\*[\s\S]*?it does not open the connection itself\.\n/;
-  if (!kimiSteerParagraph.test(result)) throw new Error("orchestrator Kimi steer paragraph not found for Codex rewrite");
-  result = result.replace(kimiSteerParagraph, "**On this harness there is no native between-steps steer seam:** a steering message arrives as ordinary user input -- classify it with the bundled runtime's `steer` verb and apply the mapping above unchanged.\n");
-  if (result.includes("prompts::steer") || result.includes("prompts:steer")) throw new Error("orchestrator Kimi steer paragraph leaked into the Codex build");
+  // Codex retry and steer sentences. The Claude-side source states only the
+  // generic re-dispatch rule and the channel-steer mapping; the Codex build
+  // pins its process-wave retry wording and states that a steering message
+  // arrives as ordinary user input. Guarded: if either anchor drifts, fail the
+  // build rather than ship the Codex skill without them.
+  const retryAnchor = "repeated-identical/no-progress threshold.\n        A no-progress result";
+  if (!result.includes(retryAnchor)) throw new Error("orchestrator subagent-failure retry anchor not found for Codex rewrite");
+  result = result.replace(retryAnchor, "repeated-identical/no-progress threshold.\n        Retry the failed member once in a fresh bounded process-wave invocation with the error appended; never switch lanes.\n        A no-progress result");
+  const steerAnchor = "ask the human to rephrase (approve/stop/status/retarget).\n";
+  if (!result.includes(steerAnchor)) throw new Error("orchestrator channel-steer anchor not found for Codex rewrite");
+  result = result.replace(steerAnchor, steerAnchor + "\n**On this harness there is no native between-steps steer seam:** a steering message arrives as ordinary user input -- classify it with the bundled runtime's `steer` verb and apply the mapping above unchanged.\n");
   const providerStart = result.indexOf("      - **Provider kind:**");
   const failureStart = result.indexOf("      - **Subagent failure", providerStart);
   if (providerStart < 0 || failureStart < 0) throw new Error("orchestrator provider/model section not found");
@@ -790,8 +773,8 @@ async function buildCodexPluginOnce({ root, outDir, nodeExecPath }) {
     // The bundled runtime/muster.mjs reads the shared harness-neutral agent
     // manifest at runtime (src/agent-manifest.js: `new URL(
     // "../catalog/agents.manifest.json", import.meta.url)`, resolving to
-    // plugin/catalog/ from plugin/runtime/) to resolve `capabilities --codex`/
-    // `--kimi` per-role model profiles. It rides into the plugin as part of the
+    // plugin/catalog/ from plugin/runtime/) to resolve `capabilities --codex`
+    // per-role model profiles. It rides into the plugin as part of the
     // catalog/ copy above (rmAndCopy catalog -> plugin/catalog), so no separate
     // staging step is needed — the runtime stays self-contained without a Node
     // experimental-JSON-modules import warning on the Node 20/22 source lane.

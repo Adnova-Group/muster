@@ -1,5 +1,5 @@
 // The packaged harness-neutral agent manifest (catalog/agents.manifest.json) is
-// read once and cached by src/agent-manifest.js; every adapter (Codex, Kimi,
+// read once and cached by src/agent-manifest.js; every adapter (Claude, Codex,
 // Claude) resolves the SAME file through its own policy. Pin: it parses, is
 // frozen, caches, and every entry is a valid neutral { tier, effort? } profile
 // naming no concrete harness model.

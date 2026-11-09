@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { detectProject, hasPromptingSignal } from "./detect.js";
 import { loadCatalog } from "./catalog.js";
-import { readInstalled, readInstalledCowork, readInstalledKimi, readInstalledWork } from "./harness.js";
+import { readInstalled, readInstalledCowork, readInstalledWork } from "./harness.js";
 import { resolveCapabilities } from "./capabilities.js";
 import { validateManifest, manifestWarnings } from "./manifest.js";
 import { writeMemory, readMemory } from "./memory.js";
@@ -48,7 +48,6 @@ import { deriveCodexAuditCandidates, selectCodexAuditProvider } from "./codex-au
 import { runInstall, runUninstall } from "./install.js";
 import { runCodexInstall, runCodexUninstall } from "./codex-install.js";
 import { runChatgptWorkInstall } from "./chatgpt-work-install.js";
-import { runKimiInstall, runKimiUninstall } from "./kimi-install.js";
 import { runCodexDoctor } from "./codex-doctor.js";
 import { readCodexInventory } from "./codex-inventory.js";
 import { adaptCatalogForCodex } from "./codex-catalog.js";
@@ -60,7 +59,6 @@ import { matchProviders, matchSkills, suggestSkillsForStack, signalsFromTask } f
 import { prioritize } from "./prioritize.js";
 import { parseIssueRef, resolveIssue } from "./issue.js";
 import { classifySteer } from "./steer.js";
-import { kimiSteerDelivery } from "./kimi-steer.js";
 import { lintPrompt, lintChat, lintWorkflow } from "./prompt-lint.js";
 import { scoreHumanness } from "./humanizer-score.js";
 import { checkCitations } from "./citation-guard.js";
@@ -78,8 +76,6 @@ import { planGateCadence, DEFAULT_REVIEW_DIFF_THRESHOLD } from "./gate-cadence.j
 import { resolveWaveDispatch, resolveWorktreeIsolation, makeGitShaVerifier } from "./wave-dispatch.js";
 import { codexSpawnAgentCall, codexWaitAgentCall } from "./codex-dispatch.js";
 import { runCodexWave, runCodexWaveContinuation } from "./codex-wave-runner.js";
-import { kimiGoalInvocation, kimiProcessDispatch } from "./kimi-dispatch.js";
-import { captureSessionId, resolveSessionForCwd, readSessionUsage, summarizeItemReceipts, DEFAULT_SESSION_INDEX } from "./kimi-receipts.js";
 import { resolvePlanSurface } from "./plan-surface.js";
 import { classifyPlanTurn, createCodexAppServerClient, fallbackPlanLaunch, launchCodexPlan, readSecretTerminalInput, renderPlanNotification, sanitizeTerminalText } from "./codex-plan-launch.js";
 import { resolveDesktopHarness } from "./desktop-harness.js";
@@ -103,11 +99,6 @@ import {
   withFileMutationLock,
   writeContainedFile,
 } from "./fs-safe.js";
-import { readDispatchReceipts, runKimiProcess } from "./dispatch-receipts.js";
-import { discoverOrcaContext, resolveOrcaCliCommand } from "./orca-context-adapter.js";
-import { probeOrcaAgentCapabilities } from "./orca-agent-capability-probe.js";
-import { readOrcaStatusBridge } from "./orca-status-bridge.js";
-import { evaluateOrcaWorktreeCleanup } from "./orca-worktree-cleanup.js";
 import {
   DESIGN_SOURCE,
   DESIGN_WORKFLOWS,
@@ -146,15 +137,15 @@ async function readFixLoopJson(path, label) {
 // pre-split string (website-docs.test.js reassembles this array from source).
 const USAGE = [
   // routing: project detection, capability discovery, task→provider matching
-  "Usage: muster <detect|capabilities [--cowork] [--codex] [--kimi] [--work] [--agent-plugins] [--role <role>] [--roles-only]|match [--skills] <task> [--stack <csv>] [--work]|",
+  "Usage: muster <detect|capabilities [--cowork] [--codex] [--work] [--agent-plugins] [--role <role>] [--roles-only]|match [--skills] <task> [--stack <csv>] [--work]|",
   // manifest + waves: validate, order, and drive a plan
   "manifest validate <file> [--work]|wave <file>|next <manifest.json> [--done a,b]|",
   // performance pass + gate helpers
-  "resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|codex-wave <wave.json> --fence-file <action-fence.json> --repository-root <repo> --base-sha <sha>|codex-wave-resume <receipt-id> --review-state <file>|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex|kimi>|plan-surface <runtime>|codex-plan <outcome> [--cwd <dir>]|desktop-harness <chatgpt-desktop|codex-desktop|gpt-work>|receipt-verify <sha> --cwd <repo>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|",
+  "resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|codex-wave <wave.json> --fence-file <action-fence.json> --repository-root <repo> --base-sha <sha>|codex-wave-resume <receipt-id> --review-state <file>|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex>|plan-surface <runtime>|codex-plan <outcome> [--cwd <dir>]|desktop-harness <chatgpt-desktop|codex-desktop|gpt-work>|receipt-verify <sha> --cwd <repo>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|",
   // sprint waves, review tally, tournament pick/fuse, advisor
   "sprint-waves <backlog.md> [--max-concurrent-threads-per-session N]|sprint-reconcile <progress.json>|backlog-receipts <backlog.md> --release-ref <ref>|backlog-publish <backlog.md> --expect <sha256|absent>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|",
-  // harness-native dispatch packets + session receipts (kimi/codex lanes)
-  "kimi-goal-invocation <objective> [--stream-json] [--secondary <model>]|kimi-process-dispatch --brief <text> --agent-file <name|path> --cwd <dir> --lane <primary|secondary>|kimi-process-run --brief <text> --agent-file <name|path> --cwd <dir> --lane <primary|secondary>|kimi-session-usage <--session-dir <dir>|--cwd <dir> [--stdout-file <f>]>|kimi-summarize-receipts <items.json>|codex-audit-provider --role <role> --task-id <id> --callable-apis <v1,v2> --callable-agent-ids <id,...> [--api-override <v1|v2>] [--message <text>|--message-file <f>]|codex-spawn-packet --task-id <id> --agent-type <id> [--message <text>|--message-file <f>] [--version v1|v2] [--fork-turns <none|N>]|codex-wait-packet [--version v1|v2] [--targets a,b] [--timeout-ms N]|",
+  // harness-native dispatch packets (codex lane)
+  "codex-audit-provider --role <role> --task-id <id> --callable-apis <v1,v2> --callable-agent-ids <id,...> [--api-override <v1|v2>] [--message <text>|--message-file <f>]|codex-spawn-packet --task-id <id> --agent-type <id> [--message <text>|--message-file <f>] [--version v1|v2] [--fork-turns <none|N>]|codex-wait-packet [--version v1|v2] [--targets a,b] [--timeout-ms N]|",
   // memory + vendor + init lifecycle
   "memory read|write ...|vendor|init [dir]|init transition [dir] --to <handoff|attempted|completed>|init normalize [dir] --approve CLAUDE.md|init acknowledge [dir] --reason unavailable|init finalize [dir]|setup [dir]|design <init|status|resolve|detect|ignores|provider|gate|workflows|run> ...|",
   // planning + routing artifacts
@@ -162,9 +153,9 @@ const USAGE = [
   // prompt tooling
   "prompt <lint|variations|eval|optimize|scan> [file|dir]|humanize-score <file> [--threshold N]|citation-check <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|",
   // diagnose/audit/issue/assess/steer/scope
-  "diagnose <symptom>|--ci <file>|audit [--backlog] [path...]|issue <ref>|assess <outcome>|steer [--harness kimi [--session <id>] [--prompt-id <id>]] <message>|scope [text]|",
+  "diagnose <symptom>|--ci <file>|audit [--backlog] [path...]|issue <ref>|assess <outcome>|steer <message>|scope [text]|",
   // doctor/conformance/scratchpad/profile/install/signals/hygiene/help
-  "orca <status|context|capabilities [--profile <id>]|bridge [--profile <id>]|cleanup-plan <input.json>> [--command <bin>]|doctor [--codex]|codex-conformance [YYYY/MM/DD | --days N] [--cwd <repo>] [--current-pins-only]|scratchpad <runId>|profile|install <codex [--scope project-or-user]|chatgpt-work --connection-id <id> --profile <pro-safe|full> [--scope project|user] [--allow-full-actions]|kimi [--probe]> [--dry-run]|uninstall <codex [--scope project-or-user]|kimi> [--dry-run]|signals [dir]|hygiene [--reap] [--json] [--backlog <file>] [--worktree-threshold N] [--zombie-stale-min N] [--claim-stale-min N]|help [command]>",
+  "doctor [--codex]|codex-conformance [YYYY/MM/DD | --days N] [--cwd <repo>] [--current-pins-only]|scratchpad <runId>|profile|install <codex [--scope project-or-user]|chatgpt-work --connection-id <id> --profile <pro-safe|full> [--scope project|user] [--allow-full-actions]> [--dry-run]|uninstall <codex [--scope project-or-user]> [--dry-run]|signals [dir]|hygiene [--reap] [--json] [--backlog <file>] [--worktree-threshold N] [--zombie-stale-min N] [--claim-stale-min N]|help [command]>",
 ].join("");
 
 function out(obj) { process.stdout.write(JSON.stringify(obj, null, 2) + "\n"); }
@@ -217,121 +208,6 @@ async function loadEffectiveCatalog(args) {
 async function resolveModeCapabilities(args) {
   const { catalog, installed } = await loadEffectiveCatalog(args);
   return resolveCapabilities(catalog, installed);
-}
-
-async function handleKimiCommand(cmd, rest) {
-  if (cmd === "kimi-goal-invocation") {
-    const objective = requireArg(rest, 0, "kimi-goal-invocation <objective> [--stream-json] [--secondary <model>]: missing objective (the bare objective; the /goal prefix is added for you)", fail);
-    const secondary = flagValue(rest, "--secondary");
-    out(kimiGoalInvocation({
-      objective,
-      streamJson: rest.includes("--stream-json"),
-      ...(secondary ? { secondaryModel: secondary } : {})
-    }));
-    return true;
-  } else if (cmd === "kimi-process-dispatch") {
-    const usage = "kimi-process-dispatch --brief <text> --agent-file <name|path> --cwd <dir> --lane <primary|secondary>";
-    const brief = flagValue(rest, "--brief");
-    if (!brief) fail(`${usage}: missing --brief`);
-    const agentFile = flagValue(rest, "--agent-file");
-    if (!agentFile) fail(`${usage}: missing --agent-file`);
-    const cwd = flagValue(rest, "--cwd");
-    if (!cwd) fail(`${usage}: missing --cwd`);
-    const lane = flagValue(rest, "--lane");
-    if (!lane) fail(`${usage}: missing --lane`);
-    out(kimiProcessDispatch({ brief, agentFile, cwd, lane }));
-    return true;
-  } else if (cmd === "kimi-process-run") {
-    const usage = "kimi-process-run --brief <text> --agent-file <name|path> --cwd <dir> --lane <primary|secondary>";
-    const allowed = new Set(["--brief", "--agent-file", "--cwd", "--lane"]);
-    for (let index = 0; index < rest.length; index += 2) {
-      if (!allowed.has(rest[index]) || index + 1 >= rest.length || rest[index + 1].startsWith("--")) {
-        fail(`${usage}: unknown or valueless option ${JSON.stringify(rest[index] ?? "")}`);
-      }
-    }
-    const brief = flagValue(rest, "--brief");
-    if (!brief) fail(`${usage}: missing --brief`);
-    const agentFile = flagValue(rest, "--agent-file");
-    if (!agentFile) fail(`${usage}: missing --agent-file`);
-    const cwd = flagValue(rest, "--cwd");
-    if (!cwd) fail(`${usage}: missing --cwd`);
-    const lane = flagValue(rest, "--lane");
-    if (!lane) fail(`${usage}: missing --lane`);
-    const terminal = await runKimiProcess({ brief, agentFile, cwd, lane });
-    if (terminal.signal) process.kill(process.pid, terminal.signal);
-    else process.exitCode = Number.isInteger(terminal.code) ? terminal.code : 1;
-    return true;
-  } else if (cmd === "kimi-session-usage") {
-    // Two arms, mirroring the prose's two accounting arms: --session-dir reads
-    // a KNOWN session dir (the in-session arm's parent session); --cwd RESOLVES
-    // the session for a -p leg first (captureSessionId on --stdout-file's
-    // captured stream-json stdout when given, else the session-index fallback),
-    // printing { resolution, usage } -- or { resolution } alone when resolution
-    // comes back UNKNOWN (resolved:false), which is a recorded outcome, never a
-    // failure (exit stays 0).
-    const usage = "kimi-session-usage <--session-dir <dir> | --cwd <dir> [--stdout-file <file>] [--index <file>]>";
-    const sessionDir = flagValue(rest, "--session-dir");
-    const cwd = flagValue(rest, "--cwd");
-    if (!sessionDir && !cwd) fail(`${usage}: missing --session-dir or --cwd`);
-    if (sessionDir && cwd) fail(`${usage}: --session-dir and --cwd are mutually exclusive (--session-dir reads a known session; --cwd resolves one first)`);
-    // Slice-B containment on every file-arg READ (the same
-    // resolveContainedRealpath discipline the sprint-waves branch applies
-    // below): these paths come from prose/model output, so a planted symlink
-    // must fail with the named refusal, never be read.
-    const contained = async (label, value, { root = process.cwd(), rootName = "the run root" } = {}) => {
-      const canonical = await resolveContainedRealpath(root, value);
-      if (canonical === null) {
-        fail(`${usage}: ${label} ${value} does not resolve to a path contained under ${rootName} (missing, dangling, or a symlink escape) -- refusing to read`);
-      }
-      return canonical;
-    };
-    if (sessionDir) {
-      out(await readSessionUsage(await contained("--session-dir", sessionDir)));
-    } else {
-      const stdoutFile = flagValue(rest, "--stdout-file");
-      const capturedSessionId = stdoutFile ? captureSessionId(await readFile(await contained("--stdout-file", stdoutFile), "utf8")) : null;
-      const index = flagValue(rest, "--index");
-      const indexPath = index ? await contained("--index", index) : DEFAULT_SESSION_INDEX;
-      const resolution = await resolveSessionForCwd({ indexPath, cwd, capturedSessionId });
-      // The RESOLVED session dir needs the same gate as the flags above: it is
-      // data (a session_index.jsonl `sessionDir` field, which readSessionIndex
-      // accepts as any string), and its usage is echoed into this JSON. Root:
-      // the index's OWN directory -- kimi writes session_index.jsonl at the
-      // kimi-home root and every sessionDir under it
-      // (<home>/sessions/wd_<slug>/session_<uuid>, probe evidence in
-      // src/kimi-receipts.js), so an entry resolving anywhere else is planted,
-      // never a session. src/kimi-receipts.js's readers re-check on their own.
-      out(resolution.resolved
-        ? {
-          resolution,
-          usage: await readSessionUsage(await contained("resolved session dir", resolution.sessionDir, {
-            root: dirname(indexPath),
-            rootName: "the session index root"
-          }))
-        }
-        : { resolution });
-    }
-    return true;
-  } else if (cmd === "kimi-summarize-receipts") {
-    const file = requireArg(rest, 0, "kimi-summarize-receipts <items.json>: missing items file ([{ itemId, resolution | resolutions }])", fail);
-    // Same slice-B containment as the sprint-waves branch below: the items
-    // file is a model-supplied path, so a planted symlink fails with the
-    // named refusal, never a read.
-    const canonical = await resolveContainedRealpath(process.cwd(), file);
-    if (canonical === null) {
-      fail(`kimi-summarize-receipts <items.json>: ${file} does not resolve to a file contained under the run root (missing, dangling, or a symlink escape) -- refusing to read`);
-    }
-    const items = JSON.parse(await readFile(canonical, "utf8"));
-    process.stdout.write((await summarizeItemReceipts(items)).join("\n") + "\n");
-    return true;
-  } else if (cmd === "install" && rest[0] === "kimi") {
-    out(await runKimiInstall({ dryRun: rest.includes("--dry-run"), probe: rest.includes("--probe") }));
-    return true;
-  } else if (cmd === "uninstall" && rest[0] === "kimi") {
-    out(await runKimiUninstall({ dryRun: rest.includes("--dry-run") }));
-    return true;
-  }
-  return false;
 }
 
 async function handleCodexAuditProvider(rest) {
@@ -452,67 +328,6 @@ async function handleCodexPlanCommand(rest) {
       interrupt: Boolean(launched?.threadId && launched?.turnId && !turnFinished),
     });
   }
-}
-
-// Orca coexistence: every subcommand here is READ-ONLY. Discovery, correlation,
-// and a cleanup DRY-RUN that prints the operations it would authorize without
-// running them. Nothing in this group mutates Orca state, and the mutating
-// cleanup executor is deliberately not exposed: worktree removal takes the
-// branch with it, so it stays behind the merge gate that proved the receipt.
-async function handleOrcaCommand(cmd, rest) {
-  if (cmd !== "orca") return false;
-  const usage = "orca <status|context|capabilities [--profile <id>]|bridge [--profile <id>]|cleanup-plan <input.json>> [--command <orca-binary>]";
-  const sub = rest[0];
-  // Resolution order: explicit flag, Muster override, then Orca's own contract
-  // (ORCA_CLI_COMMAND, orca-ide on Linux outside Orca terminals) -- never bare
-  // `orca` on Linux, where it resolves to the GNOME screen reader.
-  const command = flagValue(rest, "--command") || process.env.MUSTER_ORCA_CLI || resolveOrcaCliCommand();
-  const contextOptions = { command, cwd: process.cwd() };
-
-  if (sub === "status" || sub === "context") {
-    const result = await discoverOrcaContext(contextOptions);
-    if (sub === "context") { out(result); return true; }
-    out({
-      available: result.available,
-      availability: result.availability,
-      reason: result.reason,
-      detail: result.detail,
-      diagnostics: result.diagnostics,
-      ...(result.context ? {
-        worktree_id: result.context.orca_worktree_id,
-        worktree_path: result.context.worktree_path,
-        branch: result.context.branch,
-        host: result.context.host,
-        environment_kind: result.context.environment_kind,
-        remote_selector: result.context.remote_selector,
-        is_main_worktree: result.context.is_main_worktree,
-        terminal_handle: result.context.terminal_handle,
-        runtime: result.context.runtime,
-      } : {}),
-    });
-    return true;
-  }
-  if (sub === "capabilities") {
-    out(await probeOrcaAgentCapabilities({ profile: flagValue(rest, "--profile"), contextOptions }));
-    return true;
-  }
-  if (sub === "bridge") {
-    out(await readOrcaStatusBridge({ profile: flagValue(rest, "--profile"), contextOptions }));
-    return true;
-  }
-  if (sub === "cleanup-plan") {
-    const file = rest.slice(1).find(a => !a.startsWith("-"));
-    if (!file) fail(`${usage}: cleanup-plan needs an evidence JSON file`);
-    const decision = evaluateOrcaWorktreeCleanup(
-      JSON.parse(await readBoundedCliText(file, MAX_STDIN_BYTES, "orca cleanup evidence")),
-    );
-    // A dry run must never read as an execution. Say so in the payload.
-    out({ dryRun: true, executed: false, ...decision });
-    if (!decision.authorized) process.exitCode = 2;
-    return true;
-  }
-  fail(`${usage}: unknown subcommand ${JSON.stringify(sub ?? "")}`);
-  return true;
 }
 
 async function handleCodexCommand(cmd, rest) {
@@ -690,7 +505,7 @@ async function handleCoreCommandPart1(cmd, rest) {
     // The optional positional home-dir override is found by elimination: take the
     // first arg that neither looks like a flag nor is a value a flag consumed. In
     // this branch only --role and --connectors take values; every other flag
-    // (--codex/--kimi/--cowork/--work/--roles-only/--native-plugin) is a boolean switch.
+    // (--codex/--cowork/--work/--roles-only/--native-plugin) is a boolean switch.
     const role = flagValue(rest, "--role");
     const connectors = flagValue(rest, "--connectors");
     const consumedValues = new Set([role, connectors].filter(Boolean));
@@ -705,8 +520,6 @@ async function handleCoreCommandPart1(cmd, rest) {
         process.env.PLUGIN_ROOT || process.cwd(),
         { pluginDataRoot: process.env.PLUGIN_DATA }
       );
-    } else if (rest.includes("--kimi")) {
-      installed = await readInstalledKimi(home);
     } else if (rest.includes("--work")) {
       installed = readInstalledWork();
     } else if (rest.includes("--cowork")) {
@@ -734,8 +547,6 @@ async function handleCoreCommandPart1(cmd, rest) {
     // every description came back empty.
     const capabilities = rest.includes("--codex")
       ? resolveCapabilities(adaptCatalogForCodex(catalog, installed), installed, home, { codex: true })
-      : rest.includes("--kimi")
-      ? resolveCapabilities(catalog, installed, home, { kimi: true })
       : resolveCapabilities(catalog, installed, home);
     if (role) {
       if (!capabilities.roles[role]) fail(`capabilities --role ${role}: unknown role`);
@@ -885,7 +696,7 @@ async function handleCoreCommandPart2(cmd, rest) {
   } else if (cmd === "worktree-isolation") {
     // worktree-isolation-native item: per-harness native worktree isolation mechanism
     // selection (Agent-tool isolation on Claude Code, Desktop's automatic worktree,
-    // Hermes's `hermes -w`, Codex's and Kimi's shared receipts-only floor). `--harness`
+    // Hermes's `hermes -w`, Codex's receipts-only floor). `--harness`
     // is a declared selection, not auto-probed -- see src/wave-dispatch.js.
     const harness = flagValue(rest, "--harness");
     out(resolveWorktreeIsolation({ harness }));
@@ -953,10 +764,10 @@ async function handleCoreCommandPart2(cmd, rest) {
       eligible: lightBriefEligible({ reviewerCount, diffFiles, diffText }),
       triggers: detectReviewTriggers(diffFiles, { diffText }),
     });
-  // ── harness-native dispatch packets + session receipts (kimi/codex lanes) ──
+  // ── harness-native dispatch packets (codex lane) ──
   // The model layer reaches these builders ONLY through these verbs (the
-  // two-layer boundary): each verb prints the descriptor src/kimi-dispatch.js /
-  // src/kimi-receipts.js / src/wave-dispatch.js constructs, and the prose
+  // two-layer boundary): each verb prints the descriptor src/wave-dispatch.js
+  // constructs, and the prose
   // spawns/records from the printed JSON. Builder validation errors throw and
   // surface through main()'s catch as fail() -- only MISSING cli args fail here.
     return true;
@@ -1457,30 +1268,7 @@ async function handleCoreCommandPart4(cmd, rest) {
     return true;
   } else if (cmd === "steer") {
     if (!rest[0]) fail("steer <message>: missing message");
-    // Harness-conditional Kimi arm (kimi-native-steer-binding): ONLY
-    // `--harness kimi` activates it -- every other invocation (no flag, or
-    // any other --harness value) falls through to today's exact behavior,
-    // classifying the raw args, so the Claude Code / Codex / Hermes steer
-    // paths stay byte-identical. The Kimi arm composes the SAME classifier
-    // with the native steer delivery construction (src/kimi-steer.js):
-    // queued injection between steps without ending the turn, driven over
-    // `kimi web`'s HTTP routes by whoever holds the live session.
-    if (flagValue(rest, "--harness") === "kimi") {
-      const flags = new Set(["--harness", "--session", "--prompt-id"]);
-      const message = rest.filter((arg, i) => !flags.has(arg) && !flags.has(rest[i - 1])).join(" ");
-      if (!message) fail("steer --harness kimi <message>: missing message");
-      out({
-        ...classifySteer(message),
-        harness: "kimi",
-        delivery: kimiSteerDelivery({
-          message,
-          sessionId: flagValue(rest, "--session"),
-          promptId: flagValue(rest, "--prompt-id")
-        })
-      });
-    } else {
-      out(classifySteer(rest.join(" ")));
-    }
+    out(classifySteer(rest.join(" ")));
     return true;
   } else if (cmd === "scope") {
     // Deterministic backlog-vs-item scope detection for the plan/go verb family. An
@@ -1607,8 +1395,6 @@ async function handleCoreCommandPart5(cmd, rest) {
         zombieOptions: zombieStaleMin != null ? { staleMs: zombieStaleMin * 60_000 } : {},
         worktreeOptions: { threshold: worktreeThreshold },
         claimOptions: claimStaleMin != null ? { staleMs: claimStaleMin * 60_000 } : {},
-        dispatchReceiptStore: ({ processes, reap: shouldClean }) =>
-          readDispatchReceipts({ processes, reap: shouldClean }),
       });
       if (reap && result.claims.content != null && result.claims.releases.length > 0) {
         await atomicWrite(absoluteBacklogPath, result.claims.content, {
@@ -1658,8 +1444,6 @@ async function main() {
       process.stdout.write(USAGE + "\n");
       return;
     }
-    if (await handleOrcaCommand(cmd, rest)) return;
-    if (await handleKimiCommand(cmd, rest)) return;
     if (await handleCodexCommand(cmd, rest)) return;
     if (await handleChatgptCommand(cmd, rest)) return;
     if (await handleCoreCommand(cmd, rest)) return;

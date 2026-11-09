@@ -2,7 +2,6 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { claudeProfileForConfig } from "../src/claude.js";
 import { codexProfileForConfig } from "../src/codex.js";
-import { kimiProfileForConfig } from "../src/kimi.js";
 
 const adapters = {
   claude: {
@@ -14,11 +13,6 @@ const adapters = {
     resolve: codexProfileForConfig,
     prime: { model: "gpt-5.6-sol", effort: "high" },
     core: { model: "gpt-5.6-luna", effort: "xhigh" },
-  },
-  kimi: {
-    resolve: kimiProfileForConfig,
-    prime: { model: "kimi-code/k3", effort: "high" },
-    core: { model: "kimi-code/kimi-for-coding", thinking: "enabled" },
   },
 };
 

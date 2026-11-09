@@ -1,7 +1,7 @@
 // capabilities-claude-profile (audit 2026-07-29, slice E): the Claude lane's
-// sibling of the codexModel/kimiModel emissions. `capabilities` attaches
+// sibling of the codexModel emission. `capabilities` attaches
 // claudeProfile: {model, workflowEffort?} to each agent-backed role -- the
-// SAME manifest-driven resolution (claudeProfileForAgentId) the codex/kimi
+// SAME manifest-driven resolution (claudeProfileForAgentId) the codex
 // lanes use -- so orchestrator SKILL.md's native Workflow dispatch
 // ("effort = the member's claudeProfile.workflowEffort") reads a field that
 // EXISTS in capabilities.json instead of referencing a resolver with no live
@@ -128,11 +128,11 @@ test("capabilities: the profile-authoritative claudeModel still honors apex degr
 
 // P2 LANE SCOPE. claudeModel/claudeProfile are Claude DISPATCH fields: they
 // belong on the lanes whose host dispatches Claude models (default + cowork).
-// The --codex and --kimi lanes emit their own codexModel/kimiModel and their
-// drivers never call the Agent tool, so a Claude model sitting beside
+// The --codex lane emits its own codexModel and its
+// driver never calls the Agent tool, so a Claude model sitting beside
 // codexModel is noise a driver could act on. Through 2026-07-29 the only guard
-// was `!work`, so both fields leaked into those two lanes.
-test("capabilities: claudeModel/claudeProfile ride the Claude lanes only -- absent under --codex and --kimi", async () => {
+// was `!work`, so both fields leaked into that lane.
+test("capabilities: claudeModel/claudeProfile ride the Claude lanes only -- absent under --codex", async () => {
   const catalog = await loadCatalog(new URL("../catalog/", import.meta.url));
   const claudeLane = await caps();
   const claudeRole = Object.entries(claudeLane.roles).find(([, r]) => "claudeProfile" in r);
@@ -145,13 +145,6 @@ test("capabilities: claudeModel/claudeProfile ride the Claude lanes only -- abse
     assert.ok(!("claudeProfile" in entry), `--codex ${role}: must not carry claudeProfile`);
   }
   assert.ok(Object.values(codexLane.roles).some((r) => "codexModel" in r), "sanity: the --codex lane still carries codexModel");
-
-  const kimiLane = resolveCapabilities(catalog, installed, undefined, { kimi: true });
-  for (const [role, entry] of Object.entries(kimiLane.roles)) {
-    assert.ok(!("claudeModel" in entry), `--kimi ${role}: must not carry claudeModel`);
-    assert.ok(!("claudeProfile" in entry), `--kimi ${role}: must not carry claudeProfile`);
-  }
-  assert.ok(Object.values(kimiLane.roles).some((r) => "kimiModel" in r), "sanity: the --kimi lane still carries kimiModel");
 });
 
 test("capabilities: the Work runtime stays harness-neutral -- no claudeProfile (mirrors claudeModel)", async () => {

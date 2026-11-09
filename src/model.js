@@ -3,8 +3,7 @@
 // Tiers are muster's OWN conceptual capability ladder — harness-neutral, like the
 // semantic efforts (workhorse|judgment|peak in model-policy.js). Each harness
 // adapter maps a tier to its concrete model: Claude (claude.js) → haiku/sonnet/
-// opus/fable, Codex (codex.js) → gpt-5.6-terra/luna/sol, Kimi (kimi.js) →
-// kimi-for-coding/k3. The ladder:
+// opus/fable, Codex (codex.js) → gpt-5.6-terra/luna/sol. The ladder:
 //   scout — cheap/mechanical recon: locating, gathering, read-only mapping.
 //   core  — the bounded default: implementation, review, authoring, scoring.
 //   prime — frontier judgment that gates other work.

@@ -19,13 +19,6 @@ parallelism, isolation, and enforcement belong to the active harness.
   <span class="harness-card__action">Install for Codex →</span>
 </a>
 
-<a class="harness-card" href="./kimi">
-  <span class="harness-card__eyebrow">Native CLI lane</span>
-  <strong>Kimi</strong>
-  <span>Ten namespaced skills, native subagents, permission rules, and explicit Init limits.</span>
-  <span class="harness-card__action">Install for Kimi →</span>
-</a>
-
 <a class="harness-card" href="./cowork">
   <span class="harness-card__eyebrow">Local MCP lane</span>
   <strong>Cowork</strong>
@@ -43,7 +36,7 @@ parallelism, isolation, and enforcement belong to the active harness.
 </div>
 
 ::: info Cost and service boundary
-Muster's CLI makes no model calls. Claude Code, Codex, Kimi, and Cowork use the account or
+Muster's CLI makes no model calls. Claude Code, Codex, and Cowork use the account or
 subscription of their active native harness and do not require a Muster-hosted runtime. ChatGPT Work
 is the documented exception: its private/local transport uses Secure MCP Tunnel and a separately
 billed OpenAI Platform API key, distinct from a ChatGPT subscription.

@@ -23,7 +23,6 @@ test("init command makes native harness work a HUMAN-HOLD and never treats invoc
 
   assert.match(text, /Claude Code[\s\S]*?CLAUDE\.md[\s\S]*?\/init/);
   assert.match(text, /Codex[\s\S]*?AGENTS\.md[\s\S]*?\/init/);
-  assert.match(text, /Kimi[\s\S]*?unavailable[\s\S]*?HUMAN-HOLD/);
   assert.match(text, /Copilot\/unknown[\s\S]*?never shell `copilot init`/i);
   assert.match(text, /A request, suggestion, command invocation, refusal to\s+overwrite, or mere artifact existence is not completion/);
   assert.match(text, /--to completed --evidence artifact-delta/);

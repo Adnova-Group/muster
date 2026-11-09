@@ -29,8 +29,10 @@
 // one is caught. Previously only the first non-flag token was checked.
 //
 // Exemption targets (string-level, no fs resolution): /dev/*, /tmp/*, .muster/*
-// Targets are path.normalize()'d before testing so `.muster/../app.js` (which
+// Targets are path.posix.normalize()'d before testing so `.muster/../app.js` (which
 // resolves OUTSIDE .muster/) is not incorrectly treated as exempt.
+// POSIX semantics on every host: the Bash tool runs a POSIX shell (Git Bash on
+// Windows), and platform normalize there rewrites `/dev/null` to `\dev\null`.
 
 import path from "node:path";
 
@@ -54,7 +56,7 @@ export function bashWriteTarget(command) {
   // Iterate ALL non-flag tokens (A-SEC4: original only checked the first one,
   // allowing `tee /dev/null evil.js` to pass). Deny on the first non-exempt
   // token found.
-  // A-SEC1: if any token contains $' (ANSI-C quoting), path.normalize cannot
+  // A-SEC1: if any token contains $' (ANSI-C quoting), path.posix.normalize cannot
   // evaluate the escape sequence — treat as ambiguous and deny.
   // A-SEC5: if any token contains $( (subshell), the path is unresolvable
   // at parse time — treat as ambiguous and deny.
@@ -66,7 +68,7 @@ export function bashWriteTarget(command) {
       // A-SEC1 + A-SEC5: ANSI-C quote or subshell in path → ambiguous → deny
       if (t.includes("$'") || t.includes("$(")) return `tee ${t}`;
       // A-SEC4: deny on first non-exempt token (checks ALL targets, not just first)
-      if (!EXEMPT_TARGET_RE.test(path.normalize(t))) return `tee ${t}`;
+      if (!EXEMPT_TARGET_RE.test(path.posix.normalize(t))) return `tee ${t}`;
     }
   }
 
@@ -101,7 +103,7 @@ export function bashWriteTarget(command) {
       // Need at least 2 tokens: one source and one destination.
       if (nonFlagTokens.length >= 2) {
         const dest = nonFlagTokens[nonFlagTokens.length - 1];
-        if (!EXEMPT_TARGET_RE.test(path.normalize(dest))) {
+        if (!EXEMPT_TARGET_RE.test(path.posix.normalize(dest))) {
           return `${cpMvMatch[1]} ${dest}`;
         }
       }
@@ -143,7 +145,7 @@ export function bashWriteTarget(command) {
   while ((m = redirRe.exec(stripped)) !== null) {
     const target = m[1];
     if (target.includes("$")) return `> ${target}`;
-    if (!EXEMPT_TARGET_RE.test(path.normalize(target))) {
+    if (!EXEMPT_TARGET_RE.test(path.posix.normalize(target))) {
       return `> ${target}`;
     }
   }

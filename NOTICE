@@ -12,7 +12,7 @@ Per-item detail (upstream path, ref, relation) is in each item's `upstream:` fie
   Copyright (c) 2025 Jesse Vincent
 - wshobson/agents @ cf6059d030bf4fe96623ae2e596d2f31e35fedc0, 2de74ac1c8f6669821dcef13153332c3168033c1, 511f8345cf42f84676e0ad56ddfdee33c90a666f (MIT)
   Copyright (c) 2024 Seth Hobson
-- open-gsd/gsd-core @ 18995380ce8d85bccd8a3c64973664348b29cab8, 1c352d1ea37b010e99b8353905eb5def4f784100 (MIT)
+- open-gsd/gsd-core @ 18995380ce8d85bccd8a3c64973664348b29cab8, 9385f4618b52ef68ed8a5e8bdd93cfb25bd87765, 1c352d1ea37b010e99b8353905eb5def4f784100 (MIT)
   Copyright (c) 2026 Open GSD
 - blader/humanizer @ 1b48564898e999219882660237fde01bf4843a0f (MIT)
   Copyright (c) 2025 Siqi Chen

@@ -1,0 +1,5 @@
+{
+  "name": "plan-lint-fixture-web",
+  "private": true,
+  "scripts": { "test": "node --test" }
+}

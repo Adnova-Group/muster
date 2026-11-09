@@ -50,7 +50,7 @@ npm run docs:build
 | Path | What lives here |
 | --- | --- |
 | `src/` | The deterministic CLI. Plain Node modules, no LLM calls. Each verb maps to a module dispatched from `src/cli.js`. |
-| `plugin/` | The model-facing surface: `commands/`, `skills/`, `agents/`, `hooks/`, and `output-styles/`. This is what Claude Code loads. The glass-box output style ships here with `force-for-plugin` so it auto-applies when the plugin is enabled. |
+| `plugin/` | The model-facing surface: `commands/`, `skills/`, `agents/`, `hooks/`, and `output-styles/`. This is what Claude Code loads. The glass-box output style ships here, opt-in (not forced): users pick it under `/config`. |
 | `codex/` | Codex source assets, hook templates, fallback skills, and generated-package inputs. |
 | `cowork/` | Cowork MCP server packaging and harness adapter assets. |
 | `scripts/` | Release builds, Codex validation, asset synchronization, and maintenance scripts. |

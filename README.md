@@ -30,7 +30,7 @@ Pin the reviewed release in automation and copy the current version from `packag
 /plugin install muster@muster                # install the plugin
 ```
 
-Muster's glass-box output style ships inside the plugin and applies automatically when the plugin is enabled (`force-for-plugin`), so there is no command to run. Plugin install is a Claude Code action, so the running session picks Muster up only after you (re)install it through `/plugin`. Restart or `/clear`, then run your first outcome:
+Muster's glass-box output style ships inside the plugin but is not forced: pick "Muster" under `/config` → Output style if you want it. Plugin install is a Claude Code action, so the running session picks Muster up only after you (re)install it through `/plugin`. Restart or `/clear`, then run your first outcome:
 
 ```
 /muster:plan Add rate limiting to the public API with tests
@@ -143,14 +143,12 @@ Each role also carries a conceptual tier picked to fit the work. The ladder, fro
 
 This section describes the plugin-native Claude Code hooks. Codex uses the diagnostic hook layer described above. Other harnesses receive only the lifecycle primitives they actively subscribe to; Muster does not infer an active harness subscription from files on disk.
 
-Claude Code receives four plugin-native hooks. Enforcement follows the run's external effects, not the orchestrator's own in-repo edits: the only hard deny on a tool call is the action-class fence, scoped to a live run that declared a forbidden action. The fence classifies every payload before considering delegation or metadata-path exemptions, so a recognized forbidden external effect remains denied when a call carries `agent_id` or points at `.muster/`/`.claude/`. It fails open when run markers are absent or unreadable, classification is ambiguous, or no forbidden class matches. Delegated and metadata-path calls are exempt only from the advisory inline-drift accounting after they clear the fence; dispatch briefs, worktree barriers, and review gates remain required. A second, narrower block lives on `TaskCompleted`, gating the native task board's own completion tick rather than a tool call. Everything else is a warn-only border invitation.
+Muster costs nothing in a Claude Code session that never invokes it: no hook fires on session start or on a prompt, nothing nudges you toward a verb, and the output style is not forced. Two plugin-native hooks remain, and both act only during a muster run. A verb writes `.muster/run-active` when its run starts and removes it when the run ends.
 
-- **`SessionStart`**: injects a one-line pointer (muster available; `/muster:plan` for orchestration-scale work) at the start of every session. On a fresh start it clears per-session drift state, but preserves repository-global `.muster/run-active`/`wave-active` markers whose activity lease is fresh or cannot be verified; only a regular marker idle for more than one hour is recovered as stale. `PreToolUse` renews the lease during active work.
-- **`UserPromptSubmit`**: the only prompt-time nudge is the isDirective-triggered border invitation. A directive-shaped prompt is eligible only after inline-file activity corroborates orchestration scale; a cold "fix typo" does not trigger it. One invitation starts a shared 15-minute cooldown. The signal re-arms after a Muster run starts, `SessionStart`, or 60 minutes of inactivity, but the cooldown still prevents rapid repeats.
-- **`PreToolUse`**: the action-class fence (the one hard deny) plus the tool-call half of the same border invitation. While a muster run is active AND `.muster/forbidden-actions` lists a class, a tool call classified into that class (send/sign/submit/publish/purchase/delete-remote) is denied, honoring `MUSTER_ACTION_GUARD` (`off`/`warn`/deny-by-default). Independently, a cumulative counter of distinct inline-edited files (across turns, with no muster run active) crossing `MUSTER_INLINE_SCALE` (default 3) warns once per crossing with the same value-toned copy -- never denies. Writes into `.muster/` and `.claude/` (in-cwd repo) are exempt from this advisory drift accounting only after action classification.
+- **`PreToolUse`** (matcher `Bash|PowerShell|mcp__.*`): the action-class fence, the only hard deny on a tool call. While a muster run is active AND `.muster/forbidden-actions` lists a class, a shell command or MCP tool call classified into that class (send/sign/submit/publish/purchase/delete-remote) is denied, honoring `MUSTER_ACTION_GUARD` (`off`/`warn`/deny-by-default). The fence classifies every payload before anything else, so a recognized forbidden external effect stays denied when the call carries `agent_id`. It fails open when run markers are absent or unreadable, classification is ambiguous, or no forbidden class matches. Nothing clears a stale marker automatically: if an interrupted run leaves `.muster/run-active` behind, the next run overwrites it, or delete it by hand.
 - **`TaskCompleted`**: the second block surface. The orchestrator writes `.muster/task-board.json` (one entry per native task muster created) and flips an entry to `reviewGate: "pass"` only once the review gate actually passes that task. This hook denies (exit 2) a completion tick on a tracked task that has no recorded PASS, so a task cannot be marked done before it has been reviewed; it fails open for anything the board does not track. `MUSTER_TASK_GATE=off` disables it.
 
-All four hooks live inside the plugin, so they activate when muster is enabled and go away when muster is disabled. They do not write to your `~/.claude/CLAUDE.md` or `settings.json` and create no global files. Each hook is fail-safe: any error falls back to an empty result and never blocks a session from starting.
+Both hooks live inside the plugin, so they activate when muster is enabled and go away when muster is disabled. They do not write to your `~/.claude/CLAUDE.md` or `settings.json` and create no global files. Each hook is fail-safe: any error falls back to an empty result and never blocks a session.
 
 ## Pipelines
 
@@ -182,7 +180,6 @@ Muster's runtime behavior can be tuned with environment variables:
 
 | Variable | Default | Semantics |
 | --- | --- | --- |
-| `MUSTER_INLINE_SCALE` | `3` | The border-invitation threshold: the Nth distinct file edited inline across turns, with no muster run active, crosses the border and warns once per crossing (never denies). |
 | `MUSTER_MAX_TIER` | _(unset)_ | Caps the conceptual model tier policy. For example, `MUSTER_MAX_TIER=prime` excludes apex and `MUSTER_MAX_TIER=core` enables budget mode; unset means no cap. Static agent frontmatter pins are not affected on direct invocation; in Muster runs the dispatch override honors the cap. |
 | `MUSTER_ENABLE_APEX` | _(unset)_ | Enables apex for peak-judgment roles such as the tournament judge, architecture review, improve, and advisor. Unset (or `0`/`false`) degrades apex to prime deterministically; `1`/`true` enables it when the harness can serve it. |
 | `MUSTER_ACTION_GUARD` | `deny` | Action-class fence on `PreToolUse` while `.muster/forbidden-actions` is present: `deny` blocks a matching send/sign/submit/publish/purchase/delete-remote tool call, `warn` allows with a reminder, `off` disables the fence. This is the only hard-deny surface left in muster's enforcement stack. |
@@ -191,7 +188,7 @@ Muster's runtime behavior can be tuned with environment variables:
 | `MUSTER_FUSE_MIN_DISAGREEMENT` | `1` | Minimum disagreement score required to activate fusion synthesis. Below this threshold `muster fuse` falls back to the single best candidate. Set to 0 to always fuse when >= 2 candidates pass. |
 | `MUSTER_SPRINT_PARALLEL` | `5` | Max concurrent item-runner subagents per wave in `/muster:go-backlog` wave mode; hard ceiling `10` (higher values clamp, `0` is invalid; concurrency is never unbounded). Read by go-backlog's orchestration protocol, not by library code. |
 
-This table covers the most common controls. See the [full configuration reference](https://adnova-group.github.io/muster/reference/configuration) for hook cooldown, model, concurrency, and advanced runtime settings.
+This table covers the most common controls. See the [full configuration reference](https://adnova-group.github.io/muster/reference/configuration) for model, concurrency, and advanced runtime settings.
 
 <!-- legacy-tier-compat:start -->
 Compatibility only: legacy input aliases `haiku`, `sonnet`, `opus`, and `fable` normalize to `scout`, `core`, `prime`, and `apex`; they are not a second conceptual ladder. `MUSTER_ENABLE_FABLE` remains an alias for `MUSTER_ENABLE_APEX`.

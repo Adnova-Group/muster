@@ -716,9 +716,17 @@ test("privileged IPC broker binds callback capabilities, assignments, and fresh 
   const runnerToken = "11".repeat(32);
   const humanToken = "22".repeat(32);
   const integrationToken = "33".repeat(32);
-  const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: repoRoot, encoding: "utf8" }).trim();
-  const branch = execFileSync("git", ["symbolic-ref", "--short", "HEAD"], { cwd: repoRoot, encoding: "utf8" }).trim();
-  const common = resolve(repoRoot, execFileSync("git", ["rev-parse", "--git-common-dir"], { cwd: repoRoot, encoding: "utf8" }).trim());
+  // The broker requires the assigned worktree to be on a named branch (detached HEAD fails
+  // closed), so build an owned fixture repo instead of borrowing this checkout: CI's
+  // pull_request checkout is a detached merge commit.
+  const worktree = join(dir, "worktree");
+  const branch = "work/a";
+  const git = (...args) => execFileSync("git", args, { cwd: worktree, encoding: "utf8" }).trim();
+  execFileSync("git", ["init", "-q", "-b", branch, worktree]);
+  git("-c", "user.name=muster-test", "-c", "user.email=muster-test@example.invalid",
+    "commit", "-q", "--allow-empty", "-m", "fixture");
+  const head = git("rev-parse", "HEAD");
+  const common = resolve(worktree, git("rev-parse", "--git-common-dir"));
   const baseHeadSha = "b".repeat(40);
   const approvalTuple = {
     itemId: "a", workBranch: branch, workHeadSha: head,
@@ -733,7 +741,7 @@ test("privileged IPC broker binds callback capabilities, assignments, and fresh 
     },
     items: {
       a: {
-        worktreePath: repoRoot, branch, gitCommonDir: common,
+        worktreePath: worktree, branch, gitCommonDir: common,
         actors: { implementation: "runner-a", review: "reviewer-a", integration: "integrator", approval: "human-a" },
         integrationTarget: { baseBranch: "main", baseHeadSha, operation: "merge-local" },
       },

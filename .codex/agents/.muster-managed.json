@@ -2,7 +2,7 @@
   "format": 1,
   "owner": "muster",
   "files": [
-    "muster-builder.toml",
+    "muster-executor.toml",
     "muster-improver.toml",
     "muster-investigator.toml",
     "muster-reviewer.toml",

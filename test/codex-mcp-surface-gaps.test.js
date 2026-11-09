@@ -143,7 +143,7 @@ test("built Codex plugin's MCP server: muster_capabilities_roles resolves agains
   assert.ok(res, "tools/call returned no result");
   assert.equal(res.isError, false, `muster_capabilities_roles errored: ${JSON.stringify(res?.content)}`);
   const body = JSON.parse(res.content[0].text);
-  assert.equal(body.roles?.implement?.chosen?.id, "muster-builder", `implement must resolve to the named Codex profile, got ${JSON.stringify(body.roles?.implement?.chosen)}`);
+  assert.equal(body.roles?.implement?.chosen?.id, "muster-executor", `implement must resolve to the named Codex profile, got ${JSON.stringify(body.roles?.implement?.chosen)}`);
   assert.notEqual(body.roles?.implement?.chosen?.source, "inline", "must not fall back to inline (the --cowork/--codex swap missing on this tool)");
   assert.equal(body.skills, undefined, "roles-only capture omits skills");
 });

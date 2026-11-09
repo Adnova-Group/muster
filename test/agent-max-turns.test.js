@@ -5,9 +5,26 @@ import { parse } from "yaml";
 
 // Claude Code's subagent frontmatter supports a hard `maxTurns` cap
 // (docs/research/claude-code-cli.md:142, subagents-config source at :262). This
-// test pins the class -> cap sizing table (mirrored, with rationale, as a comment
-// block in plugin/agents/muster-builder.md) so every plugin/agents/*.md def carries
+// test pins the class -> cap sizing table so every plugin/agents/*.md def carries
 // a native cap coherent with its role class instead of relying on prose alone.
+//
+// Sizing rationale (single source of truth for every plugin/agents/*.md maxTurns
+// value; it lived in plugin/agents/muster-executor.md until that agent was merged
+// into muster-executor in stage 2 and moved here to keep the executor's prompt
+// budget for protocol text). The harness enforces maxTurns natively as a runaway
+// backstop, while the lifecycle's progress-aware recovery contract prevents an
+// ordinary step/follow-up count from declaring progressing work terminal. Tiers
+// stay coherent with Codex's per-class heartbeat-extension ceilings (PR #83):
+// - 15 mechanical/surgical: bounded by construction (1-2 file edits, read-only
+//   locating, doc recipes over given sources).
+// - 25 implementation: the default lane and the existing prose ceiling.
+// - 35 review/strategy: gates other work (verdicts, plans, verification,
+//   architecture, retrospectives) and needs headroom for a deep re-read plus
+//   re-verification.
+// - 40 security: the one rare, high-consequence xhigh lane.
+// - 200 orchestrator: not a leaf (see muster-runner below).
+// Codex has no maxTurns primitive; its prose ceiling + heartbeat watch are
+// unchanged by this cap.
 
 const AGENTS_DIR = new URL("../plugin/agents/", import.meta.url);
 
@@ -24,7 +41,7 @@ const CLASS_MAP = {
   // (one-follow-up-max quota discipline), now enforced natively instead of by prose
   // alone. Every wsh "engineer"/builder role not named in another tier lands here.
   25: [
-    "muster-builder",
+    "muster-executor",
     "wsh-business-analyst",
     "wsh-content-marketer",
     "wsh-customer-support",
@@ -44,6 +61,9 @@ const CLASS_MAP = {
   // own 10-heartbeat review/strategy-class extension ceiling (PR #83).
   35: [
     "muster-reviewer",
+    "muster-planner",
+    "muster-plan-checker",
+    "muster-verifier",
     "muster-strategist",
     "muster-improver",
     "wsh-code-reviewer",

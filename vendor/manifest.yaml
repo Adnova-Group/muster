@@ -334,37 +334,59 @@ sources:
   - id: gsd
     kind: github
     repo: open-gsd/gsd-core
-    # pinned SHA — resolve a new one deliberately when updating, and review the regenerated diff before committing
-    # Re-pinned 2026-07-06. Rolled mechanisms (hand-adapted into the muster builtins below,
-    # not a mechanical vendor diff — each upstream file's actual workflow differs from
-    # muster's, so the mechanism was ported into muster's existing voice/structure):
-    #   - honest-verifier abstain (insufficient_spec, never guess pass/fail) -> gsd-verify-work
-    #     (upstream gsd-core@1899538, #1154)
-    #   - plan:pre codebase-drift pre-check (warn-only, before planner spawns) -> gsd-plan-phase
-    #     (upstream gsd-core@d1f7ba8, #1592)
-    #   - must-NOT probe ("Must NOT Change" section -> must_haves.prohibitions) -> gsd-plan-phase
-    #     (upstream gsd-core@395fb51, #644)
-    #   - context_guard_mode (self-monitored context-budget checkpoint/handoff at wave
-    #     boundaries) -> gsd-execute-phase (upstream gsd-core@4eca5ac, #1452)
-    ref: 18995380ce8d85bccd8a3c64973664348b29cab8
+    # Merge-tracked (every item has a `mode`), so plain `muster vendor` never regenerates it.
+    # `muster vendor update gsd --to <tag> [--dry-run]` 3-way merges the adapted agents against
+    # the byte-exact base copies in vendor/upstream/gsd/, regenerates verbatim regions, and moves
+    # this pin, the base copies and every baseBlob only when nothing conflicts.
+    # `muster vendor report gsd --to <tag>` writes vendor/reports/gsd-<tag>.md (per-item upstream
+    # diff stats plus commits citing each item's issues); .github/workflows/upstream-watch.yml
+    # runs it weekly. Items: adapted = edited copy (merge); verbatim = text carried in marked
+    # `<!-- verbatim: gsd <path>:<a>-<b> -->` regions of `to` (regenerate); watch = read for
+    # mechanism changes, never merged. Watch references keep a base copy so the doctor can check
+    # it; the four workflow spines and the ported .cts gates (file items below) do not.
+    # Re-pinned 2026-11-09 to v1.20.1 for the stage-2 agents (docs/strategy/2026-11-gsd-gap-analysis.md).
+    # The three hand-ported gsd-* builtins left the manifest at this re-pin; their files go with
+    # the command rewrite.
+    ref: 9385f4618b52ef68ed8a5e8bdd93cfb25bd87765
+    tag: v1.20.1
     license: MIT
     copyright: "Copyright (c) 2026 Open GSD"
     relation: adapted
     items:
-      - from: gsd-core/workflows/plan-phase.md
-        id: gsd-plan-phase
-        roles: [plan]
-      - from: gsd-core/workflows/execute-phase.md
-        id: gsd-execute-phase
-        roles: [implement]
-      - from: gsd-core/workflows/verify-work.md
-        id: gsd-verify-work
-        roles: [plan]
-        description: "Built-in for verify — UAT + gap-closure verification of completed work"
+      # adapted: the stage-2 agent seats (heavy adaptation; the reviewer is medium)
+      - { id: muster-planner, kind: agent, from: agents/gsd-planner.md, to: plugin/agents/muster-planner.md, mode: adapted, baseBlob: b1a841e20eaec7cb7dab57ad72979f02b6e99efa, issues: [429, 1478, 1479, 2401, 3172, 4767, 4927] }
+      - { id: muster-plan-checker, kind: agent, from: agents/gsd-plan-checker.md, to: plugin/agents/muster-plan-checker.md, mode: adapted, baseBlob: 44b7536fd9c99be8d27cadf0e7945a675ccbcf7f, issues: [1478, 1479, 3172, 3724, 4927] }
+      - { id: muster-executor, kind: agent, from: agents/gsd-executor.md, to: plugin/agents/muster-executor.md, mode: adapted, baseBlob: 0edccaf308cd7ce8aeb831a3bcc08c904da6ed60, issues: [2075, 2924, 3097, 3099, 3542, 3819] }
+      - { id: muster-verifier, kind: agent, from: agents/gsd-verifier.md, to: plugin/agents/muster-verifier.md, mode: adapted, baseBlob: 860c6f833806441adb51c70dd1df2ba3c69a9dc1, issues: [1955, 3304] }
+      - { id: muster-reviewer, kind: agent, from: agents/gsd-code-reviewer.md, to: plugin/agents/muster-reviewer.md, mode: adapted, baseBlob: e79259d281d738b495963c1ae0ada8d58449266e, issues: [] }
+      # verbatim: reference protocols carried byte-for-byte inside the agents (one item per consumer)
+      - { id: muster-planner, kind: agent, from: gsd-core/references/prohibition-probe.md, to: plugin/agents/muster-planner.md, mode: verbatim, relation: vendored, baseBlob: d8c1fe398b437c0738f5b949cc54faa8b3dff270, issues: [644, 1278, 1279] }
+      - { id: muster-planner, kind: agent, from: gsd-core/references/planner-revision.md, to: plugin/agents/muster-planner.md, mode: verbatim, relation: vendored, baseBlob: 59c6ad83323a3bc969b4b5ebc9a05bfc1cc48b1a, issues: [] }
+      - { id: muster-planner, kind: agent, from: gsd-core/references/revision-loop.md, to: plugin/agents/muster-planner.md, mode: verbatim, relation: vendored, baseBlob: b90616e11d85997383e106a7698d8b03166c23f9, issues: [] }
+      - { id: muster-plan-checker, kind: agent, from: gsd-core/references/failing-direction.md, to: plugin/agents/muster-plan-checker.md, mode: verbatim, relation: vendored, baseBlob: b65b7c37606e4fe5406cfb2c4f8f952e96e1221b, issues: [2401, 3172] }
+      - { id: muster-executor, kind: agent, from: gsd-core/references/worktree-branch-check.md, to: plugin/agents/muster-executor.md, mode: verbatim, relation: vendored, baseBlob: 390513b53bfb478f85aa71a97c93fb93a5279795, issues: [48, 1265, 2015, 2924, 3174] }
+      - { id: muster-verifier, kind: agent, from: gsd-core/references/honest-verifier.md, to: plugin/agents/muster-verifier.md, mode: verbatim, relation: vendored, baseBlob: 85c932f56e2d89e3b48f254669f3ab92e4a3d0d7, issues: [966, 1110] }
+      - { id: muster-verifier, kind: agent, from: gsd-core/references/verifier-evidence-gate.md, to: plugin/agents/muster-verifier.md, mode: verbatim, relation: vendored, baseBlob: 9478e59cb37675f986c62babb5b8a466e1815c51, issues: [3304] }
+      # watch: references paraphrased by the agents or by the stage-2 CLI/workflows (base copy kept)
+      - { from: gsd-core/references/planner-reversibility.md, mode: watch, baseBlob: 8acb45a73352dcbe8e3bc8b9b5d41333bc2c796d }    # muster-planner
+      - { from: gsd-core/references/planner-preconditions.md, mode: watch, baseBlob: 531520109b8d13ef62177f81fca13b1d8290efe3 }    # muster-planner
+      - { from: gsd-core/references/planner-verify-command-grounding.md, mode: watch, baseBlob: dab92507b2670b5425916e0acd0239b84283f32a, issues: [2401, 4927] }    # muster-planner
+      - { from: gsd-core/references/planner-mvp-mode.md, mode: watch, baseBlob: 4c697c0260efae636aa5a5900c3d3b51ba4bc657 }    # muster-planner (tracer-first)
+      - { from: gsd-core/references/planner-antipatterns.md, mode: watch, baseBlob: 5b9cb1dbe6aa9b6c00c54c29ad09ce43e9dd0782, issues: [429] }    # muster-planner
+      - { from: gsd-core/references/verify-command-path-resolvability.md, mode: watch, baseBlob: 9d38ed2311394b65cbc929252917dea7334e81a4, issues: [2401] }    # muster plan-lint
+      - { from: gsd-core/references/verifier-wiring-patterns.md, mode: watch, baseBlob: 43d2519067408c0c350478ca014ee1d06dbfe5a9 }    # muster-verifier
+      - { from: gsd-core/references/model-profiles.md, mode: watch, baseBlob: 71675de315efcd522d078a75a4d208a89c02c4a1, issues: [3023] }    # preflight tier map
+      - { from: gsd-core/references/model-profile-resolution.md, mode: watch, baseBlob: 13afbb3ef4c16f8c8add5cede34f344bb493ea80, issues: [2517] }    # omit-on-inherit
+      - { from: gsd-core/references/context-budget.md, mode: watch, baseBlob: 194134d55af5cf723a808c719022d15fe71db39f }    # orchestrator rules
+      - { from: gsd-core/templates/summary.md, mode: watch, baseBlob: 948a4f4059528b42161df16a6ea23b50b25f4781 }    # SUMMARY-<taskId>.md shape
+      - { from: gsd-core/templates/verification-report.md, mode: watch, baseBlob: 3271b9de8840b0e5a4c8ed58ecb66a1dd3b17e29 }    # VERIFICATION.md shape
+      - { from: gsd-core/templates/continue-here.md, mode: watch, baseBlob: 1c3711d57bfa0884adbda52408dda12186b1557d }    # pause handoff
+      - { from: gsd-core/templates/UAT.md, mode: watch, baseBlob: da367297d8d7b4e722e11fcb80c1941326c9b940 }    # human_needed format
       # ----- stage-2 plan-lint track: gsd's deterministic plan gates ported to src/plan-lint.js -----
-      # File items ({from, to, mode, baseBlob}, docs/strategy/stage-2-contracts.md "Sync model"):
-      # never vendored or stamped. Pinned at v1.20.1; baseBlob is the upstream git blob at that ref
-      # (the 3-way merge base). `watch` = prose rules re-encoded as checks, report-only on update.
+      # File items ({from, to, mode, baseBlob}): an upstream file mapped onto a muster source file,
+      # never vendored or stamped. The TypeScript gates are ports into one JS file, so
+      # `muster vendor update` reports their upstream changes as ports to redo instead of merging.
+      # `watch` = prose rules re-encoded as checks, report-only on update.
       - { from: src/verify-command-grounding.cts, to: src/plan-lint.js, mode: adapted, ref: 9385f4618b52ef68ed8a5e8bdd93cfb25bd87765, baseBlob: 5c96d801c0ccdb6710b4c821ca50889d5b43f2f1 }
       - { from: src/gate-verify-failure-directions.cts, to: src/plan-lint.js, mode: adapted, ref: 9385f4618b52ef68ed8a5e8bdd93cfb25bd87765, baseBlob: 217a59a3f9eb046f62b2a29545c9f041b57d632e }
       - { from: src/gate-verify-command-paths.cts, to: src/plan-lint.js, mode: adapted, ref: 9385f4618b52ef68ed8a5e8bdd93cfb25bd87765, baseBlob: a471181dc94f8e52c68d2afa92fc3b54ce5d1392 }
@@ -376,6 +398,11 @@ sources:
       - { from: agents/gsd-planner.md, to: src/plan-lint.js, mode: watch, ref: 9385f4618b52ef68ed8a5e8bdd93cfb25bd87765, baseBlob: b1a841e20eaec7cb7dab57ad72979f02b6e99efa }
       - { from: agents/gsd-plan-checker.md, to: src/plan-lint.js, mode: watch, ref: 9385f4618b52ef68ed8a5e8bdd93cfb25bd87765, baseBlob: 44b7536fd9c99be8d27cadf0e7945a675ccbcf7f }
       # ----- end stage-2 plan-lint track -----
+      # watch: the workflow spines muster replaced with native Workflow scripts (report only)
+      - { from: gsd-core/workflows/execute-phase.md, mode: watch, baseBlob: 72722e6eb4853f76c7e76feb3eda2f4b92b6a337, issues: [48, 2924, 3542] }
+      - { from: gsd-core/workflows/plan-phase.md, mode: watch, baseBlob: 115ed207b92c11178c5d8d0bf7804581e371434e, issues: [2401, 3172, 3724] }
+      - { from: gsd-core/workflows/verify-work.md, mode: watch, baseBlob: 62d0b7c00b9567fad79162a35ec4fd148a1aca8d, issues: [3724] }
+      - { from: gsd-core/workflows/code-review.md, mode: watch, baseBlob: 1090eafe9ab3814086c6a91b1eb23abfed0f1b13 }
 
   # ===== Attribution-only sources (fetch: false) =====================================
   # Never fetched or regenerated by `muster vendor`; recorded so every item based on an
@@ -538,7 +565,6 @@ sources:
     fetch: false
     items:
       - { id: muster-surgeon, kind: agent, from: null }
-      - { id: muster-builder, kind: agent, from: null }
       - { id: muster-reviewer, kind: agent, from: null }
       - { id: muster-investigator, kind: agent, from: null }
       - { id: muster-strategist, kind: agent, from: null }

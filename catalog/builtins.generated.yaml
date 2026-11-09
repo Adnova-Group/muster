@@ -381,8 +381,7 @@
   rank: 50
   provenance:
     license: MIT
-    upstream:
-      - open-gsd/gsd-core
+    upstream: []
 - id: gsd-execute-phase
   kind: builtin
   roles:
@@ -390,8 +389,7 @@
   rank: 50
   provenance:
     license: MIT
-    upstream:
-      - open-gsd/gsd-core
+    upstream: []
 - id: gsd-verify-work
   kind: builtin
   roles:
@@ -399,6 +397,5 @@
   rank: 50
   provenance:
     license: MIT
-    upstream:
-      - open-gsd/gsd-core
+    upstream: []
   description: Built-in for verify — UAT + gap-closure verification of completed work

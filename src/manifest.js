@@ -154,7 +154,7 @@ export function validateManifest(m) {
 
 // Non-fatal advisories: a manifest can be structurally VALID yet signal a likely mistake.
 // An all-inline crew almost always means capability resolution was skipped — builtins (e.g.
-// `implement -> muster-builder`) resolve for nearly every role, so a hand-authored inline-only
+// `implement -> muster-executor`) resolve for nearly every role, so a hand-authored inline-only
 // crew silently bypasses routing and runs everything in-context. muster fails loud, so surface it.
 //
 // `skillsInventory` is OPTIONAL (resolveCapabilities().skills, i.e. `{id, source,
@@ -169,7 +169,7 @@ export function manifestWarnings(m, skillsInventory, opts = {}) {
   if (crew.length > 0 && crew.every((c) => c && c.source === "inline")) {
     warnings.push(
       "crew: every member is source:inline — capability resolution was likely skipped. " +
-        "Build the crew from `npx -y @adnova-group/muster capabilities` (builtins resolve roles like `implement -> muster-builder`); " +
+        "Build the crew from `npx -y @adnova-group/muster capabilities` (builtins resolve roles like `implement -> muster-executor`); " +
         "a hand-authored all-inline crew bypasses routing."
     );
   }

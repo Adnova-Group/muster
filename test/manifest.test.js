@@ -51,7 +51,7 @@ test("returns one structured error for non-array deps without traversing it", ()
 // If the resolved model isn't bound to the member, dispatch silently inherits the
 // orchestrator's model (Opus). The manifest must carry it, or validation fails loud.
 test("rejects a non-inline crew member with no model", () => {
-  const noModel = { stage: "implement", provider: "muster-builder", source: "builtin",
+  const noModel = { stage: "implement", provider: "muster-executor", source: "builtin",
                     rationale: "r", evidence: "e", fallback: "inline" };
   const r = validateManifest({ ...valid, crew: [noModel] });
   assert.equal(r.ok, false);

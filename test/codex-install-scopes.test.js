@@ -121,7 +121,7 @@ test("Codex uninstall preserves receipts when plugin removal fails and succeeds 
   };
   await runCodexInstall({ cwd, home, repoRoot, execFile });
   const registryPath = join(home, ".codex", "muster", "install-scopes.json");
-  const profilePath = join(cwd, ".codex", "agents", "muster-builder.toml");
+  const profilePath = join(cwd, ".codex", "agents", "muster-executor.toml");
   const hookPath = join(cwd, ".codex", "muster", "hooks", "muster-hook.mjs");
   const before = await Promise.all([registryPath, profilePath, hookPath].map(path => readFile(path, "utf8")));
 

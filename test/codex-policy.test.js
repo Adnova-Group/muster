@@ -65,7 +65,7 @@ test("Codex role profiles use the evidence-backed lanes and preserve sandbox pol
     "wsh-content-marketer": { tier: "core", model: "gpt-5.6-luna", effort: "xhigh", readOnly: false },
     "wsh-customer-support": { tier: "core", model: "gpt-5.6-luna", effort: "xhigh", readOnly: false },
     "wsh-data-scientist": { tier: "core", model: "gpt-5.6-luna", effort: "xhigh", readOnly: false },
-    "muster-builder": { tier: "prime", model: "gpt-5.6-sol", effort: "medium", readOnly: false },
+    "muster-executor": { tier: "prime", model: "gpt-5.6-sol", effort: "medium", readOnly: false },
     "muster-runner": { tier: "prime", model: "gpt-5.6-sol", effort: "medium", readOnly: false },
     "wsh-debugger": { tier: "prime", model: "gpt-5.6-sol", effort: "medium", readOnly: false },
     "wsh-devops-troubleshooter": { tier: "prime", model: "gpt-5.6-sol", effort: "medium", readOnly: false },

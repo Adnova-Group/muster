@@ -29,11 +29,11 @@ test("resolveCodexMultiAgentVersion: an unrecognized version fails loud, never g
 });
 
 test("codexSpawnAgentCall: v2 emits the collaboration packet", () => {
-  const call = codexSpawnAgentCall({ taskId: "wave1-build", message: "do it", agentType: "muster-builder", version: "v2" });
+  const call = codexSpawnAgentCall({ taskId: "wave1-build", message: "do it", agentType: "muster-executor", version: "v2" });
   assert.equal(call.tool, "collaboration.spawn_agent");
   assert.equal(call.task_name, "wave1-build");
   assert.equal(call.fork_turns, "none");
-  assert.equal(call.agent_type, "muster-builder");
+  assert.equal(call.agent_type, "muster-executor");
   assert.equal(call.fork_context, undefined); // v2 rejects fork_context outright
 });
 
@@ -63,7 +63,7 @@ test("codexSpawnAgentCall: fork_turns 'all' with a named agent_type is refused b
   // Codex: "Full-history forked agents inherit the parent agent type" — catching
   // it here beats learning it from a rejected spawn mid-wave.
   assert.throws(
-    () => codexSpawnAgentCall({ taskId: "t", agentType: "muster-builder", version: "v2", forkTurns: "all" }),
+    () => codexSpawnAgentCall({ taskId: "t", agentType: "muster-executor", version: "v2", forkTurns: "all" }),
     /full-history fork, which Codex refuses to combine with a named agent_type/
   );
 });
@@ -73,7 +73,7 @@ test("codexSpawnAgentCall: an explicit forkTurns at a v1 model fails loud, never
   // explicit forkTurns would print a packet the caller believes forks N turns
   // but forks none.
   assert.throws(
-    () => codexSpawnAgentCall({ taskId: "t", agentType: "muster-builder", version: "v1", forkTurns: "3" }),
+    () => codexSpawnAgentCall({ taskId: "t", agentType: "muster-executor", version: "v1", forkTurns: "3" }),
     /fork_turns is v2-only/
   );
 });

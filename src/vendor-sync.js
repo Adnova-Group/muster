@@ -79,6 +79,8 @@ export function validateSyncItem(item, at, itemPath, sourceRef) {
 // An adapted item is merged with git merge-file only when its muster file is an edited
 // copy of exactly that upstream file. A port (another language, or several upstream files
 // folded into one muster file) cannot be 3-way merged: it is reported as a port to redo.
+export const needsBaseCopy = (item, items) => item.mode === "verbatim" || isMergeable(item, items);
+
 export function isMergeable(item, items) {
   if (item.mode !== "adapted") return false;
   const ext = p => (p.match(/\.[^./]+$/) || [""])[0];
@@ -377,9 +379,9 @@ export async function runVendorUpdate({ root, manifest, manifestText, sourceId, 
     const conflicts = [];
     for (const item of items) {
       if (bases.has(item.from)) continue;
-      // Adapted and verbatim items must have a base copy; a watch item may have one.
+      // Merged and verbatim items must have a base copy; a watch item or a port may have one.
       const prev = await readText(join(root, baseCopyPath(source.id, item.from)));
-      if (item.mode !== "watch" && prev === null) throw new Error(`missing base copy ${baseCopyPath(source.id, item.from)} (run the offline vendor check)`);
+      if (needsBaseCopy(item, items) && prev === null) throw new Error(`missing base copy ${baseCopyPath(source.id, item.from)} (run the offline vendor check)`);
       if (prev !== null && gitBlobSha(prev) !== item.baseBlob) throw new Error(`base copy ${baseCopyPath(source.id, item.from)} does not match baseBlob ${item.baseBlob}`);
       const next = await upstream.readFile(toSha, item.from);
       bases.set(item.from, { prev, next, tag: toTag });
@@ -392,7 +394,7 @@ export async function runVendorUpdate({ root, manifest, manifestText, sourceId, 
       if (!byFile.has(item.to)) byFile.set(item.to, []);
       byFile.get(item.to).push(item);
     }
-    const regionBases = new Map([...bases].filter(([from, b]) => b.prev !== null && items.some(i => i.from === from && i.mode !== "watch")));
+    const regionBases = new Map([...bases].filter(([from, b]) => b.prev !== null && items.some(i => i.from === from && i.mode !== "watch" && i.id !== undefined)));
     for (const [to, fileItems] of byFile) {
       const current = await readText(join(root, to));
       if (current === null) { conflicts.push({ file: to, kind: "missing", detail: `${to} does not exist` }); continue; }
@@ -483,7 +485,7 @@ export async function checkVendorSync({ root, manifest }) {
     for (const item of items) {
       checked++;
       const base = await readText(join(root, baseCopyPath(source.id, item.from)));
-      if (base === null && item.mode === "watch") continue;
+      if (base === null && !needsBaseCopy(item, items)) continue;
       if (base === null) problems.push(`${source.id}: missing base copy ${baseCopyPath(source.id, item.from)}`);
       else if (gitBlobSha(base) !== item.baseBlob) problems.push(`${source.id}: base copy ${item.from} is ${gitBlobSha(base)}, manifest records ${item.baseBlob}`);
       if (item.to && (await readText(join(root, item.to))) === null) problems.push(`${source.id}: ${item.mode} file ${item.to} is missing`);

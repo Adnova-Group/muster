@@ -140,10 +140,10 @@ function isEphemeralNpx(root) {
 const GITHUB_SLUG = "Adnova-Group/muster";
 
 // Print the steps to register muster with Claude Code. Muster does not mutate
-// the user's ~/.claude files: the output style ships inside the plugin with
-// `force-for-plugin`, so it applies automatically once the plugin is enabled.
-// (The old `/output-style <name>` command was removed in Claude Code v2.1.91;
-// auto-apply replaces it.) Registering a plugin is a Claude Code action the
+// the user's ~/.claude files: the output style ships inside the plugin and is
+// NOT forced -- it is one more style the user can pick in /config, so a session
+// that never invokes muster keeps its own voice. (The old `/output-style <name>`
+// command was removed in Claude Code v2.1.91.) Registering a plugin is a Claude Code action the
 // running session only picks up on reinstall, so muster surfaces the steps
 // rather than touching CC's plugin state.
 export async function runInstall({ home = homedir(), repoRoot } = {}) {
@@ -170,11 +170,12 @@ export async function runInstall({ home = homedir(), repoRoot } = {}) {
       nextSteps.push(`install the plugin: /plugin install muster@muster`);
     }
   }
-  // No "enable the output style" step: the plugin force-applies it on enable.
-  // A restart or /clear lets the new session pick up the plugin and its style.
+  // The style is opt-in (no force-for-plugin): name where to pick it.
+  // A restart or /clear lets the new session pick up the plugin.
+  nextSteps.push(`optional: pick the "Muster" output style in /config`);
 
   return {
-    outputStyle: { source: "plugin", autoApplied: true, name: "Muster" },
+    outputStyle: { source: "plugin", autoApplied: false, name: "Muster" },
     nextSteps,
   };
 }
@@ -185,8 +186,7 @@ export async function runInstall({ home = homedir(), repoRoot } = {}) {
 // ~/.claude/output-styles/muster.md (with a .bak if they displaced a file of
 // yours). If one is found, restore the displaced original or remove the copy,
 // so an upgrade-then-uninstall leaves nothing behind. The plugin's own style and
-// SessionStart hook are plugin-native: disabling the plugin removes both, and
-// the force-applied style auto-reverts to your previous output style.
+// hooks are plugin-native: disabling the plugin removes both.
 export async function runUninstall({ home = homedir() } = {}) {
   const dest = join(home, ".claude", "output-styles", "muster.md");
   const bak = `${dest}.bak`;

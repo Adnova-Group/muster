@@ -32,6 +32,9 @@ Muster works in Claude Code today, but it is carrying three months of drift:
 - **Native first, aggressively**: remove any custom muster mechanism that Claude Code or Desktop now does natively.
 - **The orchestrator skill must fit**: the always-hold rules go within the 5,000-token post-compaction budget, with the rest moved into on-demand references.
 - **Round-trips are the cost metric**: cut the turns a muster run spends before and between real work.
+- **Lifecycle (revised 2026-11-09): native core, plus the parts of gsd-core muster is missing.** The core runs on native Claude Code primitives. gsd-core's stronger mechanisms are adopted into it, including routing, review, verification and state/continuity where gsd's are more robust than muster's. This is not a fork and not a required peer. A gap analysis decides what gets taken. It supersedes "gsd-core is used in its entirety" above.
+- **Harness lanes: drop Kimi and Orca completely; freeze Codex** (keep it building and passing, no new work). ChatGPT Work and Hermes are undecided.
+- **Fence exception (from a live probe, Claude Code 2.1.319):** skill-frontmatter hooks miss subagent and worktree tool calls, vanish on `--resume`, and don't load from plugin `commands/` at all. So the action fence stays as the single `hooks.json` registration, and it is a no-op unless a run is active.
 
 ## Breakages on current Claude Code
 

@@ -2,6 +2,7 @@
 name: init
 description: "Prepare a repository for Muster, then coordinate the active harness's native instruction initialization through a receipted handoff. Native completion requires positive artifact or call-result evidence; an unavailable handoff remains a HUMAN-HOLD until explicitly acknowledged. Usage: /muster:init [dir]"
 argument-hint: "[dir]"
+upstream: []
 ---
 
 <!-- prompt-lint-disable ANTH-POS-001: initialization is a trust-boundary prompt; its preservation, non-execution, and positive-evidence prohibitions are safety guarantees -->

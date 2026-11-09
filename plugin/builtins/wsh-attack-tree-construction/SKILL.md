@@ -2,8 +2,13 @@
 name: attack-tree-construction
 description: Build comprehensive attack trees to visualize threat paths. Use when mapping attack scenarios, identifying defense gaps, or communicating security risks to stakeholders.
 muster_builtin: true
-adapted_from: wshobson/agents plugins/security-scanning/skills/attack-tree-construction/SKILL.md
 license: MIT
+upstream:
+  - repo: wshobson/agents
+    ref: cf6059d030bf4fe96623ae2e596d2f31e35fedc0
+    path: plugins/security-scanning/skills/attack-tree-construction/SKILL.md
+    license: MIT
+    relation: adapted
 ---
 
 # Attack Tree Construction

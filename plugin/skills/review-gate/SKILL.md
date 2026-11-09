@@ -1,6 +1,7 @@
 ---
 name: review-gate
 description: Adversarial review gate for a completed wave — dispatch all available reviewers in parallel, tally verdicts, and loop fixes until clean or escalate.
+upstream: []
 ---
 
 <!-- muster-brief-template:start -->

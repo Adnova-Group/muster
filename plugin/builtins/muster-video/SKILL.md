@@ -2,8 +2,8 @@
 name: muster-video
 description: Built-in video-content authoring provider — tightens scripts (radio-edit pass), drafts timestamped b-roll shot lists, and outlines edit decisions. Text artifacts only. Used by content/doc pipelines for the video role.
 muster_builtin: true
-inspired_by: Muster (radio-edit script tightening + shot-list/edit-plan authoring; muster never renders)
 license: Apache-2.0
+upstream: []
 ---
 
 # Video (built-in)

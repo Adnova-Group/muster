@@ -2,8 +2,8 @@
 name: muster-image
 description: Built-in image-prompt authoring provider — reads the brand profile and drafts self-contained, brand-constrained image-generation prompts. Used by content/doc pipelines for the image role.
 muster_builtin: true
-inspired_by: Muster (brand-constrained image-prompt authoring; muster never renders)
 license: Apache-2.0
+upstream: []
 ---
 
 # Image (built-in)

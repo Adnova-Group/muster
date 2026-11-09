@@ -4,6 +4,12 @@ description: Read-only retrospective — mines a completed run's STATE, escalati
 tools: Read, Bash, Grep, Glob
 model: opus
 maxTurns: 35
+upstream:
+  - repo: damusix/atomic-claude
+    ref: null
+    path: null
+    license: MIT
+    relation: inspired-by
 ---
 <!-- Role concept inspired by atomic-claude's Improve-Agent (self-sharpening loop); authored fresh for muster, not copied. -->
 

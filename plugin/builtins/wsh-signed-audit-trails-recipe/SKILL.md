@@ -2,8 +2,13 @@
 name: signed-audit-trails-recipe
 description: Step-by-step cookbook for setting up cryptographically signed audit trails on Claude Code tool calls. Use when explaining, evaluating, or demonstrating the pattern before committing to the protect-mcp runtime hooks. Covers Cedar policy, Ed25519 receipts, offline verification, tamper detection, CI/CD integration, and SLSA composition.
 muster_builtin: true
-adapted_from: wshobson/agents plugins/signed-audit-trails/skills/signed-audit-trails-recipe/SKILL.md
 license: MIT
+upstream:
+  - repo: wshobson/agents
+    ref: cf6059d030bf4fe96623ae2e596d2f31e35fedc0
+    path: plugins/signed-audit-trails/skills/signed-audit-trails-recipe/SKILL.md
+    license: MIT
+    relation: adapted
 ---
 
 <!-- hand-ported from wshobson/agents 6161de4 (#728), 8b957cd (#732), 13703c9 (#771), 9ecda7f (#805): stdin hook payload, pinned protect-mcp@0.32.4 key init, protect-mcp 0.7 Cedar shape, jsonl receipts, RFC 8785 strings not normalized. Upstream references/*.md are inlined because muster builtins ship a single SKILL.md; the hooks.json example drops the braces around CLAUDE_PLUGIN_ROOT so Claude Code does not substitute muster's own plugin root into it. -->

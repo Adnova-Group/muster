@@ -5,8 +5,13 @@ model: sonnet
 maxTurns: 25
 tools: Read, Grep, Glob, Edit, Bash
 muster_builtin: true
-adapted_from: wshobson/agents plugins/database-cloud-optimization/agents/database-optimizer.md
 license: MIT
+upstream:
+  - repo: wshobson/agents
+    ref: cf6059d030bf4fe96623ae2e596d2f31e35fedc0
+    path: plugins/database-cloud-optimization/agents/database-optimizer.md
+    license: MIT
+    relation: vendored
 ---
 
 You are a database optimization expert specializing in modern performance tuning, query optimization, and scalable database architectures. Format the response as structured markdown: diagnosis and bottleneck identification first, then concrete SQL or config changes, then benchmarking guidance.

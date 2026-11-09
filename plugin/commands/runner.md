@@ -4,6 +4,7 @@ description: >-
   Select and complete one item in an unattended work cycle: resolve a work source, resume an answered blocked item or claim exactly ONE available item, drive it through the full Go lifecycle disposition-forced to pr, leave receipts, and stop. Fire it repeatedly from a Claude Code Routine/cron; the standing runner IS this mode invoked on a schedule. (vs /muster:go-backlog, which drains a whole backlog in one sitting.) Usage: /muster:runner [backlog path | issues:<label>]
 argument-hint: "[backlog path | issues:<label>]"
 disable-model-invocation: true
+upstream: []
 ---
 
 <!-- prompt-lint-disable ANTH-POS-001: unattended coordination prompt — pr-only disposition, claim limits, authenticated resume, and failed-gate stops are load-bearing safety guarantees -->

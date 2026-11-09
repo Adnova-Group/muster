@@ -2,6 +2,22 @@ id: newsletter
 domain: newsletter
 title: Email Newsletter
 match: [newsletter, email newsletter, email digest, weekly roundup, broadcast email]
+upstream:
+  - repo: coreyhaines31/marketingskills
+    ref: null
+    path: null
+    license: MIT
+    relation: inspired-by
+  - repo: CosmoBlk/email-marketing-bible
+    ref: null
+    path: null
+    license: MIT
+    relation: inspired-by
+  - repo: AgriciDaniel/claude-email
+    ref: null
+    path: null
+    license: MIT
+    relation: inspired-by
 phases:
   - { id: intake,                  role: brainstorm,    desc: "audience, goal, one theme, CTA; resolve the target audience to a named profile in docs/profiles/AUDIENCES.md (create/extend the profile on first use)" }
   - { id: curate,                  role: docs-research, desc: "gather items, links, and insights worth sending; cross-run diff: load persisted baseline at docs/newsletter/signal-baseline.md (create-on-first-run if absent); report ONLY new or materially-changed signals vs baseline — unchanged signals get one summary count line, not re-reporting; append this run's reported signals with dates to the baseline file" }

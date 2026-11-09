@@ -1,5 +1,6 @@
 # Book pipeline — handles fiction AND non-fiction/business/self-improvement.
-# Phase structure inspired by book-genesis (felipelobomotta-blip/book-genesis-v4),
+# Phase structure inspired by book-genesis (felipelobomotta-blip/book-genesis-studio,
+# formerly book-genesis-v4),
 # NousResearch/autonovel, Chapter Blog nonfiction outline, ProWritingAid,
 # Minto Pyramid/SCQA, StoryBrand SB7, and Before-After-Bridge.
 # Adopted from the upstream sweep (docs/audits): book-genesis premise-forge (scored
@@ -22,6 +23,19 @@ match:
   - prescriptive nonfiction
   - guide
   - personal development book
+upstream:
+  - repo: felipelobomotta-blip/book-genesis-studio
+    ref: a43a429bdec1770232ee64e7de634c5ce5109b80
+    path: null
+    license: MIT
+    relation: mechanism-port
+    formerly:
+      - felipelobomotta-blip/book-genesis-v4
+  - repo: NousResearch/autonovel
+    ref: d165f267a0ffd34f3b0a70a8a72ac38cb8e4a542
+    path: null
+    license: NONE
+    relation: mechanism-port
 phases:
   - id: intake
     role: brainstorm

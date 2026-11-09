@@ -9,6 +9,9 @@ import { fileURLToPath } from "node:url";
 import { assertRegularTree, CODEX_BUILD_INPUT_DIRS, computeCodexBuildInputDigest, generateCodexProfiles, publishCodexPlugin, resolveCodexPlugin } from "../src/codex-release.js";
 import { codexMcpOverlay } from "../src/codex-runtime-identity.js";
 import { escapeRe } from "../src/keyword.js";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { generateNotice, generateProvenanceMarkdown } from "../src/provenance.js";
+import { parseFrontmatterLenient } from "../src/frontmatter.js";
 
 // Deliberately synchronous fs throughout this script (mirrors src/codex-release.js).
 //
@@ -570,20 +573,36 @@ function bindBundledCodexCli(text) {
 // existing line-targeted rewrites below.
 const CODEX_SKILL_KEYS = new Set(["name", "description", "license", "allowed-tools", "metadata"]);
 const codexSkillId = name => name.startsWith("gsd-") ? `muster-${name}` : name;
-function codexSkill(source, id, contract) {
-  source = normalizeLf(source);
-  const match = source.match(/^(---\r?\n[\s\S]*?\r?\n---)([\s\S]*)$/);
+// Parse the header and re-serialize only the keys Codex accepts. A line-based strip
+// left the indented lines of a nested block (the `upstream:` provenance list) behind
+// as invalid YAML; provenance reaches Codex users through PROVENANCE.md + NOTICE.
+function codexFrontmatter(header, edit = data => data) {
+  const yamlText = header.replace(/^---\r?\n/, "").replace(/\r?\n---$/, "");
+  const data = edit(parseFrontmatterLenient(yamlText, parseYaml));
+  const lines = [];
+  for (const [key, value] of Object.entries(data)) {
+    if (!CODEX_SKILL_KEYS.has(key)) continue;
+    lines.push(key === "description" ? `description: ${JSON.stringify(value)}` : stringifyYaml({ [key]: value }, { lineWidth: 0 }).trimEnd());
+  }
+  return `---\n${lines.join("\n")}\n---`;
+}
+function splitCodexSkill(source) {
+  const match = normalizeLf(source).match(/^(---\r?\n[\s\S]*?\r?\n---)([\s\S]*)$/);
   if (!match) throw new Error("Ported Codex skill is missing YAML frontmatter");
-  let header = translateModeNames(match[1]).replaceAll("AskUserQuestion", "interactive user input");
-  header = header.replace(/^(?:adapted_from|inspired_by|muster_builtin):.*\r?\n?/gm, "");
-  header = header.replace(/^name:\s*.*$/m, `name: ${id}`);
-  header = header.replace(/^description:\s*(.*)$/m, (_, description) => {
-    const codexDescription = `Codex-compatible Muster workflow. ${description}`.replaceAll("<", "[").replaceAll(">", "]");
-    return `description: ${JSON.stringify(codexDescription)}`;
+  return match;
+}
+// codex/fallback-skills are already Codex-native; only their header is normalized.
+function codexFallbackSkill(source) {
+  const match = splitCodexSkill(source);
+  return codexFrontmatter(match[1]) + match[2];
+}
+function codexSkill(source, id, contract) {
+  const match = splitCodexSkill(source);
+  const header = codexFrontmatter(translateModeNames(match[1]).replaceAll("AskUserQuestion", "interactive user input"), data => {
+    data.name = id;
+    data.description = `Codex-compatible Muster workflow. ${data.description}`.replaceAll("<", "[").replaceAll(">", "]");
+    return data;
   });
-  // Single-line scalar keys only (every key this repo's skills carry today is one line);
-  // a future block-scalar value would need a smarter strip, not silently mis-handled here.
-  header = header.replace(/^([A-Za-z][\w-]*):.*\r?\n?/gm, (line, key) => (CODEX_SKILL_KEYS.has(key) ? line : ""));
   let body = translatePluginPaths(bindBundledCodexCli(translateCodexProse(translateModeNames(match[2]))))
     .replaceAll("${CLAUDE_PLUGIN_ROOT}", "${PLUGIN_ROOT}")
     .replaceAll("AskUserQuestion", "interactive user input")
@@ -799,14 +818,12 @@ async function buildCodexPluginOnce({ root, outDir, nodeExecPath }) {
     write(join(runtime, "codex-skill-adapter.md"), adaptSkillAdapterForCodex(readFileSync(join(root, "codex", "skill-adapter.md"), "utf8"), contract));
     rmAndCopy(join(root, "codex", "hooks"), join(runtime, "install-hooks"));
     write(join(runtime, "sprint-protocol.md"), readFileSync(join(root, "cowork", "sprint-protocol.md"), "utf8"));
-    const codexCatalogPath = join(plugin, "catalog", "builtins.muster.yaml");
-    const codexCatalogSource = readFileSync(codexCatalogPath, "utf8");
-    const humanizerCreditAnchor = "blader/humanizer + StealthHumanizer (AI-tell removal)";
-    if (!codexCatalogSource.includes(humanizerCreditAnchor)) throw new Error("builtins.muster.yaml humanizer-credit anchor not found for Codex rewrite");
-    write(
-      codexCatalogPath,
-      codexCatalogSource.replace(humanizerCreditAnchor, "blader/humanizer + rudra496/StealthHumanizer (AI-tell removal)")
-    );
+    // Codex agent TOMLs and skill headers cannot carry `upstream:`, so the bundle ships
+    // the manifest-generated attribution files instead (catalog provenance already names
+    // every upstream repository, e.g. rudra496/StealthHumanizer, so no rewrite is needed).
+    const vendorManifest = parseYaml(readFileSync(join(root, "vendor", "manifest.yaml"), "utf8"));
+    write(join(plugin, "NOTICE"), generateNotice(vendorManifest));
+    write(join(plugin, "PROVENANCE.md"), generateProvenanceMarkdown(vendorManifest));
     for (const entry of readdirSync(join(plugin, "commands"), { withFileTypes: true })) {
       if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
       const path = join(plugin, "commands", entry.name);
@@ -836,6 +853,8 @@ async function buildCodexPluginOnce({ root, outDir, nodeExecPath }) {
     for (const name of ["muster-gsd-plan-phase", "muster-gsd-execute-phase", "muster-gsd-verify-work", "wsh-signed-audit-trails-recipe"]) {
       rmSync(join(internalSkillDir, name), { recursive: true, force: true });
       rmAndCopy(join(root, "codex", "fallback-skills", name), join(internalSkillDir, name));
+      const fallbackPath = join(internalSkillDir, name, "SKILL.md");
+      write(fallbackPath, codexFallbackSkill(readFileSync(fallbackPath, "utf8")));
     }
     await adaptPortedSkills(internalSkillDir, portedSkillNames.filter(name => !name.startsWith("gsd-") && name !== "wsh-signed-audit-trails-recipe"), contract);
     await writeInternalRuntime(root, plugin);

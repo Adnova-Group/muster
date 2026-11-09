@@ -1,6 +1,7 @@
 ---
 name: coordination
 description: Source-agnostic multi-runner protocol -- CLAIM before work, structured RECEIPTS, BLOCKED/HUMAN-HOLD->RESUME, one LEDGER heartbeat/runner. Four bindings: GitHub issues (labels + gh CLI), backlog.md (annotations + STATE), Linear (statuses + MCP), Hermes kanban (native kanban.db). Wired in by /muster:go-backlog.
+upstream: []
 ---
 
 # Coordination

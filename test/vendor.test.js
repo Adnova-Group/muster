@@ -78,13 +78,18 @@ test("validateVendorManifest accepts https/file/absolute-path source.url values"
 
 const src = `---\nname: brainstorming\ndescription: Explore before building\n---\n\n# Brainstorming\nDo the thing.\n`;
 const item = { from: "brainstorming/SKILL.md", id: "sp-brainstorm", roles: ["brainstorm"] };
-const source = { repo: "obra/superpowers", license: "MIT" };
+const source = { repo: "obra/superpowers", license: "MIT", ref: "284be5905ed540d34ce5bcde24728b9b7f413ea0", relation: "vendored" };
 
 test("toBuiltin merges provenance frontmatter, preserves body", () => {
   const r = toBuiltin(src, item, source);
   assert.equal(r.path, "plugin/builtins/sp-brainstorm/SKILL.md");
   assert.match(r.content, /muster_builtin: true/);
-  assert.match(r.content, /adapted_from: obra\/superpowers brainstorming\/SKILL.md/);
+  assert.doesNotMatch(r.content, /adapted_from:/, "adapted_from is retired in favour of upstream");
+  const { data } = splitFrontmatter(r.content);
+  assert.deepEqual(data.upstream, [{
+    repo: "obra/superpowers", ref: "284be5905ed540d34ce5bcde24728b9b7f413ea0",
+    path: "brainstorming/SKILL.md", license: "MIT", relation: "vendored"
+  }]);
   assert.match(r.content, /license: MIT/);
   assert.match(r.content, /name: brainstorming/);
   assert.match(r.content, /Do the thing\./);
@@ -94,7 +99,7 @@ test("toBuiltin emits a valid catalog builtin entry", () => {
   const r = toBuiltin(src, item, source);
   assert.deepEqual(r.catalogEntry, {
     id: "sp-brainstorm", kind: "builtin", roles: ["brainstorm"], rank: 50,
-    provenance: { adapted_from: "obra/superpowers brainstorming/SKILL.md", license: "MIT" }
+    provenance: { license: "MIT", upstream: ["obra/superpowers"] }
   });
 });
 
@@ -134,39 +139,58 @@ test("toBuiltin is idempotent", () => {
   assert.equal(toBuiltin(src, item, source).content, toBuiltin(src, item, source).content);
 });
 
-test("toBuiltin keeps adapted_from on one line (no yaml wrapping)", () => {
+test("toBuiltin keeps the upstream path on one line (no yaml wrapping)", () => {
   const longItem = { from: "plugins/some-very-long-marketplace-path/agents/extremely-long-agent-name.md", id: "wsh-x", roles: ["implement"] };
-  const r = toBuiltin("# x\nbody", longItem, { repo: "wshobson/agents", license: "MIT" });
-  const line = r.content.split("\n").find(l => l.startsWith("adapted_from:"));
-  assert.ok(line.includes("extremely-long-agent-name.md"), "adapted_from must be on a single unwrapped line");
+  const r = toBuiltin("# x\nbody", longItem, { repo: "wshobson/agents", license: "MIT", ref: "cf6059d030bf4fe96623ae2e596d2f31e35fedc0", relation: "vendored" });
+  const line = r.content.split("\n").find(l => l.trim().startsWith("path:"));
+  assert.ok(line.includes("extremely-long-agent-name.md"), "upstream path must be on a single unwrapped line");
 });
 
-test("generateNotice lists each source repo + license once", () => {
-  const entries = [
-    { provenance: { adapted_from: "obra/superpowers a/SKILL.md", license: "MIT" } },
-    { provenance: { adapted_from: "obra/superpowers b/SKILL.md", license: "MIT" } },
-    { provenance: { adapted_from: "wshobson/agents x.md", license: "MIT" } }
-  ];
-  const n = generateNotice(entries);
-  assert.match(n, /obra\/superpowers \(MIT\)/);
-  assert.match(n, /wshobson\/agents \(MIT\)/);
-  assert.equal((n.match(/obra\/superpowers/g) || []).length, 1);
+test("toBuiltin output is a fixed point of `muster provenance` stamping", async () => {
+  const { stampMarkdown, upstreamEntry } = await import("../src/provenance.js");
+  const r = toBuiltin(src, item, source);
+  assert.equal(stampMarkdown(r.content, [upstreamEntry(source, item)]), r.content);
+});
+
+const NOTICE_MANIFEST = { sources: [
+  { id: "a", kind: "github", repo: "obra/superpowers", ref: "284be5905ed540d34ce5bcde24728b9b7f413ea0", license: "MIT", copyright: "Copyright (c) 2025 Jesse Vincent", items: [] },
+  { id: "b", kind: "github", repo: "obra/superpowers", ref: "d884ae04edebef577e82ff7c4e143debd0bbec99", license: "MIT", copyright: "Copyright (c) 2025 Jesse Vincent", fetch: false, items: [] },
+  { id: "c", kind: "github", repo: "wshobson/agents", ref: "cf6059d030bf4fe96623ae2e596d2f31e35fedc0", license: "MIT", copyright: "Copyright (c) 2024 Seth Hobson", items: [] },
+  { id: "d", kind: "github", repo: "pbakaus/impeccable", ref: "32930818a109fafa87199babe92fa8e530cff5d3", license: "Apache-2.0", fetch: false, items: [] },
+  { id: "e", kind: "github", repo: "felipelobomotta-blip/book-genesis-studio", formerly: ["felipelobomotta-blip/book-genesis-v4"], license: "MIT", fetch: false, items: [] }
+] };
+
+test("generateNotice lists each source repo once, with its refs, license and copyright line", () => {
+  const n = generateNotice(NOTICE_MANIFEST);
+  assert.match(n, /obra\/superpowers @ 284be5905ed540d34ce5bcde24728b9b7f413ea0, d884ae04edebef577e82ff7c4e143debd0bbec99 \(MIT\)\n  Copyright \(c\) 2025 Jesse Vincent/);
+  assert.match(n, /wshobson\/agents @ cf6059d030bf4fe96623ae2e596d2f31e35fedc0 \(MIT\)\n  Copyright \(c\) 2024 Seth Hobson/);
+  assert.equal((n.match(/^- obra\/superpowers/gm) || []).length, 1);
+  assert.match(n, /formerly: felipelobomotta-blip\/book-genesis-v4/);
+  assert.match(n, /The above copyright notice and this permission notice shall be included/);
 });
 
 test("generateNotice leads with the do-not-edit banner", () => {
-  const n = generateNotice([{ provenance: { adapted_from: "obra/superpowers a/SKILL.md", license: "MIT" } }]);
+  const n = generateNotice(NOTICE_MANIFEST);
   assert.match(n, /^GENERATED by `muster vendor` from vendor\/manifest\.yaml — do not edit/);
 });
 
 test("generateNotice preserves a pinned attribution-only source label", () => {
-  const n = generateNotice([{
-    provenance: {
-      adapted_from: "pbakaus/impeccable @ 32930818a109fafa87199babe92fa8e530cff5d3",
-      noticeSource: "pbakaus/impeccable @ 32930818a109fafa87199babe92fa8e530cff5d3",
-      license: "Apache-2.0",
-    },
-  }]);
+  const n = generateNotice(NOTICE_MANIFEST);
   assert.match(n, /pbakaus\/impeccable @ 32930818a109fafa87199babe92fa8e530cff5d3 \(Apache-2\.0\)/);
+});
+
+test("validateVendorManifest rejects the retired attributionOnly flag and an unknown relation", () => {
+  const r = validateVendorManifest({ sources: [{ id: "x", kind: "github", repo: "a/b", license: "MIT", attributionOnly: true, relation: "copied", items: [] }] });
+  assert.ok(r.errors.some(e => /attributionOnly: retired/.test(e)));
+  assert.ok(r.errors.some(e => /relation: must be one of/.test(e)));
+});
+
+test("validateVendorManifest: fetch:false items need a kind but no roles, and runVendor never fetches them", async () => {
+  const ok = validateVendorManifest({ sources: [{ id: "x", kind: "github", repo: "a/b", license: "MIT", relation: "inspired-by", fetch: false,
+    items: [{ id: "muster-runner", kind: "agent", from: null }] }] });
+  assert.deepEqual(ok, { ok: true, errors: [] });
+  const bad = validateVendorManifest({ sources: [{ id: "x", kind: "github", repo: "a/b", license: "MIT", fetch: false, items: [{ id: "y", from: null }] }] });
+  assert.ok(bad.errors.some(e => /kind: required for a fetch: false source/.test(e)));
 });
 
 // --- runVendor: data-loss guards + banner -------------------------------------

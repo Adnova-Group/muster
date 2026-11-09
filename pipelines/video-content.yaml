@@ -2,6 +2,7 @@ id: video-content
 domain: video
 title: Video Content (script, radio-edit, shot list)
 match: [video script, video content, b-roll, shot list, video edit, youtube script, video plan]
+upstream: []
 phases:
   - { id: intake,      role: brainstorm, desc: "platform, audience, goal, runtime target, format (talking-head/voiceover/interview)" }
   - { id: script,      role: video,      desc: "draft the spoken-word script anchored to outcome + audience + runtime target" }

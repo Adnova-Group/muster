@@ -4,6 +4,42 @@ description: Dispatchable single-item lifecycle runner — drives ONE claimed ba
 tools: Read, Write, Edit, Bash, Grep, Glob, Task, Agent
 model: sonnet
 maxTurns: 200
+upstream:
+  - repo: obra/superpowers
+    ref: d884ae04edebef577e82ff7c4e143debd0bbec99
+    path: null
+    license: MIT
+    relation: mechanism-port
+  - repo: wshobson/agents
+    ref: 511f8345cf42f84676e0ad56ddfdee33c90a666f
+    path: null
+    license: MIT
+    relation: mechanism-port
+  - repo: VoltAgent/awesome-claude-code-subagents
+    ref: 14bbcf5d984c8ce61a0aa17f897b7d8e63739783
+    path: null
+    license: MIT
+    relation: mechanism-port
+  - repo: humanlayer/12-factor-agents
+    ref: d20c728368bf9c189d6d7aab704744decb6ec0cc
+    path: null
+    license: Apache-2.0 AND CC-BY-SA-4.0
+    relation: mechanism-port
+  - repo: contains-studio/agents
+    ref: a5a480c324cac64b9c569bca0b2f297d517240cb
+    path: null
+    license: NONE
+    relation: mechanism-port
+  - repo: disler/infinite-agentic-loop
+    ref: 6e9a012f81ef2291faf174d67176f7e69832cc0a
+    path: null
+    license: NONE
+    relation: mechanism-port
+  - repo: hesreallyhim/awesome-claude-code
+    ref: null
+    path: null
+    license: CC-BY-NC-ND-4.0
+    relation: inspired-by
 ---
 <!-- Clean-room synthesis from docs/research/lifecycle-agent-patterns.md: mechanisms adapted
      from obra/superpowers (MIT), wshobson/agents (MIT), and Anthropic's subagent docs;

@@ -2,8 +2,33 @@
 name: muster-humanizer
 description: Built-in humanizer — rewrite human-facing text to remove AI tells while preserving meaning. Mandatory final filter on anything a human will read.
 muster_builtin: true
-adapted_from: blader/humanizer + StealthHumanizer (AI-tell removal); tell taxonomy + tiered vocab adapted from conorbronsdon/avoid-ai-writing, jalaalrd/anti-ai-slop-writing, aaaronmiller/humanize-writing
 license: MIT
+upstream:
+  - repo: blader/humanizer
+    ref: 1b48564898e999219882660237fde01bf4843a0f
+    path: SKILL.md
+    license: MIT
+    relation: adapted
+  - repo: rudra496/StealthHumanizer
+    ref: 1aacbda6e2f66afbdcb6714a85347307068373e9
+    path: null
+    license: MIT
+    relation: adapted
+  - repo: conorbronsdon/avoid-ai-writing
+    ref: 500ff59006f19c27120c5ddbd9b56fc3d937b6bf
+    path: SKILL.md
+    license: MIT
+    relation: adapted
+  - repo: jalaalrd/anti-ai-slop-writing
+    ref: 63255f9bbb75a265dc5786a04535cd033f487756
+    path: skills/anti-ai-slop-writing
+    license: NONE
+    relation: adapted
+  - repo: aaaronmiller/humanize-writing
+    ref: c07a2a8dab1f6033ad0da713766df43d0dc374b9
+    path: SKILL.md
+    license: MIT
+    relation: adapted
 ---
 
 # Humanizer (built-in)

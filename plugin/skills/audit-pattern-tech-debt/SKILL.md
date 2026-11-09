@@ -1,6 +1,7 @@
 ---
 name: audit-pattern-tech-debt
 description: Hunt-list pattern skill for muster's tech-debt audit dimension -- dead exports, orphaned modules, outdated patterns, and fs-safe/trackedMkdtempSync convention drift in muster's own repo. Loaded by the audit orchestrator as a REQUIRED SKILLS binding on the tech-debt dimension task; read on demand, never dispatched standalone.
+upstream: []
 ---
 
 <!-- prompt-lint-disable ANTH-ROLE-001: reference hunt-list loaded ON DEMAND into an already

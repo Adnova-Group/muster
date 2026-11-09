@@ -2,8 +2,13 @@
 name: sast-configuration
 description: Configure Static Application Security Testing (SAST) tools for automated vulnerability detection in application code. Use when setting up security scanning, implementing DevSecOps practices, or automating code vulnerability detection.
 muster_builtin: true
-adapted_from: wshobson/agents plugins/security-scanning/skills/sast-configuration/SKILL.md
 license: MIT
+upstream:
+  - repo: wshobson/agents
+    ref: cf6059d030bf4fe96623ae2e596d2f31e35fedc0
+    path: plugins/security-scanning/skills/sast-configuration/SKILL.md
+    license: MIT
+    relation: vendored
 ---
 
 # SAST Configuration

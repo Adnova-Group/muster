@@ -2,8 +2,13 @@
 name: javascript-testing-patterns
 description: Implement comprehensive testing strategies using Jest, Vitest, and Testing Library for unit tests, integration tests, and end-to-end testing with mocking, fixtures, and test-driven development. Use when writing JavaScript/TypeScript tests, setting up test infrastructure, or implementing TDD/BDD workflows.
 muster_builtin: true
-adapted_from: wshobson/agents plugins/javascript-typescript/skills/javascript-testing-patterns/SKILL.md
 license: MIT
+upstream:
+  - repo: wshobson/agents
+    ref: cf6059d030bf4fe96623ae2e596d2f31e35fedc0
+    path: plugins/javascript-typescript/skills/javascript-testing-patterns/SKILL.md
+    license: MIT
+    relation: vendored
 ---
 
 # JavaScript Testing Patterns

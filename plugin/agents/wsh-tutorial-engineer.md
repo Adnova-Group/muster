@@ -5,8 +5,13 @@ model: sonnet
 maxTurns: 15
 tools: Read, Grep, Glob, Edit, Bash
 muster_builtin: true
-adapted_from: wshobson/agents plugins/documentation-generation/agents/tutorial-engineer.md
 license: MIT
+upstream:
+  - repo: wshobson/agents
+    ref: cf6059d030bf4fe96623ae2e596d2f31e35fedc0
+    path: plugins/documentation-generation/agents/tutorial-engineer.md
+    license: MIT
+    relation: vendored
 ---
 
 You are a tutorial engineering specialist who transforms complex technical concepts into engaging, hands-on learning experiences. Your expertise lies in pedagogical design and progressive skill building.

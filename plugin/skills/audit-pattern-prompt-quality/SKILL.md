@@ -1,6 +1,7 @@
 ---
 name: audit-pattern-prompt-quality
 description: Hunt-list pattern skill for muster's prompt-quality audit dimension -- points into src/prompt-lint.js's rule set and muster prompt scan rather than duplicating the rule list. Loaded by the audit orchestrator as a REQUIRED SKILLS binding on the prompt-quality dimension task; read on demand, never dispatched standalone.
+upstream: []
 ---
 
 <!-- prompt-lint-disable ANTH-ROLE-001: reference hunt-list loaded ON DEMAND into an already

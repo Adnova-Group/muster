@@ -1,6 +1,7 @@
 ---
 name: audit-pattern-architecture
 description: Hunt-list pattern skill for muster's architecture audit dimension -- where to look for boundary, coupling, and receipt-grammar drift in muster's own repo. Loaded by the audit orchestrator as a REQUIRED SKILLS binding on the architecture-review dimension task; read on demand, never dispatched standalone.
+upstream: []
 ---
 
 <!-- prompt-lint-disable ANTH-ROLE-001: reference hunt-list loaded ON DEMAND into an already

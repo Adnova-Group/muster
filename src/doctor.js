@@ -122,8 +122,11 @@ async function vendoredBuiltinIds(base) {
   if (!raw) return ids;
   let manifest;
   try { manifest = parseYaml(raw); } catch { return ids; }
+  // Attribution-only (`fetch: false`) items are muster-authored files that merely
+  // credit an upstream; their doc references are muster's own and stay checked.
   for (const s of (manifest?.sources || [])) {
-    for (const it of (s.items || [])) if (it?.id) ids.add(it.id);
+    if (s?.fetch === false) continue;
+    for (const it of (s.items || [])) if (it?.id && !it.kind) ids.add(it.id);
   }
   return ids;
 }

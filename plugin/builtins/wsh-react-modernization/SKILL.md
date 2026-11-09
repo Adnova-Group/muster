@@ -2,8 +2,13 @@
 name: react-modernization
 description: Upgrade React applications to latest versions, migrate from class components to hooks, and adopt concurrent features. Use when modernizing React codebases, migrating to React Hooks, or upgrading to latest React versions.
 muster_builtin: true
-adapted_from: wshobson/agents plugins/framework-migration/skills/react-modernization/SKILL.md
 license: MIT
+upstream:
+  - repo: wshobson/agents
+    ref: cf6059d030bf4fe96623ae2e596d2f31e35fedc0
+    path: plugins/framework-migration/skills/react-modernization/SKILL.md
+    license: MIT
+    relation: vendored
 ---
 
 # React Modernization

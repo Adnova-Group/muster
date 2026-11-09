@@ -2,6 +2,22 @@ id: case-study
 domain: sales
 title: Customer Case Study
 match: [case study, customer story, success story, testimonial]
+upstream:
+  - repo: coreyhaines31/marketingskills
+    ref: null
+    path: null
+    license: MIT
+    relation: inspired-by
+  - repo: CosmoBlk/email-marketing-bible
+    ref: null
+    path: null
+    license: MIT
+    relation: inspired-by
+  - repo: AgriciDaniel/claude-email
+    ref: null
+    path: null
+    license: MIT
+    relation: inspired-by
 phases:
   - { id: intake,             role: brainstorm,    desc: "customer, segment, the win, target buyer" }
   - { id: synthesis,          role: docs-research, desc: "interview/notes synthesis; for ingested source documents, build a section-map before searching, then extract every quote, metric, fact, decision, and action into one structured evidence table — the ledger's case-study form — before drafting: row types {quote, metric, fact, decision|action}, columns {value, source-anchor (file+locator, landing in ## Sources as `- anchor: file+locator`), confidence, needs_review, subject-approval-status}, plus owner + deadline as columns applicable only to decision|action rows (unowned actions and undated deadlines are flagged, not silently dropped); draft and downstream phases read this table only, replacing freeform quote/metric/fact collection" }

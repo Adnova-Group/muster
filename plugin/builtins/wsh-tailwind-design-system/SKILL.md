@@ -2,8 +2,13 @@
 name: tailwind-design-system
 description: Build scalable design systems with Tailwind CSS v4, design tokens, component libraries, and responsive patterns. Use when creating component libraries, implementing design systems, or standardizing UI patterns.
 muster_builtin: true
-adapted_from: wshobson/agents plugins/frontend-mobile-development/skills/tailwind-design-system/SKILL.md
 license: MIT
+upstream:
+  - repo: wshobson/agents
+    ref: cf6059d030bf4fe96623ae2e596d2f31e35fedc0
+    path: plugins/frontend-mobile-development/skills/tailwind-design-system/SKILL.md
+    license: MIT
+    relation: vendored
 ---
 
 # Tailwind Design System (v4)

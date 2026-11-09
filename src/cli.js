@@ -29,6 +29,7 @@ import { initScratchpad } from "./scratchpad.js";
 import { readProfile } from "./profile.js";
 import { buildSignals } from "./signals.js";
 import { validateVendorManifest, runVendor } from "./vendor.js";
+import { runProvenance } from "./provenance.js";
 import { parse as parseYaml } from "yaml";
 import { scaffoldProject } from "./setup.js";
 import {
@@ -156,7 +157,7 @@ const USAGE = [
   // harness-native dispatch packets + session receipts (kimi/codex lanes)
   "kimi-goal-invocation <objective> [--stream-json] [--secondary <model>]|kimi-process-dispatch --brief <text> --agent-file <name|path> --cwd <dir> --lane <primary|secondary>|kimi-process-run --brief <text> --agent-file <name|path> --cwd <dir> --lane <primary|secondary>|kimi-session-usage <--session-dir <dir>|--cwd <dir> [--stdout-file <f>]>|kimi-summarize-receipts <items.json>|codex-audit-provider --role <role> --task-id <id> --callable-apis <v1,v2> --callable-agent-ids <id,...> [--api-override <v1|v2>] [--message <text>|--message-file <f>]|codex-spawn-packet --task-id <id> --agent-type <id> [--message <text>|--message-file <f>] [--version v1|v2] [--fork-turns <none|N>]|codex-wait-packet [--version v1|v2] [--targets a,b] [--timeout-ms N]|",
   // memory + vendor + init lifecycle
-  "memory read|write ...|vendor|init [dir]|init transition [dir] --to <handoff|attempted|completed>|init normalize [dir] --approve CLAUDE.md|init acknowledge [dir] --reason unavailable|init finalize [dir]|setup [dir]|design <init|status|resolve|detect|ignores|provider|gate|workflows|run> ...|",
+  "memory read|write ...|vendor|provenance [--write]|init [dir]|init transition [dir] --to <handoff|attempted|completed>|init normalize [dir] --approve CLAUDE.md|init acknowledge [dir] --reason unavailable|init finalize [dir]|setup [dir]|design <init|status|resolve|detect|ignores|provider|gate|workflows|run> ...|",
   // planning + routing artifacts
   "plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|",
   // prompt tooling
@@ -1211,6 +1212,16 @@ async function handleCoreCommandPart3(cmd, rest) {
     const res = await runVendor({ repoRoot, manifest });
     res.warnings.forEach(w => process.stderr.write(`warn: ${w}\n`));
     out({ vendored: res.count, warnings: res.warnings.length });
+    return true;
+  } else if (cmd === "provenance") {
+    // Offline. Check mode (default) exits 1 on drift; --write restamps every item's
+    // `upstream:` field, the catalog provenance summary and NOTICE from the manifest.
+    const manifest = parseYaml(await readFile(new URL("../vendor/manifest.yaml", import.meta.url), "utf8"));
+    const v = validateVendorManifest(manifest);
+    if (!v.ok) { process.stderr.write(`muster: ${v.errors.join("\n")}\n`); process.exit(2); }
+    const res = await runProvenance({ root: dirFromImportMeta(import.meta.url, "../"), manifest, write: rest.includes("--write") });
+    out(res);
+    if (!res.written && !res.ok) process.exitCode = 1;
     return true;
   } else if (cmd === "setup") {
     out(await scaffoldProject(rest[0] || process.cwd()));

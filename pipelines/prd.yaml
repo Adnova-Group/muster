@@ -3,6 +3,37 @@ domain: pm
 default: true
 title: Product Requirements Document
 match: [prd, product requirements, product spec, feature spec, product brief, requirements doc]
+upstream:
+  - repo: deanpeters/product-manager-prompts
+    ref: null
+    path: null
+    license: CC-BY-NC-SA-4.0
+    relation: inspired-by
+  - repo: deanpeters/Product-Manager-Skills
+    ref: null
+    path: null
+    license: CC-BY-NC-SA-4.0
+    relation: inspired-by
+  - repo: phuryn/pm-skills
+    ref: null
+    path: null
+    license: MIT
+    relation: inspired-by
+  - repo: anthropics/knowledge-work-plugins
+    ref: null
+    path: null
+    license: Apache-2.0
+    relation: inspired-by
+  - repo: joelparkerhenderson/objectives-and-key-results
+    ref: null
+    path: null
+    license: NONE
+    relation: inspired-by
+  - repo: architecture-decision-record/architecture-decision-record
+    ref: null
+    path: null
+    license: CC-BY-NC-SA-4.0
+    relation: inspired-by
 phases:
   - { id: intake,   role: brainstorm,    desc: "clarify problem, audience, success metrics; confidence-gated clarification — keep asking until you can state the problem and metrics with high confidence before drafting, don't draft on guesses; when intake ingests raw notes/brain-dumps/transcripts, extract a structured row per item — {decision|action|fact, owner, deadline, source-anchor}; unowned actions and undated deadlines are flagged, not silently dropped" }
   - { id: framing,  role: brainstorm,    desc: "Jobs-to-be-Done framing: functional/emotional/social job + hiring criteria; proto-persona" }

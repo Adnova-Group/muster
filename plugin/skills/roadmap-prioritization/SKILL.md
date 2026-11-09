@@ -1,6 +1,7 @@
 ---
 name: roadmap-prioritization
 description: Turn goals into a RICE-prioritized now/next/later roadmap — generate candidate initiatives, gather market+customer-feedback evidence, estimate RICE factors, let `muster prioritize` do the math, render a roadmap doc (+ optional GitHub issues).
+upstream: []
 ---
 
 # Roadmap prioritization

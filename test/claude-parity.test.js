@@ -40,7 +40,7 @@ test("Claude orchestration surface remains byte-identical outside release metada
     hash.update(await readFile(join(root, path)));
     hash.update("\0");
   }
-  assert.equal(paths.length, 157); // 0.7.0 retires the run/autopilot/sprint command files together.
+  assert.equal(paths.length, 152); // 0.7.0 retired the run/autopilot/sprint command files; 2026-11-09 removed five always-on hook files.
   // Previous 159-file surface +1: audit-pattern-batch2's new
   // plugin/skills/audit-pattern-documentation/SKILL.md (the 10th pattern skill, approved via the
   // second improver batch, composed onto readability + design-ux). The batch also appended 19
@@ -1494,5 +1494,13 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // agent is the principal the gate constrains and could set that variable itself, so the degraded
   // lane moved to an operator-owned file outside every worker-writable root. Phrased positively ("That
   // file is theirs to create") to stay inside ANTH-POS-001's negative budget. Deliberate, not drift.
-  assert.equal(hash.digest("hex"), "6b88fb16dd776b49be17ef559928abd2b587fe453d39e9fffae4dfb7c6010952");
+  // Re-pin 2026-11-09b (revival stage 0, 157 -> 152 files): the always-on Claude Code hooks are
+  // removed (session-start.js, user-prompt-submit.js, inline-budget.js, bash-write-target.js,
+  // hooks/env-util.js) and pre-tool-use.js is slimmed to the run-scoped action fence; the output
+  // style no longer sets force-for-plugin; four vendored builtins carry hand-ported upstream fixes
+  // (sp-debug secret echo, sp-review $1 substitution, sp-brainstorm replacer and absolute
+  // --project-dir, wsh-signed-audit-trails-recipe stdin hooks and pinned tooling); and command and
+  // skill prose drops promises about the deleted hooks. Owner decision recorded in
+  // docs/strategy/2026-11-revival-review.md. Deliberate, not drift.
+  assert.equal(hash.digest("hex"), "e0a60a23d47cbe4c036fbff0b7dd65dccb60c956ec6a9db4a10b4d78ecbd9ab4");
 });

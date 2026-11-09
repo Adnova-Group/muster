@@ -37,8 +37,13 @@ export const ITEM_PATHS = Object.freeze({
 
 export const isFetchedSource = source => source?.fetch !== false;
 export const itemKind = item => item.kind || (item.as === "agent" ? "agent" : "builtin");
+// A file item maps one upstream file onto a muster source file ({from, to, mode, baseBlob}; see
+// docs/strategy/stage-2-contracts.md "Sync model"). It has no kind or id: it is never vendored,
+// stamped or projected onto an item, but its ref still reaches NOTICE.
+export const SYNC_MODES = Object.freeze(["adapted", "verbatim", "watch"]);
+export const isFileItem = item => typeof item?.to === "string";
 // Only items of a fetched source without an explicit `kind` are copied by `muster vendor`.
-export const isVendoredItem = (source, item) => isFetchedSource(source) && !item.kind;
+export const isVendoredItem = (source, item) => isFetchedSource(source) && !item.kind && !isFileItem(item);
 
 export function isValidLicense(license) {
   if (typeof license !== "string") return false;
@@ -67,6 +72,7 @@ export function projectManifest(manifest) {
   const map = new Map();
   for (const source of manifest?.sources || []) {
     for (const item of source.items || []) {
+      if (isFileItem(item)) continue;
       const key = itemKey(itemKind(item), item.id);
       if (!map.has(key)) map.set(key, []);
       map.get(key).push(upstreamEntry(source, item));

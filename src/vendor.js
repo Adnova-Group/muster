@@ -12,7 +12,7 @@ import { modelForRole, maxTier, floorAtCore, normalizeTier } from "./model.js";
 import { claudeModelForTier, claudeProfileForAgentId } from "./claude.js";
 import { matchFrontmatter } from "./frontmatter.js";
 import {
-  RELATIONS, ITEM_PATHS, WAIVER_STATUSES, isValidLicense, isVendoredItem, isFetchedSource,
+  RELATIONS, ITEM_PATHS, WAIVER_STATUSES, isValidLicense, isVendoredItem, isFetchedSource, SYNC_MODES, isFileItem,
   upstreamEntry, renderUpstreamBlock, generateNotice as generateManifestNotice, NOTICE_PATHS
 } from "./provenance.js";
 
@@ -179,6 +179,15 @@ export function validateVendorManifest(doc) {
     if (!Array.isArray(s.items)) errors.push(`sources[${i}].items: must be an array`);
     else s.items.forEach((it, j) => {
       const at = `sources[${i}].items[${j}]`;
+      if (isFileItem(it)) {
+        const relPath = p => typeof p === "string" && p !== "" && !p.startsWith("/") && !p.split("/").includes("..");
+        if (!relPath(it.from)) errors.push(`${at}.from: required relative upstream path for a file item`);
+        if (!relPath(it.to)) errors.push(`${at}.to: must be a relative repository path`);
+        if (!SYNC_MODES.includes(it.mode)) errors.push(`${at}.mode: must be one of ${SYNC_MODES.join("|")}`);
+        for (const key of ["ref", "baseBlob"])
+          if (it[key] !== undefined && !/^[0-9a-f]{40}$/.test(String(it[key]))) errors.push(`${at}.${key}: must be a 40-hex SHA`);
+        return;
+      }
       const vendored = isVendoredItem(s, it);
       if (vendored ? !it.from : (it.from !== null && typeof it.from !== "string")) errors.push(`${at}.from: required${vendored ? "" : " (null = repository-wide)"}`);
       if (!it.id) {

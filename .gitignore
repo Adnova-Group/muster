@@ -1,6 +1,11 @@
 node_modules/
 .muster/*
 !.muster/backlog.md
+# Stage-2 run directories travel with the work branch (docs/strategy/stage-2-contracts.md),
+# except the machine-local preflight detail and raw Workflow build results.
+!.muster/runs/
+.muster/runs/*/preflight.json
+.muster/runs/*/build-result.json
 # The Codex plugin (skills/MCP/commands + generated agent profiles) is
 # generated at build/install time (scripts/build-codex.mjs, src/codex-install.js)
 # into this staging directory. Nothing here is ever committed.

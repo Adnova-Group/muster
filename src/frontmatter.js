@@ -25,3 +25,35 @@ export function matchFrontmatter(text) {
   if (!m) return null;
   return { raw: m[0], body: m[1], rest: str.slice(m[0].length) };
 }
+
+// Split a frontmatter body into its top-level key blocks: each block is the key's
+// line plus every following indented / sequence-continuation / blank line. Lines
+// outside any key block (top-level comments) form keyless blocks.
+export function topLevelBlocks(yamlText) {
+  const blocks = [];
+  for (const line of String(yamlText).split(/\r?\n/)) {
+    const top = line.match(/^([A-Za-z_][\w-]*):/);
+    if (top) blocks.push({ key: top[1], lines: [line] });
+    else if (blocks.at(-1)?.key && (/^(\s|-\s|-$)/.test(line) || line.trim() === "")) blocks.at(-1).lines.push(line);
+    else blocks.push({ key: null, lines: [line] });
+  }
+  return blocks;
+}
+
+// Lenient frontmatter parse. Each top-level block is parsed on its own, and a
+// single-line value that strict YAML rejects -- a plain scalar with a mid-string
+// ": ", which several of muster's own skill descriptions carry (see
+// plugin-inventory.js) -- is taken verbatim instead of failing the whole header.
+export function parseFrontmatterLenient(yamlText, parseYaml) {
+  const data = {};
+  for (const block of topLevelBlocks(yamlText)) {
+    if (!block.key) continue;
+    try {
+      Object.assign(data, parseYaml(block.lines.join("\n")) || {});
+    } catch (error) {
+      if (block.lines.filter(line => line.trim()).length !== 1) throw error;
+      data[block.key] = block.lines[0].slice(block.key.length + 1).trim();
+    }
+  }
+  return data;
+}

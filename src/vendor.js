@@ -11,6 +11,10 @@ import { isContainedLexical } from "./fs-safe.js";
 import { modelForRole, maxTier, floorAtCore, normalizeTier } from "./model.js";
 import { claudeModelForTier, claudeProfileForAgentId } from "./claude.js";
 import { matchFrontmatter } from "./frontmatter.js";
+import {
+  RELATIONS, ITEM_PATHS, WAIVER_STATUSES, isValidLicense, isVendoredItem, isFetchedSource,
+  upstreamEntry, renderUpstreamBlock, generateNotice as generateManifestNotice, NOTICE_PATHS
+} from "./provenance.js";
 
 // Allowlist of tools vendored agent frontmatter may reference.
 // Derived from the tools lines in plugin/agents/wsh-*.md (all use the same set)
@@ -161,20 +165,49 @@ export function validateVendorManifest(doc) {
         errors.push(`sources[${i}].url: invalid — scheme must be https:// or file:// (or an absolute local path)`);
       }
     }
+    // Provenance fields (src/provenance.js). `attributionOnly` was generalized to `fetch: false`.
+    if (s.attributionOnly !== undefined) errors.push(`sources[${i}].attributionOnly: retired — use fetch: false`);
+    if (s.fetch !== undefined && typeof s.fetch !== "boolean") errors.push(`sources[${i}].fetch: must be a boolean`);
+    if (s.relation !== undefined && !RELATIONS.includes(s.relation))
+      errors.push(`sources[${i}].relation: must be one of ${RELATIONS.join("|")}`);
+    if (s.license && !isValidLicense(s.license))
+      errors.push(`sources[${i}].license: must be an allowed SPDX id, NONE or LicenseRef-*`);
+    if (s.copyright !== undefined && (typeof s.copyright !== "string" || !s.copyright.trim()))
+      errors.push(`sources[${i}].copyright: must be a non-empty string`);
+    if (s.formerly !== undefined && (!Array.isArray(s.formerly) || !s.formerly.every(r => REPO_RE.test(r))))
+      errors.push(`sources[${i}].formerly: must be a list of owner/name`);
     if (!Array.isArray(s.items)) errors.push(`sources[${i}].items: must be an array`);
     else s.items.forEach((it, j) => {
-      if (!it.from) errors.push(`sources[${i}].items[${j}].from: required`);
+      const at = `sources[${i}].items[${j}]`;
+      const vendored = isVendoredItem(s, it);
+      if (vendored ? !it.from : (it.from !== null && typeof it.from !== "string")) errors.push(`${at}.from: required${vendored ? "" : " (null = repository-wide)"}`);
       if (!it.id) {
-        errors.push(`sources[${i}].items[${j}].id: required`);
+        errors.push(`${at}.id: required`);
       } else if (!ID_RE.test(it.id)) {
-        errors.push(`sources[${i}].items[${j}].id: invalid — must match /^[a-zA-Z0-9_-]+$/`);
+        errors.push(`${at}.id: invalid — must match /^[a-zA-Z0-9_-]+$/`);
       }
-      if (!Array.isArray(it.roles) || it.roles.length === 0)
-        errors.push(`sources[${i}].items[${j}].roles: required non-empty array`);
+      if (vendored && (!Array.isArray(it.roles) || it.roles.length === 0))
+        errors.push(`${at}.roles: required non-empty array`);
       if (it.as !== undefined && it.as !== "agent" && it.as !== "skill")
-        errors.push(`sources[${i}].items[${j}].as: must be "agent" or "skill" when set`);
+        errors.push(`${at}.as: must be "agent" or "skill" when set`);
+      if (it.kind !== undefined && !Object.hasOwn(ITEM_PATHS, it.kind))
+        errors.push(`${at}.kind: must be one of ${Object.keys(ITEM_PATHS).join("|")}`);
+      if (!isFetchedSource(s) && it.kind === undefined) errors.push(`${at}.kind: required for a fetch: false source`);
+      if (it.relation !== undefined && !RELATIONS.includes(it.relation))
+        errors.push(`${at}.relation: must be one of ${RELATIONS.join("|")}`);
+      if (it.ref !== undefined && !/^[0-9a-f]{40}$/.test(String(it.ref))) errors.push(`${at}.ref: must be a 40-hex commit SHA`);
     });
   });
+  const ids = (doc.sources || []).map(s => s.id).filter(Boolean);
+  for (const id of new Set(ids.filter((id, k) => ids.indexOf(id) !== k))) errors.push(`sources: duplicate id ${id}`);
+  if (doc.licenseWaivers !== undefined) {
+    if (!Array.isArray(doc.licenseWaivers)) errors.push("licenseWaivers: must be an array");
+    else doc.licenseWaivers.forEach((w, i) => {
+      if (!ids.includes(w?.source)) errors.push(`licenseWaivers[${i}].source: must name a source id`);
+      if (!WAIVER_STATUSES.includes(w?.status)) errors.push(`licenseWaivers[${i}].status: must be one of ${WAIVER_STATUSES.join("|")}`);
+      if (typeof w?.reason !== "string" || !w.reason.trim()) errors.push(`licenseWaivers[${i}].reason: required`);
+    });
+  }
   return { ok: errors.length === 0, errors };
 }
 
@@ -184,20 +217,25 @@ export function splitFrontmatter(text) {
   return { data: parse(m.body) || {}, body: m.rest };
 }
 
+// The `upstream:` frontmatter block for a vendored item. Rendered by the same
+// serializer `muster provenance --write` uses, so vendoring and stamping agree
+// byte for byte (provenance.js projects the identical entry from the manifest).
+function frontmatterWithUpstream(fm, source, item) {
+  return `---\n${stringify(fm, { lineWidth: 0 }).trim()}\n${renderUpstreamBlock([upstreamEntry(source, item)])}\n---\n`;
+}
+
 export function toBuiltin(sourceText, item, source) {
   const { data, body } = splitFrontmatter(sourceText);
-  const adapted_from = `${source.repo} ${item.from}`;
   const fm = {
     name: data.name || item.id,
     description: item.description || data.description || `Built-in for ${item.roles.join(", ")} (adapted from ${source.repo})`,
     muster_builtin: true,
-    adapted_from,
     license: source.license
   };
-  const content = `---\n${stringify(fm, { lineWidth: 0 }).trim()}\n---\n\n${body.trim()}\n`;
+  const content = `${frontmatterWithUpstream(fm, source, item)}\n${body.trim()}\n`;
   const catalogEntry = {
     id: item.id, kind: "builtin", roles: item.roles, rank: item.rank !== undefined ? item.rank : 50,
-    provenance: { adapted_from, license: source.license }
+    provenance: { license: source.license, upstream: [source.repo] }
   };
   if (item.description) catalogEntry.description = item.description;
   return {
@@ -223,7 +261,6 @@ export function modelForRoles(roles) {
 
 export function toAgent(sourceText, item, source) {
   const { data, body } = splitFrontmatter(sourceText);
-  const adapted_from = `${source.repo} ${item.from}`;
   // Agent-backed entries take their concrete Claude model from the same
   // manifest-driven, emission-layer profile that capabilities dispatches.
   // Unknown/non-manifest agents preserve the vendor-manifest fallback: an
@@ -241,17 +278,16 @@ export function toAgent(sourceText, item, source) {
     model,
     tools: filteredTools,
     muster_builtin: true,
-    adapted_from,
     license: source.license
   };
-  const content = `---\n${stringify(fm, { lineWidth: 0 }).trim()}\n---\n\n${body.trim()}\n`;
+  const content = `${frontmatterWithUpstream(fm, source, item)}\n${body.trim()}\n`;
   return {
     path: `plugin/agents/${item.id}.md`,
     content,
     catalogEntry: {
       id: item.id, kind: "agent", roles: item.roles, rank: 50,
       description: fm.description,
-      provenance: { adapted_from, license: source.license }
+      provenance: { license: source.license, upstream: [source.repo] }
     }
   };
 }
@@ -262,16 +298,9 @@ export function toAgent(sourceText, item, source) {
 const BANNER_TEXT = "GENERATED by `muster vendor` from vendor/manifest.yaml — do not edit";
 const YAML_BANNER = `# ${BANNER_TEXT}\n`;
 
-export function generateNotice(builtinEntries) {
-  const bySrc = new Map();
-  for (const e of builtinEntries) {
-    const repo = e.provenance.noticeSource || e.provenance.adapted_from.split(" ")[0];
-    if (!bySrc.has(repo)) bySrc.set(repo, e.provenance.license);
-  }
-  let out = `${BANNER_TEXT}\n\nMuster\nCopyright 2026 Adnova Group\n\nThis product bundles adapted content from:\n`;
-  for (const [repo, lic] of bySrc) out += `\n- ${repo} (${lic})`;
-  return out + "\n";
-}
+// NOTICE is generated from the whole manifest (every source, fetched or not, with
+// its copyright line) — see src/provenance.js.
+export const generateNotice = generateManifestNotice;
 
 const pexec = promisify(execFile);
 
@@ -364,18 +393,9 @@ export async function runVendor({ home = homedir(), repoRoot = process.cwd(), ma
   const warnings = [];
   const builtinEntries = [];
   const agentEntries = [];
-  const attributionEntries = [];
   for (const source of manifest.sources) {
-    if (source.attributionOnly === true) {
-      attributionEntries.push({
-        provenance: {
-          adapted_from: `${source.repo} @ ${source.ref || "main"}`,
-          noticeSource: `${source.repo} @ ${source.ref || "main"}`,
-          license: source.license,
-        },
-      });
-      continue;
-    }
+    // Attribution-only sources are recorded (NOTICE, `upstream:`) but never fetched.
+    if (!isFetchedSource(source)) continue;
     const { root, error, cleanup } = await fetchSourceRoot(source, home);
     if (!root) {
       const detail = error ? `: ${error.message}` : "";
@@ -383,7 +403,7 @@ export async function runVendor({ home = homedir(), repoRoot = process.cwd(), ma
       continue;
     }
     try {
-      for (const item of source.items) {
+      for (const item of source.items.filter(it => isVendoredItem(source, it))) {
         const srcPath = join(root, item.from);
         // Guard: srcPath must stay within the clone/source root (no traversal via item.from).
         if (srcPath !== root && !srcPath.startsWith(root + sep)) {
@@ -421,6 +441,8 @@ export async function runVendor({ home = homedir(), repoRoot = process.cwd(), ma
     await atomicPublish(outputRoot, "catalog/builtins.generated.yaml", YAML_BANNER + stringify(builtinEntries, { lineWidth: 0 }));
   if (agentEntries.length > 0)
     await atomicPublish(outputRoot, "catalog/agents.generated.yaml", YAML_BANNER + stringify(agentEntries, { lineWidth: 0 }));
-  await atomicPublish(outputRoot, "NOTICE", generateNotice([...allEntries, ...attributionEntries]));
+  // cowork/NOTICE ships in the Cowork bundle and must stay byte-identical to NOTICE.
+  const notice = generateNotice(manifest);
+  for (const path of NOTICE_PATHS) await atomicPublish(outputRoot, path, notice);
   return { count: allEntries.length, builtins: builtinEntries.length, agents: agentEntries.length, warnings };
 }

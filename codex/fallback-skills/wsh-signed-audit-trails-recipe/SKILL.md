@@ -2,6 +2,12 @@
 name: wsh-signed-audit-trails-recipe
 description: "Codex-compatible Muster workflow. Design and review cryptographically verifiable audit trails for Codex tool-mediated workflows without silently installing hooks, packages, keys, or remote services. Use for security architecture and implementation planning, not automatic environment mutation."
 license: MIT
+upstream:
+  - repo: wshobson/agents
+    ref: 2de74ac1c8f6669821dcef13153332c3168033c1
+    path: plugins/signed-audit-trails/skills/signed-audit-trails-recipe/SKILL.md
+    license: MIT
+    relation: mechanism-port
 ---
 
 # Signed audit trails for Codex workflows

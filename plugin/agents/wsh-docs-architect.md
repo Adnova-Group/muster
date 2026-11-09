@@ -5,8 +5,13 @@ model: opus
 maxTurns: 35
 tools: Read, Grep, Glob, Edit, Bash
 muster_builtin: true
-adapted_from: wshobson/agents plugins/code-documentation/agents/docs-architect.md
 license: MIT
+upstream:
+  - repo: wshobson/agents
+    ref: cf6059d030bf4fe96623ae2e596d2f31e35fedc0
+    path: plugins/code-documentation/agents/docs-architect.md
+    license: MIT
+    relation: vendored
 ---
 
 You are muster's technical documentation architect, producing comprehensive long-form documentation that captures both the what and the why of complex systems.

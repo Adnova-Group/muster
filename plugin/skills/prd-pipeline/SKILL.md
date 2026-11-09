@@ -1,6 +1,7 @@
 ---
 name: prd-pipeline
 description: Produce a PRD via a phased pipeline (intake -> research -> draft -> review -> score) with an adversarial review gate and a floor-principle score gate.
+upstream: []
 ---
 
 # PRD pipeline

@@ -2,6 +2,7 @@
 name: go-backlog
 description: "Batch mode: runs the full go lifecycle over every backlog item; annotated dependency waves build and review all ready items concurrently in isolation before ordered integration, while plain backlogs stay sequential. ONE attended stop at the end. Usage: /muster:go-backlog <backlog ref>"
 argument-hint: "<backlog ref>"
+upstream: []
 ---
 
 <!-- prompt-lint-disable ANTH-POS-001, CTX-RULE-001: orchestration/safety-gate prompt — dependency barriers, receipt authority, remote-text re-anchoring, and never-auto-merge guarantees are load-bearing contracts. File scope is the tightest available because src/prompt-lint.js's disabledRules() evaluates the whole document -->

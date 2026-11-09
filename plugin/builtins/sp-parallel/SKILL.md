@@ -2,8 +2,13 @@
 name: dispatching-parallel-agents
 description: Use when facing 2+ independent tasks that can be worked on without shared state or sequential dependencies
 muster_builtin: true
-adapted_from: obra/superpowers dispatching-parallel-agents/SKILL.md
 license: MIT
+upstream:
+  - repo: obra/superpowers
+    ref: 284be5905ed540d34ce5bcde24728b9b7f413ea0
+    path: skills/dispatching-parallel-agents/SKILL.md
+    license: MIT
+    relation: adapted
 ---
 
 # Dispatching Parallel Agents

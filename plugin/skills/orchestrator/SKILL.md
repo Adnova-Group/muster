@@ -1,6 +1,7 @@
 ---
 name: orchestrator
 description: Execute a validated Crew Manifest in dependency-ordered waves, with a barrier + adversarial review gate between waves. Glass-box: every wave/decision appended to the run STATE.
+upstream: []
 ---
 
 # Orchestrator (wave executor)

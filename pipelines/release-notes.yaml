@@ -2,6 +2,37 @@ id: release-notes
 domain: pm
 title: Release Briefing
 match: [release notes, changelog, what's new, patch notes, release briefing]
+upstream:
+  - repo: deanpeters/product-manager-prompts
+    ref: null
+    path: null
+    license: CC-BY-NC-SA-4.0
+    relation: inspired-by
+  - repo: deanpeters/Product-Manager-Skills
+    ref: null
+    path: null
+    license: CC-BY-NC-SA-4.0
+    relation: inspired-by
+  - repo: phuryn/pm-skills
+    ref: null
+    path: null
+    license: MIT
+    relation: inspired-by
+  - repo: anthropics/knowledge-work-plugins
+    ref: null
+    path: null
+    license: Apache-2.0
+    relation: inspired-by
+  - repo: joelparkerhenderson/objectives-and-key-results
+    ref: null
+    path: null
+    license: NONE
+    relation: inspired-by
+  - repo: architecture-decision-record/architecture-decision-record
+    ref: null
+    path: null
+    license: CC-BY-NC-SA-4.0
+    relation: inspired-by
 phases:
   - { id: intake,   role: brainstorm,    desc: "release scope; identify the three audiences: developers (technical changelog), users (briefing), public (announcement)" }
   - { id: facts,    role: docs-research, desc: "extract fact rows from the release diff/changelog: change description + source (commit/PR ref) + date per entry; no analysis, no framing, no categorization" }

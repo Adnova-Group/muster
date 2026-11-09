@@ -2,8 +2,13 @@
 name: writing-plans
 description: Use when you have a spec or requirements for a multi-step task, before touching code
 muster_builtin: true
-adapted_from: obra/superpowers writing-plans/SKILL.md
 license: MIT
+upstream:
+  - repo: obra/superpowers
+    ref: 284be5905ed540d34ce5bcde24728b9b7f413ea0
+    path: skills/writing-plans/SKILL.md
+    license: MIT
+    relation: vendored
 ---
 
 # Writing Plans

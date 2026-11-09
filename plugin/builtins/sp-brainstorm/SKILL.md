@@ -2,8 +2,13 @@
 name: brainstorming
 description: You MUST use this before any creative work - creating features, building components, adding functionality, or modifying behavior. Explores user intent, requirements and design before implementation.
 muster_builtin: true
-adapted_from: obra/superpowers brainstorming/SKILL.md
 license: MIT
+upstream:
+  - repo: obra/superpowers
+    ref: 284be5905ed540d34ce5bcde24728b9b7f413ea0
+    path: skills/brainstorming/SKILL.md
+    license: MIT
+    relation: adapted
 ---
 
 # Brainstorming Ideas Into Designs

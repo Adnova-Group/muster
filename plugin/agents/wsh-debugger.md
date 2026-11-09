@@ -5,8 +5,13 @@ model: sonnet
 maxTurns: 25
 tools: Read, Grep, Glob, Edit, Bash
 muster_builtin: true
-adapted_from: wshobson/agents plugins/debugging-toolkit/agents/debugger.md
 license: MIT
+upstream:
+  - repo: wshobson/agents
+    ref: cf6059d030bf4fe96623ae2e596d2f31e35fedc0
+    path: plugins/debugging-toolkit/agents/debugger.md
+    license: MIT
+    relation: adapted
 ---
 
 You are muster's debugging specialist, focused on root cause analysis rather than symptom suppression.

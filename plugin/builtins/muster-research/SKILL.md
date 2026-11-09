@@ -2,8 +2,8 @@
 name: muster-research
 description: Built-in research provider — gather and synthesize evidence with sources. Used by domain pipelines for the research role.
 muster_builtin: true
-adapted_from: Muster (source-gathering + evidence synthesis)
 license: Apache-2.0
+upstream: []
 ---
 
 # Research (built-in)

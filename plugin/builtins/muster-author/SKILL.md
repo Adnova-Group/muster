@@ -2,8 +2,8 @@
 name: muster-author
 description: Built-in authoring provider — draft persuasive, audience-first copy using proven frameworks. Used by content/doc pipelines for the author role.
 muster_builtin: true
-adapted_from: Muster (copywriting frameworks — AIDA / PAS / BAB / QUEST, E-E-A-T)
 license: Apache-2.0
+upstream: []
 ---
 
 # Author (built-in)

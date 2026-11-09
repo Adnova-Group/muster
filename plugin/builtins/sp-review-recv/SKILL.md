@@ -2,8 +2,13 @@
 name: receiving-code-review
 description: Use when receiving code review feedback, before implementing suggestions, especially if feedback seems unclear or technically questionable - requires technical rigor and verification, not performative agreement or blind implementation
 muster_builtin: true
-adapted_from: obra/superpowers receiving-code-review/SKILL.md
 license: MIT
+upstream:
+  - repo: obra/superpowers
+    ref: 284be5905ed540d34ce5bcde24728b9b7f413ea0
+    path: skills/receiving-code-review/SKILL.md
+    license: MIT
+    relation: vendored
 ---
 
 # Code Review Reception

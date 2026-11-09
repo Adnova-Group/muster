@@ -2,8 +2,13 @@
 name: architecture-decision-records
 description: Write and maintain Architecture Decision Records (ADRs) following best practices for technical decision documentation. Use when documenting significant technical decisions, reviewing past architectural choices, or establishing decision processes.
 muster_builtin: true
-adapted_from: wshobson/agents plugins/documentation-generation/skills/architecture-decision-records/SKILL.md
 license: MIT
+upstream:
+  - repo: wshobson/agents
+    ref: cf6059d030bf4fe96623ae2e596d2f31e35fedc0
+    path: plugins/documentation-generation/skills/architecture-decision-records/SKILL.md
+    license: MIT
+    relation: vendored
 ---
 
 # Architecture Decision Records

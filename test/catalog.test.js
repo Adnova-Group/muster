@@ -17,7 +17,7 @@ test("validateCatalog requires detect for external entries", () => {
 test("validateCatalog accepts a valid builtin + external", () => {
   const { ok } = validateCatalog([
     { id: "muster-planner", kind: "builtin", roles: ["plan"], rank: 50,
-      provenance: { adapted_from: "superpowers", license: "MIT" } },
+      provenance: { license: "MIT", upstream: ["obra/superpowers"] } },
     { id: "serena", kind: "external", roles: ["code-navigation"], rank: 90,
       detect: { kind: "mcp_server", match: "serena" } }
   ]);
@@ -35,7 +35,7 @@ test("validateCatalog rejects an unknown detect.kind", () => {
 test("validateCatalog accepts a valid agent entry with provenance", () => {
   const { ok } = validateCatalog([
     { id: "muster-agent", kind: "agent", roles: ["plan"], rank: 40,
-      provenance: { adapted_from: "Muster", license: "Apache-2.0" } }
+      provenance: { license: "Apache-2.0", upstream: [] } }
   ]);
   assert.equal(ok, true);
 });

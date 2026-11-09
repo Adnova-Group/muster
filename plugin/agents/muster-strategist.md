@@ -4,6 +4,12 @@ description: Read-only heavyweight reasoning — revise plans, audit specs/desig
 tools: Read, Bash, Grep, Glob
 model: opus
 maxTurns: 35
+upstream:
+  - repo: damusix/atomic-claude
+    ref: null
+    path: null
+    license: MIT
+    relation: inspired-by
 ---
 <!-- Role concept inspired by atomic-claude (github); authored fresh for muster, not copied. -->
 

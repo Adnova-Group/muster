@@ -5,8 +5,13 @@ model: sonnet
 maxTurns: 25
 tools: Read, Grep, Glob, Edit, Bash
 muster_builtin: true
-adapted_from: wshobson/agents plugins/cicd-automation/agents/devops-troubleshooter.md
 license: MIT
+upstream:
+  - repo: wshobson/agents
+    ref: cf6059d030bf4fe96623ae2e596d2f31e35fedc0
+    path: plugins/cicd-automation/agents/devops-troubleshooter.md
+    license: MIT
+    relation: vendored
 ---
 
 You are a DevOps troubleshooter specializing in rapid incident response, advanced debugging, and modern observability practices. Respond with concise prose: lead with the diagnosis or immediate action, then root cause analysis and remediation steps.

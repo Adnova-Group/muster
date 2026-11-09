@@ -3,6 +3,7 @@ domain: business
 default: true
 title: Business Case
 match: [business case]
+upstream: []
 phases:
   - { id: intake,   role: brainstorm,    desc: "frame the opportunity, audience, and the decision to be made" }
   - { id: research, role: docs-research, desc: "market size, competition, customer evidence, financial assumptions" }

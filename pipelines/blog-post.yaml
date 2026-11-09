@@ -1,6 +1,7 @@
 id: blog-post
 domain: blog
 title: Blog Post
+upstream: []
 phases:
   - { id: intake,   role: brainstorm,    desc: "audience, search intent, angle, target keyword, success metric; resolve the target audience to a named profile in docs/profiles/AUDIENCES.md (create/extend the profile on first use)" }
   - { id: research, role: docs-research, desc: "evidence, sources, competitor posts, E-E-A-T signals — incl. a named author with first-hand experience and 'how it was made' accountability (2025 helpful-content guidance)" }

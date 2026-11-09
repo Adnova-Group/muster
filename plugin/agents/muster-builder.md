@@ -4,6 +4,12 @@ description: Feature-checkpoint builder for one cohesive slice (endpoint + servi
 tools: Read, Write, Edit, Bash, Grep, Glob
 model: sonnet
 maxTurns: 25
+upstream:
+  - repo: damusix/atomic-claude
+    ref: null
+    path: null
+    license: MIT
+    relation: inspired-by
 ---
 <!-- Role concept inspired by atomic-claude (github); authored fresh for muster, not copied. -->
 

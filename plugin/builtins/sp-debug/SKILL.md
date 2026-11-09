@@ -2,8 +2,13 @@
 name: systematic-debugging
 description: Use when encountering any bug, test failure, or unexpected behavior, before proposing fixes
 muster_builtin: true
-adapted_from: obra/superpowers systematic-debugging/SKILL.md
 license: MIT
+upstream:
+  - repo: obra/superpowers
+    ref: 284be5905ed540d34ce5bcde24728b9b7f413ea0
+    path: skills/systematic-debugging/SKILL.md
+    license: MIT
+    relation: adapted
 ---
 
 # Systematic Debugging

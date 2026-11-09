@@ -2,8 +2,13 @@
 name: gsd-plan-phase
 description: Built-in for plan (adapted from open-gsd/gsd-core)
 muster_builtin: true
-adapted_from: open-gsd/gsd-core gsd-core/workflows/plan-phase.md
 license: MIT
+upstream:
+  - repo: open-gsd/gsd-core
+    ref: 18995380ce8d85bccd8a3c64973664348b29cab8
+    path: gsd-core/workflows/plan-phase.md
+    license: MIT
+    relation: adapted
 ---
 
 <!-- prompt-lint-disable ANTH-POS-001: orchestration prompt — its stacked prohibitions (fail-closed stops, the wave guard) are intentional, safety-critical guarantees and must stay imperative -->

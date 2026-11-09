@@ -2,6 +2,22 @@ id: runbook
 domain: ops
 title: Operations Runbook
 match: [runbook, playbook, on-call, incident response, operations manual, operational procedure]
+upstream:
+  - repo: SkeltonThatcher/run-book-template
+    ref: null
+    path: null
+    license: NONE
+    relation: inspired-by
+  - repo: dastergon/awesome-sre
+    ref: null
+    path: null
+    license: CC0-1.0
+    relation: inspired-by
+  - repo: runbear-io/awesome-runbook
+    ref: null
+    path: null
+    license: CC0-1.0
+    relation: inspired-by
 phases:
   - { id: intake,         role: brainstorm,  desc: "scope, trigger, owners, prerequisites" }
   - { id: preconditions,  role: author,      desc: "required access, environment, blast-radius scope, idempotency declaration, tool dependencies" }

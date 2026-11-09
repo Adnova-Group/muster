@@ -2,6 +2,22 @@ id: lead-magnet
 domain: marketing
 title: Lead Magnet
 match: [lead magnet, content upgrade, opt-in, gated content, ebook]
+upstream:
+  - repo: coreyhaines31/marketingskills
+    ref: null
+    path: null
+    license: MIT
+    relation: inspired-by
+  - repo: CosmoBlk/email-marketing-bible
+    ref: null
+    path: null
+    license: MIT
+    relation: inspired-by
+  - repo: AgriciDaniel/claude-email
+    ref: null
+    path: null
+    license: MIT
+    relation: inspired-by
 phases:
   - { id: intake,           role: brainstorm,    desc: "ICP, pain, promise, format (checklist/ebook/template), conversion goal" }
   - { id: research,         role: docs-research, desc: "audience evidence, competitor magnets, proof points" }

@@ -2,8 +2,23 @@
 name: muster-prompt-smith
 description: Built-in prompt-quality provider — lint, eval, and optimize prompts an application generates to build agents/agentic workflows (and prompts found in a codebase). Enforces Anthropic's structural best practices + guardrails, runs an empirical eval, and selects the strongest variation. Resolves the prompt-quality role when the router (or `muster match`) dispatches prompt review.
 muster_builtin: true
-adapted_from: Anthropic prompt-engineering + test/eval docs; lintlang taxonomy; promptfoo/promptimal patterns
 license: Apache-2.0
+upstream:
+  - repo: hermes-labs-ai/lintlang
+    ref: dd17238643817f3d7fd3ece69e6fdbafe8676a98
+    path: src/lintlang/patterns.py
+    license: Apache-2.0
+    relation: mechanism-port
+  - repo: promptfoo/promptfoo
+    ref: 3901d3949df32c087465bce39626c460d8590034
+    path: null
+    license: MIT
+    relation: inspired-by
+  - repo: shobrook/promptimal
+    ref: e03cbc1db19c7ec6c310605a9819e35c2baed023
+    path: null
+    license: MIT
+    relation: inspired-by
 ---
 
 # Prompt Smith (built-in)

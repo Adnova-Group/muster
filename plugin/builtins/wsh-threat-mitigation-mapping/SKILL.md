@@ -2,8 +2,13 @@
 name: threat-mitigation-mapping
 description: Map identified threats to appropriate security controls and mitigations. Use when prioritizing security investments, creating remediation plans, or validating control effectiveness.
 muster_builtin: true
-adapted_from: wshobson/agents plugins/security-scanning/skills/threat-mitigation-mapping/SKILL.md
 license: MIT
+upstream:
+  - repo: wshobson/agents
+    ref: cf6059d030bf4fe96623ae2e596d2f31e35fedc0
+    path: plugins/security-scanning/skills/threat-mitigation-mapping/SKILL.md
+    license: MIT
+    relation: vendored
 ---
 
 # Threat Mitigation Mapping

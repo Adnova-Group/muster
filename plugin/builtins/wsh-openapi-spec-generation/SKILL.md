@@ -2,8 +2,13 @@
 name: openapi-spec-generation
 description: Generate and maintain OpenAPI 3.1 specifications from code, design-first specs, and validation patterns. Use when creating API documentation, generating SDKs, or ensuring API contract compliance.
 muster_builtin: true
-adapted_from: wshobson/agents plugins/documentation-generation/skills/openapi-spec-generation/SKILL.md
 license: MIT
+upstream:
+  - repo: wshobson/agents
+    ref: cf6059d030bf4fe96623ae2e596d2f31e35fedc0
+    path: plugins/documentation-generation/skills/openapi-spec-generation/SKILL.md
+    license: MIT
+    relation: adapted
 ---
 
 # OpenAPI Spec Generation

@@ -2,8 +2,15 @@
 name: muster-scorer
 description: Built-in scoring provider — evidence-cited rubric scoring with the floor principle. Used by domain pipelines for the score role.
 muster_builtin: true
-adapted_from: Muster (floor-principle rubric scoring, book-genesis-inspired)
 license: Apache-2.0
+upstream:
+  - repo: felipelobomotta-blip/book-genesis-studio
+    ref: a43a429bdec1770232ee64e7de634c5ce5109b80
+    path: null
+    license: MIT
+    relation: inspired-by
+    formerly:
+      - felipelobomotta-blip/book-genesis-v4
 ---
 
 # Scorer (built-in)

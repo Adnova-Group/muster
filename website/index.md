@@ -33,7 +33,7 @@ features:
       width: 32
       height: 32
     title: Multi-runtime
-    details: Composes the tools you already have and falls back to its own built-ins. Supported lanes include Claude Code, Codex, Kimi, and Cowork, with each harness's limits documented.
+    details: Composes the tools you already have and falls back to its own built-ins. Supported lanes include Claude Code, Codex, and Cowork, with each harness's limits documented.
   - icon:
       src: /brand/icon-domain.svg
       alt: ""
@@ -61,5 +61,5 @@ features:
       width: 32
       height: 32
     title: Native lanes, no extra service
-    details: "The CLI makes no model calls. Native Claude Code, Codex, Kimi, and Cowork lanes use their active harness. Private/local ChatGPT Work is the exception: it uses Secure MCP Tunnel, a separately billed OpenAI Platform key, and proof-gated native invocation."
+    details: "The CLI makes no model calls. Native Claude Code, Codex, and Cowork lanes use their active harness. Private/local ChatGPT Work is the exception: it uses Secure MCP Tunnel, a separately billed OpenAI Platform key, and proof-gated native invocation."
 ---

@@ -75,10 +75,6 @@ instruction seeds.
      `$MUSTER_CLI init transition "$TARGET" --to handoff --reason unavailable --expect ""`.
      Do not suggest Codex `/init` from a Work session. Leave a **HUMAN-HOLD**
      offering explicit acknowledgement of the unavailable handoff.
-   - **Kimi** — Kimi has no proven callable native init command. Run
-     `$MUSTER_CLI init transition "$TARGET" --to handoff --reason unavailable --expect ""`.
-     Do not invent or suggest a Kimi init command. Leave a **HUMAN-HOLD** offering
-     explicit acknowledgement of the unavailable handoff.
    - **Copilot/unknown** — run
      `$MUSTER_CLI init transition "$TARGET" --to handoff --reason unavailable --expect .github/copilot-instructions.md`.
      Never shell `copilot init` merely because a binary exists. Leave a

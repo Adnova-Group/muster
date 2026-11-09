@@ -40,7 +40,7 @@ import { computeSprintWaves } from "./sprint-waves.js";
 // Guard 1 -- zombie provider CLI process: detect + (conservatively) reap
 // ---------------------------------------------------------------------------
 
-export const DEFAULT_PROVIDER_PROCESS_PATTERN = /^(codex|claude|kimi)$/i;
+export const DEFAULT_PROVIDER_PROCESS_PATTERN = /^(codex|claude)$/i;
 export const DEFAULT_ZOMBIE_STALE_MS = 60 * 60 * 1000; // 60 minutes
 
 // Process diagnostics (audit S10, security): a dead parent alone never makes a

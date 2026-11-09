@@ -267,7 +267,7 @@ const childEnvironment = (source, runtimeIdentity) => {
     "PATH", "PATHEXT", "SYSTEMROOT", "COMSPEC", "WINDIR",
     "HOME", "USERPROFILE", "USER", "LOGNAME", "TMPDIR", "TMP", "TEMP",
     "LANG", "LC_ALL", "LC_CTYPE", "TZ", "TERM", "NO_COLOR", "FORCE_COLOR", "CI",
-    "NODE_ENV", "CODEX_HOME", "KIMI_CODE_HOME", "PLUGIN_ROOT", "PLUGIN_DATA",
+    "NODE_ENV", "CODEX_HOME", "PLUGIN_ROOT", "PLUGIN_DATA",
     "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME",
   ]);
   const environment = {};

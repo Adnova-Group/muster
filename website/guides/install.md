@@ -33,7 +33,7 @@ Plugin install is a Claude Code action, so the running session only picks Muster
 :::
 
 ::: tip Using another runtime?
-Codex, Kimi, and Cowork have their own install and enforcement paths. Start with [Harness support](/guides/harnesses).
+Codex and Cowork have their own install and enforcement paths. Start with [Harness support](/guides/harnesses).
 :::
 
 ## 3. Verify

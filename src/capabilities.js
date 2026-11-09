@@ -5,7 +5,6 @@ import { ROLES } from "./roles.js";
 import { isInstalled } from "./installed.js";
 import { installedSkillDescription } from "./plugin-inventory.js";
 import { codexProfileForAgentId } from "./codex.js";
-import { kimiProfileForAgentId } from "./kimi.js";
 
 // Dispatch type for a resolved provider: "agent" | "mcp" | "skill".
 function providerType(entry) {
@@ -30,11 +29,6 @@ export function resolveCapabilities(catalog, installed, home = homedir(), opts =
   // reads the resolved gpt-5.6 model + reasoning effort pre-dispatch, without
   // the post-run codex-conformance audit. Non-codex output shape is unchanged.
   const codex = opts.codex === true;
-  // --kimi lane (opts.kimi): the Kimi sibling of the codex lane. Each agent-backed
-  // role additionally carries kimiModel: {model, effort|thinking} -- the exact Kimi
-  // Code alias + effort it dispatches on, resolved from the SAME neutral manifest
-  // (kimiProfileForAgentId). Non-kimi output shape is unchanged.
-  const kimi = opts.kimi === true;
   const agentPlugins = opts.agentPlugins === true
     || installed.runtime === "agent-plugins"
     || process.env.MUSTER_RUNTIME === "agent-plugins";
@@ -110,22 +104,22 @@ export function resolveCapabilities(catalog, installed, home = homedir(), opts =
     // lane. `claudeModel`/`claudeProfile` are the CLAUDE adapter's concrete
     // dispatch values, so they ride only the lanes whose host actually
     // dispatches Claude models: the default lane and Cowork. Work has no Claude
-    // model override at all, and a --codex/--kimi driver dispatches on its own
-    // codexModel/kimiModel -- a Claude model sitting beside those is noise it
-    // could act on (audit S3, P2: the guard here used to be `!work` alone, so
-    // both Claude fields leaked into the codex and kimi lane output).
+    // model override at all, and a --codex driver dispatches on its own
+    // codexModel -- a Claude model sitting beside those is noise it could act
+    // on (audit S3, P2: the guard here used to be `!work` alone, so both Claude
+    // fields leaked into the codex lane output).
     roles[role] = { chosen, chain, recommendations, model };
-    // claudeProfile: the Claude lane's sibling of the codex/kimi profile
+    // claudeProfile: the Claude lane's sibling of the codex profile
     // emissions -- the SAME manifest-driven resolution (claudeProfileForAgentId),
     // carrying {model} plus the Workflow-lane `workflowEffort` when the chosen
     // agent's profile declares a semantic effort (src/claude.js). This is what
     // makes orchestrator SKILL.md's native Workflow dispatch ("effort = the
     // member's workflowEffort") read a field that EXISTS in capabilities.json
     // instead of re-deriving it. Agent-backed roles only; the key is absent for
-    // inline/skill/mcp chosen exactly as codexModel/kimiModel are, and
+    // inline/skill/mcp chosen exactly as codexModel is, and
     // src/claude.js's lane scoping is honored: the field is a pre-dispatch
     // resolution surface, never agent frontmatter or an Agent-tool call.
-    if (!work && !codex && !kimi && !agentPlugins) {
+    if (!work && !codex && !agentPlugins) {
       const claudeProfile = chosen.kind === "agent" ? claudeProfileForAgentId(chosen.id) : null;
       // PRECEDENCE (audit S3, P1): when the chosen agent HAS a manifest profile,
       // that profile is the authoritative dispatch pin, so claudeModel IS
@@ -144,10 +138,6 @@ export function resolveCapabilities(catalog, installed, home = homedir(), opts =
     if (codex && chosen.kind === "agent") {
       const codexModel = codexProfileForAgentId(chosen.id);
       if (codexModel) roles[role].codexModel = codexModel;
-    }
-    if (kimi && chosen.kind === "agent") {
-      const kimiModel = kimiProfileForAgentId(chosen.id);
-      if (kimiModel) roles[role].kimiModel = kimiModel;
     }
   }
 

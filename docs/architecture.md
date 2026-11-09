@@ -17,7 +17,7 @@ Muster is split into two layers with a hard boundary between them.
 | Deterministic CLI | `src/*.js` | Plain Node ESM | No |
 | Model-facing | skills, commands, agents, and adapters | Active harness | Yes |
 
-The **CLI layer** is ordinary Node. The published package has two runtime dependencies, `yaml` and `esbuild`, requires Node 20 or newer, and normally makes no model calls. Direct CLI verbs need no precompile, while tests, publishing, and adapter installation run the adapter build pipeline. Most verbs are fully local; five boundaries can use the network or active model account: `issue` performs explicit issue lookup, `vendor` fetches declared remote sources, `doctor` verifies pinned remote sources, one opt-in adapter probe checks an authenticated account, and one adapter's native planning launcher begins a model turn. The remaining deterministic verbs run without network access. The CLI handles project detection, provider resolution, token-overlap ranking, gate scoring, prioritization math, and pipeline loading and validation.
+The **CLI layer** is ordinary Node. The published package has two runtime dependencies, `yaml` and `esbuild`, requires Node 20 or newer, and normally makes no model calls. Direct CLI verbs need no precompile, while tests, publishing, and adapter installation run the adapter build pipeline. Most verbs are fully local; four boundaries can use the network or active model account: `issue` performs explicit issue lookup, `vendor` fetches declared remote sources, `doctor` verifies pinned remote sources, and one adapter's native planning launcher begins a model turn. The remaining deterministic verbs run without network access. The CLI handles project detection, provider resolution, token-overlap ranking, gate scoring, prioritization math, and pipeline loading and validation.
 
 The **model-facing layer** is a set of markdown commands, skills, agents, and adapter bindings. These files instruct the active harness how to drive a run. They call the CLI for every deterministic decision, then use the harness's dispatch primitive for judgment work. The split is deliberate. Routing, scoring, and validation are reproducible because code owns them. Drafting, reviewing, and classifying are the model's job.
 
@@ -156,23 +156,18 @@ review and strategy to `gpt-5.6-sol`/high, and security to
 `gpt-5.6-sol`/xhigh through its `peak` effort override. Its generator and
 `check:codex` validate concrete TOML against the neutral manifest.
 
-### Kimi adapter: optional network probe
-
-`install kimi --probe` performs the fourth network-capable CLI operation: an
-authenticated models request. Omit `--probe` to keep Kimi installation offline.
-
 ### Codex adapter: native Plan launcher
 
-`codex-plan` is the fifth boundary: it starts Codex App Server and begins a
+`codex-plan` is the fourth boundary: it starts Codex App Server and begins a
 model turn on the active Codex account. Other deterministic planning verbs stay offline.
 
 ### Claude Code adapter: remote controls
 
 Driving Muster remotely in Claude Code uses the harness's own features, not a transport Muster ships. A Routine can fire `/muster:go` as a scheduled cloud run. Channels deliver steering events (approve, stop, status, retarget) to a running session. Remote Control hands phone or web access to a running local session when a human wants to take over.
 
-### Claude Code and Kimi adapters: dispatch lanes
+### Claude Code adapter: dispatch lane
 
-Two adapter-specific dispatch lanes refine the wave fan-out picture. On Claude Code, a wave rides the native `Workflow` tool when the session's own tool list carries it -- a declared, self-observed capability, never probed from outside -- with the prose wave loop as the unconditional floor on every session or harness without it (`src/wave-dispatch.js`, `docs/native-workflow-dispatch.md`). On Kimi, model work goes through Kimi's own `Agent` dispatch: a leg may run foreground or background (`run_in_background`), a backgrounded leg returning a task id whose completion arrives as a later synthetic user message with an on-disk receipt under the session's `tasks/` dir -- and barrier-gated work never dispatches background (`src/kimi-dispatch.js`). The orchestrator's per-harness dispatch detail lives in `plugin/skills/orchestrator/references/` (split out of `SKILL.md`), e.g. `kimi-dispatch.md` and `codex-dispatch.md`.
+An adapter-specific dispatch lane refines the wave fan-out picture. On Claude Code, a wave rides the native `Workflow` tool when the session's own tool list carries it -- a declared, self-observed capability, never probed from outside -- with the prose wave loop as the unconditional floor on every session or harness without it (`src/wave-dispatch.js`, `docs/native-workflow-dispatch.md`). The orchestrator's per-harness dispatch detail lives in `plugin/skills/orchestrator/references/` (split out of `SKILL.md`), e.g. `codex-dispatch.md`.
 
 ## Claude Code adapter: session hooks
 

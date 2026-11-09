@@ -101,7 +101,6 @@ test("public navigation exposes every guide route and names the ten-mode referen
     "/guides/quickstart",
     "/guides/harnesses",
     "/guides/codex",
-    "/guides/kimi",
     "/guides/cowork",
     "/guides/chatgpt-work",
     "/guides/security",
@@ -119,7 +118,6 @@ test("public entry points consistently document ten modes including Design and I
     read("website/guides/quickstart.md"),
     read("website/guides/codex.md"),
     read("website/guides/install.md"),
-    read("website/guides/kimi.md"),
     read("website/guides/harnesses.md"),
   ]);
   for (const page of pages) {
@@ -135,22 +133,16 @@ test("public entry points consistently document ten modes including Design and I
 });
 
 test("harness documentation routes and support claims are explicit", async () => {
-  const [config, harnesses, codex, kimi, cowork] = await Promise.all([
+  const [config, harnesses, codex, cowork] = await Promise.all([
     read("website/.vitepress/config.js"),
     read("website/guides/harnesses.md"),
     read("website/guides/codex.md"),
-    read("website/guides/kimi.md"),
     read("website/guides/cowork.md"),
   ]);
-  for (const harness of ["Claude Code", "Codex", "Kimi", "Cowork"]) {
+  for (const harness of ["Claude Code", "Codex", "Cowork"]) {
     assert.match(config, new RegExp(harness));
     assert.match(harnesses, new RegExp(harness));
   }
-  assert.match(kimi, /support matrix/i);
-  assert.match(kimi, /hooks-free/i);
-  assert.match(kimi, new RegExp(`@adnova-group/muster@${escapedReleaseVersion}`));
-  assert.match(kimi, /symbolic[\s\S]{0,100}`primary`[\s\S]{0,80}`secondary`/i);
-  assert.match(kimi, /explicit[\s\S]{0,120}overrides[\s\S]{0,120}model_preference/i);
   assert.match(cowork, /support matrix/i);
   assert.match(cowork, /30 CLI-wrapper tools/i);
   assert.match(cowork, /`muster_sprint_protocol`/);
@@ -225,7 +217,6 @@ test("website install and uninstall examples pin the reviewed release", async ()
   for (const file of [
     "website/guides/install.md",
     "website/guides/codex.md",
-    "website/guides/kimi.md",
     "website/guides/troubleshooting.md",
   ]) {
     const page = await read(file);
@@ -247,7 +238,7 @@ test("website release surface routes through harness choice and publishes access
   ]);
   assert.match(home, /text: Get Started[\s\S]{0,80}link: \/guides\/get-started/);
   assert.doesNotMatch(home, /(?:🔍|🧩|🌐|⚙️|🚦|🔒)/u);
-  for (const harness of ["Claude Code", "Codex", "Kimi", "Cowork", "ChatGPT Work"]) {
+  for (const harness of ["Claude Code", "Codex", "Cowork", "ChatGPT Work"]) {
     assert.match(getStarted, new RegExp(harness));
   }
   for (const disclosure of [/private\/local/i, /proof-gated/i, /Secure MCP Tunnel/i, /separately billed OpenAI Platform API key/i]) {
@@ -293,8 +284,8 @@ test("architecture docs name every network-capable CLI boundary and offline beha
   ]);
   for (const doc of docs) {
     assert.doesNotMatch(doc, /one carve-out is the `issue` verb/);
-    assert.match(doc, /five boundaries/i);
-    for (const command of ["`issue`", "`vendor`", "`doctor`", "`install kimi --probe`", "`codex-plan`"]) {
+    assert.match(doc, /four boundaries/i);
+    for (const command of ["`issue`", "`vendor`", "`doctor`", "`codex-plan`"]) {
       assert.match(doc, new RegExp(command));
     }
     assert.match(doc, /offline/i);

@@ -4,7 +4,6 @@ import { readFile } from "node:fs/promises";
 
 const CLI_SOURCE = new URL("../src/cli.js", import.meta.url);
 const REQUIRED_HANDLERS = [
-  "handleKimiCommand",
   "handleCodexCommand",
   "handleChatgptCommand",
   "handleCoreCommand",

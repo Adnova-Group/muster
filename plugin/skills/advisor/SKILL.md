@@ -45,7 +45,7 @@ worker guesses instead of escalating.
    (`consult: false`) → append `advisor-budget-exhausted: proceeding best-effort`, skip to step 5.
 4. **Dispatch the advisor agent (NATIVE).** Via the Agent tool on the CLI's `advisorClaudeModel`
    (the Claude adapter's concrete value for the conceptual `advisorModel` tier, apex -> prime
-   default degradation already applied; on Codex/Kimi use the role's adapter profile instead),
+   default degradation already applied; on Codex use the role's adapter profile instead),
    the full request as the prompt; an invalid response counts as budget-exhausted.
 5. **Append to STATE.** One glass-box line per attempt: `advisor-consult #<n>: decisionType=<type>
    model=<advisorModel>` plus truncated question/recommendation/rationale; exhausted appends

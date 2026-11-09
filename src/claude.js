@@ -3,14 +3,13 @@ import { assertNeutralProfile, resolveNeutralProfile } from "./model-policy.js";
 import { agentProfiles } from "./agent-manifest.js";
 
 // Claude is an adapter target, not the identity muster's tiers are named after —
-// the same posture as codex.js and kimi.js. Through 2026-07-26 the conceptual
+// the same posture as codex.js. Through 2026-07-26 the conceptual
 // tiers WERE the Claude family names (haiku|sonnet|opus|fable), which made this
 // adapter implicit and unwritten; the semantic-tier rename (scout|core|prime|
 // apex, model.js) makes it explicit. The family names below are Claude's
 // CONCRETE model values — what Claude Code's own surfaces consume: the agent
 // frontmatter `model:` field, the Agent tool's `model` param, and settings-level
-// model aliases. They are harness words now, exactly like "gpt-5.6-sol" and
-// "kimi-code/k3".
+// model aliases. They are harness words now, exactly like "gpt-5.6-sol".
 //
 // Claude Code's per-subagent reasoning-effort knob exists on exactly ONE
 // surface: the Workflow tool's agent() takes `effort:
@@ -62,8 +61,8 @@ export function claudeModelForRole(role) {
 
 // SINGLE SOURCE for the concrete Claude model a HARNESS-NEUTRAL agent config
 // resolves to. Consumes { tier, effort? } (model-policy.js) from the SAME
-// catalog/agents.manifest.json the Codex and Kimi adapters read. Mirrors
-// codexProfileForConfig / kimiProfileForConfig.
+// catalog/agents.manifest.json the Codex adapter reads. Mirrors
+// codexProfileForConfig.
 //
 // The declared tier goes through the shared emission layer (model.js
 // emissionTier: apex opt-in check + MUSTER_MAX_TIER) before it is resolved.

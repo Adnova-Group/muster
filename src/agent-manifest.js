@@ -4,8 +4,8 @@ import { readFileSync } from "node:fs";
 //
 // Shape: { format, description, agents: { <id>: { tier, effort?, readOnly?,
 // source } } }. Each entry names a CONCEPTUAL tier + an optional SEMANTIC effort
-// and NO concrete harness model, so every adapter (Codex, Kimi, ...) resolves the
-// SAME file through its own policy (codexProfileForConfig / kimiProfileForConfig).
+// and NO concrete harness model, so every adapter (Claude, Codex, ...) resolves the
+// SAME file through its own policy (claudeProfileForConfig / codexProfileForConfig).
 // That is the payoff of the neutral-shape migration: one manifest, every harness.
 //
 // It lives at catalog/ -- a shared, packaged data dir -- NOT under codex/: the
@@ -24,7 +24,7 @@ export function readAgentManifest() {
 }
 
 // The frozen { <id>: config } agent map -- what the adapters resolve per agent id
-// (== the `capabilities --codex`/`--kimi` chosen.id for an agent provider).
+// (== the `capabilities --codex` chosen.id for an agent provider).
 export function agentProfiles() {
   return readAgentManifest().agents;
 }

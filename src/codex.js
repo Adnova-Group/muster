@@ -63,7 +63,7 @@ export function codexModelForRole(role) {
 }
 
 // The frozen agent map comes from the shared, harness-neutral manifest
-// (agent-manifest.js reads catalog/agents.manifest.json) — the SAME file the Kimi
+// (agent-manifest.js reads catalog/agents.manifest.json) — the SAME file the Claude
 // adapter resolves. Keyed by agent id (== .codex/agents/<id>.toml filename ==
 // `capabilities --codex` chosen.id for an agent provider).
 

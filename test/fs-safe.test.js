@@ -373,8 +373,7 @@ test("atomicWrite: honors a caller's historical tempName and fsyncDir", async ()
 // Directory fsync is a POSIX-only durability barrier: Windows has no directory
 // fsync, and opening a directory handle to sync() it raises EPERM there. An
 // unguarded fsyncDir therefore failed the ENTIRE write on Windows for every
-// caller that asks for it (kimi install/uninstall receipts, init.js,
-// design.js), which is a lost write, not a lost barrier. The gate must track
+// caller that asks for it (init.js, design.js), which is a lost write, not a lost barrier. The gate must track
 // the platform, and must stay ON wherever the barrier is real.
 test("atomicWrite: the fsyncDir barrier is gated on platform support, and publishes either way", async () => {
   assert.equal(DIRECTORY_FSYNC_SUPPORTED, process.platform !== "win32");

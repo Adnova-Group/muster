@@ -42,7 +42,7 @@ survey briefs seeded as a skill (the other is `audit-pattern-readability`).
   open as of this writing -- re-verify each name is still zero-reference before citing as
   current): "the 5 zero-reference exports (`CODEX_MARKETPLACE`, `codexInvocationConfigDirs`,
   `assertRegularFile`, `parseCodexTurnUsage`, `DESKTOP_HARNESS_SURFACES`), `src/brief-lint.js`,
-  the 4-function kimi-dispatch interpretation cluster, and codex-fix-loop's orphaned binding
+  [a 4-function interpretation cluster in a since-removed harness lane], and codex-fix-loop's orphaned binding
   functions". That item's own success criterion is the contract-surface bar to hold a deletion to:
   "100% of deletions pass a contract-surface check proving 0 invocations from plugin skills,
   generated runtimes, or docs."
@@ -108,10 +108,10 @@ survey briefs seeded as a skill (the other is `audit-pattern-readability`).
      (`test/brief-lint.test.js`), not the full `test/` directory. Always grep the WHOLE `test/`
      tree, never assume a 1:1 file-to-test-file naming convention.
   3. **Prose-wiring contract tests can bind exact identifiers into plugin docs, making a
-     textually-uncalled function load-bearing anyway.** The kimi-dispatch
-     `interpretKimiGoalExit`-style interpretation cluster is never called from `src/*.js`
+     textually-uncalled function load-bearing anyway.** An exit-code
+     interpretation cluster in a since-removed harness lane was never called from `src/*.js`
      directly, but a corpus/contract test asserts the exact identifier is quoted verbatim in a
-     `plugin/` doc -- deleting the function would silently break that doc-fidelity contract even
+     `plugin/` doc -- deleting the function would have silently broken that doc-fidelity contract even
      though no JS import ever breaks. Grep `test/*.test.js` for the candidate name as a
      STRING literal (inside a doc-quoting assertion), not only as an import, before deleting.
 

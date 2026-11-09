@@ -52,13 +52,10 @@ authoritative and `CLAUDE.md` only imports it.
 Current investigations live under [`research/`](research/). They are evidence
 inputs, not runtime contracts.
 
-- [Orca](research/orca.md): worktree/runtime and orchestration research pinned
-  to Orca `1.4.177-rc.0`.
-
 ## Strategy
 
-- [Orca–Muster integration](strategy/orca-muster-integration.md): authority
-  boundaries and phased coexistence plan.
+- [2026-11 revival review](strategy/2026-11-revival-review.md): owner decisions
+  and the staged revival plan.
 
 ## Historical
 

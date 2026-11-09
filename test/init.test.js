@@ -12,6 +12,7 @@ import {
   canonicalInitJson,
   finalizeInitialization,
   INIT_LIMITS,
+  __withInitLimits,
   initializeProject,
   learnProjectProfile,
   normalizeCodexInstructionPair,
@@ -567,15 +568,19 @@ test("repository fingerprints reject a path-set addition during hashing", async 
 });
 
 test("directory learning limits remain explicit without blocking fingerprinting", async () => {
+  // Scaled-down ceilings keeping INIT_LIMITS' 1:4 learning-to-fingerprint
+  // ratio: 40 x 255-byte names = 10,200 name bytes, over the learning
+  // directory ceiling but under the fingerprint directory ceiling.
+  const limits = { fingerprintDirectoryBytes: 8_192, fingerprintDirectoryNameBytes: 32_768 };
+  assert.equal(INIT_LIMITS.fingerprintDirectoryNameBytes / INIT_LIMITS.fingerprintDirectoryBytes,
+    limits.fingerprintDirectoryNameBytes / limits.fingerprintDirectoryBytes);
   const dir = await tmp();
-  for (let offset = 0; offset < 33_000; offset += 500) {
-    await Promise.all(Array.from({ length: 500 }, (_, index) => {
-      const id = String(offset + index).padStart(5, "0");
-      return writeFile(join(dir, `${id}-${"x".repeat(249)}`), "");
-    }));
-  }
+  await Promise.all(Array.from({ length: 40 }, (_, index) => {
+    const id = String(index).padStart(5, "0");
+    return writeFile(join(dir, `${id}-${"x".repeat(249)}`), "");
+  }));
 
-  const profile = await learnProjectProfile(dir);
+  const profile = await __withInitLimits(limits, () => learnProjectProfile(dir));
   assert.deepEqual(profile.facts.learning, {
     limitations: [{ path: "project-root", reason: "directory-limit" }],
     status: "incomplete",
@@ -793,17 +798,20 @@ test("project learning binds root VCS facts to the sealed fingerprint", async ()
   await pexecFile("git", ["init", "--quiet"], { cwd: dir });
   await pexecFile("git", ["config", "user.name", "Muster Test"], { cwd: dir });
   await pexecFile("git", ["config", "user.email", "muster@example.invalid"], { cwd: dir });
-  const large = join(dir, "large.bin");
-  await writeFile(large, "");
-  await truncate(large, 512 * 1024 * 1024);
-  await pexecFile("git", ["add", "large.bin"], { cwd: dir });
+  await writeFile(join(dir, "package.json"), "{}");
+  await pexecFile("git", ["add", "package.json"], { cwd: dir });
   await pexecFile("git", ["commit", "--quiet", "-m", "initial"], { cwd: dir });
-  const writer = (async () => {
-    await sleep(50);
-    await pexecFile("git", ["commit", "--quiet", "--allow-empty", "-m", "advance"], { cwd: dir });
-  })();
-  await assert.rejects(() => learnProjectProfile(dir), /repository VCS changed while learning/);
-  await writer;
+  // Advance HEAD after the root VCS facts are captured and before the
+  // fingerprint is sealed: deterministic, no 512 MiB hash-time race.
+  let advanced = false;
+  await assert.rejects(() => learnProjectProfile(dir, {
+    async __afterLearningOpen({ rel }) {
+      if (rel !== "package.json" || advanced) return;
+      advanced = true;
+      await pexecFile("git", ["commit", "--quiet", "--allow-empty", "-m", "advance"], { cwd: dir });
+    },
+  }), /repository VCS changed while learning/);
+  assert.equal(advanced, true);
 });
 
 test("project learning cumulatively bounds retained package metadata", async () => {
@@ -880,37 +888,53 @@ test("project learning bounds generated evidence so high-cardinality profiles re
     "Cargo.toml", "Cargo.lock", "pyproject.toml", "requirements.txt", "go.mod", "Gemfile",
     "AGENTS.md", "CLAUDE.md", "GEMINI.md",
   ];
-  for (let offset = 0; offset < 600; offset += 20) {
-    await Promise.all(Array.from({ length: 20 }, async (_, index) => {
-      const id = String(offset + index).padStart(3, "0");
-      const parent = join(dir, `${id}-${"x".repeat(246)}`);
-      await mkdir(parent);
-      await Promise.all(metadata.map((name) => writeFile(join(parent, name), name === "package.json" ? "{}" : "")));
-    }));
-  }
-  const initialized = await initializeProject(dir);
-  const profile = await readProfile(dir);
-  assert.equal(profile.facts.learning.status, "incomplete");
-  assert.ok(profile.facts.learning.limitations.some(({ reason }) => reason === "profile-limit"));
-  assert.ok((await stat(join(dir, ".muster/project-profile.json"))).size <= INIT_LIMITS.learnProfileBytes);
-  assert.deepEqual(await initializeProject(dir), initialized);
+  // Scaled-down evidence/profile ceilings (INIT_LIMITS' ~1.5 ratio). 30 dirs x
+  // 14 long-named metadata files carry ~10x the evidence budget, as the
+  // full-size 600-dir fixture did against the real ceilings.
+  const limits = { learnEvidenceBytes: 16_384, learnProfileBytes: 24_576 };
+  await Promise.all(Array.from({ length: 30 }, async (_, index) => {
+    const id = String(index).padStart(3, "0");
+    const parent = join(dir, `${id}-${"x".repeat(246)}`);
+    await mkdir(parent);
+    await Promise.all(metadata.map((name) => writeFile(join(parent, name), name === "package.json" ? "{}" : "")));
+  }));
+  await __withInitLimits(limits, async () => {
+    const initialized = await initializeProject(dir);
+    const profile = await readProfile(dir);
+    assert.equal(profile.facts.learning.status, "incomplete");
+    assert.ok(profile.facts.learning.limitations.some(({ reason }) => reason === "profile-limit"));
+    assert.ok((await stat(join(dir, ".muster/project-profile.json"))).size <= limits.learnProfileBytes);
+    assert.deepEqual(await initializeProject(dir), initialized);
+  });
 });
 
 test("project learning dynamically trims many source roots to the serialized profile ceiling", async () => {
   const dir = await tmp();
   const sourceNames = ["src", "lib", "app", "apps", "packages"];
-  for (let offset = 0; offset < 5_740; offset += 100) {
-    await Promise.all(Array.from({ length: Math.min(100, 5_740 - offset) }, async (_, index) => {
-      const parent = join(dir, (offset + index).toString(36).padStart(4, "0"));
-      await Promise.all(sourceNames.map((name) => mkdir(join(parent, name), { recursive: true })));
-    }));
-  }
-  const initialized = await initializeProject(dir);
-  const profile = await readProfile(dir);
-  assert.equal(profile.facts.learning.status, "incomplete");
-  assert.ok(profile.facts.learning.limitations.some(({ reason }) => reason === "profile-limit"));
-  assert.ok((await stat(join(dir, ".muster/project-profile.json"))).size <= INIT_LIMITS.learnProfileBytes);
-  assert.deepEqual(await initializeProject(dir), initialized);
+  // Each parent reserves 61 compact evidence bytes for its five roots but
+  // pretty-prints to ~96. Size the parents to just overflow a scaled-down
+  // evidence budget (as 5,740 parents did against 350,000), with the profile
+  // ceiling at INIT_LIMITS' learnProfileBytes:learnEvidenceBytes ratio, so the
+  // evidence-bounded profile still serializes past the ceiling and must trim.
+  const learnEvidenceBytes = 3_050;
+  const limits = {
+    learnEvidenceBytes,
+    learnProfileBytes: Math.round(learnEvidenceBytes * INIT_LIMITS.learnProfileBytes / INIT_LIMITS.learnEvidenceBytes),
+  };
+  const parents = Math.ceil(learnEvidenceBytes / 61) + 1;
+  await Promise.all(Array.from({ length: parents }, async (_, index) => {
+    const parent = join(dir, index.toString(36).padStart(4, "0"));
+    await Promise.all(sourceNames.map((name) => mkdir(join(parent, name), { recursive: true })));
+  }));
+  await __withInitLimits(limits, async () => {
+    const initialized = await initializeProject(dir);
+    const profile = await readProfile(dir);
+    assert.equal(profile.facts.learning.status, "incomplete");
+    assert.ok(profile.facts.learning.limitations.some(({ reason }) => reason === "profile-limit"));
+    assert.ok(profile.facts.sourceRoots.length > 0, "trimming keeps a bounded prefix of source roots");
+    assert.ok((await stat(join(dir, ".muster/project-profile.json"))).size <= limits.learnProfileBytes);
+    assert.deepEqual(await initializeProject(dir), initialized);
+  });
 });
 
 // --- TOCTOU translation arm (audit 2 slice J) ------------------------------

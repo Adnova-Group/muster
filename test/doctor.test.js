@@ -308,8 +308,9 @@ describe("runDoctor skill-doc-refs check", () => {
     await cp(join(repoRoot, "plugin/builtins"), join(tmp, "plugin/builtins"), { recursive: true });
     await mkdir(join(tmp, "vendor"), { recursive: true });
     await cp(join(repoRoot, "vendor/manifest.yaml"), join(tmp, "vendor/manifest.yaml"));
-    // No docs/ directory at all — the packed-install condition.
-    const result = await runDoctor({ root: tmp });
+    // No docs/ directory at all — the packed-install condition. The copied vendor
+    // manifest carries commit-sha notes, so stub `gh` to keep this offline.
+    const result = await runDoctor({ root: tmp, exec: noNetworkExec });
     const check = result.checks.find(c => c.name === "skill-doc-refs");
     assert.ok(check, "skill-doc-refs check must exist");
     assert.equal(check.ok, true, `packed install must stay ok:true — detail: ${check.detail}`);

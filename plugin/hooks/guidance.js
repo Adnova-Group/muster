@@ -1,4 +1,7 @@
-// muster shared guidance — single source of truth for the text the hooks inject.
+// muster shared guidance — the principles/verbs/routing text the Cowork MCP
+// server (mcp/server.mjs) injects as its instructions, plus the emit() helper
+// the PreToolUse action fence uses. No hook injects this text into a Claude
+// Code session any more.
 //
 // SELF-CONTAINED: only node: builtins. Ships under plugin/, must stand alone.
 import { existsSync } from "node:fs";
@@ -19,7 +22,7 @@ export const VERBS =
   "/muster:plan-backlog (approve-first batch planner), /muster:diagnose (failure-first fix), /muster:audit (whole-codebase review-and-fix), " +
   "/muster:design (canonical design-context and workflow gate), /muster:go-backlog (batch backlog clear), /muster:runner (unattended one-cycle work-picker).";
 
-// Voice anti-drift: a single reinforcement line every nudge tier must carry, to
+// Voice anti-drift: a single reinforcement line the injected guidance carries, to
 // counter the output voice regressing over long sessions the same way routing does.
 export const VOICE_NUDGE =
   "Voice: terse and decision-first — done = verified with evidence inline; no recaps, no process narration.";
@@ -35,83 +38,9 @@ export const ROUTING_POLICY =
   " " +
   VOICE_NUDGE;
 
-// ── the border invitation ────────────────────────────────────────────────────
-// Shared value-toned copy for muster's single warn-only "border invitation":
-// two signals (PreToolUse's cumulative inline-file drift counter, and
-// UserPromptSubmit's isDirective prompt detector) each sell the same value
-// proposition before naming the verb, rather than commanding — see
-// pre-tool-use.js and user-prompt-submit.js for the two call sites, and
-// inline-budget.js's isCrossingStale for the shared per-crossing/age-reset
-// cadence both signals re-arm on.
-export const CREW_INVITATION =
-  "A muster run buys parallel dispatch across the crew, adversarial review before merge, " +
-  "and a receipts trail for every decision.";
-
 // Shared emit helper — writes a JSON object to stdout.
 export function emit(obj) {
   process.stdout.write(JSON.stringify(obj));
-}
-
-// ── isDirective ───────────────────────────────────────────────────────────────
-// Deterministic, pure, case-insensitive detector for "directive-shaped" prompts:
-// an imperative verb (optionally preceded by a polite lead-in) as the prompt's
-// opening word. No I/O — used by user-prompt-submit.js to trigger an immediate
-// routing nudge instead of waiting for the periodic cadence.
-const DIRECTIVE_PREFIXES = [
-  "please",
-  "can you",
-  "could you",
-  "let's",
-  "lets",
-  "now",
-  "go",
-  "ok",
-  "okay",
-];
-
-const DIRECTIVE_VERBS = [
-  "fix",
-  "build",
-  "implement",
-  "add",
-  "create",
-  "write",
-  "refactor",
-  "migrate",
-  "update",
-  "remove",
-  "rename",
-  "convert",
-  "make",
-];
-
-function escapeForRegex(s) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-const PREFIX_ALT = DIRECTIVE_PREFIXES.map(escapeForRegex).join("|");
-const VERB_ALT = DIRECTIVE_VERBS.join("|");
-
-// Zero or more polite lead-ins, then one of the imperative verbs, as the whole
-// prompt's opening word (bounded by \b so "fixing"/"updates" etc. don't match).
-const DIRECTIVE_RE = new RegExp(`^(?:(?:${PREFIX_ALT})\\s+)*(?:${VERB_ALT})\\b`, "i");
-
-export function isDirective(prompt) {
-  if (typeof prompt !== "string") return false;
-  const trimmed = prompt.trim();
-  if (trimmed.length === 0) return false;
-  if (trimmed.startsWith("/")) return false;
-  if (trimmed.endsWith("?")) return false;
-  const match = DIRECTIVE_RE.exec(trimmed);
-  if (!match) return false;
-  // Tighten false positives: a verb immediately followed by ":" (a status
-  // update headline, e.g. "Update: shipped...") or by the word "for" (a
-  // noun-phrase headline, e.g. "Fix for the login bug is in review.") is not
-  // an imperative directive, even though it opens with a directive verb.
-  const rest = trimmed.slice(match[0].length);
-  if (/^\s*:/.test(rest)) return false;
-  if (/^\s+for\b/i.test(rest)) return false;
-  return true;
 }
 
 export function detect(cwd) {

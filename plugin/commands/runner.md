@@ -46,7 +46,7 @@ Source: `.muster/backlog.md` item `repair-export` and its preceding FAILED recei
 </output>
 </example>
 
-**Run-active lifecycle:** Write `.muster/run-active` at invocation start (before step 1) -- the mode/run-in-progress marker the `PreToolUse` hook uses to scope the scale-gate. Remove it after step 6. `SessionStart` on a fresh session clears a stale marker automatically. `.muster/run-active` is owned by THIS outer mode (runner), not by the per-item autopilot pass: step 4's "run autopilot steps 1-8" excludes autopilot's own run-active preamble — the marker is written once at this cycle's invocation start and removed only at this cycle's own exit (step 6), never mid-item.
+**Run-active lifecycle:** Write `.muster/run-active` at invocation start (before step 1) -- the mode/run-in-progress marker the action fence uses to scope itself to this run. Remove it after step 6. Nothing clears a stale marker automatically: overwrite one an interrupted run left behind, and delete `.muster/run-active` by hand to disarm a leftover action fence outside a run. `.muster/run-active` is owned by THIS outer mode (runner), not by the per-item autopilot pass: step 4's "run autopilot steps 1-8" excludes autopilot's own run-active preamble — the marker is written once at this cycle's invocation start and removed only at this cycle's own exit (step 6), never mid-item.
 
 Load the **coordination** skill before step 2 — every cycle shares state with other runners and humans.
 Its HYGIENE PREFLIGHT step runs `$MUSTER_CLI hygiene --reap` once per cycle, before any claim — a

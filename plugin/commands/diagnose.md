@@ -12,7 +12,7 @@ Respond with a structured debug record: one section per phase (hypothesis table,
 
 If the failure description is empty, ask for a symptom or failing output and stop. Otherwise drive the diagnose loop:
 
-**Run-active lifecycle:** Write `.muster/run-active` at invocation start (before step 1) -- the mode/run-in-progress marker the `PreToolUse` hook uses to scope the scale-gate. Remove it after the merge decision or on escalation exit. `SessionStart` on a fresh session clears a stale marker automatically.
+**Run-active lifecycle:** Write `.muster/run-active` at invocation start (before step 1) -- the mode/run-in-progress marker the action fence uses to scope itself to this run. Remove it after the merge decision or on escalation exit. Nothing clears a stale marker automatically: overwrite one an interrupted run left behind, and delete `.muster/run-active` by hand to disarm a leftover action fence outside a run.
 
 0. **Resolve the CLI (once per run).** A raw `npx -y <pkg>` re-verifies against the npm registry/cache on EVERY call; resolve `$MUSTER_CLI` ONCE with plain shell (no CLI call, so resolution itself never pays a cold start), preferring a vendored/local install over `npx` — see docs/performance-pass.md:
    ```bash

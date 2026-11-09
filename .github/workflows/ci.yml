@@ -74,7 +74,6 @@ jobs:
           test/codex-hook-node-pin.test.js
           test/codex-runtime-identity.test.js
           test/harness-cowork.test.js
-          test/bash-write-target-posix.test.js
       - name: Smoke npm CLI shim (detect)
         run: npx --no-install muster detect .
       - name: Smoke npm CLI shim (doctor)

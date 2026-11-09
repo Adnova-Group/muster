@@ -21,12 +21,13 @@
 // non-letter characters (`_`, `-`, `.`, digits) or the string's start/end.
 //
 // classifyBashCommand(command): a small, conservative allowlist of
-// high-confidence external-effect Bash patterns (not general shell parsing —
-// same fail-open philosophy as bash-write-target.js). Unmatched -> null.
+// high-confidence external-effect shell patterns (not general shell parsing —
+// fail-open on anything unrecognized). Unmatched -> null.
 //
 // classifyAction(payload): dispatches a PreToolUse payload to one of the above
-// based on tool_name — Bash payloads are classified by command, everything
-// else by tool_name.
+// based on tool_name — Bash and PowerShell payloads are classified by command
+// (the listed CLIs — git, gh, npm, curl — read the same in either shell),
+// everything else by tool_name.
 //
 // All three return a class string or null (unmatched -> null, never throws).
 
@@ -69,9 +70,11 @@ export function classifyBashCommand(command) {
   return null;
 }
 
+const SHELL_TOOLS = new Set(["Bash", "PowerShell"]);
+
 export function classifyAction(payload) {
   if (!payload) return null;
-  if (payload.tool_name === "Bash") {
+  if (SHELL_TOOLS.has(payload.tool_name)) {
     const command = (payload.tool_input && payload.tool_input.command) || "";
     return classifyBashCommand(command);
   }

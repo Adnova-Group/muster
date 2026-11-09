@@ -19,10 +19,8 @@ import { trackedMkdtemp as mkdtemp } from "../test-support/helpers.js";
 import { uniqueSid } from "./test-support/hook-helpers.js";
 
 // Border-invitation state lives in os.tmpdir(), keyed by a sanitized
-// session_id (mirrors plugin/hooks/inline-budget.js's cumFile naming, kept
-// separate from that file's `muster-cum-*` prefix so a shared-session-id
-// coincidence between a Claude session and a Codex session can never
-// collide). Tests compute the same path to assert on/clean up state directly.
+// session_id (it mirrored the Claude plugin's since-removed inline-budget.js
+// cumFile naming, under a separate `muster-codex-border-*` prefix). Tests compute the same path to assert on/clean up state directly.
 const borderStateFile = sessionId => join(tmpdir(), `muster-codex-border-${sessionId.replace(/[^a-zA-Z0-9_-]/g, "")}`);
 
 function runMarkerReplacementRace({ hookPath, marker, victim, replacement, payload, cwd }) {
@@ -268,7 +266,7 @@ test("Codex PreToolUse's border invitation warns exactly once per crossing (3 di
   assert.equal(second.systemMessage, undefined, "2 distinct files is below the border");
   const third = await editCall(3);
   assert.match(third.systemMessage, /border invitation/i);
-  assert.match(third.systemMessage, /parallel dispatch/i, "shares the same value-toned copy as main's CREW_INVITATION");
+  assert.match(third.systemMessage, /parallel dispatch/i, "carries the value-toned crew invitation copy");
   const fourth = await editCall(4);
   assert.equal(fourth.systemMessage, undefined, "already nudged this crossing -- stays silent until a run starts or it re-arms");
 

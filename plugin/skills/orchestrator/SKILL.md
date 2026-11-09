@@ -59,11 +59,10 @@ doing the work.
         dispatch -- the per-harness selection below ("Worktree isolation per harness +
         base-SHA receipts") says which case this harness is. Before dispatch, propagate the
         active action fence into every isolated writer worktree as regular files: create that
-        worktree's `.muster/run-active` lease and copy the run's exact top-level set into that
+        worktree's `.muster/run-active` marker and copy the run's exact top-level set into that
         worktree's `.muster/forbidden-actions`. Verify both files from the worker cwd; a marker
-        that exists only in the outer worktree does not protect a delegated hook call. Renew the
-        worktree lease with the outer lease and remove both propagated files at the wave barrier
-        after the worker has stopped. Read-only/single-task waves skip worktree creation, but any
+        that exists only in the outer worktree does not protect a delegated hook call. Remove
+        both propagated files at the wave barrier after the worker has stopped. Read-only/single-task waves skip worktree creation, but any
         writer that already runs in another cwd still receives this same propagation.
       - **Provider kind:** look up the role's chosen provider from `.muster/capabilities.json` ->
         `roles[<role>].chosen = { id, source, kind }` (do NOT re-invoke `capabilities` mid-run).
@@ -299,7 +298,7 @@ immediately before executing the declared merge disposition (fences guard the wo
 disposition is the human-authorized exit) and no later than run close in any case. The hook resolves
 these files from the tool payload's cwd, so every isolated writer worktree must carry a regular-file
 copy of both `.muster/run-active` and the exact top-level `.muster/forbidden-actions`; never rely on
-the outer worktree's markers and never symlink them. Renew propagated leases while the worker runs,
+the outer worktree's markers and never symlink them. Keep them for the worker's whole life,
 then remove the propagated files only after that worker stops or at the wave barrier.
 
 ## Required skills (brief binding)
@@ -372,9 +371,9 @@ docs/architecture.md's "Enforcement model: gates vs conventions" for the full mo
 **THE ONE HARD DENY (hook-enforced):** while a run is active and `.muster/forbidden-actions` exists,
 `plugin/hooks/pre-tool-use.js`/`action-guard.js` deny a tool call classified into a forbidden action
 class -- fail-open on either file's absence, `MUSTER_ACTION_GUARD=warn|off` softens/disables it.
-`.muster/` and `.claude/` (in-cwd) are exempt only from advisory drift accounting after the action-class fence. This is the ONLY tool
-call the `PreToolUse` hook can deny; everything else (dispatch-not-inline, todo-driving, the
-inline-edit border invitation) is SKILL discipline or a warn-only reminder, never a block.
+This is the ONLY tool call the `PreToolUse` hook can deny; everything else (dispatch-not-inline,
+todo-driving) is SKILL discipline, never a block. No muster hook fires on session start or on a
+prompt, and none nudges toward a verb: muster costs nothing until a verb is invoked.
 
 **A second, narrower hook-enforced block, on a different event:** `TaskCompleted`, not
 `PreToolUse`. `plugin/hooks/task-completed-gate.js` denies a native task board completion tick

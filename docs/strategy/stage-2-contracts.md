@@ -1,0 +1,106 @@
+# Stage 2 interface contracts
+
+The interfaces shared by the parallel stage-2 tracks. Workflows, agents, CLI steps and commands
+must agree on these names and shapes. Grounding:
+- `docs/strategy/2026-11-gsd-gap-analysis.md` (the target architecture);
+- `docs/research/claude-code-live-probes-2026-11.md` (what Workflow and hooks actually do).
+
+## Agents (plugin/agents/)
+
+| Agent file | Role | Source | Replaces |
+|---|---|---|---|
+| `muster-planner.md` | Writes PLAN.md for a run | gsd `agents/gsd-planner.md` (heavy adaptation) | router skill + crew manifest |
+| `muster-plan-checker.md` | Checks PLAN.md against binding dimensions | gsd `agents/gsd-plan-checker.md` (heavy) | plan-checklist rendering, spec gate |
+| `muster-executor.md` | Implements one task in its worktree, commits atomically, self-checks | gsd `agents/gsd-executor.md` + `muster-builder.md` | `muster-builder.md` (deleted) |
+| `muster-verifier.md` | Goal-backward verification with honest abstain | gsd `agents/gsd-verifier.md` (heavy) | — (new seat) |
+| `muster-reviewer.md` | Code review of one task's commit range | gsd `agents/gsd-code-reviewer.md` (medium) | current muster-reviewer body |
+
+`muster-strategist`, `muster-investigator`, `muster-surgeon` and `muster-improver` stay. What
+happens to `muster-runner` is decided in the command rewrite (go-backlog folds into go). The
+`wsh-*` specialists stay; the planner names them per task via `agentHint`.
+
+Every adapted agent:
+- has no gsd-tools / gsd_run calls;
+- has no `.planning/` paths, using `.muster/runs/<id>/` instead;
+- has no `@~/.claude/gsd-core/...` includes;
+- keeps gsd's protocol text verbatim wherever it produces measured behavior (honest abstain, revision loop, failing-direction);
+- has a one-line `description`, an `effort:` field, and `upstream:` provenance.
+
+## Run directory (committed on the work branch)
+
+```
+.muster/runs/<runId>/
+  CONTEXT.md          # interview decisions, gray areas resolved
+  PLAN.md             # planner output (tasks, deps, waves, agentHint, verify commands)
+  SUMMARY-<taskId>.md # executor self-check summary per task
+  VERIFICATION.md     # verifier output
+  STATE.md            # derived by `muster next --run <id>`, never hand-narrated
+  continue-here.md    # pause/handoff note
+```
+
+These stay gitignored, local only: `.muster/run-active` and `.muster/forbidden-actions`, which the
+action fence reads, and `.claude/worktrees/`.
+
+## Workflow scripts (plugin/workflows/)
+
+- `plan.js`: args `{runId, outcome, contextPath, candidates}`. Runs planner → plan-checker, looping
+  at most 3 revisions and escalating when the issue count stops falling. Returns
+  `{runId, planPath, verdict, revisions, issues[]}`.
+- `build.js`: args `{runId, waves:[[{taskId, title, agentHint, files, verify}]], base}`. Runs each
+  wave as `parallel()` executors with `isolation:"worktree"`, then reviewer and fixer, looping at
+  most 2 times, then the verifier once per run. Returns `{runId, tasks:[ExecResult & {review}],
+  verification}`.
+- `backlog.js`: args `{items:[{itemId, runId, waves}]}`. Runs items sequentially through the same
+  stages, inlined, because Workflow nesting is one level only.
+
+Every `agent()` call:
+- is wrapped so that one schema failure records `{status:"error"}` rather than killing the run;
+- sets `model` / `effort` from args (the tier map is computed by the CLI);
+- has an idempotent builder brief: check git state before acting.
+
+The main thread calls the workflows as `Workflow({name:"muster:plan"|"muster:build"|"muster:backlog", args:{…}})`. It resumes with `{name, resumeFromRunId}`, never with `scriptPath`.
+
+## Result schemas (JSON Schema, in plugin/workflows/schemas.js)
+
+- **ExecResult:** `{taskId, status: "done"|"blocked"|"error", branch, commit, worktree,
+  filesChanged:[string], testsRun:[string], testsPassed:boolean, selfCheck:"PASSED"|"FAILED",
+  deviations:[string]}`
+- **ReviewResult:** `{taskId, verdict: "PASS"|"FAIL"|"ABSTAIN", commitReviewed, findings:[{severity,
+  file, line, summary}], testsRun:[string], testsPassed:boolean}`
+- **VerifyResult:** `{verdict: "PASS"|"GAPS"|"ABSTAIN", truths:[{claim, status, evidence}],
+  gaps:[string]}`
+- **CheckResult:** `{verdict: "PASS"|"ISSUES", issues:[{dimension, severity, required_property,
+  summary}]}`
+
+Verdicts are evidence, not truth. The main thread re-checks `commit` / `commitReviewed` exist and
+re-runs `testsRun` before merging, through `muster merge-wave`.
+
+## CLI steps (src/cli.js)
+
+- `muster preflight <outcome> [--json]`: one call replacing scope, assess, fast-path, detect,
+  capabilities, memory and validate. Prints a small JSON summary: scope, fast-path eligibility, tier
+  map, top candidate agents, gsd/plugin detections. Full detail goes to a file.
+- `muster merge-wave <runId> --result <build-result.json>`:
+  1. verify every claimed commit exists on its branch;
+  2. merge the branches in manifest order (`--no-ff`);
+  3. re-run each task's `verify` / `testsRun`;
+  4. remove the worktrees and branches;
+  5. append to `.muster/runs/<id>/STATE.md`.
+
+  Exits non-zero on any mismatch.
+- `muster next --run <id>`: derives position from files on disk (which of CONTEXT, PLAN, SUMMARY-*,
+  VERIFICATION exist) and prints the next action.
+- `muster plan-lint <PLAN.md>`: deterministic gates ported from gsd (failing-direction, verify
+  commands present, deps acyclic, files declared). Exit 1 with issues in the CheckResult shape.
+
+## Sync model (vendor/)
+
+- `vendor/manifest.yaml` gsd source: `ref: 9385f46`, `tag: v1.20.1`. Each item records `{from,
+  to, mode: adapted|verbatim|watch, baseBlob, issues:[…]}`.
+- `vendor/upstream/gsd/<path>`: byte-exact upstream copies at the pin, never edited, used as the
+  3-way merge base.
+- `muster vendor update gsd --to <tag>` runs a 3-way `git merge-file` for adapted items and
+  regenerates verbatim items. `watch` items appear in the report only.
+- `vendor/reports/gsd-<tag>.md` is the per-item upstream diff report.
+- `.github/workflows/upstream-watch.yml` runs weekly. It opens an issue when a new gsd release
+  touches tracked files.

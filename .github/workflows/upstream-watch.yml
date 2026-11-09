@@ -1,0 +1,102 @@
+name: Upstream watch
+
+# Weekly, non-blocking: compares gsd-core's latest release with the pin in
+# vendor/manifest.yaml. When a newer release touches a tracked file, it writes
+# vendor/reports/gsd-<tag>.md (`muster vendor report gsd --to <tag>`) and opens or
+# updates one issue carrying that report. It never edits the repository: merging an
+# upstream release is `muster vendor update gsd --to <tag>`, run by a person.
+
+on:
+  schedule:
+    - cron: "23 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: upstream-watch
+  cancel-in-progress: false
+
+jobs:
+  gsd:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Non-blocking by design: an upstream release is information, never a red main.
+    continue-on-error: true
+    env:
+      GH_TOKEN: ${{ github.token }}
+      UPSTREAM_REPO: open-gsd/gsd-core
+      LABEL: upstream-watch
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: npm
+      - run: npm ci --ignore-scripts
+
+      - name: Compare the latest release with the pin
+        id: compare
+        run: |
+          set -euo pipefail
+          latest="$(gh api "repos/${UPSTREAM_REPO}/releases/latest" --jq .tag_name)"
+          pinned="$(node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            import { parse } from "yaml";
+            const m = parse(readFileSync("vendor/manifest.yaml", "utf8"));
+            process.stdout.write(m.sources.find(s => s.id === "gsd").tag);
+          ')"
+          # The tag comes from the network: accept release tags only before it reaches git.
+          if ! printf '%s' "$latest" | grep -Eq '^v?[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$'; then
+            echo "::warning::unexpected release tag from ${UPSTREAM_REPO}: ${latest}"
+            exit 0
+          fi
+          echo "latest=${latest}" >> "$GITHUB_OUTPUT"
+          echo "pinned=${pinned}" >> "$GITHUB_OUTPUT"
+          echo "gsd pinned ${pinned}, latest ${latest}"
+
+      - name: Build the per-item report
+        id: report
+        if: steps.compare.outputs.latest != '' && steps.compare.outputs.latest != steps.compare.outputs.pinned
+        env:
+          LATEST: ${{ steps.compare.outputs.latest }}
+        run: |
+          set -euo pipefail
+          node src/cli.js vendor report gsd --to "$LATEST" > report.json
+          touched="$(node -e 'process.stdout.write(String(JSON.parse(require("fs").readFileSync("report.json","utf8")).touched))')"
+          echo "touched=${touched}" >> "$GITHUB_OUTPUT"
+          echo "path=vendor/reports/gsd-${LATEST}.md" >> "$GITHUB_OUTPUT"
+          echo "${touched} tracked item(s) changed between the pin and ${LATEST}"
+
+      - name: Open or update the upstream-watch issue
+        if: steps.report.outputs.touched != '' && steps.report.outputs.touched != '0'
+        env:
+          LATEST: ${{ steps.compare.outputs.latest }}
+          PINNED: ${{ steps.compare.outputs.pinned }}
+          REPORT: ${{ steps.report.outputs.path }}
+        run: |
+          set -euo pipefail
+          title="gsd-core ${LATEST} touches tracked files (pinned ${PINNED})"
+          {
+            echo "A newer gsd-core release changes files muster tracks. Review the report, then run"
+            echo "\`muster vendor update gsd --to ${LATEST} --dry-run\` followed by the real update."
+            echo
+            cat "$REPORT"
+          } > body.md
+          gh label create "$LABEL" --color BFD4F2 --description "Upstream release touches vendored files" 2>/dev/null || true
+          existing="$(gh issue list --label "$LABEL" --state open --search "gsd-core in:title" --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" --title "$title" --body-file body.md
+          else
+            gh issue create --title "$title" --label "$LABEL" --body-file body.md
+          fi
+
+      - name: Flag the drift (non-blocking)
+        if: steps.report.outputs.touched != '' && steps.report.outputs.touched != '0'
+        env:
+          LATEST: ${{ steps.compare.outputs.latest }}
+        run: |
+          echo "::warning::gsd-core ${LATEST} touches tracked files; see the upstream-watch issue"
+          exit 1

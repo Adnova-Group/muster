@@ -11,8 +11,9 @@ import { isContainedLexical } from "./fs-safe.js";
 import { modelForRole, maxTier, floorAtCore, normalizeTier } from "./model.js";
 import { claudeModelForTier, claudeProfileForAgentId } from "./claude.js";
 import { matchFrontmatter } from "./frontmatter.js";
+import { isSyncItem, isSyncSource, validateSyncItem, validateSyncSource } from "./vendor-sync.js";
 import {
-  RELATIONS, ITEM_PATHS, WAIVER_STATUSES, isValidLicense, isVendoredItem, isFetchedSource, SYNC_MODES, isFileItem,
+  RELATIONS, ITEM_PATHS, WAIVER_STATUSES, isValidLicense, isVendoredItem, isFetchedSource,
   upstreamEntry, renderUpstreamBlock, generateNotice as generateManifestNotice, NOTICE_PATHS
 } from "./provenance.js";
 
@@ -176,16 +177,20 @@ export function validateVendorManifest(doc) {
       errors.push(`sources[${i}].copyright: must be a non-empty string`);
     if (s.formerly !== undefined && (!Array.isArray(s.formerly) || !s.formerly.every(r => REPO_RE.test(r))))
       errors.push(`sources[${i}].formerly: must be a list of owner/name`);
+    if (s.tag !== undefined && !isSyncSource(s)) errors.push(`sources[${i}].tag: only a merge-tracked source (items with mode) records a tag`);
+    if (Array.isArray(s.items) && isSyncSource(s)) {
+      errors.push(...validateSyncSource(s, `sources[${i}]`));
+      if (!isFetchedSource(s)) errors.push(`sources[${i}].fetch: a merge-tracked source is fetched by muster vendor update`);
+    }
     if (!Array.isArray(s.items)) errors.push(`sources[${i}].items: must be an array`);
     else s.items.forEach((it, j) => {
       const at = `sources[${i}].items[${j}]`;
-      if (isFileItem(it)) {
-        const relPath = p => typeof p === "string" && p !== "" && !p.startsWith("/") && !p.split("/").includes("..");
-        if (!relPath(it.from)) errors.push(`${at}.from: required relative upstream path for a file item`);
-        if (!relPath(it.to)) errors.push(`${at}.to: must be a relative repository path`);
-        if (!SYNC_MODES.includes(it.mode)) errors.push(`${at}.mode: must be one of ${SYNC_MODES.join("|")}`);
-        for (const key of ["ref", "baseBlob"])
-          if (it[key] !== undefined && !/^[0-9a-f]{40}$/.test(String(it[key]))) errors.push(`${at}.${key}: must be a 40-hex SHA`);
+      if (it.to !== undefined && !isSyncItem(it)) { errors.push(`${at}.mode: a file item (with to) needs mode ${["adapted", "verbatim", "watch"].join("|")}`); return; }
+      if (isSyncItem(it)) {
+        errors.push(...validateSyncItem(it, at, (kind, id) => ITEM_PATHS[kind]?.(id), s.ref));
+        if (it.kind !== undefined && !Object.hasOwn(ITEM_PATHS, it.kind)) errors.push(`${at}.kind: must be one of ${Object.keys(ITEM_PATHS).join("|")}`);
+        if (it.id !== undefined && !ID_RE.test(it.id)) errors.push(`${at}.id: invalid — must match /^[a-zA-Z0-9_-]+$/`);
+        if (it.relation !== undefined && !RELATIONS.includes(it.relation)) errors.push(`${at}.relation: must be one of ${RELATIONS.join("|")}`);
         return;
       }
       const vendored = isVendoredItem(s, it);
@@ -268,14 +273,20 @@ export function modelForRoles(roles) {
   return floorAtCore(maxTier(roles.map(modelForRole)));
 }
 
+// The concrete Claude `model:` toAgent writes for a vendored agent item. Agent-backed
+// entries take it from the same manifest-driven, emission-layer profile that
+// capabilities dispatches (catalog/agents.manifest.json via claudeProfileForAgentId).
+// Unknown/non-manifest agents preserve the vendor-manifest fallback: an explicit
+// item.model pin, otherwise the role-derived tier floored at core. Exported so the
+// generator and test/agents.generated.test.js's drift check share one code path.
+export function vendoredAgentModel(item) {
+  const tier = item.model ? normalizeTier(item.model) : modelForRoles(item.roles);
+  return claudeProfileForAgentId(item.id)?.model ?? claudeModelForTier(tier).model;
+}
+
 export function toAgent(sourceText, item, source) {
   const { data, body } = splitFrontmatter(sourceText);
-  // Agent-backed entries take their concrete Claude model from the same
-  // manifest-driven, emission-layer profile that capabilities dispatches.
-  // Unknown/non-manifest agents preserve the vendor-manifest fallback: an
-  // explicit item.model pin, otherwise the role-derived tier floored at core.
-  const tier = item.model ? normalizeTier(item.model) : modelForRoles(item.roles);
-  const model = claudeProfileForAgentId(item.id)?.model ?? claudeModelForTier(tier).model;
+  const model = vendoredAgentModel(item);
   const filteredTools = (() => {
     if (!data.tools) return DEFAULT_TOOLS;
     const allowed = data.tools.split(",").map(s => s.trim()).filter(t => ALLOWED_TOOLS.has(t));
@@ -403,8 +414,9 @@ export async function runVendor({ home = homedir(), repoRoot = process.cwd(), ma
   const builtinEntries = [];
   const agentEntries = [];
   for (const source of manifest.sources) {
-    // Attribution-only sources are recorded (NOTICE, `upstream:`) but never fetched.
-    if (!isFetchedSource(source)) continue;
+    // Attribution-only sources are recorded (NOTICE, `upstream:`) but never fetched;
+    // merge-tracked sources are only touched by `muster vendor update`.
+    if (!isFetchedSource(source) || !source.items.some(it => isVendoredItem(source, it))) continue;
     const { root, error, cleanup } = await fetchSourceRoot(source, home);
     if (!root) {
       const detail = error ? `: ${error.message}` : "";

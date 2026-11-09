@@ -1,7 +1,7 @@
 ---
 name: prompt-engineer
 description: Expert prompt engineer specializing in advanced prompting techniques, LLM optimization, and AI system design. Masters chain-of-thought, constitutional AI, and production prompt strategies. Use when building AI features, improving agent performance, or crafting system prompts.
-model: sonnet
+model: opus
 maxTurns: 25
 tools: Read, Grep, Glob, Edit, Bash
 muster_builtin: true

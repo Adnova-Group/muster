@@ -5,8 +5,7 @@ import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 import { loadCatalog } from "../src/catalog.js";
 import { resolveCapabilities } from "../src/capabilities.js";
-import { splitFrontmatter, modelForRoles } from "../src/vendor.js";
-import { claudeModelForTier } from "../src/claude.js";
+import { splitFrontmatter, vendoredAgentModel } from "../src/vendor.js";
 import { bareCapabilities } from "./test-support/capabilities-helpers.js";
 
 const catalogDir = new URL("../catalog/", import.meta.url);
@@ -59,16 +58,22 @@ test("core software roles each resolve to SOME provider on a bare machine", asyn
 
 test("vendored agent plugin files have model frontmatter matching current policy (no drift)", async () => {
   const agents = await readAgents();
+  // The manifest item carries any explicit `model:` pin; toAgent reads it, so the drift
+  // check must too.
+  const manifest = parse(await readFile(new URL("../vendor/manifest.yaml", import.meta.url), "utf8"));
+  const items = new Map(manifest.sources.flatMap(s => s.items || []).filter(i => i.as === "agent").map(i => [i.id, i]));
   for (const e of agents) {
     const f = fileURLToPath(new URL(`../plugin/agents/${e.id}.md`, import.meta.url));
     const text = await readFile(f, "utf8");
     const { data: fm } = splitFrontmatter(text);
-    // Frontmatter `model:` is a Claude Code surface — the conceptual tier from
-    // policy resolves to its Claude-concrete value through the adapter.
-    const expected = claudeModelForTier(modelForRoles(e.roles)).model;
+    // Frontmatter `model:` is a Claude Code surface. The expectation is computed by
+    // the SAME function toAgent uses (vendoredAgentModel: the agents.manifest.json
+    // profile first, then an item pin, then the role tier), so regeneration and this
+    // drift check can never contradict each other.
+    const expected = vendoredAgentModel(items.get(e.id) || { id: e.id, roles: e.roles });
     assert.equal(
       fm.model, expected,
-      `${e.id}.md has model: ${fm.model} but policy for roles [${e.roles.join(", ")}] requires model: ${expected} — run \`muster vendor\` or fix the frontmatter`
+      `${e.id}.md has model: ${fm.model} but toAgent would write model: ${expected} — run \`muster vendor\` or fix the frontmatter`
     );
   }
 });

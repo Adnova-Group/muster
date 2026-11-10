@@ -871,6 +871,12 @@ sources:
     # theme.mjs point at the pinned raw URLs instead), upstream's tests and fixtures, refcheck.mjs,
     # install.mjs, and install-hook.mjs + lint-hook.mjs (a PostToolUse hook installer: muster ships no
     # always-on hooks; flow.md says so). relation: adapted.
+    # Security hardening (stage 3 pre-PR review, 2026-11-10; noted in each script header):
+    # scripts/sloplint.mjs and scripts/sloplint-render.mjs never write .hallmark/before.json,
+    # before.txt (page text), .gitignore, screenshots or compare.html through a symlink planted at
+    # .hallmark, shots/ or the file, and sloplint.mjs regex-escapes an aria-labelledby value before
+    # building a pattern from it (page-controlled ReDoS). test/hallmark-sloplint-hardening.test.js
+    # pins both and kill-checks the base copy.
     ref: 407fa689f4a276f2fd389208d271d0fef08f5058
     tag: null
     license: MIT
@@ -1155,7 +1161,12 @@ sources:
     # resources from the source directory only (Path.cwd() dropped); scripts/search_databases.py
     # writes every fetched field as one escaped line (Markdown and TeX punctuation backslash-escaped,
     # TeX specials escaped in BibTeX fields, the entry type reduced to letters). Both are adapted
-    # with base copies; test/kdense-pdf-safety.test.js pins it. market-research-reports'
+    # with base copies; test/kdense-pdf-safety.test.js pins it. Stage 3 pre-PR review (2026-11-10):
+    # paranoid TeX access still reads relative names and Pandoc passes math through verbatim
+    # ($\input{notes/keys.txt}$), so generate_pdf.py runs pandoc from a fresh empty temporary
+    # directory (every path it passes is absolute) with shell_escape=f; SKILL.md's uv command adds
+    # `--no-config --python "$(command -v python3)"` (a checkout's .python-version or .venv otherwise
+    # chooses the interpreter uv runs, even with --isolated). market-research-reports'
     # assets/FORMATTING_GUIDE.md (adapted for its header) runs its documented xelatex command under
     # the same openin_any=p / openout_any=p; it is the only other pandoc/LaTeX invocation shipped. verify_citations.py (Crossref,
     # public and keyless) is verbatim. Cross-references to upstream skills muster does not carry (parallel-web,
@@ -1663,6 +1674,17 @@ sources:
     # sibling paths, skill names or the canvas-fonts directory changed. Everything else verbatim.
     # uupm-ui-styling/LICENSE.txt is the Apache-2.0 text upstream ships beside that skill;
     # it is carried verbatim with it.
+    # Security adaptations (stage 3 pre-PR review, 2026-11-10; base copies kept, each noted in its
+    # file header): ui-styling/scripts/shadcn_add.py ran `npx shadcn@<package.json spec>` with the
+    # spec only stripped of ^~>=<, so a checkout's "shadcn": "github:owner/repo" (or npm:, a
+    # tarball URL) installed and ran attacker code, and passed component arguments unchecked (a
+    # registry-item URL or a --cwd/--path flag); it now accepts only a plain semver (else the pin)
+    # and names matching [a-z0-9][a-z0-9-]*. design/scripts/cip/render-html.py base64-embedded
+    # every *.png it globbed, symlinks included (a.png -> ~/.ssh/id_rsa), and interpolated brand,
+    # industry, CSV fields and file-derived titles into HTML raw (a file name carrying
+    # " onerror=... ran script); it now skips symlinked or non-regular images, HTML-escapes every
+    # value, slugs the default output name and refuses a symlinked output path.
+    # test/vendored-script-hardening.test.js pins both and kill-checks the base copies.
     ref: 4f2dbb67e64969a9a30ab00742f2d55d66ddec2b
     tag: v2.15.0-80-g4f2dbb6
     license: MIT
@@ -1746,7 +1768,7 @@ sources:
       - { from: .claude/skills/design/references/social-photos-design.md, to: plugin/builtins/uupm-design/references/social-photos-design.md, mode: adapted, baseBlob: 1dc1fdc533c16b1ef2adb13e167977e685b7d1a4 }
       - { from: .claude/skills/design/scripts/cip/core.py, to: plugin/builtins/uupm-design/scripts/cip/core.py, mode: verbatim, baseBlob: 5e6b7a902ceabbc2f7a9ef425923774c9435f9da }
       - { from: .claude/skills/design/scripts/cip/generate.py, to: plugin/builtins/uupm-design/scripts/cip/generate.py, mode: verbatim, baseBlob: 394b06de244392b9b13317f2097cbfd0087116d0 }
-      - { from: .claude/skills/design/scripts/cip/render-html.py, to: plugin/builtins/uupm-design/scripts/cip/render-html.py, mode: verbatim, baseBlob: 34e378261f642ea98303ee4a7718568b78ec8520 }
+      - { from: .claude/skills/design/scripts/cip/render-html.py, to: plugin/builtins/uupm-design/scripts/cip/render-html.py, mode: adapted, baseBlob: 34e378261f642ea98303ee4a7718568b78ec8520 }
       - { from: .claude/skills/design/scripts/cip/search.py, to: plugin/builtins/uupm-design/scripts/cip/search.py, mode: verbatim, baseBlob: 894f4841979ef66920e5b96b8f41c89c896b8f6a }
       - { from: .claude/skills/design/scripts/icon/generate.py, to: plugin/builtins/uupm-design/scripts/icon/generate.py, mode: verbatim, baseBlob: 375f7896e531be6ad0c5719052f4a5ba50eaf166 }
       - { from: .claude/skills/design/scripts/logo/core.py, to: plugin/builtins/uupm-design/scripts/logo/core.py, mode: verbatim, baseBlob: b3de30c5d7c4afecb1c8a51c52688184530ea300 }
@@ -1768,7 +1790,7 @@ sources:
       - { from: .claude/skills/ui-styling/references/tailwind-responsive.md, to: plugin/builtins/uupm-ui-styling/references/tailwind-responsive.md, mode: verbatim, baseBlob: f252e1857bb2f5f5a884711fcf983ea945ce45e7 }
       - { from: .claude/skills/ui-styling/references/tailwind-utilities.md, to: plugin/builtins/uupm-ui-styling/references/tailwind-utilities.md, mode: verbatim, baseBlob: 7b7b12363f2dbe40961cd7a11446419046a921af }
       - { from: .claude/skills/ui-styling/scripts/requirements.txt, to: plugin/builtins/uupm-ui-styling/scripts/requirements.txt, mode: verbatim, baseBlob: 75f72ca91d5c2eca4e9d3d1621a9db07f7d25dd3 }
-      - { from: .claude/skills/ui-styling/scripts/shadcn_add.py, to: plugin/builtins/uupm-ui-styling/scripts/shadcn_add.py, mode: verbatim, baseBlob: 983d5009ea9af4307c390e5a87d6b91146cfc69d }
+      - { from: .claude/skills/ui-styling/scripts/shadcn_add.py, to: plugin/builtins/uupm-ui-styling/scripts/shadcn_add.py, mode: adapted, baseBlob: 983d5009ea9af4307c390e5a87d6b91146cfc69d }
       - { from: .claude/skills/ui-styling/scripts/tailwind_config_gen.py, to: plugin/builtins/uupm-ui-styling/scripts/tailwind_config_gen.py, mode: verbatim, baseBlob: da94fc6bbed9ce72453131c07d406d646eef0f1b }
       - { id: uupm-ui-ux-pro-max, kind: builtin, from: .claude/skills/ui-ux-pro-max/SKILL.md, to: plugin/builtins/uupm-ui-ux-pro-max/SKILL.md, mode: adapted, relation: adapted, baseBlob: 2cacc8756e816a1eb6bfa44307372f2aeb445902 }
       - { from: .claude/skills/ui-ux-pro-max/data/app-interface.csv, to: plugin/builtins/uupm-ui-ux-pro-max/data/app-interface.csv, mode: verbatim, baseBlob: 95e328c807a23be02c9c32c736d0fa19109c6076 }
@@ -1825,6 +1847,17 @@ sources:
     # an "In muster" note mapping /<skill> to ../intent-<skill>/SKILL.md; intent-noor's present
     # paths point at ${CLAUDE_PLUGIN_ROOT}/builtins/intent-present/references/). Not vendored:
     # the Cursor/Copilot ports, hooks/, docs/ site, tests/ and build scripts.
+    # Security adaptation (stage 3 pre-PR review, 2026-11-10; base copy kept, noted in its header):
+    # present/references/build_deck.py keeps chart labels literal in the embedded workbook, in depth:
+    # python-pptx writes categories and series names with XlsxWriter's write(), which stores "=..."
+    # as a live formula, "{=...}" as an array formula even with strings_to_formulas off, and turns
+    # http(s)/ftp/mailto/internal/external strings into hyperlinks or external references. The
+    # adapted script wraps pptx.chart.xlsx.Workbook (strings_to_formulas and strings_to_urls off,
+    # every string cell written with write_string()) and _validate rejects labels starting with
+    # = {= + - @, a tab or CR, a URL scheme or mailto:/internal:/external:.
+    # test/vendored-script-hardening.test.js pins all three, end to end when python-pptx is
+    # installed. The only other vendored CSV/XLSX/chart writer, kdense generate_report_scaffold.py,
+    # writes constant header rows only.
     ref: 1806110106a472bc588d7a8a2b7e3d39aee4a4b8
     tag: v1.7.4
     license: CC0-1.0
@@ -1861,7 +1894,7 @@ sources:
       - { id: intent-organize, kind: builtin, from: skills/organize/SKILL.md, to: plugin/builtins/intent-organize/SKILL.md, mode: adapted, relation: adapted, baseBlob: bfa2bb364ea2625c911f9396cc032ec5bed2b7ed }
       - { id: intent-philosopher, kind: builtin, from: skills/philosopher/SKILL.md, to: plugin/builtins/intent-philosopher/SKILL.md, mode: adapted, relation: adapted, baseBlob: 6406b25447e3811c81af8feba63a565acdf876b0 }
       - { id: intent-present, kind: builtin, from: skills/present/SKILL.md, to: plugin/builtins/intent-present/SKILL.md, mode: adapted, relation: adapted, baseBlob: 759c57726b5cab4d8fad4f631efeb518df31fd46 }
-      - { from: skills/present/references/build_deck.py, to: plugin/builtins/intent-present/references/build_deck.py, mode: verbatim, baseBlob: 1ed828c93b786408280713ab264a779a98afba1f }
+      - { from: skills/present/references/build_deck.py, to: plugin/builtins/intent-present/references/build_deck.py, mode: adapted, baseBlob: 1ed828c93b786408280713ab264a779a98afba1f }
       - { from: skills/present/references/deck-theme.css, to: plugin/builtins/intent-present/references/deck-theme.css, mode: verbatim, baseBlob: 416e973c730569ff2c5917b270207b8825c36e19 }
       - { from: skills/present/references/deck-theme.md, to: plugin/builtins/intent-present/references/deck-theme.md, mode: verbatim, baseBlob: 2af37b4156c693f8a5a88d4f0f3622aae9d28fbf }
       - { from: skills/present/references/reveal-template.html, to: plugin/builtins/intent-present/references/reveal-template.html, mode: verbatim, baseBlob: a9ad7b815d90e90befae44c849af27b13e8f9f1c }
@@ -2126,6 +2159,15 @@ sources:
     # 40-64 character hex object id; render.py _safe_text entity-escapes & < >, backslash-escapes
     # backslash, backtick, |, [, *, _ and ~, and caps third-party text at 200 characters.
     # test/tob-supply-chain-hardening.test.js pins both (skipped without python3 >= 3.11).
+    # Stage 3 pre-PR security review (2026-11-10): collect.py also reads every manifest and
+    # lockfile through O_NOFOLLOW and refuses a symlink or non-regular file (a symlinked
+    # requirements*.txt put lines of an outside file into the report and the registry queries),
+    # and writes only valid names and versions into its pip-audit requirements file (a newline in
+    # a uv.lock version added requirement options); SKILL.md runs both scripts with
+    # `uv run --no-config --python "$(command -v python3)"` so the audited checkout's
+    # .python-version, .venv, uv.toml or [tool.uv] cannot choose or download the interpreter
+    # (reproduced with uv 0.11: a planted .python-version or .venv ran its own binary). Both
+    # changes are noted in the license headers; the same test file pins them.
     ref: e4dd0bb5b15535f7c5a0834187dffba6ac37e4ff
     tag: null
     license: CC-BY-SA-4.0
@@ -2242,8 +2284,15 @@ sources:
     # sanitizes names to [A-Za-z0-9._-] (no leading dot); test/splab-category-split-hardening.test.js
     # pins it and kill-checks the upstream copy (skipped without bash or jq).
     # scripts/generate-report.sh is adapted too (base copy kept): its jq-computed counts are
-    # checked to be plain integers before bash arithmetic. The other three files
-    # (extract-functions.sh and the two prompt templates) are whole-file verbatim copies.
+    # checked to be plain integers before bash arithmetic. Security review 2026-11-10 (stage 3
+    # pre-PR): generate-report.sh also Markdown-escapes every model-written field (one line, HTML
+    # entities, backslash-escaped Markdown syntax; backticks inside code spans become ') so
+    # duplicates/*.json cannot add headings, images, links or HTML to the report, and all three
+    # scripts refuse to write through a symlink planted at their output path (the SKILL.md note
+    # now has the work files written to a fresh directory outside the checkout).
+    # scripts/extract-functions.sh is therefore adapted as well (base copy kept);
+    # test/splab-report-hardening.test.js pins these and kill-checks the upstream report script
+    # (skipped without bash or jq). The two prompt templates are whole-file verbatim copies.
     # Wiring: audit-pattern-dead-code-duplication names it by id.
     ref: 51111f74f24058117752d9aa917cb19859f8ec86
     tag: v0.5.0
@@ -2254,7 +2303,7 @@ sources:
       - { from: LICENSE, mode: watch, baseBlob: abf0390320aa14406af7a520b9b0739fdda9bf08 }
       - { id: audit-pattern-dead-code-duplication, kind: audit-pattern, from: null, relation: inspired-by }
       - { id: splab-finding-duplicate-functions, kind: builtin, from: skills/finding-duplicate-functions/SKILL.md, to: plugin/builtins/splab-finding-duplicate-functions/SKILL.md, mode: adapted, relation: adapted, baseBlob: 71c6a530be8271766add8147194af1063ed5c5b8 }
-      - { from: skills/finding-duplicate-functions/scripts/extract-functions.sh, to: plugin/builtins/splab-finding-duplicate-functions/scripts/extract-functions.sh, mode: verbatim, baseBlob: f22d20af338b89b25c5cd4ab55602a57b3223ac0 }
+      - { from: skills/finding-duplicate-functions/scripts/extract-functions.sh, to: plugin/builtins/splab-finding-duplicate-functions/scripts/extract-functions.sh, mode: adapted, baseBlob: f22d20af338b89b25c5cd4ab55602a57b3223ac0 }
       - { from: skills/finding-duplicate-functions/scripts/categorize-prompt.md, to: plugin/builtins/splab-finding-duplicate-functions/scripts/categorize-prompt.md, mode: verbatim, baseBlob: 8c09214fd2d80a84d0f3fe86cdf8c6b28fc4225c }
       - { from: skills/finding-duplicate-functions/scripts/prepare-category-analysis.sh, to: plugin/builtins/splab-finding-duplicate-functions/scripts/prepare-category-analysis.sh, mode: adapted, baseBlob: 92ddd23bddfc3ea5b4c278e817a2d0e87474cb69 }
       - { from: skills/finding-duplicate-functions/scripts/find-duplicates-prompt.md, to: plugin/builtins/splab-finding-duplicate-functions/scripts/find-duplicates-prompt.md, mode: verbatim, baseBlob: f4dc277d0bce37722530213b935e52c598ef5799 }

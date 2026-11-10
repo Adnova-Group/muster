@@ -2,6 +2,7 @@
 name: cloud-infrastructure-cloud-architect
 description: "Cloud architecture on AWS, Azure and GCP: IaC, cost, security and disaster recovery."
 model: opus
+effort: high
 maxTurns: 35
 tools: Read, Grep, Glob, Edit, Bash
 muster_builtin: true

@@ -8,8 +8,9 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { exists } from "./fs-util.js";
 import { isContainedLexical } from "./fs-safe.js";
-import { modelForRole, maxTier, floorAtCore, normalizeTier } from "./model.js";
+import { modelForRole, maxTier, floorAtCore, normalizeTier, emissionTier } from "./model.js";
 import { claudeModelForTier, claudeProfileForAgentId } from "./claude.js";
+import { agentProfiles } from "./agent-manifest.js";
 import { matchFrontmatter } from "./frontmatter.js";
 import { isSyncItem, isSyncSource, validateSyncItem, validateSyncSource } from "./vendor-sync.js";
 import {
@@ -303,9 +304,24 @@ export function vendoredAgentModel(item) {
   return claudeProfileForAgentId(item.id)?.model ?? claudeModelForTier(tier).model;
 }
 
+// The Claude `effort:` toAgent writes for a vendored agent. A semantic effort declared in
+// catalog/agents.manifest.json wins (the Claude adapter maps workhorse=medium, judgment=high,
+// peak=xhigh); otherwise the tier default below, read off the same tier vendoredAgentModel
+// resolves (manifest tier through the emission layer, else an item pin, else the role tier).
+// Exported so toAgent and the agents.generated drift check share one code path.
+const CLAUDE_TIER_DEFAULT_EFFORT = Object.freeze({ scout: "low", core: "medium", prime: "high", apex: "high" });
+export function vendoredAgentEffort(item) {
+  const profile = claudeProfileForAgentId(item.id);
+  if (profile?.workflowEffort) return profile.workflowEffort;
+  const config = agentProfiles()[item.id];
+  const tier = config ? emissionTier(config.tier) : item.model ? normalizeTier(item.model) : modelForRoles(item.roles);
+  return CLAUDE_TIER_DEFAULT_EFFORT[tier];
+}
+
 export function toAgent(sourceText, item, source) {
   const { data, body } = splitFrontmatter(sourceText);
   const model = vendoredAgentModel(item);
+  const effort = vendoredAgentEffort(item);
   const filteredTools = (() => {
     if (!data.tools) return DEFAULT_TOOLS;
     const allowed = data.tools.split(",").map(s => s.trim()).filter(t => ALLOWED_TOOLS.has(t));
@@ -315,6 +331,7 @@ export function toAgent(sourceText, item, source) {
     name: data.name || item.id,
     description: item.description || data.description || `Agent for ${item.roles.join(", ")} (adapted from ${source.repo})`,
     model,
+    effort,
     tools: filteredTools,
     muster_builtin: true,
     license: source.license

@@ -2,6 +2,7 @@
 name: backend-development-test-automator
 description: "Test suites: unit, integration and E2E, with TDD/BDD support."
 model: sonnet
+effort: medium
 maxTurns: 25
 tools: Read, Grep, Glob, Edit, Bash
 muster_builtin: true

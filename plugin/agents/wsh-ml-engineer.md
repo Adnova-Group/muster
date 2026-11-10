@@ -2,6 +2,7 @@
 name: ml-engineer
 description: "Production ML systems: model serving, feature pipelines and monitoring."
 model: opus
+effort: medium
 maxTurns: 25
 tools: Read, Grep, Glob, Edit, Bash
 muster_builtin: true

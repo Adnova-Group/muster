@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 import { loadCatalog } from "../src/catalog.js";
 import { resolveCapabilities } from "../src/capabilities.js";
-import { splitFrontmatter, vendoredAgentModel } from "../src/vendor.js";
+import { splitFrontmatter, vendoredAgentModel, vendoredAgentEffort } from "../src/vendor.js";
 import { bareCapabilities } from "./test-support/capabilities-helpers.js";
 
 const catalogDir = new URL("../catalog/", import.meta.url);
@@ -75,5 +75,8 @@ test("vendored agent plugin files have model frontmatter matching current policy
       fm.model, expected,
       `${e.id}.md has model: ${fm.model} but toAgent would write model: ${expected} — run \`muster vendor\` or fix the frontmatter`
     );
+    // effort: rides the same tier (manifest semantic effort first, else the tier default).
+    const effort = vendoredAgentEffort(items.get(e.id) || { id: e.id, roles: e.roles });
+    assert.equal(fm.effort, effort, `${e.id}.md has effort: ${fm.effort} but toAgent would write effort: ${effort}`);
   }
 });

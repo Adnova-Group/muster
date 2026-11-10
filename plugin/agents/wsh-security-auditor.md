@@ -2,6 +2,7 @@
 name: backend-development-security-auditor
 description: "Security review: OWASP Top 10, auth flaws and compliance."
 model: opus
+effort: xhigh
 maxTurns: 40
 tools: Read, Grep, Glob, Edit, Bash
 muster_builtin: true

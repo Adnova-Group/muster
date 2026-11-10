@@ -2,6 +2,7 @@
 name: content-marketer
 description: "Content marketing: strategy, SEO, distribution and performance."
 model: sonnet
+effort: medium
 maxTurns: 25
 tools: Read, Grep, Glob, Edit, Bash
 muster_builtin: true

@@ -2,6 +2,7 @@
 name: business-analyst
 description: "Business analysis: KPI frameworks, dashboards and data-driven recommendations."
 model: sonnet
+effort: medium
 maxTurns: 25
 tools: Read, Grep, Glob, Edit, Bash
 muster_builtin: true

@@ -2,6 +2,7 @@
 name: customer-support
 description: "Customer support experience: ticketing, support content and CX."
 model: sonnet
+effort: medium
 maxTurns: 25
 tools: Read, Grep, Glob, Edit, Bash
 muster_builtin: true

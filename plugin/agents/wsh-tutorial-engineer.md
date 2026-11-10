@@ -2,6 +2,7 @@
 name: documentation-generation-tutorial-engineer
 description: Step-by-step tutorials and onboarding guides from code.
 model: sonnet
+effort: medium
 maxTurns: 15
 tools: Read, Grep, Glob, Edit, Bash
 muster_builtin: true

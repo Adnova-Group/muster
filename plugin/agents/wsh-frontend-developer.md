@@ -2,6 +2,7 @@
 name: frontend-mobile-development-frontend-developer
 description: "Frontend work: React components, layouts, state, performance and accessibility."
 model: opus
+effort: medium
 maxTurns: 25
 tools: Read, Grep, Glob, Edit, Bash
 muster_builtin: true

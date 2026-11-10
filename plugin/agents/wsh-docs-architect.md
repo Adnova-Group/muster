@@ -2,6 +2,7 @@
 name: code-documentation-docs-architect
 description: Long-form technical documentation from an existing codebase.
 model: opus
+effort: medium
 maxTurns: 35
 tools: Read, Grep, Glob, Edit, Bash
 muster_builtin: true

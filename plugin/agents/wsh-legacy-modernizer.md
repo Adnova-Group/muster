@@ -2,6 +2,7 @@
 name: framework-migration-legacy-modernizer
 description: Legacy refactoring, framework migrations and gradual modernization.
 model: opus
+effort: medium
 maxTurns: 25
 tools: Read, Grep, Glob, Edit, Bash
 muster_builtin: true

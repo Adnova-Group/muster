@@ -2,6 +2,7 @@
 name: code-documentation-code-reviewer
 description: Code review for quality, security and production reliability.
 model: opus
+effort: high
 maxTurns: 35
 tools: Read, Grep, Glob, Edit, Bash
 muster_builtin: true

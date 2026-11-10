@@ -2,6 +2,7 @@
 name: database-cloud-optimization-database-optimizer
 description: "Database performance: query tuning, indexing, caching and migrations."
 model: opus
+effort: medium
 maxTurns: 25
 tools: Read, Grep, Glob, Edit, Bash
 muster_builtin: true

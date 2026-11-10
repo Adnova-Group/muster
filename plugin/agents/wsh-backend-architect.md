@@ -2,6 +2,7 @@
 name: backend-development-backend-architect
 description: "Backend architecture: API design, service boundaries, resilience and observability."
 model: opus
+effort: high
 maxTurns: 35
 tools: Read, Grep, Glob, Edit, Bash
 muster_builtin: true

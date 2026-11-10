@@ -2,6 +2,7 @@
 name: cicd-automation-devops-troubleshooter
 description: Incident response and debugging with logs, traces and Kubernetes.
 model: opus
+effort: medium
 maxTurns: 25
 tools: Read, Grep, Glob, Edit, Bash
 muster_builtin: true

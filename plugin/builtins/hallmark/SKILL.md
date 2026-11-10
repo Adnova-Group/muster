@@ -11,7 +11,7 @@ upstream:
     relation: adapted
 ---
 
-<!-- muster adaptation: in muster the project has one design file, DESIGN.md, owned by /muster:design. Where Hallmark offers to lock the system into `design.md`, present it as a proposal for the project's DESIGN.md and never create a separate design file. -->
+<!-- muster adaptation: in muster the project has one design file, DESIGN.md, owned by muster's design command. Where Hallmark offers to lock the system into `design.md`, present it as a proposal for the project's DESIGN.md and never create a separate design file. -->
 
 # Hallmark
 

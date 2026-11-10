@@ -1,7 +1,10 @@
 id: ai-test-plan
 domain: pm
-title: Test Plan
-match: [test plan, ai test plan, qa plan, QA plan, test strategy, acceptance test plan]
+title: Human QA Test Plan
+# Narrowed in PM domain stage D: a plan for what people test by hand. Automated tests and model
+# evals are not planned here: they are the SPEC's verify: test / check / eval criteria and its
+# EV rows (docs/spec-format.md), which this plan cites by ID and never re-specifies.
+match: [test plan, qa plan, QA plan, test strategy, acceptance test plan, manual test plan, uat plan]
 upstream:
   - kind: standard
     title: "ISO/IEC/IEEE 29119-3, Software testing: Test documentation"
@@ -14,11 +17,11 @@ upstream:
     url: https://standards.ieee.org/ieee/829/3787/
     relation: inspired-by
 phases:
-  - { id: intake,       role: brainstorm,  desc: "feature under test, risks, scope, exit criteria" }
+  - { id: intake,       role: brainstorm,  desc: "feature under test, risks, scope, exit criteria. Human QA only: exploratory sessions, user acceptance, device/browser and accessibility walk-throughs, the SPEC's verify: judgment criteria (NEEDS-HUMAN). Automated tests and model evals stay in the SPEC (verify: test/check/eval, EV rows); when a SPEC exists, list those IDs as out of scope for this plan and cite them, never re-specify them" }
   - { id: scope,        role: author,      desc: "what's in/out; risk-based prioritization; test deliverables, environment/infra, schedule/milestones, staffing (ISO/IEC/IEEE 29119-3 sections)" }
   - { id: risk-matrix,  role: author,      desc: "H/M/L risk per feature; test depth from risk (ISO/IEC/IEEE 29119-3 — supersedes the withdrawn IEEE 829)" }
-  - { id: cases,        role: author,      desc: "per risk tier: happy/boundary/negative/security; data+env+owner; suspension+resumption criteria" }
-  - { id: review,       role: code-review, desc: "adversarial review + coverage gaps" }
+  - { id: cases,        role: author,      desc: "per risk tier: happy/boundary/negative/security manual cases, each with data+env+owner and the SPEC ID it checks when one exists; suspension+resumption criteria" }
+  - { id: review,       role: code-review, desc: "adversarial review + coverage gaps; flags any case an automated test or eval could run instead" }
   - { id: score,        role: score,       desc: "score vs rubric, floor principle" }
 gate:
   criteria: [coverage, clarity, prioritization, test-data-strategy, suspension-criteria, done-definition]

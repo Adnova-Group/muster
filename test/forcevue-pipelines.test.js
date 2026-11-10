@@ -9,8 +9,8 @@ import { readInstalled } from "../src/harness.js";
 import { tmpProject } from "../test-support/helpers.js";
 
 const PIPE = new URL("../pipelines/", import.meta.url);
-const newIds = ["book", "epic", "user-story", "launch-plan", "release-notes",
-  "executive-summary", "okrs", "competitive-battlecard", "ai-implementation-spec", "ai-test-plan"];
+const newIds = ["book", "epic", "launch-plan", "release-notes",
+  "executive-summary", "okrs", "competitive-battlecard", "design", "ai-test-plan"];
 
 test("new pipelines load, validate, and gates are achievable at full marks", async () => {
   const ps = await loadPipelines(PIPE);
@@ -27,13 +27,15 @@ test("routePipeline picks the right pipeline by outcome (match wins; domain defa
   const ps = await loadPipelines(PIPE);
   const route = (o) => { const { domain } = classifyDomain(o); const p = routePipeline(ps, o, domain); return p ? p.id : null; };
   assert.equal(route("write an epic for checkout"), "epic");
-  assert.equal(route("draft a user story"), "user-story");
+  // The user-story pipeline was retired (PM domain stage D): user stories come from /muster:pm tickets,
+  // and preflight falls back to the pm domain default.
+  assert.equal(route("draft a user story"), "prd");
   assert.equal(route("build a launch plan"), "launch-plan");
   assert.equal(route("write release notes"), "release-notes");
   assert.equal(route("write an executive summary"), "executive-summary");
   assert.equal(route("set our okrs"), "okrs");
   assert.equal(route("make a competitive battlecard"), "competitive-battlecard");
-  assert.equal(route("write an implementation spec"), "ai-implementation-spec");
+  assert.equal(route("write an implementation spec"), "design");
   assert.equal(route("write a test plan"), "ai-test-plan");
   assert.equal(route("write a book about resilience"), "book");
   assert.equal(route("write a PRD for onboarding"), "prd");

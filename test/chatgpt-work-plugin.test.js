@@ -469,7 +469,8 @@ test("receipt v3 binds every Work activation artifact and rejects tampering", as
   assert.ok(Object.hasOwn(receipt.artifacts, "package.json"));
   assert.ok(Object.hasOwn(receipt.artifacts, "catalog/software.yaml"));
   assert.ok(Object.hasOwn(receipt.artifacts, "pipelines/prd.yaml"));
-  assert.equal(Object.keys(receipt.artifacts).length, 35);
+  // 34: the user-story pipeline was retired in PM domain stage D (20 -> 19 pipeline files).
+  assert.equal(Object.keys(receipt.artifacts).length, 34);
   for (const digest of Object.values(receipt.artifacts)) assert.match(digest, /^[a-f0-9]{64}$/);
   const mcp = JSON.parse(await readFile(join(installed.pluginPath, ".mcp.json"), "utf8"));
   assert.equal(mcp.mcpServers.muster.env.MUSTER_CHATGPT_WORK_RECEIPT_PATH, installed.configPath);

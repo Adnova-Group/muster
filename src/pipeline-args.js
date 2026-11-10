@@ -3,11 +3,20 @@
 // phase's role resolved to the builtin skills its agent reads (revival stage 3: the deleted
 // domain-router, as data). Deterministic, one Bash call; the main thread commits the file.
 import { readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { loadPipelines } from "./pipeline.js";
+import { loadPipelines, resolvePipeline } from "./pipeline.js";
 import { runDir } from "./run-dir.js";
 import { writeContainedFile } from "./fs-safe.js";
-import { specialistCatalog } from "./specialists.js";
+import { specialistCatalog, PLUGIN_ROOT } from "./specialists.js";
+
+// A phase's own `skills:` (builtin ids) bind on top of its role. They resolve through the
+// catalog first, then by path: kit builtins such as muster-pm carry no catalog role.
+export function builtinSkillPath(id, catalog, pluginRoot = PLUGIN_ROOT) {
+  if (catalog.skills.has(id)) return catalog.skills.get(id).path;
+  const path = join(pluginRoot, "builtins", id, "SKILL.md");
+  return existsSync(path) ? path : null;
+}
 
 // Pipeline role -> builtin skills. brainstorm binds nothing: sp-brainstorm runs a one-question-
 // at-a-time interview a subagent cannot hold, so intake works from CONTEXT.md (the main thread
@@ -29,16 +38,21 @@ const PIPELINES_DIR = new URL("../pipelines/", import.meta.url);
 const OUT_RE = /^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[A-Za-z0-9._\/-]{1,200}$/;
 
 // Pure: pipeline + options -> { args, problems }.
-export function pipelineArgsFrom(pipeline, { runId, outcome, contextPath = null, models = null, out = null, withPhases = [], catalog = specialistCatalog() }) {
+export function pipelineArgsFrom(pipeline, { runId, outcome, contextPath = null, models = null, out = null, withPhases = [], catalog = specialistCatalog(), pluginRoot = PLUGIN_ROOT }) {
   const problems = [];
   const optional = (pipeline.optional_phases || []).filter((p) => withPhases.includes(p.id));
   for (const id of withPhases) if (!optional.some((p) => p.id === id)) problems.push(`pipeline ${pipeline.id} has no optional phase "${id}"`);
   const phases = [...pipeline.phases, ...optional].map((ph) => {
     const ids = ROLE_SKILLS[ph.role];
     if (!ids) problems.push(`phase ${ph.id}: role "${ph.role}" has no skill binding`);
+    const own = (ph.skills || []).map((id) => ({ id, path: builtinSkillPath(id, catalog, pluginRoot) }));
+    for (const s of own) if (!s.path) problems.push(`phase ${ph.id}: skill "${s.id}" is not a bundled builtin`);
     return {
       id: ph.id, role: ph.role, desc: ph.desc || "",
-      skills: (ids || []).filter((id) => catalog.skills.has(id)).map((id) => ({ id, path: catalog.skills.get(id).path })),
+      skills: [
+        ...(ids || []).filter((id) => catalog.skills.has(id)).map((id) => ({ id, path: catalog.skills.get(id).path })),
+        ...own.filter((s) => s.path && !(ids || []).includes(s.id)),
+      ],
     };
   });
   const artifactPath = out || `.muster/runs/${runId}/${pipeline.id}.md`;
@@ -65,14 +79,16 @@ export async function writePipelineArgs({ cwd, runId, pipelineId = null, out = n
   if (!preflight) return { ok: false, runId, problems: [`.muster/runs/${runId}/preflight.json not found: run muster preflight first`] };
   const id = pipelineId || preflight.pipeline;
   if (!id) return { ok: false, runId, problems: ["no pipeline: preflight routed this outcome to code; pass --pipeline <id> to force one"] };
-  const pipeline = (await loadPipelines(PIPELINES_DIR)).find((p) => p.id === id);
+  const resolved = resolvePipeline(await loadPipelines(PIPELINES_DIR), id);
+  if (resolved.retired) return { ok: false, runId, problems: [`pipeline "${id}" is retired: use ${resolved.retired}`] };
+  const pipeline = resolved.pipeline;
   if (!pipeline) return { ok: false, runId, problems: [`unknown pipeline "${id}"`] };
   const contextPath = (await exists(join(dir, "CONTEXT.md"))) ? `.muster/runs/${runId}/CONTEXT.md` : null;
   const { args, problems } = pipelineArgsFrom(pipeline, { runId, outcome: preflight.outcome, contextPath, models: preflight.models || null, out, withPhases });
   if (problems.length) return { ok: false, runId, problems };
   await writeContainedFile(cwd, join(dir, "pipeline-args.json"), JSON.stringify(args, null, 2) + "\n");
   return {
-    ok: true, runId, path: `.muster/runs/${runId}/pipeline-args.json`, pipeline: pipeline.id, artifactPath: args.artifactPath,
+    ok: true, runId, path: `.muster/runs/${runId}/pipeline-args.json`, pipeline: pipeline.id, ...(resolved.alias ? { aliasOf: resolved.alias } : {}), artifactPath: args.artifactPath,
     phases: args.phases.map((p) => `${p.id}${p.skills.length ? ` (${p.skills.map((k) => k.id).join(", ")})` : ""}`),
     gate: pipeline.gate,
   };

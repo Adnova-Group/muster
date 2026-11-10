@@ -17,10 +17,11 @@ const startupCodexHome = process.env.CODEX_HOME;
 // uupm-*, intent-*, typeui, pfd; impeccable-*; the complementary evaluation/security/engineering
 // skills: evals-*, sentry-*, openai-*, tob-*, mp-*, splab-*, addy-source-driven-development) are
 // Claude-plugin only and never copied into the Codex bundle's internal skills, so CODEX_COUNTS
-// below stays the frozen census. So does muster-pm (the PM artifact kit): the frozen lane gets no new features.
+// below stays the frozen census. So do muster-pm (the PM artifact kit) and muster-roadmap (the
+// roadmap-prioritization skill moved to a builtin in PM domain stage D): the frozen lane gets no new features.
 export const isUxFamilyBuiltin = name => /^(uupm|intent)-/.test(name) || name === "typeui" || name === "pfd";
 export const isComplementBuiltin = name => /^(evals|sentry|openai|tob|mp|splab)-/.test(name) || name === "addy-source-driven-development";
-export const isCodexFrozenOutBuiltin = name => isUxFamilyBuiltin(name) || isComplementBuiltin(name) || /^impeccable-/.test(name) || name === "muster-pm";
+export const isCodexFrozenOutBuiltin = name => isUxFamilyBuiltin(name) || isComplementBuiltin(name) || /^impeccable-/.test(name) || name === "muster-pm" || name === "muster-roadmap";
 
 // Expected contents of one generated Codex bundle. This census belongs with
 // inventory/build validation; model adapters only translate tiers to models.
@@ -30,12 +31,15 @@ export const CODEX_COUNTS = Object.freeze({
   // (read by path, not listed per session); router/review-gate/tournament feed Codex from
   // codex/frozen/skills/; coordination, domain-router, sp-plan, sp-subagents and the gsd-*
   // builtins were deleted (the muster-gsd-* Codex fallbacks stay in codex/fallback-skills).
-  nativeSkills: 7,
+  // PM domain stage D: prd-pipeline retired and roadmap-prioritization moved to the frozen-out
+  // muster-roadmap builtin (7 -> 5); user-story retired and ai-implementation-spec renamed to
+  // design (pipelines 20 -> 19).
+  nativeSkills: 5,
   builtinSkills: 92,
   publicSkills: 8,
-  // 105: nativeSkills (7) + builtinSkills (92) + 3 frozen skills + 3 muster-gsd-* fallbacks.
-  internalSkills: 105,
-  pipelines: 20,
+  // 103: nativeSkills (5) + builtinSkills (92) + 3 frozen skills + 3 muster-gsd-* fallbacks.
+  internalSkills: 103,
+  pipelines: 19,
   mcpTools: 30,
   primaryModes: 7,
   aliases: 0

@@ -248,6 +248,34 @@ export async function runDoctor({ root, home, exec, cwd } = {}) {
     }
   }
 
+  // --- pipeline reachability and sources (src/pipeline-reach.js) ---
+  // Some command or workflow can run every pipeline, every phase binds, and every pipeline's
+  // sources are in vendor/manifest.yaml. Skipped where the plugin tree is not beside the CLI.
+  {
+    const commandsDir = join(base, "plugin/commands");
+    if (pipelines === null || !(await exists(commandsDir))) {
+      checks.push({ name: "pipeline-reach", ok: true, detail: pipelines === null ? "pipelines failed to load — skip" : "no plugin/commands beside this CLI — skip" });
+    } else {
+      try {
+        const { checkPipelineReach } = await import("./pipeline-reach.js");
+        const { specialistCatalog } = await import("./specialists.js");
+        const commands = {};
+        for (const f of (await readdirSafe(commandsDir)).filter(n => n.endsWith(".md"))) commands[f.replace(/\.md$/, "")] = await readFile(join(commandsDir, f), "utf8");
+        let manifest = null;
+        try { manifest = parseYaml(await readFile(join(base, "vendor/manifest.yaml"), "utf8")); } catch { /* reported by vendor-note-staleness */ }
+        const res = checkPipelineReach({
+          pipelines, manifest, commands,
+          workflowPresent: await exists(join(base, "plugin/workflows/pipeline.js")),
+          catalog: specialistCatalog({ catalogDir: join(base, "catalog"), pluginRoot: join(base, "plugin") }),
+          pluginRoot: join(base, "plugin"),
+        });
+        checks.push({ name: "pipeline-reach", ok: res.ok, detail: res.ok ? res.detail : res.problems.join("; ") });
+      } catch (e) {
+        checks.push({ name: "pipeline-reach", ok: false, detail: e.message });
+      }
+    }
+  }
+
   // --- skill doc references ---
   // Every concrete (extensioned) docs/ path a muster-authored SKILL.md cites as an existing
   // reference must actually exist on disk. Scoped to plugin/skills/** plus the muster-native

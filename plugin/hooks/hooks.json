@@ -1,7 +1,17 @@
 {
   "hooks": {
     "PreToolUse": [
-      { "matcher": "Bash|PowerShell|mcp__.*", "hooks": [ { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/pre-tool-use.js\"" } ] }
+      {
+        "matcher": "^(Bash|PowerShell|mcp__(?!ccd_).*)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/pre-tool-use.js"],
+            "onFailure": "continue"
+          }
+        ]
+      }
     ]
   }
 }

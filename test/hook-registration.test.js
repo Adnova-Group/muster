@@ -21,13 +21,16 @@ const VALID_EVENTS = new Set([
   "TaskCompleted",
 ]);
 
-// Parse ${CLAUDE_PLUGIN_ROOT} as the plugin/ directory.
-function resolveScript(command) {
-  return command
-    .replace(/\$\{CLAUDE_PLUGIN_ROOT\}/g, path.join(ROOT, "plugin"))
-    .replace(/^node\s+"?/, "")
-    .replace(/"$/, "")
-    .trim();
+// Every hook runs in exec form (`command` + `args`, no shell): the script is the first `args`
+// element, with ${CLAUDE_PLUGIN_ROOT} resolved to the plugin/ directory.
+function resolveScript(hook) {
+  return hook.args[0].replace(/\$\{CLAUDE_PLUGIN_ROOT\}/g, path.join(ROOT, "plugin"));
+}
+
+// Claude Code evaluates a matcher holding any regex character with RegExp.prototype.test,
+// unanchored (code.claude.com/docs/en/hooks.md, "Matcher patterns").
+function matches(matcher, toolName) {
+  return new RegExp(matcher).test(toolName);
 }
 
 test("hooks.json parses as valid JSON", () => {
@@ -43,28 +46,47 @@ test("hooks.json top-level keys are all valid hook event names", () => {
   }
 });
 
-// P1-6: the PreToolUse matcher must fire for EVERY mcp__* tool (not just names
-// containing [Ss]end/[Ss]ubmit/[Pp]ublish/[Ss]ign/[Pp]urchase-shaped substrings).
-// The old matcher only reached the hook for those keyword-ish tool names, so an
-// MCP tool with different casing or wording never even invoked the hook — the
-// action fence was dead for it. classifyToolName's word-boundary+case-insensitive
-// keyword match (action-guard.js) is what actually narrows the class now; the
-// matcher's only job is "get every shell and mcp__* call to the hook at all".
-// PowerShell is the primary Windows shell tool, so it rides with Bash. Edit/
-// Write/NotebookEdit are deliberately absent: the fence never classifies them,
-// and spawning node for every edit is pure always-on cost.
-test("hooks.json: PreToolUse matcher is exactly Bash|PowerShell|mcp__.* (not a keyword subset)", () => {
+// P1-6: the PreToolUse matcher must fire for EVERY shell call and every external mcp__* tool
+// (not just names containing send/submit/publish/sign/purchase-shaped substrings): the old
+// keyword matcher never reached the hook for an MCP tool with other casing or wording, so the
+// fence was dead for it. classifyToolName's word-boundary, case-insensitive match
+// (action-guard.js) narrows the class; the matcher only routes calls to the hook. PowerShell is
+// the primary Windows shell tool, so it rides with Bash. Edit/Write/NotebookEdit and Claude
+// Desktop's own mcp__ccd_* tools (mcp__ccd_turn__update_plan runs many times per Desktop
+// session) are deliberately absent: the fence never classifies them, and spawning node for each
+// is pure always-on cost. The matcher is anchored because Claude Code tests it unanchored.
+test("hooks.json: PreToolUse matcher routes shell and external mcp__* calls only", () => {
   const parsed = JSON.parse(readFileSync(HOOKS_JSON, "utf8"));
   const entry = parsed.hooks.PreToolUse.find((e) =>
-    e.hooks.some((h) => h.command.includes("pre-tool-use.js")),
+    e.hooks.some((h) => (h.args || []).some((arg) => arg.endsWith("/hooks/pre-tool-use.js"))),
   );
   assert.ok(entry, "PreToolUse entry running pre-tool-use.js must exist");
-  assert.equal(
-    entry.matcher,
-    "Bash|PowerShell|mcp__.*",
-    "matcher must route every shell and mcp__* tool to the hook; classification (case-insensitive, " +
-    "word-boundary) happens in action-guard.js, not the matcher",
-  );
+  for (const tool of [
+    "Bash", "PowerShell", "mcp__gmail__send_email", "mcp__docusign__sign_document",
+    "mcp__plugin_acme_db__publish_release", "mcp__Stripe__Purchase", "mcp__ccdx__send",
+    "mcp__claude_ai_Slack__slack_send_message",
+  ]) assert.ok(matches(entry.matcher, tool), `matcher must route ${tool} to the fence`);
+  for (const tool of [
+    "mcp__ccd_turn__update_plan", "mcp__ccd_session__mark_chapter", "Read", "Edit", "Write",
+    "NotebookEdit", "BashOutput", "KillBash", "Monitor",
+  ]) assert.ok(!matches(entry.matcher, tool), `matcher must not spawn the fence for ${tool}`);
+});
+
+// Exec form: Claude Code spawns node directly with the script path as one argument, so no shell
+// is involved (a shell-form hook on Windows without Git Bash now blocks every call). The fence is
+// advisory-safe to fail open, so a hook that cannot start or crashes never blocks the tool call.
+test("hooks.json: every hook is exec form and fails open", () => {
+  const parsed = JSON.parse(readFileSync(HOOKS_JSON, "utf8"));
+  for (const [event, entries] of Object.entries(parsed.hooks)) {
+    for (const entry of entries) {
+      for (const hook of entry.hooks) {
+        assert.equal(hook.command, "node", `${event} hook must spawn node directly`);
+        assert.ok(Array.isArray(hook.args) && hook.args.length >= 1, `${event} hook must set args (exec form)`);
+        assert.equal(hook.shell, undefined, `${event} hook must not select a shell`);
+        assert.equal(hook.onFailure, "continue", `${event} hook must fail open`);
+      }
+    }
+  }
 });
 
 // Zero cost until invoked: no hook may fire on session start or on every
@@ -81,10 +103,10 @@ test("every hook command's script path exists on disk", () => {
     for (const entry of entries) {
       for (const hook of entry.hooks) {
         assert.equal(hook.type, "command", `${event} hook must be type:command`);
-        const scriptPath = resolveScript(hook.command);
+        const scriptPath = resolveScript(hook);
         assert.ok(
           existsSync(scriptPath),
-          `script for ${event} not found: ${scriptPath} (from command: ${hook.command})`,
+          `script for ${event} not found: ${scriptPath} (from args: ${JSON.stringify(hook.args)})`,
         );
       }
     }

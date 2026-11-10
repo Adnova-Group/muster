@@ -110,7 +110,7 @@ Enforcement follows the run's EXTERNAL effects, not the orchestrator's own in-re
 
 `/muster:go` writes `.muster/run-active` before it builds and removes it at the merge decision. Nothing renews or expires the marker: one left behind by an interrupted run stays until the next run overwrites it or you delete it.
 
-**`PreToolUse`** (`pre-tool-use.js`, matcher `Bash|PowerShell|mcp__.*`) is the action-class fence and nothing else. A recognized forbidden external effect is fenced even when the call is delegated (`agent_id`).
+**`PreToolUse`** (`pre-tool-use.js`, exec-form `node` hook, fail-open, matcher `^(Bash|PowerShell|mcp__(?!ccd_).*)$`, which skips Claude Desktop's internal `mcp__ccd_*` tools) is the action-class fence and nothing else. A recognized forbidden external effect is fenced even when the call is delegated (`agent_id`).
 
 **Action-class fence** (`action-guard.js`): when both `.muster/run-active` and `.muster/forbidden-actions` exist, the hook classifies the tool call (an `mcp__`-prefixed tool name against a `send`/`submit`/`publish`/`sign`/`purchase` keyword set, word-boundary matched; or a Bash or PowerShell command against a small high-confidence allowlist -- `git push`, `npm publish`, `gh release create`, `gh pr merge`, `curl -X POST`) and denies a match against the run's declared `forbiddenActions`, honouring `MUSTER_ACTION_GUARD` (`off`/`warn`/deny-by-default). Either file absent, or no class matching, is a no-op.
 

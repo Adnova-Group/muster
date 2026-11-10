@@ -1,6 +1,6 @@
 ---
 name: intent-wren
-description: "Experience design: flows, IA, screens and UI copy."
+description: "Experience design: flows, IA, UI copy."
 model: sonnet
 effort: medium
 maxTurns: 25

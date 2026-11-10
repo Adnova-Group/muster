@@ -1,6 +1,6 @@
 ---
 name: diagnose
-description: "Failure-first bug fix: reproduce, root cause, fix, regression test, verify. Usage: /muster:diagnose <symptom | failing output>"
+description: "Failure-first bug fix: reproduce, root-cause, fix, regression test. Usage: /muster:diagnose <symptom | failing output>"
 argument-hint: "<symptom | failing output>"
 upstream: []
 ---

@@ -1,6 +1,6 @@
 ---
 name: go
-description: "Hands-off lifecycle: plan, build in isolated worktrees, review, verify, then the merge decision. Usage: /muster:go <outcome | backlog ref>"
+description: "Hands-off: plan, build, review and verify, then ask to merge. Usage: /muster:go <outcome | backlog ref>"
 argument-hint: "<outcome | backlog ref>"
 upstream: []
 ---

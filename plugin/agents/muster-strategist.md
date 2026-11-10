@@ -1,6 +1,6 @@
 ---
 name: muster-strategist
-description: Read-only heavyweight reasoning on whether an approach, plan or spec is right; does not implement.
+description: Read-only judgment on whether an approach, plan or spec is right; no code.
 tools: Read, Bash, Grep, Glob
 model: opus
 effort: high

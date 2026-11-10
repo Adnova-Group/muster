@@ -1,6 +1,6 @@
 ---
 name: intent-vigil
-description: "UX evaluation: heuristics, edge cases, WCAG 2.2."
+description: "UX evaluation: heuristics, WCAG 2.2."
 model: sonnet
 effort: high
 maxTurns: 35

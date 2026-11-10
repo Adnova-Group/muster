@@ -1,6 +1,6 @@
 ---
 name: debugging-toolkit-debugger
-description: Debugging errors, test failures and unexpected behavior.
+description: Debugs errors, test failures and odd behavior.
 model: opus
 effort: medium
 maxTurns: 25

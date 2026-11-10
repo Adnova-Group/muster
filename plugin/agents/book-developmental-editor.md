@@ -1,6 +1,6 @@
 ---
 name: book-developmental-editor
-description: "Read-only structural edit of a book outline or manuscript."
+description: "Book workflow: structural edit."
 tools: Read, Bash, Grep, Glob
 model: opus
 effort: high

@@ -1,6 +1,6 @@
 ---
 name: greenfield
-description: Bootstraps a brand-new project in an empty target before planning.
+description: Bootstraps a new project in an empty target before planning.
 user-invocable: false
 upstream: []
 ---

@@ -1,6 +1,6 @@
 ---
 name: plan
-description: "Plan first: write and check PLAN.md, then stop for approval before anything is built. Usage: /muster:plan <outcome | backlog ref>"
+description: "Write and check PLAN.md, then stop for approval. Usage: /muster:plan <outcome | backlog ref>"
 argument-hint: "<outcome | backlog ref>"
 upstream: []
 ---

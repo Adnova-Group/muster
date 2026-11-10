@@ -1,6 +1,6 @@
 ---
 name: muster-verifier
-description: "Goal-backward check of a run's integrated work: PASS, GAPS or honest ABSTAIN."
+description: "Run workflow: goal-backward check of integrated work."
 tools: Read, Write, Bash, Grep, Glob
 model: sonnet
 effort: high

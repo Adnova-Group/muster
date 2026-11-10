@@ -1,6 +1,6 @@
 ---
 name: database-cloud-optimization-database-optimizer
-description: "Database performance: query tuning, indexing, caching and migrations."
+description: "Database performance: queries, indexes, caching."
 model: opus
 effort: medium
 maxTurns: 25

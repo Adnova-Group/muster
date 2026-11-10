@@ -1,6 +1,6 @@
 ---
 name: muster-plan-checker
-description: "Checks a run's PLAN.md against binding dimensions and plan-lint."
+description: "Run workflow: checks PLAN.md."
 tools: Read, Bash, Grep, Glob
 model: sonnet
 effort: high

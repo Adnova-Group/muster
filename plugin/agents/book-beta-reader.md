@@ -1,6 +1,6 @@
 ---
 name: book-beta-reader
-description: "Read-only simulated first-time reader of a manuscript."
+description: "Book workflow: simulated first reader."
 tools: Read, Bash, Grep, Glob
 model: sonnet
 effort: low

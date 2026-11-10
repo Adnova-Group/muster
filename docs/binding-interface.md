@@ -259,10 +259,11 @@ stale:
 AskUserQuestion    files=10  mentions=22
 dispatch (Agent/Task tool)  files=2  mentions=8
 hook (PreToolUse/SessionStart/UserPromptSubmit)  files=2  mentions=3
-worktree   files=10 mentions=65
+worktree   files=9 mentions=64
 ```
 
-The worktree row was refreshed on 2026-11-10 for the dev-team seats: `muster-test-writer` and
+The worktree row dropped to 9 files and 64 mentions at revival stage 4, when go.md's trimmed
+description stopped naming worktrees (its body never did). It was refreshed on 2026-11-10 for the dev-team seats: `muster-test-writer` and
 `muster-integration-checker` work in an isolated and a scratch worktree, and the go and diagnose
 commands name `muster:team`. Counts refreshed for revival stage 2b (2026-11-09): plan.md, go.md and the orchestrator were
 rewritten around the Workflow scripts; plan-backlog, go-backlog, runner, the router,

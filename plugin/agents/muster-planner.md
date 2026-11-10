@@ -1,6 +1,6 @@
 ---
 name: muster-planner
-description: "Writes and revises a run's PLAN.md: tracer-first tasks, waves, hints, verify commands."
+description: "Run workflow: writes and revises PLAN.md."
 tools: Read, Write, Edit, Bash, Grep, Glob
 model: opus
 effort: high

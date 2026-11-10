@@ -1,6 +1,6 @@
 ---
 name: improve
-description: Read-only retrospective over a finished run; proposes user-gated edits to muster itself.
+description: Read-only retrospective of a finished run; proposes edits to muster.
 user-invocable: false
 context: fork
 upstream:

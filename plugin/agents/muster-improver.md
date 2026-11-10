@@ -1,6 +1,6 @@
 ---
 name: muster-improver
-description: "Read-only retrospective over a finished run; proposes user-gated edits to muster's skills and agents."
+description: Read-only run retrospective; proposes edits to muster's skills and agents.
 tools: Read, Bash, Grep, Glob
 model: opus
 effort: high

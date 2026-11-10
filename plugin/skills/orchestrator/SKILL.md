@@ -1,6 +1,6 @@
 ---
 name: orchestrator
-description: Rules every muster run keeps after compaction, plus the prose fallback when the Workflow tool is missing.
+description: Rules a muster run keeps after compaction; prose fallback without the Workflow tool.
 user-invocable: false
 upstream: []
 ---

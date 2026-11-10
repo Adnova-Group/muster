@@ -1,6 +1,6 @@
 ---
 name: prt-type-design-analyzer
-description: "Type design and invariant review."
+description: Type design and invariants.
 model: sonnet
 effort: high
 maxTurns: 35

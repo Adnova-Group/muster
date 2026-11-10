@@ -1,6 +1,6 @@
 ---
 name: audit
-description: "Whole-codebase review-and-fix (or a read-only ranked backlog). Usage: /muster:audit [path] | backlog [path]"
+description: "Whole-codebase review and fix, or a ranked backlog. Usage: /muster:audit [path] | backlog [path]"
 argument-hint: "[path] | backlog [path]"
 disable-model-invocation: true
 upstream: []

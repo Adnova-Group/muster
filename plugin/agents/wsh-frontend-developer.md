@@ -1,6 +1,6 @@
 ---
 name: frontend-mobile-development-frontend-developer
-description: "Frontend work: React components, layouts, state, performance and accessibility."
+description: "Frontend: React components, layouts, state, accessibility."
 model: opus
 effort: medium
 maxTurns: 25

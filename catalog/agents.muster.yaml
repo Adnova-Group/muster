@@ -69,42 +69,42 @@
   roles: [frontend]
   rank: 38
   keywords: [flows, wireframing, microcopy, ia]
-  description: "Experience design: flows, IA, screens and UI copy."
+  description: "Experience design: flows, IA, UI copy."
   provenance: { license: CC0-1.0, upstream: [ghaida/intent] }
 - id: intent-vigil
   kind: agent
   roles: [frontend]
   rank: 37
   keywords: [evaluation, heuristic, wcag, resilience]
-  description: "UX evaluation: heuristics, edge cases, WCAG 2.2."
+  description: "UX evaluation: heuristics, WCAG 2.2."
   provenance: { license: CC0-1.0, upstream: [ghaida/intent] }
 - id: intent-sage
   kind: agent
   roles: [brainstorm]
   rank: 44
   keywords: [brainstorming, stuck, explore]
-  description: "Design brainstorming before solving a problem."
+  description: "Design brainstorming before solving."
   provenance: { license: CC0-1.0, upstream: [ghaida/intent] }
 - id: intent-ember
   kind: agent
   roles: [plan, research]
   rank: 36
   keywords: [strategy, framing, scoping, brief]
-  description: "UX strategy and research: frames problems, scopes."
+  description: "UX strategy and research framing."
   provenance: { license: CC0-1.0, upstream: [ghaida/intent] }
 - id: intent-rune
   kind: agent
   roles: [plan]
   rank: 35
   keywords: [handoff, packaging]
-  description: "Design handoff: packages approved work for builders."
+  description: "Design handoff to builders."
   provenance: { license: CC0-1.0, upstream: [ghaida/intent] }
 - id: intent-noor
   kind: agent
   roles: [plan, frontend]
   rank: 23
   keywords: [ethics, darkpattern, engagement, orientation]
-  description: "UX engagement lead: context, ethics and routing."
+  description: "UX engagement lead: context and ethics."
   provenance: { license: CC0-1.0, upstream: [ghaida/intent] }
 
 # ----- pr-review-toolkit agents: merge-tracked vendored from anthropics/claude-plugins-official

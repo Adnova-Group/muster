@@ -1,6 +1,6 @@
 ---
 name: init
-description: "Prepare a repository for muster and hand off native instruction setup. Usage: /muster:init [dir]"
+description: "Prepare a repository for muster. Usage: /muster:init [dir]"
 argument-hint: "[dir]"
 upstream: []
 ---

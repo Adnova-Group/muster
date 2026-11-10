@@ -1,6 +1,6 @@
 ---
 name: intent-noor
-description: "UX engagement lead: context, ethics and routing."
+description: "UX engagement lead: context and ethics."
 model: sonnet
 effort: high
 maxTurns: 35

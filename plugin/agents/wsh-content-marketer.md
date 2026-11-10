@@ -1,6 +1,6 @@
 ---
 name: content-marketer
-description: "Content marketing: strategy, SEO, distribution and performance."
+description: "Content marketing: strategy, SEO, distribution."
 model: sonnet
 effort: medium
 maxTurns: 25

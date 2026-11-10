@@ -1,6 +1,6 @@
 ---
 name: design
-description: "Resolve, gate or initialize DESIGN.md context, or run a pinned design workflow. Usage: /muster:design <init|status|resolve|detect|ignores|provider|workflow> ..."
+description: "DESIGN.md context and pinned design workflows. Usage: /muster:design <init|status|resolve|detect|ignores|provider|workflow> ..."
 argument-hint: "<init|status|resolve|detect|ignores|provider|workflow> [target]"
 upstream:
   - repo: pbakaus/impeccable

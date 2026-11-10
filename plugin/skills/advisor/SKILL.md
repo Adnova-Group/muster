@@ -1,6 +1,6 @@
 ---
 name: advisor
-description: "Services a worker's advice-request: validate it, resolve the advisor model, return one bounded answer."
+description: Answers a worker's advice-request with one bounded reply from the advisor model.
 user-invocable: false
 upstream: []
 ---

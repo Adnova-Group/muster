@@ -1,6 +1,6 @@
 ---
 name: muster-reviewer
-description: "Read-only reviewer of one task's commits; re-runs its tests and returns a PASS/FAIL ReviewResult."
+description: Read-only reviewer of one task's commits; re-runs tests, returns PASS/FAIL.
 tools: Read, Bash, Grep, Glob
 model: sonnet
 effort: high

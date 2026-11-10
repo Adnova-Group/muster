@@ -1,6 +1,6 @@
 ---
 name: muster-integration-checker
-description: "Checks a wave's parallel tasks wire together."
+description: "Run workflow: checks parallel tasks wire together."
 tools: Read, Bash, Grep, Glob
 model: sonnet
 effort: high

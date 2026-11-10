@@ -1,6 +1,6 @@
 ---
 name: documentation-generation-tutorial-engineer
-description: Step-by-step tutorials and onboarding guides from code.
+description: Step-by-step tutorials and onboarding guides.
 model: sonnet
 effort: medium
 maxTurns: 15

@@ -1,6 +1,6 @@
 ---
 name: backend-development-backend-architect
-description: "Backend architecture: API design, service boundaries, resilience and observability."
+description: "Backend architecture: APIs, service boundaries, resilience."
 model: opus
 effort: high
 maxTurns: 35

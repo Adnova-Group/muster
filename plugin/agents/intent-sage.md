@@ -1,6 +1,6 @@
 ---
 name: intent-sage
-description: "Design brainstorming before solving a problem."
+description: Design brainstorming before solving.
 model: sonnet
 effort: high
 maxTurns: 35

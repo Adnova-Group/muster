@@ -1,6 +1,6 @@
 ---
 name: backend-development-security-auditor
-description: "Security review: OWASP Top 10, auth flaws and compliance."
+description: "Security review: OWASP Top 10, auth, compliance."
 model: opus
 effort: xhigh
 maxTurns: 40

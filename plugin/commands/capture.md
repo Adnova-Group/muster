@@ -1,6 +1,6 @@
 ---
 name: capture
-description: "Turn this conversation's decisions into approval-gated backlog items. Usage: /muster:capture [hint]"
+description: "Turn this conversation's decisions into backlog items. Usage: /muster:capture [hint]"
 argument-hint: "[hint]"
 upstream: []
 ---

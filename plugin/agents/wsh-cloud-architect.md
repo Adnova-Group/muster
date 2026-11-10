@@ -1,6 +1,6 @@
 ---
 name: cloud-infrastructure-cloud-architect
-description: "Cloud architecture on AWS, Azure and GCP: IaC, cost, security and disaster recovery."
+description: "Cloud architecture (AWS, Azure, GCP): IaC, cost, DR."
 model: opus
 effort: high
 maxTurns: 35

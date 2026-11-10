@@ -27,7 +27,7 @@ The Cowork adapter is `cowork/mcp-server.mjs`; the neutral core receives its run
 | Variable | Default | Semantics | Read by |
 | --- | --- | --- | --- |
 | `MUSTER_RUNTIME` | _(unset)_ | The neutral MCP core marks nested CLI invocations with the active host (`cowork`, `codex`, or `work`), so capability resolution uses that lane. Set on child CLI spawns by `mcp/server.mjs`. | CLI (`src/capabilities.js`) |
-| `MUSTER_COWORK_NATIVE_PLUGIN` | _(unset — off)_ | Declares that Cowork's own plugin loader accepted muster's `plugin/` tree. A declared capability check, never a probe: unset keeps resolution MCP-only. | CLI (`src/cli.js`, `src/capabilities.js`) |
+| `MUSTER_COWORK_NATIVE_PLUGIN` | _(unset — detect)_ | Overrides plugin detection for `capabilities --cowork`: `1`/`true` declares muster's plugin loaded, `0`/`false` declares a plugin-less install. Unset reads the Desktop account plugin list, and assumes the plugin route when no list is readable. | CLI (`src/cli.js`, `src/harness.js`, `src/capabilities.js`) |
 | `MUSTER_COWORK_CONNECTORS` | _(unset)_ | Comma-separated remote-connector names (e.g. `slack,drive`) to treat as available. Remote connectors live in your cloud account, not on disk, so they cannot be auto-discovered. | CLI (`src/cli.js`) |
 | `MUSTER_COWORK_MAX_INFLIGHT` | `4` | Max concurrent MCP tool executions in the Cowork server. Hard ceiling `64`. | `mcp/server.mjs` (via `cowork/mcp-server.mjs` adapter) |
 | `MUSTER_COWORK_MAX_QUEUE` | `16` | Max queued MCP tool executions before overload rejection. Hard ceiling `1024`. | `mcp/server.mjs` (via `cowork/mcp-server.mjs` adapter) |

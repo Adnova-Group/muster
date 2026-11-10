@@ -146,7 +146,9 @@ test("harness documentation routes and support claims are explicit", async () =>
   assert.match(cowork, /support matrix/i);
   assert.match(cowork, /29 CLI-wrapper tools/i);
   assert.match(cowork, /`muster_sprint_protocol`/);
-  assert.match(cowork, /phase-?3[\s\S]{0,260}before relying on parallel/i);
+  assert.match(cowork, /phase-?3[\s\S]{0,260}before relying on per-call model override/i, "model override stays phase-3 gated");
+  assert.match(cowork, /Parallel subagents are documented in Cowork/, "fan-out is documented, not probe-gated");
+  assert.match(cowork, /Desktop WSL sessions load no plugins/);
   assert.match(cowork, /orchestrator creates[\s\S]{0,120}dedicated isolated Git worktree[\s\S]{0,180}sequentially/i);
   assert.doesNotMatch(cowork, /write-capable wave items must run sequentially in the connected project/i);
   assert.doesNotMatch(cowork, /Parallel subagents \| Confirmed/i);

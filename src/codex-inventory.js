@@ -16,7 +16,9 @@ const startupCodexHome = process.env.CODEX_HOME;
 // The Codex lane is frozen: builtins added after the freeze (the merge-tracked UX family:
 // uupm-*, intent-*, typeui, pfd) are Claude-plugin only and never copied into the
 // Codex bundle's internal skills, so CODEX_COUNTS below stays the frozen census.
-export const isCodexFrozenOutBuiltin = name => /^(uupm|intent)-/.test(name) || name === "typeui" || name === "pfd";
+// The Codex lane is frozen: builtins vendored after the freeze (the UX family, impeccable-*) stay
+// out of the generated Codex bundle.
+export const isCodexFrozenOutBuiltin = name => /^(uupm|intent|impeccable)-/.test(name) || name === "typeui" || name === "pfd";
 
 // Expected contents of one generated Codex bundle. This census belongs with
 // inventory/build validation; model adapters only translate tiers to models.
@@ -27,10 +29,10 @@ export const CODEX_COUNTS = Object.freeze({
   // codex/frozen/skills/; coordination, domain-router, sp-plan, sp-subagents and the gsd-*
   // builtins were deleted (the muster-gsd-* Codex fallbacks stay in codex/fallback-skills).
   nativeSkills: 7,
-  builtinSkills: 69,
+  builtinSkills: 46,
   publicSkills: 8,
-  // 82: nativeSkills (7) + builtinSkills (69, incl. the 23 vendored impeccable-* playbooks) + 3 frozen skills + 3 muster-gsd-* fallbacks.
-  internalSkills: 82,
+  // 59: nativeSkills (7) + builtinSkills (46) + 3 frozen skills + 3 muster-gsd-* fallbacks.
+  internalSkills: 59,
   pipelines: 20,
   mcpTools: 30,
   primaryModes: 7,

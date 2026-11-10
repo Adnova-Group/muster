@@ -18,7 +18,10 @@ const builtinsRoot = join(pluginRoot, "builtins");
 
 // Names that are not files of the builtin (the skill tells the user to create them).
 const NOT_A_FILE = {
-  "wsh-architecture-decision-records": ["template.md", "NNNN-title-with-dashes.md"] // ADR naming in the user's repo
+  "wsh-architecture-decision-records": ["template.md", "NNNN-title-with-dashes.md"], // ADR naming in the user's repo
+  // Former upstream file names, named only to say their content now lives inline in this file.
+  "impeccable-adapt": ["responsive-design.md"],
+  "impeccable-critique": ["cognitive-load.md", "heuristics-scoring.md", "personas.md"]
 };
 
 // Files that live in the USER's project, never in the plugin: a builtin names them because it
@@ -28,7 +31,8 @@ const NOT_A_FILE = {
 // Project-root files any builtin may name:
 const PROJECT_ROOT_FILES = {
   "DESIGN.md": "the project's canonical design context, owned by /muster:design (impeccable)",
-  "README.md": "a README the skill writes into the user's project or handoff package"
+  "README.md": "a README the skill writes into the user's project or handoff package",
+  "CLAUDE.md": "the project's Claude Code instructions file, read from the user's project"
 };
 // Per builtin: project paths it reads or writes, and example names for deliverables it writes.
 const deliverable = "example name of the deliverable the skill writes into the user's working directory";
@@ -59,7 +63,23 @@ const projectFile = (id, target) => Object.hasOwn(PROJECT_ROOT_FILES, target) ||
 // when the file ships or the pointer is fixed, so the list only shrinks.
 // Empty since the superpowers v7.0.2 refresh shipped every sp-* supporting file. Add an entry only
 // with a dated reason; the test fails once a listed entry resolves, so the list can only shrink.
-const KNOWN_DANGLING = {};
+const KNOWN_DANGLING = {
+  // 2026-11-10: impeccable skill-v4.8.2 is vendored without its engine-gated, live-browser and
+  // native-platform references (see the impeccable source comment in vendor/manifest.yaml); the
+  // upstream body still links them, and each builtin's adaptation note says those links name
+  // upstream files for context only. Delete an entry when that reference is vendored.
+  "impeccable-core": ["reference/routing.md", "reference/new-work.md", "reference/live.md", "reference/init.md",
+    "reference/hooks.md", "reference/generate.md", "reference/doctor.md", "reference/craft.md",
+    "reference/audit.native.md", "reference/adapt.native.md"],
+  "impeccable-adapt": ["adapt.native.md"],
+  "impeccable-animate": ["ios.md", "android.md"],
+  "impeccable-audit": ["audit.native.md"],
+  "impeccable-colorize": ["new-work.md", "live.md"],
+  "impeccable-document": ["init.md", "new-work.md"],
+  "impeccable-layout": ["ios.md", "android.md", "new-work.md", "live.md"],
+  "impeccable-shape": ["new-work.md"],
+  "impeccable-typeset": ["ios.md", "android.md", "new-work.md", "live.md"]
+};
 
 export function relativePointers(markdown) {
   const out = new Set();

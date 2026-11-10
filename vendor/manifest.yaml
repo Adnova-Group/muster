@@ -1208,7 +1208,7 @@ sources:
     relation: adapted
     fetch: false
     items:
-      - { id: muster-humanizer, kind: builtin, from: references/structures.md }
+      - { id: muster-humanizer, kind: builtin, from: SKILL.md }
   - id: no-ai-slop
     kind: github
     repo: petergyang/no-ai-slop

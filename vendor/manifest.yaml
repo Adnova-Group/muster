@@ -1438,6 +1438,83 @@ sources:
       - { id: evals-generate-synthetic-data, kind: builtin, from: skills/generate-synthetic-data/SKILL.md, to: plugin/builtins/evals-generate-synthetic-data/SKILL.md, mode: adapted, relation: adapted, baseBlob: 0954334c590cbd3329f31d8555f1ffa8d7fdaf45 }
       - { id: evals-eval-audit, kind: builtin, from: skills/eval-audit/SKILL.md, to: plugin/builtins/evals-eval-audit/SKILL.md, mode: adapted, relation: adapted, baseBlob: 4c932d9d6b8630797c38d50591933329b7f8bb27 }
 
+  - id: sentry-skills
+    kind: github
+    repo: getsentry/skills
+    # Added 2026-11-10. Pinned to upstream HEAD (2026-11-05); the repository publishes no tags, so
+    # tag is null. License basis: top-level LICENSE is the Apache License 2.0 ("Copyright 2025
+    # Functional Software, Inc. dba Sentry"); gha-security-review carries no license file of its
+    # own, so the repository license governs it. Its attack patterns cite StepSecurity's
+    # HackerBot Claw analysis by link (upstream's own comment, kept).
+    # Vendored: gha-security-review as sentry-gha-security-review with its nine references/
+    # verbatim. Adapted: SKILL.md frontmatter (name kept, one-line description, muster_builtin,
+    # SPDX license, generated upstream:; allowed-tools dropped) and the prompt-lint directive.
+    # Its CLAUDE.md/AGENTS.md mentions name files of the reviewed repository (project files in
+    # test/builtin-references.test.js). security-review lives in the share-alike source below.
+    # Not vendored: every other skill, agents/, warden.toml.
+    ref: e94f22214528d69899d09c627b3315ddc3544816
+    tag: null
+    license: Apache-2.0
+    copyright: "Copyright 2025 Functional Software, Inc. dba Sentry"
+    relation: vendored
+    items:
+      - { from: LICENSE, mode: watch, baseBlob: 753a6c03c60a9232405d05170bd3ad3cab49a1ef }
+      - { id: audit-pattern-security, kind: audit-pattern, from: null, relation: inspired-by }
+      - { id: sentry-gha-security-review, kind: builtin, from: skills/gha-security-review/SKILL.md, to: plugin/builtins/sentry-gha-security-review/SKILL.md, mode: adapted, relation: adapted, baseBlob: 7ef6c6ed67a57539e62e6465acf5a8a45fab12d0 }
+      - { from: skills/gha-security-review/references/ai-prompt-injection-via-ci.md, to: plugin/builtins/sentry-gha-security-review/references/ai-prompt-injection-via-ci.md, mode: verbatim, baseBlob: be1c9497f4c140818dd2bc925244fa0d3a48d53e }
+      - { from: skills/gha-security-review/references/comment-triggered-commands.md, to: plugin/builtins/sentry-gha-security-review/references/comment-triggered-commands.md, mode: verbatim, baseBlob: a1d651ed35ec333c9afcaf328cadca4c6b7fb5e4 }
+      - { from: skills/gha-security-review/references/credential-escalation.md, to: plugin/builtins/sentry-gha-security-review/references/credential-escalation.md, mode: verbatim, baseBlob: 805a301dff90376a947cab3ab953074378814e57 }
+      - { from: skills/gha-security-review/references/expression-injection.md, to: plugin/builtins/sentry-gha-security-review/references/expression-injection.md, mode: verbatim, baseBlob: dca326d2f7067b8921c4fc47e01ccc8a56bb6c78 }
+      - { from: skills/gha-security-review/references/permissions-and-secrets.md, to: plugin/builtins/sentry-gha-security-review/references/permissions-and-secrets.md, mode: verbatim, baseBlob: 3a809e928c13d537af5527dcf3c7fbe63d588c03 }
+      - { from: skills/gha-security-review/references/pwn-request.md, to: plugin/builtins/sentry-gha-security-review/references/pwn-request.md, mode: verbatim, baseBlob: 0a2046843146aaff7dd09e303715e0bda0e0db89 }
+      - { from: skills/gha-security-review/references/real-world-attacks.md, to: plugin/builtins/sentry-gha-security-review/references/real-world-attacks.md, mode: verbatim, baseBlob: 2b24e2a5b30a0463d2a750d752a68d9b05799418 }
+      - { from: skills/gha-security-review/references/runner-infrastructure.md, to: plugin/builtins/sentry-gha-security-review/references/runner-infrastructure.md, mode: verbatim, baseBlob: 6aafbdbf62e29cc3ca6355bd31bc3780672f9120 }
+      - { from: skills/gha-security-review/references/supply-chain.md, to: plugin/builtins/sentry-gha-security-review/references/supply-chain.md, mode: verbatim, baseBlob: 7a9d1a012dcef748de83b5960bce715ffc3758c0 }
+  - id: sentry-security-review
+    kind: github
+    repo: getsentry/skills
+    # Added 2026-11-10, same pin as sentry-skills. License basis: skills/security-review/LICENSE
+    # (blob 45d290bd) states that the skill's reference material derives from the OWASP Cheat
+    # Sheet Series under CC BY-SA 4.0, and the upstream SKILL.md frontmatter sets
+    # `license: LICENSE`, licensing the whole skill under that file. Muster therefore treats the
+    # whole skill directory as CC-BY-SA-4.0 (stricter than the repository's Apache-2.0): a
+    # separate source, so the share-alike rule (src/provenance.js checkShareAlike) binds only
+    # these files, and NOTICE lists both licenses for the repository.
+    # Vendored as sentry-security-review: SKILL.md adapted with frontmatter (license
+    # CC-BY-SA-4.0; allowed-tools dropped), a license header line stating the changes, the
+    # prompt-lint directive, and paths only (bare reference names qualified with references/);
+    # LICENSE and the 17 references/, 2 languages/ and 1 infrastructure/ files verbatim. Not
+    # vendored: SPEC.md (authoring notes the skill never loads). Muster files cite it by id only.
+    ref: e94f22214528d69899d09c627b3315ddc3544816
+    tag: null
+    license: CC-BY-SA-4.0
+    copyright: "skills/security-review: reference material derived from the OWASP Cheat Sheet Series (https://cheatsheetseries.owasp.org/), CC BY-SA 4.0"
+    relation: vendored
+    items:
+      - { id: audit-pattern-security, kind: audit-pattern, from: null, relation: inspired-by }
+      - { id: sentry-security-review, kind: builtin, from: skills/security-review/SKILL.md, to: plugin/builtins/sentry-security-review/SKILL.md, mode: adapted, relation: adapted, baseBlob: 63d362f046e78729cd3ac563d20238b2da2e7392 }
+      - { from: skills/security-review/LICENSE, to: plugin/builtins/sentry-security-review/LICENSE, mode: verbatim, baseBlob: 45d290bd539a284149f9a6efc8da050d763881e2 }
+      - { from: skills/security-review/references/api-security.md, to: plugin/builtins/sentry-security-review/references/api-security.md, mode: verbatim, baseBlob: 8ae657407cdb16b5b5ba0481927f9bf2920ea640 }
+      - { from: skills/security-review/references/authentication.md, to: plugin/builtins/sentry-security-review/references/authentication.md, mode: verbatim, baseBlob: ddd41dffff9f469a4f73cb38b50c30d3eda56e96 }
+      - { from: skills/security-review/references/authorization.md, to: plugin/builtins/sentry-security-review/references/authorization.md, mode: verbatim, baseBlob: cd0f94a614bbaa7d217d524de1191064084b6466 }
+      - { from: skills/security-review/references/business-logic.md, to: plugin/builtins/sentry-security-review/references/business-logic.md, mode: verbatim, baseBlob: ae87ad885d7298a0cce60262955eea0f236fa5da }
+      - { from: skills/security-review/references/cryptography.md, to: plugin/builtins/sentry-security-review/references/cryptography.md, mode: verbatim, baseBlob: c4cc4260d81b1a5fb9a748f93959859f51e7c966 }
+      - { from: skills/security-review/references/csrf.md, to: plugin/builtins/sentry-security-review/references/csrf.md, mode: verbatim, baseBlob: 7b712ba45c644db40ebfda00138264f2ba785855 }
+      - { from: skills/security-review/references/data-protection.md, to: plugin/builtins/sentry-security-review/references/data-protection.md, mode: verbatim, baseBlob: 77c73235b2f7fd0996885ff18f5f32483e13bc99 }
+      - { from: skills/security-review/references/deserialization.md, to: plugin/builtins/sentry-security-review/references/deserialization.md, mode: verbatim, baseBlob: 038bc0fdd716f1f60197a0b90e756d0f1e725fd7 }
+      - { from: skills/security-review/references/error-handling.md, to: plugin/builtins/sentry-security-review/references/error-handling.md, mode: verbatim, baseBlob: 54f2763eb70980fc3dbc3f340ebaefcd27be5a89 }
+      - { from: skills/security-review/references/file-security.md, to: plugin/builtins/sentry-security-review/references/file-security.md, mode: verbatim, baseBlob: be310e084ecbc6d4d6a027cb1d553f347c4dea86 }
+      - { from: skills/security-review/references/injection.md, to: plugin/builtins/sentry-security-review/references/injection.md, mode: verbatim, baseBlob: 4374c460726eb3f57d997548923b65f53a6299d0 }
+      - { from: skills/security-review/references/logging.md, to: plugin/builtins/sentry-security-review/references/logging.md, mode: verbatim, baseBlob: e446b01412e122a100079450ec1c83711db569de }
+      - { from: skills/security-review/references/misconfiguration.md, to: plugin/builtins/sentry-security-review/references/misconfiguration.md, mode: verbatim, baseBlob: 41132da74728cb0190f530c55ce40359e146ea68 }
+      - { from: skills/security-review/references/modern-threats.md, to: plugin/builtins/sentry-security-review/references/modern-threats.md, mode: verbatim, baseBlob: efdadcf38830264d26d77cd42443532cf665a846 }
+      - { from: skills/security-review/references/ssrf.md, to: plugin/builtins/sentry-security-review/references/ssrf.md, mode: verbatim, baseBlob: 971fe8d9d8933670ef34ed10ee8d5251aa063b3f }
+      - { from: skills/security-review/references/supply-chain.md, to: plugin/builtins/sentry-security-review/references/supply-chain.md, mode: verbatim, baseBlob: 97ffb35326e56524478fb5a41f1ddc73f2cbd3e7 }
+      - { from: skills/security-review/references/xss.md, to: plugin/builtins/sentry-security-review/references/xss.md, mode: verbatim, baseBlob: f3deadc84ecc0cb034fc708a01e17f6bcdf68f9e }
+      - { from: skills/security-review/languages/javascript.md, to: plugin/builtins/sentry-security-review/languages/javascript.md, mode: verbatim, baseBlob: 53ac8f6c30940acf2b239937cb9ed9a02e63b112 }
+      - { from: skills/security-review/languages/python.md, to: plugin/builtins/sentry-security-review/languages/python.md, mode: verbatim, baseBlob: f0a2e6bd64f7f01fa96fc947ac2a08b582e1c519 }
+      - { from: skills/security-review/infrastructure/docker.md, to: plugin/builtins/sentry-security-review/infrastructure/docker.md, mode: verbatim, baseBlob: b66d79aec631de32c138515c17c4a23c5beae6b5 }
+
   # ===== Attribution-only sources (fetch: false) =====================================
   # Never fetched or regenerated by `muster vendor`; recorded so every item based on an
   # external repository names it. Hand-maintained items stay hand-maintained.

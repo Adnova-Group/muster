@@ -40,6 +40,9 @@ Per-item detail (upstream path, ref, relation) is in each item's `upstream:` fie
   Copyright 2025-2026 Stefan Kovalik / Aurochs
   "Perception-First Design" is a trademark of Stefan Kovalik / Aurochs (Serial 99686343). The methodology is open; the name requires attribution.
 - ai-evals-course/evals-skills @ 80d5f7b0127c7572ed9e9339937adbfd7240ffeb (Apache-2.0)
+- getsentry/skills @ e94f22214528d69899d09c627b3315ddc3544816 (Apache-2.0 AND CC-BY-SA-4.0)
+  Copyright 2025 Functional Software, Inc. dba Sentry
+  skills/security-review: reference material derived from the OWASP Cheat Sheet Series (https://cheatsheetseries.owasp.org/), CC BY-SA 4.0
 - blader/humanizer @ 1b48564898e999219882660237fde01bf4843a0f (MIT)
   Copyright (c) 2025 Siqi Chen
 - rudra496/StealthHumanizer @ 1aacbda6e2f66afbdcb6714a85347307068373e9 (MIT)

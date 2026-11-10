@@ -2,6 +2,16 @@
 name: audit-pattern-security
 description: Hunt-list pattern skill for muster's security audit dimension -- fs-safe routing, path-traversal/symlink guards, and prompt-injection separation in muster's own repo. Loaded by the audit orchestrator as a REQUIRED SKILLS binding on the security-review dimension task; read on demand, never dispatched standalone.
 upstream:
+  - repo: getsentry/skills
+    ref: e94f22214528d69899d09c627b3315ddc3544816
+    path: null
+    license: Apache-2.0
+    relation: inspired-by
+  - repo: getsentry/skills
+    ref: e94f22214528d69899d09c627b3315ddc3544816
+    path: null
+    license: CC-BY-SA-4.0
+    relation: inspired-by
   - kind: standard
     title: OWASP Top 10:2021 A08, Software and Data Integrity Failures
     author: OWASP Foundation
@@ -50,6 +60,15 @@ Hunt-list for the **security** audit dimension (`buildAuditManifest`, `src/audit
 - **Lock/atomic-write races**: `withFileMutationLock`/`atomicWrite` exist specifically to avoid
   TOCTOU races on shared state files (`.muster/backlog.md`, lock files); a hand-rolled
   read-modify-write on a shared file that skips them is a race-condition finding.
+
+**Specialist depth** (read only when the scope calls for it; each is a builtin under
+`<plugin root>/builtins/<id>/SKILL.md`, cited by id):
+
+- `sentry-security-review`: for application code beyond muster's own hunt list (injection, XSS,
+  authz, crypto, SSRF, deserialization); use its trace-the-input-first confidence bar so only
+  exploitable findings reach the ledger. Separately licensed (CC BY-SA 4.0); cite it, never copy it.
+- `sentry-gha-security-review`: whenever `.github/workflows/` or a composite action is in scope;
+  report a workflow finding only with the concrete fork-PR or comment-triggered attack path it requires.
 
 ## Repo-specific conventions to enforce
 

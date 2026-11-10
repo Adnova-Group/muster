@@ -51,7 +51,9 @@ const PROJECT_FILES = {
   "uupm-design": { "assets/design-tokens.json": tokens },
   "uupm-design-system": { "assets/design-tokens.json": tokens, "assets/design-tokens.css": tokens, "assets/css/slide-animations.css": "the project's slide animation stylesheet, listed as a project source of truth" },
   "uupm-slides": { "assets/design-tokens.json": tokens },
-  "uupm-ui-styling": { "assets/design-tokens.json": tokens }
+  "uupm-ui-styling": { "assets/design-tokens.json": tokens },
+  // Complementary skills: files in the repository under review or the project being designed.
+  "sentry-gha-security-review": Object.fromEntries(["CLAUDE.md", "AGENTS.md"].map(f => [f, "an agent-instruction file in the reviewed repository that its workflows load (a prompt-injection surface)"]))
 };
 const projectFile = (id, target) => Object.hasOwn(PROJECT_ROOT_FILES, target) || Object.hasOwn(PROJECT_FILES[id] || {}, target);
 

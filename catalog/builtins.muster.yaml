@@ -269,3 +269,17 @@
   keywords: [evals, eval, pipeline, audit, metrics]
   description: "Audit an LLM eval pipeline for missing error analysis, unvalidated judges and vanity metrics, then rank the fixes."
   provenance: { license: Apache-2.0, upstream: [ai-evals-course/evals-skills] }
+- id: sentry-security-review
+  kind: builtin
+  roles: [security-review]
+  rank: 46
+  keywords: [security, vulnerability, vulnerabilities, owasp, injection, xss, ssrf, authz]
+  description: "High-confidence security code review: trace attacker-controlled input before flagging injection, XSS, auth, crypto, SSRF or deserialization findings."
+  provenance: { license: CC-BY-SA-4.0, upstream: [getsentry/skills] }
+- id: sentry-gha-security-review
+  kind: builtin
+  roles: [security-review]
+  rank: 45
+  keywords: [github-actions, gha, workflow, workflows, ci, pwn-request]
+  description: "Exploitation-focused GitHub Actions workflow review: pwn requests, expression injection, credential escalation, unpinned actions and CI prompt injection."
+  provenance: { license: Apache-2.0, upstream: [getsentry/skills] }

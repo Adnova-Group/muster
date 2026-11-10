@@ -21,6 +21,7 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { trackedMkdtempSync as mkdtempSync } from "../test-support/helpers.js";
 import { readNoFollowRegular } from "../src/fs-safe.js";
+import { isSyncItem, isWholeFileVerbatim } from "../src/vendor-sync.js";
 import {
   collectScanFiles,
   scanRepoPrompts,
@@ -542,11 +543,19 @@ test("C2c: collectScanFiles excludes files inside .agents (codex build-staging m
 // 3-way-merged adaptations, so rewriting them to satisfy muster's linter would turn verbatim
 // files into adapted ones and make every upstream update conflict. Muster-authored prompts and
 // the adapted gsd lifecycle seats stay in scope.
+// Every other merge-tracked source's whole-file verbatim items (byte-exact upstream copies that
+// cannot carry a prompt-lint directive, e.g. the CC BY-SA references of sentry-security-review)
+// are excluded on the same ground; their adapted files stay in scope and carry the directive.
 const UPSTREAM_PROMPT_SOURCES = new Set(["uupm", "intent", "typeui", "pfd"]);
 async function upstreamPromptFiles(repoRoot) {
   const manifest = parseYaml(await readFile(path.join(repoRoot, "vendor", "manifest.yaml"), "utf8"));
-  return new Set(manifest.sources.filter((s) => UPSTREAM_PROMPT_SOURCES.has(s.id))
-    .flatMap((s) => s.items.filter((i) => i.to && i.mode !== "watch").map((i) => i.to)));
+  const ux = manifest.sources.filter((s) => UPSTREAM_PROMPT_SOURCES.has(s.id))
+    .flatMap((s) => s.items.filter((i) => i.to && i.mode !== "watch").map((i) => i.to));
+  const verbatim = manifest.sources.flatMap((s) => {
+    const items = (s.items || []).filter(isSyncItem);
+    return items.filter((i) => isWholeFileVerbatim(i, items)).map((i) => i.to);
+  });
+  return new Set([...ux, ...verbatim]);
 }
 
 test("repo-wide prompt-lint backlog is clean: scanRepoPrompts(repoRoot) reports zero failing files", async () => {

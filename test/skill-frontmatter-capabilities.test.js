@@ -72,6 +72,7 @@ const EXPECTED_ARGUMENT_HINTS = {
   // Each fragment is a row of skills.md's verb table (the description keeps only `<verb>`
   // because descriptions are always-on context).
   skills: "list [domain] | show <id> | search <query> | enable <id> | disable <id> | add <publisher>/<skill> | pin <id> [--role <role>] | unpin <id> | usage",
+  "write-book": "<brief | --run id>",
 };
 
 test("every plugin/commands/*.md file carries argument-hint, matching the Usage string already in its description", async () => {

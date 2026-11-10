@@ -19,7 +19,9 @@ const ORCHESTRATOR_BUDGET = 18 * KB;
 // +102 at revival stage 3 for exactly the three prt-* pr-review-toolkit agent descriptions
 // (41 + 33 + 28 bytes), kept minimal because they are always-on.
 // +84: /muster:skills (skill discovery follow-up, 2026-11-10) adds exactly its description's bytes.
-const DESCRIPTION_BUDGET = 4_186;
+// +428 on 2026-11-10 for book runs, exactly the bytes they added: the write-book command (134) and
+// the five Workflow-only book-* agents (294), whose descriptions are already minimal.
+const DESCRIPTION_BUDGET = 4_614;
 
 function frontmatter(text) {
   const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);

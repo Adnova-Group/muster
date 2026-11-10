@@ -1341,6 +1341,216 @@ sources:
       - { id: go-safety, kind: builtin, from: skills/golang-safety/SKILL.md, to: plugin/builtins/go-safety/SKILL.md, mode: adapted, baseBlob: cb90ba22aa41832a9e0fb05bb6f0167a5396a1d8 }
       - { from: skills/golang-safety/references/nil-safety.md, to: plugin/builtins/go-safety/references/nil-safety.md, mode: adapted, baseBlob: 915ee2e4a05ed58d49d03d275b63d20b1216273b }
       - { from: skills/golang-safety/references/slice-map-safety.md, to: plugin/builtins/go-safety/references/slice-map-safety.md, mode: adapted, baseBlob: 0b5793292995935410a77c00f78349fd90733f30 }
+  # ---- book authoring (2026-11-10) ----
+  - id: sepia
+    kind: github
+    repo: Nanako0129/sepia
+    # Added 2026-11-10 for book runs (owner-approved). Merge-tracked: `muster vendor update sepia`
+    # 3-way merges SKILL.md against its byte-exact base copy in vendor/upstream/sepia/; every
+    # references/ file is a verbatim whole-file copy (its own base, checked by blob hash).
+    # Kept muster divergence: SKILL.md swaps the upstream frontmatter for muster's (name kept,
+    # one-line description, muster_builtin, SPDX license, generated upstream:) and adds a
+    # prompt-lint waiver; metadata and agents/openai.yaml are dropped, and so are the five
+    # one-line wrapper skills (sepia-write/review/refactor/recreate/hemingway): the main skill
+    # routes all four operations itself. The research/ ledger stays upstream (SKILL.md cites it
+    # by ID, never by path). Catalog: role humanize, ranked below muster-humanizer (50), which
+    # stays the mandatory final filter; the book agents load sepia by path for fiction structure.
+    ref: 0eb11d6c64c962fcc35f596c167c6e38045d6cb8
+    tag: v0.13.0
+    license: MIT
+    copyright: "Copyright (c) 2026 Nanako Tsai"
+    relation: vendored
+    items:
+      - { id: sepia, kind: builtin, from: skills/sepia/SKILL.md, to: plugin/builtins/sepia/SKILL.md, mode: adapted, baseBlob: 6a22a2dc47e41b24fc45898937110c5df07dad5f, roles: [humanize], rank: 40, description: "De-AI pass for fiction and professional prose: StoryScope narrative-architecture repair, per-venue rules, four operations." }
+      - { from: skills/sepia/references/discourse-pass.md, to: plugin/builtins/sepia/references/discourse-pass.md, mode: verbatim, baseBlob: d75285a161b8137d4a3b859541dae1cdf62eee2f }
+      - { from: skills/sepia/references/domains/dev-replies.md, to: plugin/builtins/sepia/references/domains/dev-replies.md, mode: verbatim, baseBlob: 6662ee2c0a7a02b4b4e9b14e8f943855039a1643 }
+      - { from: skills/sepia/references/domains/journalism.md, to: plugin/builtins/sepia/references/domains/journalism.md, mode: verbatim, baseBlob: f1d1be053ec9712b1660a04abee0b57913cdf4f7 }
+      - { from: skills/sepia/references/domains/postmortems.md, to: plugin/builtins/sepia/references/domains/postmortems.md, mode: verbatim, baseBlob: 9ce895dd989eb4f8bdfa815bf6c4c5ade1c1d9e8 }
+      - { from: skills/sepia/references/domains/release-notes.md, to: plugin/builtins/sepia/references/domains/release-notes.md, mode: verbatim, baseBlob: 2cfdda62ecab284279ae4f8be4c1efce9a7ddf61 }
+      - { from: skills/sepia/references/domains/tech-articles.md, to: plugin/builtins/sepia/references/domains/tech-articles.md, mode: verbatim, baseBlob: 1ce89d0fd6472561924a58397a6b17add3a5a2f2 }
+      - { from: skills/sepia/references/domains/tickets.md, to: plugin/builtins/sepia/references/domains/tickets.md, mode: verbatim, baseBlob: 6972c36c3ec7b9229605e57842f72eeb806a7d62 }
+      - { from: skills/sepia/references/languages/zh.md, to: plugin/builtins/sepia/references/languages/zh.md, mode: verbatim, baseBlob: b72aadb88ae83e0850be5881649f5ee8ebfb04a0 }
+      - { from: skills/sepia/references/model-fingerprints.md, to: plugin/builtins/sepia/references/model-fingerprints.md, mode: verbatim, baseBlob: 15b09ea715b4531b734eaa821a67786ec910a1e1 }
+      - { from: skills/sepia/references/narrative-pass.md, to: plugin/builtins/sepia/references/narrative-pass.md, mode: verbatim, baseBlob: d311a31e3e8609ef111a98ab78e5caebca957bf1 }
+      - { from: skills/sepia/references/professional-pass.md, to: plugin/builtins/sepia/references/professional-pass.md, mode: verbatim, baseBlob: e97122b403d95551a0e5af89a0ec57497ca132f4 }
+      - { from: skills/sepia/references/rubric.md, to: plugin/builtins/sepia/references/rubric.md, mode: verbatim, baseBlob: 969be443b2a4a5f3554030b69e51c0917e8cceb7 }
+      - { from: skills/sepia/references/style-pass.md, to: plugin/builtins/sepia/references/style-pass.md, mode: verbatim, baseBlob: 7862eab61ab5ef69042c6447b9f0164cdbada5e8 }
+      - { from: skills/sepia/references/voice-skills.md, to: plugin/builtins/sepia/references/voice-skills.md, mode: verbatim, baseBlob: 62d1c59ecc32c440dc4518a27cb637de20ab1b9e }
+      - { from: skills/sepia/references/voices/PERSONA-TEMPLATE.md, to: plugin/builtins/sepia/references/voices/PERSONA-TEMPLATE.md, mode: verbatim, baseBlob: a53ea20e19da94037792dcd52007ece04e47d9b2 }
+      - { from: skills/sepia/references/voices/hemingway.md, to: plugin/builtins/sepia/references/voices/hemingway.md, mode: verbatim, baseBlob: ea3fcd0cd78bb8d9a4215b4c64ebfea56f57f0b9 }
+      - { from: skills/sepia/references/voices/personas/nyaneko.md, to: plugin/builtins/sepia/references/voices/personas/nyaneko.md, mode: verbatim, baseBlob: 805992520e3e7898813d91cd1c1a964d0f39990f }
+      - { from: skills/sepia/references/voices/registry.md, to: plugin/builtins/sepia/references/voices/registry.md, mode: verbatim, baseBlob: 1b0078723b646a103e19793650c17519d9f6d39f }
+      - { from: skills/sepia/references/voices/tw-journalism.md, to: plugin/builtins/sepia/references/voices/tw-journalism.md, mode: verbatim, baseBlob: 429c2e5cf46155114a392b080e8025336149376b }
+  - id: creative-writing-skills
+    kind: github
+    repo: haowjy/creative-writing-skills
+    # Added 2026-11-10 for book runs: the best permissive fiction review set found (575 stars,
+    # Apache-2.0, pushed 2026-11-09). Merge-tracked like sepia: each SKILL.md is adapted against
+    # its base copy in vendor/upstream/creative-writing-skills/, every resources/ file is a
+    # verbatim whole-file copy. Builtin ids carry a cws- prefix; `name:` keeps upstream's so the
+    # skills' cross-references (/writing-principles, /creative-writing-craft, /reader-sim) still
+    # name them. Not vendored: story-memory, story-planning, story-workflow, project-setup and the
+    # kb/ layout they assume (muster's book run keeps its own canon ledger), and the plugin/ copies.
+    # Upstream's LICENSE carries no copyright line. Catalog: role author, rank 30, so muster-author
+    # stays the default author provider; the book agents load these by path.
+    ref: 15003a6fd5a1ce92ff49a13187d648c426c03080
+    tag: v0.7.4
+    license: Apache-2.0
+    relation: vendored
+    items:
+      - { id: cws-story-review, kind: builtin, from: skills/story-review/SKILL.md, to: plugin/builtins/cws-story-review/SKILL.md, mode: adapted, baseBlob: 5206c06f4dad9b810577cc40d7f482145c8557da, roles: [author], rank: 30, description: "Fiction review by level: editorial, developmental, line, copyedit, proofread, craft critique and continuity." }
+      - { from: skills/story-review/resources/editorial-review.md, to: plugin/builtins/cws-story-review/resources/editorial-review.md, mode: verbatim, baseBlob: aaaefed418ac4fb899d2b9306c5723f65dd93cf5 }
+      - { from: skills/story-review/resources/developmental-edit.md, to: plugin/builtins/cws-story-review/resources/developmental-edit.md, mode: verbatim, baseBlob: df9407cefc95b8c70cc89e33533739c2b8c12244 }
+      - { from: skills/story-review/resources/line-edit.md, to: plugin/builtins/cws-story-review/resources/line-edit.md, mode: verbatim, baseBlob: a2595d16e47acfcb46291bba0eb6d0e81a5facf3 }
+      - { from: skills/story-review/resources/copyedit.md, to: plugin/builtins/cws-story-review/resources/copyedit.md, mode: verbatim, baseBlob: 21795e11ebc4596b1265cdc63181fcb0e8a3cbc9 }
+      - { from: skills/story-review/resources/proofreading.md, to: plugin/builtins/cws-story-review/resources/proofreading.md, mode: verbatim, baseBlob: 4da172f29a0b9af1cccf8db2775cc2a6e5823b16 }
+      - { from: skills/story-review/resources/prose-critique.md, to: plugin/builtins/cws-story-review/resources/prose-critique.md, mode: verbatim, baseBlob: 366721651a4acada1f21a0228ee5bb13660ee95b }
+      - { from: skills/story-review/resources/reader-sim-signal.md, to: plugin/builtins/cws-story-review/resources/reader-sim-signal.md, mode: verbatim, baseBlob: 0e36bfb3794149b010ee0ee1b039acdd419336ee }
+      - { from: skills/story-review/resources/prose-critique/baseline.md, to: plugin/builtins/cws-story-review/resources/prose-critique/baseline.md, mode: verbatim, baseBlob: 6ed09e47a42313b346266e0a2ee39c5186d496da }
+      - { from: skills/story-review/resources/prose-critique/character.md, to: plugin/builtins/cws-story-review/resources/prose-critique/character.md, mode: verbatim, baseBlob: ef52cec9af28f6384cc03d6e806ffe54a4c2dc1c }
+      - { from: skills/story-review/resources/prose-critique/continuity.md, to: plugin/builtins/cws-story-review/resources/prose-critique/continuity.md, mode: verbatim, baseBlob: 016134d40ae617f3618555f298f5bbe730c70f48 }
+      - { from: skills/story-review/resources/prose-critique/prose.md, to: plugin/builtins/cws-story-review/resources/prose-critique/prose.md, mode: verbatim, baseBlob: 6683e59e21711b3eabfd826a76803fb97c10829d }
+      - { from: skills/story-review/resources/prose-critique/structure.md, to: plugin/builtins/cws-story-review/resources/prose-critique/structure.md, mode: verbatim, baseBlob: e4b5523105f96f8dac7ab1332fac31e1fefdb5fc }
+      - { from: skills/story-review/resources/prose-critique/voice.md, to: plugin/builtins/cws-story-review/resources/prose-critique/voice.md, mode: verbatim, baseBlob: 3f0958b20e54d03cfd2df6c3b43a99776bab4c0f }
+      - { from: skills/story-review/resources/prose-critique/analyze.py, to: plugin/builtins/cws-story-review/resources/prose-critique/analyze.py, mode: verbatim, baseBlob: b7283f26a0acfcc21f64b8f4efb697143978cf2b }
+      - { id: cws-reader-sim, kind: builtin, from: skills/reader-sim/SKILL.md, to: plugin/builtins/cws-reader-sim/SKILL.md, mode: adapted, baseBlob: 940ac129015adcf19edc934b9723cd0476bcce0e, roles: [author], rank: 30, description: "Read a draft as a stated first-time reader and report the felt experience moment by moment, not a critique." }
+      - { id: cws-writing-principles, kind: builtin, from: skills/writing-principles/SKILL.md, to: plugin/builtins/cws-writing-principles/SKILL.md, mode: adapted, baseBlob: 28d42f778213710d6d35e7500091355c6c025cf4, roles: [author], rank: 30, description: "What fiction readers want (reader reward channels) and the specific ways model prose damages them." }
+      - { from: skills/writing-principles/resources/failure-modes.md, to: plugin/builtins/cws-writing-principles/resources/failure-modes.md, mode: verbatim, baseBlob: 61fe89bf11ea23cf220aacd8ab7abef3cb46ad49 }
+      - { from: skills/writing-principles/resources/antipatterns.md, to: plugin/builtins/cws-writing-principles/resources/antipatterns.md, mode: verbatim, baseBlob: 5e8c250febcc77732c8325ba11af6ad1dc2f907b }
+      - { from: skills/writing-principles/resources/citations.md, to: plugin/builtins/cws-writing-principles/resources/citations.md, mode: verbatim, baseBlob: 597e441c7f8edb7556a84fd88af76100919083d9 }
+      - { id: cws-creative-writing-craft, kind: builtin, from: skills/creative-writing-craft/SKILL.md, to: plugin/builtins/cws-creative-writing-craft/SKILL.md, mode: adapted, baseBlob: af3446ea00fbd4db35bb0dfdb7390d08959af835, roles: [author], rank: 30, description: "Fiction execution craft: production modes, prose immersion, scene construction, style analysis and genre contracts." }
+      - { from: skills/creative-writing-craft/resources/prose-modes.md, to: plugin/builtins/cws-creative-writing-craft/resources/prose-modes.md, mode: verbatim, baseBlob: 6ed44b0eebf8e0e3eb5f3d1f4a1c8b8be6b84819 }
+      - { from: skills/creative-writing-craft/resources/prose-writing.md, to: plugin/builtins/cws-creative-writing-craft/resources/prose-writing.md, mode: verbatim, baseBlob: a1c12ad09c3015d824b0cd09354c8f3f629cd7b3 }
+      - { from: skills/creative-writing-craft/resources/scene-construction.md, to: plugin/builtins/cws-creative-writing-craft/resources/scene-construction.md, mode: verbatim, baseBlob: 0529b86887521313ae08d5c5d28bc433c6e64437 }
+      - { from: skills/creative-writing-craft/resources/style-analysis.md, to: plugin/builtins/cws-creative-writing-craft/resources/style-analysis.md, mode: verbatim, baseBlob: 6ef503ff6b10a7f4764ed71d4638de484b280ca7 }
+      - { from: skills/creative-writing-craft/resources/genre/fantasy.md, to: plugin/builtins/cws-creative-writing-craft/resources/genre/fantasy.md, mode: verbatim, baseBlob: b9f096189b8495a195cc0f78de5be33809b9acad }
+      - { from: skills/creative-writing-craft/resources/genre/horror.md, to: plugin/builtins/cws-creative-writing-craft/resources/genre/horror.md, mode: verbatim, baseBlob: 970248e14490db2c0373b3b88ef81c23192dc29a }
+      - { from: skills/creative-writing-craft/resources/genre/litfic.md, to: plugin/builtins/cws-creative-writing-craft/resources/genre/litfic.md, mode: verbatim, baseBlob: 018e35ceb0b68de2b59423b461968d941d443a24 }
+      - { from: skills/creative-writing-craft/resources/genre/mystery.md, to: plugin/builtins/cws-creative-writing-craft/resources/genre/mystery.md, mode: verbatim, baseBlob: 7d651cb15b851a637ac9bf56aab53c89e8d5dd43 }
+      - { from: skills/creative-writing-craft/resources/genre/romance.md, to: plugin/builtins/cws-creative-writing-craft/resources/genre/romance.md, mode: verbatim, baseBlob: a379070d1c20a8abd8b6607baea400a49ac7deae }
+      - { from: skills/creative-writing-craft/resources/genre/thriller.md, to: plugin/builtins/cws-creative-writing-craft/resources/genre/thriller.md, mode: verbatim, baseBlob: d1a3d0272c05d1d791aaf919d5f7fd4dffb745e5 }
+  - id: creative-writing-skills-ideas
+    kind: github
+    repo: haowjy/creative-writing-skills
+    # Ideas the book agents restate in their own words (same pin as the vendored items above):
+    # developmental notes name a structural action; the reorder test (a chronicle, not a plot);
+    # a reader simulation never reports a universal reaction.
+    ref: 15003a6fd5a1ce92ff49a13187d648c426c03080
+    license: Apache-2.0
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: book-developmental-editor, kind: agent, from: skills/story-review/resources/developmental-edit.md }
+      - { id: book-line-editor, kind: agent, from: skills/story-review/resources/line-edit.md }
+      - { id: book-continuity-checker, kind: agent, from: skills/story-review/resources/prose-critique/continuity.md }
+      - { id: book-beta-reader, kind: agent, from: skills/reader-sim/SKILL.md }
+  - id: story-skills
+    kind: github
+    repo: danjdewhurst/story-skills
+    # 2026-11-10 book research. Ideas only, restated: quote both sides of every contradiction
+    # (skills/reader-panel/references/continuity-reader.md:25); a simulated reader panel can
+    # never mark a book ready (skills/reader-panel/SKILL.md:31). Ref: HEAD on 2026-11-10.
+    ref: 3c0e0346ee09ded32546d9481ac18ec5324f02c3
+    license: MIT
+    copyright: "Copyright (c) 2026 Daniel Dewhurst"
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: book-continuity-checker, kind: agent, from: skills/reader-panel/references/continuity-reader.md }
+      - { id: book-beta-reader, kind: agent, from: skills/reader-panel/SKILL.md }
+      - { id: book-run, kind: builtin, from: skills/reader-panel/SKILL.md }
+  - id: calliope-writing-skills
+    kind: github
+    repo: Calliope-Editor/writing-skills
+    # 2026-11-10 book research. Ideas only, restated: the continuity editor never decides which
+    # version is canon (skills/editorial/continuity-editor/SKILL.md:12); filter verbs as the
+    # countable sign of psychic distance (skills/craft/psychic-distance/SKILL.md:53). Ref: HEAD.
+    ref: 2fad031982cbbcb00c4da14c2fc9712d2daa78da
+    license: MIT
+    copyright: "Copyright (c) 2026 Rhymenoceros s. r. o. (Calliope)"
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: book-continuity-checker, kind: agent, from: skills/editorial/continuity-editor/SKILL.md }
+      - { id: book-run, kind: builtin, from: skills/craft/psychic-distance/SKILL.md }
+  - id: velith
+    kind: github
+    repo: epicsagas/Velith
+    # 2026-11-10 book research. Ideas only, restated: beta readers do not read the outline or the
+    # bible before their first read (agents/beta-reader.md:12); every nonfiction chapter has one
+    # claim the reader could disagree with (skills/book-nonfiction/SKILL.md:23). Ref: HEAD.
+    ref: 5ddd29675c5fd00e2c5b3bb095b7ac3749a22c90
+    license: Apache-2.0
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: book-beta-reader, kind: agent, from: agents/beta-reader.md }
+      - { id: book-run, kind: builtin, from: skills/book-nonfiction/SKILL.md }
+  - id: book-writing-skills
+    kind: github
+    repo: clutcher/book-writing-skills
+    # 2026-11-10 book research. One idea, restated: a reference is not a citation
+    # (plugins/book/skills/check-facts/SKILL.md:32). Ref: HEAD on 2026-11-10.
+    ref: 0bea387d1fe1936667373036e43e9f425cb3415e
+    license: MIT
+    copyright: "Copyright (c) 2026 Igor Zarvanskyi"
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: book-run, kind: builtin, from: plugins/book/skills/check-facts/SKILL.md }
+  - id: chinese-novelist-skill
+    kind: github
+    repo: PenglongHuang/chinese-novelist-skill
+    # 2026-11-10 book research. One idea, restated: the last thing read before drafting is the
+    # previous chapter's closing prose, never outline tables (references/flows/chapter-checklist.md:18).
+    ref: 507d41567925eab520ad459db08fda83813e8051
+    license: MIT
+    copyright: "Copyright (c) 2026 PenglongHuang"
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: book-writer, kind: agent, from: references/flows/chapter-checklist.md }
+  - id: howells-fiction
+    kind: github
+    repo: howells/fiction
+    # 2026-11-10 book research. NO LICENSE upstream: ideas only.
+    ref: 2f256acbfce6a90ba0bcf819fb9dea95663b23cd
+    license: NONE
+    relation: inspired-by
+    fetch: false
+    licenseReview:
+      date: 2026-11-10
+      finding: ideas-only
+      evidence: >-
+        Read agents/continuity.md:69-71 at the pin. Muster took one idea, practical-logic
+        continuity checks (meals, sleep, money), and wrote its own one-line bullet in
+        plugin/agents/book-continuity-checker.md; no sentence of the upstream file is carried.
+    items:
+      - { id: book-continuity-checker, kind: agent, from: agents/continuity.md }
+  - id: book-genesis-studio-v5-ideas
+    kind: github
+    repo: felipelobomotta-blip/book-genesis-studio
+    # 2026-11-10: the book-beta-reader idea of a few deliberately different personas (a fast
+    # reader, a critical reader, a hostile one) instead of many convergent ones, from
+    # skills/beta-reader/SKILL.md at v5.0.1. A separate entry so the book-genesis-studio source
+    # above (pipeline refresh, another track) is untouched.
+    ref: 88e2e0047ad293564b2fae80b6e0043e24fd23b9
+    license: MIT
+    # LICENSE at v5.0.1 names a different holder than the v4.2.0 pin above records.
+    copyright: "Copyright (c) 2026 Philip Stark"
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: book-beta-reader, kind: agent, from: skills/beta-reader/SKILL.md }
+  - id: snowflake-method
+    kind: book
+    title: "How to Write a Novel Using the Snowflake Method"
+    author: Randy Ingermanson
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: book-run, kind: builtin, from: null }
+  # ---- end book authoring ----
   - id: gsd
     kind: github
     repo: open-gsd/gsd-core
@@ -2356,9 +2566,13 @@ sources:
         continuity-ledger phase text. The phase names it shares (foundation, drafting)
         are generic. Re-checked 2026-11-10: upstream unchanged since the pin; after the
         book.yaml revision update the two still share no 5-gram.
+        are generic. 2026-11-10: the same two ideas carried into book-run and src/book.js
+        (canon facts, debts opened by a checker, an amend or a line edit), written fresh from
+        this entry's description; no upstream file was reread.
     items:
       # fiction phase order + continuity-propagation ledger
       - { id: book, kind: pipeline, from: null }
+      - { id: book-run, kind: builtin, from: null }
   - id: llm-judges-survey-list
     kind: github
     repo: CSHaitao/Awesome-LLMs-as-Judges
@@ -3357,6 +3571,7 @@ sources:
     fetch: false
     items:
       - { id: book, kind: pipeline, from: null }
+      - { id: book-run, kind: builtin, from: null }
   - id: story-grid
     kind: book
     title: "The Story Grid"
@@ -3365,6 +3580,7 @@ sources:
     fetch: false
     items:
       - { id: book, kind: pipeline, from: null }
+      - { id: book-run, kind: builtin, from: null }
   - id: scene-sequel
     kind: book
     title: "Techniques of the Selling Writer (scene and sequel)"
@@ -3373,6 +3589,7 @@ sources:
     fetch: false
     items:
       - { id: book, kind: pipeline, from: null }
+      - { id: book-run, kind: builtin, from: null }
   - id: nonfiction-outline-guides
     kind: article
     title: "Chapter Blog nonfiction outline; ProWritingAid non-fiction structure"
@@ -3381,6 +3598,7 @@ sources:
     fetch: false
     items:
       - { id: book, kind: pipeline, from: null }
+      - { id: book-run, kind: builtin, from: null }
 
   # --- product management ---
   - id: jobs-to-be-done

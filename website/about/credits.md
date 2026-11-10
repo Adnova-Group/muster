@@ -51,6 +51,16 @@ Every non-vendored source, generated from the manifest. Each row lists the items
 | [AminBlg/SimpleEnglish](https://github.com/AminBlg/SimpleEnglish) @ `a6fcb4fde098` | MIT | 5 vendored builtins and agents | vendored |
 | [supabase/agent-skills](https://github.com/supabase/agent-skills) @ `c9be0e931b79` | MIT | 33 vendored builtins and agents | vendored |
 | [samber/cc-skills-golang](https://github.com/samber/cc-skills-golang) @ `d68d80aec298` | MIT | 28 vendored builtins and agents | vendored |
+| [Nanako0129/sepia](https://github.com/Nanako0129/sepia) @ `0eb11d6c64c9` | MIT | 20 vendored builtins and agents | vendored |
+| [haowjy/creative-writing-skills](https://github.com/haowjy/creative-writing-skills) @ `15003a6fd5a1` | Apache-2.0 | 31 vendored builtins and agents | vendored |
+| [haowjy/creative-writing-skills](https://github.com/haowjy/creative-writing-skills) @ `15003a6fd5a1` | Apache-2.0 | `book-developmental-editor`, `book-line-editor`, `book-continuity-checker`, `book-beta-reader` | inspired-by |
+| [danjdewhurst/story-skills](https://github.com/danjdewhurst/story-skills) @ `3c0e0346ee09` | MIT | `book-continuity-checker`, `book-beta-reader`, `book-run` | inspired-by |
+| [Calliope-Editor/writing-skills](https://github.com/Calliope-Editor/writing-skills) @ `2fad031982cb` | MIT | `book-continuity-checker`, `book-run` | inspired-by |
+| [epicsagas/Velith](https://github.com/epicsagas/Velith) @ `5ddd29675c5f` | Apache-2.0 | `book-beta-reader`, `book-run` | inspired-by |
+| [clutcher/book-writing-skills](https://github.com/clutcher/book-writing-skills) @ `0bea387d1fe1` | MIT | `book-run` | inspired-by |
+| [PenglongHuang/chinese-novelist-skill](https://github.com/PenglongHuang/chinese-novelist-skill) @ `507d41567925` | MIT | `book-writer` | inspired-by |
+| [howells/fiction](https://github.com/howells/fiction) @ `2f256acbfce6` | NONE | `book-continuity-checker` | inspired-by |
+| [felipelobomotta-blip/book-genesis-studio](https://github.com/felipelobomotta-blip/book-genesis-studio) @ `88e2e0047ad2` | MIT | `book-beta-reader` | inspired-by |
 | [open-gsd/gsd-core](https://github.com/open-gsd/gsd-core) @ `9385f4618b52` | MIT | 42 vendored builtins and agents | adapted, vendored |
 | [nextlevelbuilder/ui-ux-pro-max-skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) @ `4f2dbb67e649` | MIT | 144 vendored builtins and agents | vendored, inspired-by, adapted |
 | [ghaida/intent](https://github.com/ghaida/intent) @ `1806110106a4` | CC0-1.0 | 42 vendored builtins and agents | vendored, inspired-by, adapted |
@@ -80,7 +90,7 @@ Every non-vendored source, generated from the manifest. Each row lists the items
 | [shobrook/promptimal](https://github.com/shobrook/promptimal) @ `e03cbc1db19c` | MIT | `muster-prompt-smith` | inspired-by |
 | [gepa-ai/gepa](https://github.com/gepa-ai/gepa) @ `ce5b0d6e3d6a` | MIT | `muster-prompt-smith` | inspired-by |
 | [felipelobomotta-blip/book-genesis-studio](https://github.com/felipelobomotta-blip/book-genesis-studio) @ `c2fc628fd5d1` | MIT | `book`, `muster-scorer` | mechanism-port, inspired-by |
-| [NousResearch/autonovel](https://github.com/NousResearch/autonovel) @ `d165f267a0ff` | NONE | `book` | inspired-by |
+| [NousResearch/autonovel](https://github.com/NousResearch/autonovel) @ `d165f267a0ff` | NONE | `book`, `book-run` | inspired-by |
 | [CSHaitao/Awesome-LLMs-as-Judges](https://github.com/CSHaitao/Awesome-LLMs-as-Judges) @ `d89ed4241b81` | NONE | `muster-scorer` | inspired-by |
 | [llm-as-a-judge/Awesome-LLM-as-a-judge](https://github.com/llm-as-a-judge/Awesome-LLM-as-a-judge) @ `ad3b4ce1d869` | NONE | `muster-scorer` | inspired-by |
 | [microsoft/LLM-Rubric](https://github.com/microsoft/LLM-Rubric) @ `030ab161e5af` | MIT | `muster-scorer` | inspired-by |
@@ -126,6 +136,7 @@ Articles, books, papers, standards, talks and people whose ideas, frameworks or 
 
 | Work | Kind | Basis for |
 | --- | --- | --- |
+| How to Write a Novel Using the Snowflake Method, Randy Ingermanson | book | `book-run` |
 | [Unlock AI: Open Engine and Open Skills](https://unlock-ai.natebjones.com/), Nate B. Jones | person | `review-gate`, `muster-humanizer`, `muster-image`, `muster-research`, `prd`, `case-study`, `newsletter`, `blog-post`, `social-post` |
 | [Building effective agents](https://www.anthropic.com/research/building-effective-agents), Erik Schluntz and Barry Zhang (Anthropic) | article | `muster-runner` |
 | [Create custom subagents (Claude Code docs)](https://code.claude.com/docs/en/sub-agents), Anthropic | article | `muster-runner` |
@@ -155,10 +166,10 @@ Articles, books, papers, standards, talks and people whose ideas, frameworks or 
 | The Hero with a Thousand Faces, Joseph Campbell | book | `case-study` |
 | [Building a StoryBrand (SB7)](https://storybrand.com/), Donald Miller | book | `book`, `case-study` |
 | The Pyramid Principle (SCQA, MECE), Barbara Minto | book | `executive-summary`, `book` |
-| Save the Cat!, Blake Snyder | book | `book` |
-| The Story Grid, Shawn Coyne | book | `book` |
-| Techniques of the Selling Writer (scene and sequel), Dwight V. Swain | book | `book` |
-| Chapter Blog nonfiction outline; ProWritingAid non-fiction structure | article | `book` |
+| Save the Cat!, Blake Snyder | book | `book`, `book-run` |
+| The Story Grid, Shawn Coyne | book | `book`, `book-run` |
+| Techniques of the Selling Writer (scene and sequel), Dwight V. Swain | book | `book`, `book-run` |
+| Chapter Blog nonfiction outline; ProWritingAid non-fiction structure | article | `book`, `book-run` |
 | Competing Against Luck (Jobs to Be Done), Clayton M. Christensen, Taddy Hall, Karen Dillon and David S. Duncan | book | `muster-author`, `prd`, `epic` |
 | Lean UX (hypothesis statements, proto-personas), Jeff Gothelf and Josh Seiden | book | `prd`, `epic` |
 | [The Humanizing Work Guide to Splitting User Stories](https://www.humanizingwork.com/the-humanizing-work-guide-to-splitting-user-stories/), Richard Lawrence and Peter Green | article | `epic` |

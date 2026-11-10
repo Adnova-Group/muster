@@ -42,9 +42,9 @@ test("applyEffort maps semantic efforts to Workflow-lane efforts without mutatin
   // Same lane semantics as Codex's CODEX_EFFORT (workhorse=medium, judgment=high,
   // peak=xhigh; max never routine), but scoped to `workflowEffort`: only the
   // Workflow tool's agent() takes an effort -- the Agent tool has no such param.
-  assert.deepEqual(CLAUDE_MODEL_POLICY.applyEffort({ ...base }, "workhorse"), { model: "opus", workflowEffort: "medium" });
-  assert.deepEqual(CLAUDE_MODEL_POLICY.applyEffort({ ...base }, "judgment"), { model: "opus", workflowEffort: "high" });
-  assert.deepEqual(CLAUDE_MODEL_POLICY.applyEffort({ ...base }, "peak"), { model: "opus", workflowEffort: "xhigh" });
+  assert.deepEqual(CLAUDE_MODEL_POLICY.applyEffort({ ...base }, "workhorse"), { model: "opus", workflowEffort: "medium", agentEffort: "medium" });
+  assert.deepEqual(CLAUDE_MODEL_POLICY.applyEffort({ ...base }, "judgment"), { model: "opus", workflowEffort: "high", agentEffort: "high" });
+  assert.deepEqual(CLAUDE_MODEL_POLICY.applyEffort({ ...base }, "peak"), { model: "opus", workflowEffort: "xhigh", agentEffort: "xhigh" });
   // An unknown semantic leaves the profile untouched (assertNeutralProfile
   // guards upstream; this is the same fall-through codex.js takes).
   assert.deepEqual(CLAUDE_MODEL_POLICY.applyEffort({ ...base }, "nonsense"), { model: "opus" });
@@ -55,15 +55,15 @@ test("claudeProfileForConfig resolves a neutral profile; effort becomes workflow
   // No declared effort -> no workflowEffort key at all: Workflow agent() omits
   // effort to inherit the session effort, so an absent key IS the contract.
   assert.deepEqual(claudeProfileForConfig({ tier: "prime" }), { model: "opus" });
-  assert.deepEqual(claudeProfileForConfig({ tier: "prime", effort: "peak" }), { model: "opus", workflowEffort: "xhigh" });
-  assert.deepEqual(claudeProfileForConfig({ tier: "scout", effort: "workhorse" }), { model: "haiku", workflowEffort: "medium" });
+  assert.deepEqual(claudeProfileForConfig({ tier: "prime", effort: "peak" }), { model: "opus", workflowEffort: "xhigh", agentEffort: "xhigh" });
+  assert.deepEqual(claudeProfileForConfig({ tier: "scout", effort: "workhorse" }), { model: "haiku", workflowEffort: "medium", agentEffort: "medium" });
 });
 
 test("claudeProfileForAgentId resolves manifest agents and returns null for non-agents", () => {
   // catalog/agents.manifest.json: muster-reviewer is prime/judgment (so it
   // carries the Workflow-lane judgment effort); muster-investigator is scout
   // with no declared effort (so no workflowEffort key -- inherit at dispatch).
-  assert.deepEqual(claudeProfileForAgentId("muster-reviewer"), { model: "opus", workflowEffort: "high" });
+  assert.deepEqual(claudeProfileForAgentId("muster-reviewer"), { model: "opus", workflowEffort: "high", agentEffort: "high" });
   assert.deepEqual(claudeProfileForAgentId("muster-investigator"), { model: "haiku" });
   // A skill/mcp/inline provider has no manifest entry -> null, not a throw.
   assert.equal(claudeProfileForAgentId("grep"), null);

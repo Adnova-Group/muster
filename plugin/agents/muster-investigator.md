@@ -3,6 +3,7 @@ name: muster-investigator
 description: "Read-only code locator: answers where-is and what-calls questions as a file:line table."
 tools: Read, Bash, Grep, Glob
 model: haiku
+effort: low
 maxTurns: 15
 upstream:
   - repo: damusix/atomic-claude

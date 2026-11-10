@@ -55,7 +55,7 @@ worker guesses instead of escalating.
 6. **Feed advice back to the worker.** Re-dispatch via the Agent tool with the original brief plus an
    `ADVISOR GUIDANCE` block (question/recommendation/rationale) — guidance the worker may override on
    stronger grounds, or say so if still unsure rather than guess. It continues and produces a final
-   result; the orchestrator proceeds to the review gate. Exhausted: guidance reads "budget exhausted --
+   result; the orchestrator proceeds to review. Exhausted: guidance reads "budget exhausted --
    proceed best-effort," no further consult attempts.
 
 ## Consult-per-task tracking

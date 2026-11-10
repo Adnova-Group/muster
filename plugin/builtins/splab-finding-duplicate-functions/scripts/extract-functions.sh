@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Adapted by Muster from obra/superpowers-lab @ 51111f74f24058117752d9aa917cb19859f8ec86 (MIT): a symlinked -o output path is refused.
 # ABOUTME: Extracts function/method definitions from TypeScript/JavaScript codebase
 # Outputs JSON catalog for duplicate detection analysis
 
@@ -233,6 +234,13 @@ process_output() {
 }
 
 # Main
+# Muster hardening: the catalog path may sit in an untrusted checkout; never write through a
+# symlink planted there.
+if [[ "$OUTPUT" != "/dev/stdout" && -L "$OUTPUT" ]]; then
+    echo "Error: refusing to write the catalog through a symlink: $OUTPUT" >&2
+    exit 1
+fi
+
 extract_functions "$SRC_DIR" "$CONTEXT_LINES" | process_output > "$OUTPUT"
 
 # Report stats to stderr

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Adapted by Muster from obra/superpowers-lab @ 51111f74f24058117752d9aa917cb19859f8ec86 (MIT): the per-file counts are checked to be plain integers before bash arithmetic.
+# Adapted by Muster from obra/superpowers-lab @ 51111f74f24058117752d9aa917cb19859f8ec86 (MIT): the per-file counts are checked to be plain integers before bash arithmetic; model-written text is Markdown-escaped and a symlinked output path is refused.
 # ABOUTME: Generates human-readable duplicate detection report from Opus analysis output
 # Combines per-category duplicate findings into a prioritized markdown report
 
@@ -40,6 +40,23 @@ if [[ ! -d "$DUPLICATES_DIR" ]]; then
     echo "Error: directory not found: $DUPLICATES_DIR" >&2
     exit 1
 fi
+
+# Muster hardening: the report path may sit in an untrusted checkout; never write through a
+# symlink planted there.
+if [[ -L "$OUTPUT" ]]; then
+    echo "Error: refusing to write the report through a symlink: $OUTPUT" >&2
+    exit 1
+fi
+
+# Muster hardening: every field below is model output about untrusted code. `md` flattens it
+# to one line and escapes HTML and Markdown syntax so it cannot add headings, links, images,
+# tables or raw HTML to the report; `code` keeps a value inside its backtick code span.
+JQ_ESCAPE='
+def one: if . == null then "" else tostring end | gsub("[\r\n\t]+"; " ");
+def md: one | gsub("&"; "&amp;") | gsub("<"; "&lt;") | gsub(">"; "&gt;")
+    | gsub("(?<c>[\\\\`*_\\[\\]!#|~])"; "\\\(.c)");
+def code: one | gsub("`"; "'"'"'");
+'
 
 # Generate the report
 {
@@ -87,15 +104,15 @@ fi
         [[ -f "$f" ]] || continue
         category=$(basename "$f" .json)
 
-        jq -r --arg cat "$category" '
+        jq -r --arg cat "$category" "$JQ_ESCAPE"'
             .[] | select(.confidence == "HIGH") |
-            "### \(.intent)\n\n" +
-            "**Category:** \($cat)\n\n" +
+            "### \(.intent | md)\n\n" +
+            "**Category:** \($cat | md)\n\n" +
             "**Functions:**\n" +
-            (.functions | map("- `\(.name)` in `\(.file):\(.line)`" + if .notes then " - \(.notes)" else "" end) | join("\n")) +
+            (.functions | map("- `\(.name | code)` in `\(.file | code):\(.line | code)`" + if .notes then " - \(.notes | md)" else "" end) | join("\n")) +
             "\n\n" +
-            "**Differences:** \(.differences // "None - identical implementations")\n\n" +
-            "**Recommendation:** Keep `\(.recommendation.survivor)` - \(.recommendation.reason)\n\n" +
+            "**Differences:** \(.differences // "None - identical implementations" | md)\n\n" +
+            "**Recommendation:** Keep `\(.recommendation.survivor | code)` - \(.recommendation.reason | md)\n\n" +
             "---\n"
         ' "$f" 2>/dev/null || true
     done
@@ -111,15 +128,15 @@ fi
         [[ -f "$f" ]] || continue
         category=$(basename "$f" .json)
 
-        jq -r --arg cat "$category" '
+        jq -r --arg cat "$category" "$JQ_ESCAPE"'
             .[] | select(.confidence == "MEDIUM") |
-            "### \(.intent)\n\n" +
-            "**Category:** \($cat)\n\n" +
+            "### \(.intent | md)\n\n" +
+            "**Category:** \($cat | md)\n\n" +
             "**Functions:**\n" +
-            (.functions | map("- `\(.name)` in `\(.file):\(.line)`" + if .notes then " - \(.notes)" else "" end) | join("\n")) +
+            (.functions | map("- `\(.name | code)` in `\(.file | code):\(.line | code)`" + if .notes then " - \(.notes | md)" else "" end) | join("\n")) +
             "\n\n" +
-            "**Differences:** \(.differences)\n\n" +
-            "**Recommendation:** \(.recommendation.action) - \(.recommendation.reason)\n\n" +
+            "**Differences:** \(.differences | md)\n\n" +
+            "**Recommendation:** \(.recommendation.action | md) - \(.recommendation.reason | md)\n\n" +
             "---\n"
         ' "$f" 2>/dev/null || true
     done
@@ -135,14 +152,14 @@ fi
         [[ -f "$f" ]] || continue
         category=$(basename "$f" .json)
 
-        jq -r --arg cat "$category" '
+        jq -r --arg cat "$category" "$JQ_ESCAPE"'
             .[] | select(.confidence == "LOW") |
-            "### \(.intent)\n\n" +
-            "**Category:** \($cat)\n\n" +
+            "### \(.intent | md)\n\n" +
+            "**Category:** \($cat | md)\n\n" +
             "**Functions:**\n" +
-            (.functions | map("- `\(.name)` in `\(.file):\(.line)`") | join("\n")) +
+            (.functions | map("- `\(.name | code)` in `\(.file | code):\(.line | code)`") | join("\n")) +
             "\n\n" +
-            "**Notes:** \(.differences)\n\n" +
+            "**Notes:** \(.differences | md)\n\n" +
             "---\n"
         ' "$f" 2>/dev/null || true
     done

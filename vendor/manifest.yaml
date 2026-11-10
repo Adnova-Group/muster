@@ -2242,8 +2242,15 @@ sources:
     # sanitizes names to [A-Za-z0-9._-] (no leading dot); test/splab-category-split-hardening.test.js
     # pins it and kill-checks the upstream copy (skipped without bash or jq).
     # scripts/generate-report.sh is adapted too (base copy kept): its jq-computed counts are
-    # checked to be plain integers before bash arithmetic. The other three files
-    # (extract-functions.sh and the two prompt templates) are whole-file verbatim copies.
+    # checked to be plain integers before bash arithmetic. Security review 2026-11-10 (stage 3
+    # pre-PR): generate-report.sh also Markdown-escapes every model-written field (one line, HTML
+    # entities, backslash-escaped Markdown syntax; backticks inside code spans become ') so
+    # duplicates/*.json cannot add headings, images, links or HTML to the report, and all three
+    # scripts refuse to write through a symlink planted at their output path (the SKILL.md note
+    # now has the work files written to a fresh directory outside the checkout).
+    # scripts/extract-functions.sh is therefore adapted as well (base copy kept);
+    # test/splab-report-hardening.test.js pins these and kill-checks the upstream report script
+    # (skipped without bash or jq). The two prompt templates are whole-file verbatim copies.
     # Wiring: audit-pattern-dead-code-duplication names it by id.
     ref: 51111f74f24058117752d9aa917cb19859f8ec86
     tag: v0.5.0
@@ -2254,7 +2261,7 @@ sources:
       - { from: LICENSE, mode: watch, baseBlob: abf0390320aa14406af7a520b9b0739fdda9bf08 }
       - { id: audit-pattern-dead-code-duplication, kind: audit-pattern, from: null, relation: inspired-by }
       - { id: splab-finding-duplicate-functions, kind: builtin, from: skills/finding-duplicate-functions/SKILL.md, to: plugin/builtins/splab-finding-duplicate-functions/SKILL.md, mode: adapted, relation: adapted, baseBlob: 71c6a530be8271766add8147194af1063ed5c5b8 }
-      - { from: skills/finding-duplicate-functions/scripts/extract-functions.sh, to: plugin/builtins/splab-finding-duplicate-functions/scripts/extract-functions.sh, mode: verbatim, baseBlob: f22d20af338b89b25c5cd4ab55602a57b3223ac0 }
+      - { from: skills/finding-duplicate-functions/scripts/extract-functions.sh, to: plugin/builtins/splab-finding-duplicate-functions/scripts/extract-functions.sh, mode: adapted, baseBlob: f22d20af338b89b25c5cd4ab55602a57b3223ac0 }
       - { from: skills/finding-duplicate-functions/scripts/categorize-prompt.md, to: plugin/builtins/splab-finding-duplicate-functions/scripts/categorize-prompt.md, mode: verbatim, baseBlob: 8c09214fd2d80a84d0f3fe86cdf8c6b28fc4225c }
       - { from: skills/finding-duplicate-functions/scripts/prepare-category-analysis.sh, to: plugin/builtins/splab-finding-duplicate-functions/scripts/prepare-category-analysis.sh, mode: adapted, baseBlob: 92ddd23bddfc3ea5b4c278e817a2d0e87474cb69 }
       - { from: skills/finding-duplicate-functions/scripts/find-duplicates-prompt.md, to: plugin/builtins/splab-finding-duplicate-functions/scripts/find-duplicates-prompt.md, mode: verbatim, baseBlob: f4dc277d0bce37722530213b935e52c598ef5799 }

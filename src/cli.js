@@ -147,7 +147,7 @@ const USAGE = [
   // manifest + waves: validate, order, and drive a plan
   "manifest validate <file> [--work]|wave <file>|next <manifest.json> [--done a,b]|",
   // stage-2 run steps: one-call preflight, deterministic wave merge, run position
-  "preflight <outcome> [--json] [--run <id>] [--model <model>]|build-args <runId> [--base <sha>]|pipeline-args <runId> [--pipeline <id>] [--out <path>] [--with <phase,...>]|merge-wave <runId> --result <build-result.json>|next --run <id>|plan-lint <PLAN.md> [--json] [--root <dir>]|spec-lint <SPEC.md> [--intent] [--json] [--root <dir>]|",
+  "preflight <outcome> [--json] [--run <id>] [--model <model>]|build-args <runId> [--base <sha>]|pipeline-args <runId> [--pipeline <id>] [--out <path>] [--with <phase,...>]|merge-wave <runId> --result <build-result.json>|next --run <id>|plan-lint <PLAN.md> [--json] [--root <dir>]|spec-lint <SPEC.md> [--intent] [--json] [--root <dir>]|spec-context <runId> [--spec <path>]|spec-clarify <SPEC.md> [--date <YYYY-MM-DD>]|spec-trace <runId> [--accept <IDs>] [--coverage] [--json]|",
   // performance pass + gate helpers
   "resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|codex-wave <wave.json> --fence-file <action-fence.json> --repository-root <repo> --base-sha <sha>|codex-wave-resume <receipt-id> --review-state <file>|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex>|plan-surface <runtime>|codex-plan <outcome> [--cwd <dir>]|desktop-harness <chatgpt-desktop|codex-desktop|gpt-work>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|",
   // sprint waves, review tally, tournament pick/fuse, advisor
@@ -1467,6 +1467,7 @@ function renderPreflight(s) {
     `models ${models}`,
     `candidates ${s.candidates.join(", ") || "-"}; skills ${(s.skills || []).join(", ") || "-"}`,
     `route ${s.route}${s.pipeline ? ` (pipeline ${s.pipeline}, domain ${s.domain})` : ""}`,
+    ...(s.spec ? [`spec ${s.spec.path}${s.spec.anchor ? `#${s.spec.anchor}` : ""}: ${s.spec.status ?? "unreadable"}, ready ${yn(s.spec.ready)}, ${s.spec.acs.length} criteria, ${s.spec.invariants.length} invariants, ${s.spec.evals.length} evals, ${s.spec.openQuestions.length} blocking questions`] : []),
     `gsd ${yn(s.detected.gsd)}, plugins ${s.detected.plugins.join(", ") || "-"}, memory ${s.memory.join(", ") || "-"}`,
     ...(s.warnings || []).map((w) => `warning: ${w}`),
     `detail ${s.detail}`,
@@ -1555,6 +1556,40 @@ async function handleCoreCommand(cmd, rest) {
     // contract as plan-lint: 0 = no blockers, 1 = blockers, 2 = not evaluated.
     const { runSpecLintCli } = await import("./spec-lint.js");
     process.exitCode = runSpecLintCli(rest);
+    return true;
+  }
+  if (cmd === "spec-context") {
+    // Import a spec's D-NN decisions (verbatim, LOCKED) and non-goals into the run's CONTEXT.md.
+    const runId = rest.find((a, i) => !a.startsWith("-") && rest[i - 1] !== "--spec");
+    if (!runId) fail("spec-context <runId> [--spec <path[#REF-NN]>]: missing runId");
+    const { writeSpecContext } = await import("./spec-plan.js");
+    const report = await writeSpecContext({ cwd: process.cwd(), runId, specRef: flagValue(rest, "--spec") });
+    out(report);
+    if (!report.ok) process.exitCode = 1;
+    return true;
+  }
+  if (cmd === "spec-clarify") {
+    // One clarification round's answers (JSON on stdin) written back into the spec.
+    const specPath = rest.find((a, i) => !a.startsWith("-") && rest[i - 1] !== "--date");
+    if (!specPath) fail("spec-clarify <SPEC.md> [--date YYYY-MM-DD] < answers.json: missing spec path");
+    let answers;
+    try {
+      const raw = (await readStdin()).trim();
+      const parsed = raw ? JSON.parse(raw) : [];
+      answers = Array.isArray(parsed) ? parsed : parsed?.answers;
+      if (!Array.isArray(answers)) throw new Error("expected [{id, a}] or {answers: [...]}");
+    } catch (error) { fail(`spec-clarify: answers on stdin: ${error.message}`); }
+    const { runSpecClarify } = await import("./spec-plan.js");
+    const date = flagValue(rest, "--date") || new Date().toISOString().slice(0, 10);
+    const report = await runSpecClarify({ cwd: process.cwd(), specPath, answers, date });
+    out(report);
+    if (!report.ok || !report.ready) process.exitCode = 1;
+    return true;
+  }
+  if (cmd === "spec-trace") {
+    // Regenerate a spec's Traceability block from a verified run (src/spec-trace.js).
+    const { runSpecTraceCli } = await import("./spec-trace.js");
+    process.exitCode = await runSpecTraceCli(rest);
     return true;
   }
   if (await handleCoreCommandPart1(cmd, rest)) return true;

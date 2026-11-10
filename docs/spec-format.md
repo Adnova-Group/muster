@@ -87,7 +87,9 @@ updated: 2026-11-10
 | `spec` | yes | The slug; the file is `docs/specs/<slug>/SPEC.md`. |
 | `intent` | yes, or an inline `## Intent` | Repo-relative path to the intent (an `#anchor` is allowed). It must resolve to a file under the project root. Omit it, or write `inline`, in lite mode. |
 | `status` | yes | See below. |
-| `change` | no | `new`, `modify` (with `modifies: [IDs]`) or `remove`. |
+| `change` | no | `new` (the default), `modify` or `remove`. See "Delta specs". |
+| `base` | with `modify` / `remove` | Repo-relative path of the spec this change modifies. |
+| `modifies` | with `modify` / `remove` | The base spec's IDs this change modifies or removes, as a list. |
 | `updated` | no | Date of the last substantive edit. |
 
 | Status | Meaning | Gate |
@@ -180,6 +182,51 @@ abstention and prompt-injection rows; write `Takes user text: no` in the section
 A rate with no designed sample is a `needs-runtime` criterion, not an EV row. Error analysis after
 launch appends EV rows with new IDs; it never rewrites a pass rule.
 
+**Post-launch rows.** A row added after launch takes the next free EV number, goes below the
+existing rows, and starts its Behavior cell with `[post-launch YYYY-MM-DD]` (the date of the error
+analysis that found the pattern); its case set says which traces the cases came from. Existing
+rows and their pass rules are never edited: a stricter bar is a new row beside the old one. A
+`shipped` spec takes new rows like any other; the next run plans them. spec-lint warns on a
+post-launch tag without a valid date and on a post-launch row numbered below a launch row.
+
+```markdown
+| **EV-04** | [post-launch 2026-12-01] Ask for the order id instead of guessing when the message names none | 25 cases from the 2026-11 error-analysis sample | 25/25 ask | evals/refunds/missing-order.jsonl |
+```
+
+### Delta specs
+
+A change to a feature that already has a spec (brownfield) gets its own spec that names what it
+changes, in the spirit of OpenSpec's delta specs, instead of an in-place rewrite of the shipped
+one:
+
+```markdown
+---
+spec: refunds-partial
+intent: docs/intent/INT-0007-self-serve-refunds.md
+status: draft
+change: modify
+base: docs/specs/refunds-self-serve/SPEC.md
+modifies: [REF-01, INV-01]
+---
+```
+
+- `modifies` lists the base IDs the change touches. A modified requirement, invariant or EV row
+  is restated in full under its base ID (a requirement with all its criteria); new behavior gets
+  new IDs. Listing a requirement covers its criteria.
+- `change: remove` lists the IDs it removes and states, as invariants, what must keep working
+  after the removal.
+- When the delta ships, the base spec is updated to match (or marked `superseded`), so the base
+  stays the current truth.
+- No `base` means the changed behavior has no spec yet (code-only brownfield): `modifies` then
+  names this spec's own IDs for that behavior, as the lite-mode example does.
+
+spec-lint, `delta` dimension: blocker when `base` is not one path, leaves the root or does not
+resolve, when a `modifies` entry is not an ID, or when a listed ID is not defined in the base
+spec; warning when `modifies` is missing or empty, when a requirement, criterion, invariant or EV
+ID of the base is redefined without being listed, when a listed ID is not restated in a `modify`
+delta, when a spec with no `base` lists an ID it does not define, and when `base`/`modifies`
+appear on a `change: new` spec.
+
 ## ID grammar
 
 | Kind | Pattern | Example |
@@ -211,7 +258,7 @@ as an INTENT; `--intent` forces the intent rules. Output is plan-lint's CheckRes
 Any issue makes the verdict `ISSUES`. The exit code is 0 with no blocker, 1 with at least one,
 and 2 when the file was not evaluated (missing, unreadable or over 1 MB, bad usage). Treat any exit
 other than 0 or 1 as "not evaluated", never as a pass. `--root` (default: the current directory)
-anchors the intent link. spec-lint reads only the spec and its linked intent; regex and
+anchors the intent link. spec-lint reads only the spec, its linked intent and, for a delta, its base spec; regex and
 structure only, no network.
 
 SPEC rules:
@@ -223,11 +270,12 @@ SPEC rules:
 | `requirements` | a requirement with no acceptance criterion; a criterion outside its own requirement; a requirement outside `## Requirements`; a reserved-kind ID heading a requirement; no requirement and no invariant | a `###` heading under Requirements that is not a requirement |
 | `acceptance_criteria` | a criterion or invariant without "shall"; zero, several or an unknown `verify:` type | no or unknown EARS tag; tag that does not match its condition word; criterion over 500 characters; invariant without "shall continue to" |
 | `readiness` | more than 3 `[NEEDS CLARIFICATION` markers; status `ready` (or later) with a marker, or with an open question that blocks build | an open question with no `blocks:` |
-| `ai_evals` | an EV pass rule with no number or N/N | no refusal/abstention or injection row (unless `Takes user text: no`); an AI section with no EV rows |
+| `ai_evals` | an EV pass rule with no number or N/N | no refusal/abstention or injection row (unless `Takes user text: no`); an AI section with no EV rows; a post-launch tag without a valid date; a post-launch row numbered below a launch row |
 | `requirement_language` | | implementation language in a requirement; an unquantified vague adjective in a requirement or invariant |
 | `scope` | | no non-goal (`NG-NN`) anywhere in the spec |
 | `outcome_link` | | a needs-runtime criterion and no filled-in Primary outcome row in the linked or inline intent |
 | `spec_length` | | body over about 2,000 words (the Traceability block excluded) |
+| `delta` | `base` not one path, outside the root or unresolved; a `modifies` entry that is not an ID; a listed ID not defined in the base | `modifies` missing or empty; a base ID redefined without being listed; a listed ID not restated in a `modify` delta; with no `base`, a listed ID this spec does not define; `base`/`modifies` on a `change: new` spec |
 
 INTENT rules are mostly warnings, since an intent is a human-owned page:
 

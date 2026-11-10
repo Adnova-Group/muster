@@ -106,8 +106,11 @@ writer keep CLAUDE.md: they write or judge project code against its conventions.
   deviations:[string]}`
 - **ReviewResult:** `{taskId, verdict: "PASS"|"FAIL"|"ABSTAIN", commitReviewed, findings:[{severity,
   file, line, summary}], testsRun:[string], testsPassed:boolean}`
-- **VerifyResult:** `{verdict: "PASS"|"GAPS"|"ABSTAIN", truths:[{claim, status, evidence}],
-  gaps:[string]}`
+- **VerifyResult:** `{verdict: "PASS"|"GAPS"|"HUMAN_NEEDED"|"ABSTAIN", truths:[{claim, status, evidence}],
+  gaps:[string], human:[string]}`. HUMAN_NEEDED is gsd's `human_needed`: zero gaps, `human` lists
+  the items only a human can judge (a judgment prohibition, a visual check), shown at the
+  attended merge decision. ABSTAIN means the verification could not run. The build result leads
+  with `summary`, `verification` and `halted`, echoes `argsDigest`, and ends with `tasks`.
 - **CheckResult:** `{verdict: "PASS"|"ISSUES", issues:[{dimension, severity, required_property,
   summary}]}`
 
@@ -124,7 +127,10 @@ re-runs `testsRun` before merging, through `muster merge-wave`.
      run's committed inputs (`CONTEXT.md`, `PLAN.md`, `build-args.json`) relative to the plan
      commit. Plan rules exclude `.muster/` from the builders' diff and change-set gates, so this
      is the check that keeps a builder from rewriting its own plan. `SUMMARY-*.md` is exempt;
-     `merge-wave` writes it;
+     `merge-wave` writes it. The main thread may not change them either: `muster build-args`
+     records `digests` of PLAN.md and of its own args, both must match at HEAD, and the build
+     result's `argsDigest` must equal the recorded args digest. `--result` may be the Workflow
+     tool's output file; merge-wave keeps a copy as `build-result.json`;
   2. merge the branches in manifest order (`--no-ff`);
   3. re-run each task's `verify` / `testsRun`;
   4. remove the worktrees and branches;

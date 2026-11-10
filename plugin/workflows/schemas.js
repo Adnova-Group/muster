@@ -52,7 +52,7 @@ export const REVIEW_RESULT = {
 export const VERIFY_RESULT = {
   type: "object",
   properties: {
-    verdict: { type: "string", enum: ["PASS", "GAPS", "ABSTAIN"] },
+    verdict: { type: "string", enum: ["PASS", "GAPS", "HUMAN_NEEDED", "ABSTAIN"] },
     truths: {
       type: "array",
       items: {
@@ -62,6 +62,7 @@ export const VERIFY_RESULT = {
       },
     },
     gaps: strList,
+    human: strList,
   },
   required: ["verdict", "truths", "gaps"],
 };

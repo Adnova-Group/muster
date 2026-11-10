@@ -9,7 +9,7 @@ import { join, sep } from "node:path";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { trackedMkdtemp } from "../test-support/helpers.js";
-import { buildArgsFromPlan, writeBuildArgs } from "../src/build-args.js";
+import { argsDigest, buildArgsFromPlan, planDigest, taskLines, workflowFor, writeBuildArgs } from "../src/build-args.js";
 import { nextForRun } from "../src/run-next.js";
 import { runStateCheck } from "../src/doctor.js";
 
@@ -112,6 +112,31 @@ test("build-args CLI exits 1 with problems and 0 with the report", async () => {
   const ok = cli(root, ["build-args", "r1", "--base", "abc"]);
   assert.equal(ok.status, 0, ok.stderr);
   assert.equal(JSON.parse(ok.stdout).path, ".muster/runs/r1/build-args.json");
+});
+
+test("build-args stdout carries the task lines, the workflow and the exact args, so the session never re-reads the file", async () => {
+  // Run 1 (first live e2e) spent three turns re-reading build-args.json: twice to print the
+  // task lines go.md asks for, once to pass the file verbatim to the build Workflow.
+  const root = await trackedMkdtemp(join(tmpdir(), "muster-build-args-stdout-"));
+  await mkdir(join(root, ".muster/runs/r1"), { recursive: true });
+  await writeFile(join(root, ".muster/runs/r1/PLAN.md"), PLAN);
+  const r = cli(root, ["build-args", "r1", "--base", "abc"]);
+  assert.equal(r.status, 0, r.stderr);
+  const report = JSON.parse(r.stdout);
+  assert.deepEqual(report.tasks, ["W1 01 · wsh-test-automator · -", "W2 02 · muster-executor · -"]);
+  assert.equal(report.workflow, "muster:build");
+  const file = JSON.parse(await readFile(join(root, ".muster/runs/r1/build-args.json"), "utf8"));
+  assert.deepEqual(report.args, file, "stdout args are the file's exact contents");
+  assert.equal(Object.keys(report).at(-1), "args", "the short fields print first");
+  // The digests merge-wave checks: PLAN.md as read, and the args without the digests key.
+  assert.equal(file.digests.plan, planDigest(PLAN));
+  assert.equal(file.digests.plan, planDigest(PLAN.replace(/\n/g, "\r\n")), "a CRLF checkout digests the same");
+  assert.equal(file.digests.args, argsDigest(file));
+  assert.notEqual(argsDigest({ ...file, base: "def" }), file.digests.args);
+  // A test-first task or a wave of 2+ tasks selects muster:team.
+  assert.equal(workflowFor({ waves: [[{ taskId: "01", tdd: true }]] }), "muster:team");
+  assert.equal(workflowFor({ waves: [[{ taskId: "01" }, { taskId: "02" }]] }), "muster:team");
+  assert.deepEqual(taskLines({ waves: [[{ taskId: "01", tdd: true, skills: [{ id: "sp-tdd", path: "x" }] }]] }), ["W1 01 · muster-executor · sp-tdd · tdd"]);
 });
 
 test("preflight --model pins every Workflow seat to one model and keeps the outcome intact", async () => {

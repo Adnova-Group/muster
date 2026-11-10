@@ -12,6 +12,11 @@
 //   build-args.json). Plan rules keep .muster/ out of the builders' diff and change-set gates,
 //   so without this a builder could rewrite its own plan unnoticed. SUMMARY files are not
 //   inputs: merge-wave writes them, and a branch may bring its own.
+// - Neither may the main thread change them after `muster build-args` ran: build-args records
+//   digests of PLAN.md and of its own args, and both must still match at HEAD (the first live
+//   run hand-edited the committed PLAN.md and build-args.json, base included, and re-ran
+//   merge-wave). The build result echoes the args digest it ran with, so args regenerated after
+//   the build are refused too. The legitimate path after a re-plan is build-args, then the build.
 // - A worktree is removed only when it is under <root>/.claude/worktrees/, has the merged
 //   task branch checked out, and is clean; branches are deleted with `branch -d` only.
 // Any mismatch rolls HEAD back and the CLI exits non-zero.
@@ -19,7 +24,8 @@ import { spawnSync } from "node:child_process";
 import { readFileSync, realpathSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { appendStateLog, assertRunId, ensureRunDir } from "./run-dir.js";
-import { createContainedFile } from "./fs-safe.js";
+import { createContainedFile, writeContainedFile } from "./fs-safe.js";
+import { argsDigest, planDigest } from "./build-args.js";
 
 const VERIFY_TIMEOUT_MS = 10 * 60 * 1000;
 
@@ -44,10 +50,10 @@ export function tasksFor(result, runId) {
   if (result && result.result && typeof result.result === "object" && !Array.isArray(result.tasks) && !Array.isArray(result.items)) result = result.result;
   if (result && Array.isArray(result.tasks)) {
     if (result.runId && result.runId !== runId) throw new Error(`result is for run ${result.runId}, not ${runId}`);
-    return { tasks: result.tasks, base: result.base || null };
+    return { tasks: result.tasks, base: result.base || null, argsDigest: result.argsDigest ?? null, result };
   }
   const item = result && Array.isArray(result.items) ? result.items.find((i) => i && i.runId === runId) : null;
-  if (item && Array.isArray(item.tasks)) return { tasks: item.tasks, base: item.base || null };
+  if (item && Array.isArray(item.tasks)) return { tasks: item.tasks, base: item.base || null, argsDigest: item.argsDigest ?? null, result: item };
   throw new Error(`result has no tasks for run ${runId}`);
 }
 
@@ -62,7 +68,26 @@ function plannedTasks(root, runId) {
   const own = Array.isArray(args?.items) ? args.items.find((i) => i && i.runId === runId) : args;
   if (!own || !Array.isArray(own.waves)) return { problem: `${buildArgsPath(runId)} has no waves for run ${runId}` };
   const tasks = own.waves.flatMap((w) => (Array.isArray(w) ? w : [])).map((t) => ({ taskId: t?.taskId, title: t?.title || "", verify: list(t?.verify) }));
-  return { tasks };
+  return { tasks, args: own };
+}
+
+const ESCALATE = "never edit PLAN.md or build-args.json to get past a merge-wave failure: escalate to the user, or after a re-plan re-run `muster build-args` and the build";
+
+// The committed inputs must be exactly what `muster build-args` wrote, and the build must have
+// run with those args. Returns a list of problems; empty means unchanged.
+export function inputDrift(root, runId, args, resultDigest) {
+  const d = args?.digests;
+  if (!d || typeof d.plan !== "string" || typeof d.args !== "string") {
+    return [`${buildArgsPath(runId)} carries no digests, so \`muster build-args\` did not write it (or it predates them); re-run \`muster build-args ${runId}\` and the build`];
+  }
+  const p = [];
+  const now = argsDigest(args);
+  if (now !== d.args) p.push(`${buildArgsPath(runId)} changed after \`muster build-args\` wrote it (args digest ${short(now)}, recorded ${short(d.args)}); ${ESCALATE}`);
+  const plan = spawnSync("git", ["show", `HEAD:.muster/runs/${runId}/PLAN.md`], { cwd: root, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
+  if (plan.status !== 0) p.push(`.muster/runs/${runId}/PLAN.md is not committed at HEAD; commit the plan inputs before building`);
+  else if (planDigest(plan.stdout) !== d.plan) p.push(`.muster/runs/${runId}/PLAN.md changed after \`muster build-args\` ran (recorded digest ${short(d.plan)}); ${ESCALATE}`);
+  if (resultDigest && resultDigest !== d.args) p.push(`the build ran with args digest ${short(resultDigest)}, but the committed ${buildArgsPath(runId)} records ${short(d.args)}; ${ESCALATE}`);
+  return p;
 }
 
 export const RUN_INPUTS = ["CONTEXT.md", "PLAN.md", "build-args.json"];
@@ -195,7 +220,8 @@ export async function mergeWave({ cwd, runId, result, resultFile, now = () => ne
   if (isClaudeWorktree(root) || isClaudeWorktree(realpathSync(root))) {
     return { ok: false, runId, problems: [`refusing to run inside a .claude/worktrees/ checkout (${root}); run merge-wave from the main checkout`] };
   }
-  const { tasks, base } = tasksFor(result ?? JSON.parse(readFileSync(resultFile, "utf8")), runId);
+  const found = tasksFor(result ?? JSON.parse(readFileSync(resultFile, "utf8")), runId);
+  const { tasks, base } = found;
   const report = { ok: false, runId, merged: [], verify: [], cleanup: [], notes: [], problems: [] };
   const finish = async (ok) => {
     report.ok = ok;
@@ -218,6 +244,14 @@ export async function mergeWave({ cwd, runId, result, resultFile, now = () => ne
   if (planned.problem) {
     report.problems.push(planned.problem);
     return finish(false);
+  }
+  report.problems.push(...inputDrift(root, runId, planned.args, found.argsDigest));
+  if (!found.argsDigest) report.notes.push("the build result carries no argsDigest, so the args the build ran with were not checked");
+  // A result read from elsewhere (the Workflow tool's output file) is kept in the run dir, so
+  // the session never reads or re-writes it.
+  if (resultFile && resolve(resultFile) !== resolve(root, runPrefix, "build-result.json")) {
+    await ensureRunDir(root, runId);
+    await writeContainedFile(root, join(root, runPrefix, "build-result.json"), JSON.stringify(found.result, null, 2) + "\n");
   }
   const byId = new Map();
   for (const t of tasks) {

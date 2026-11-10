@@ -7,7 +7,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { decodeEntityAmps, parsePlan } from "./plan-lint.js";
 import { runDir } from "./run-dir.js";
-import { writeContainedFile } from "./fs-safe.js";
+import { sha256, writeContainedFile } from "./fs-safe.js";
 import { agentTypeFor, musterCli, specialistCatalog } from "./specialists.js";
 import { pinApplies, resolvePins, taskRoles } from "./skill-pins.js";
 
@@ -74,12 +74,34 @@ export function buildArgsFromPlan(planText, { runId, base = null, branch = null,
   return { args, humanNeeded, problems };
 }
 
+// Digests of the two inputs merge-wave trusts (findings: the main session hand-edited the
+// committed PLAN.md and build-args.json to get past a merge-wave failure). `plan` hashes
+// PLAN.md with line endings normalized (a Windows checkout may hold CRLF while the blob is LF);
+// `args` hashes the args object without its own `digests` key, so a re-indented file still
+// matches and any changed value does not. Only `muster build-args` writes them.
+export const planDigest = (text) => sha256(String(text).replace(/\r\n/g, "\n"));
+export function argsDigest(args) {
+  const { digests, ...rest } = args && typeof args === "object" ? args : {};
+  return sha256(JSON.stringify(rest));
+}
+
+// muster:team when any task is test-first or any wave runs 2+ tasks (go.md step 5).
+export const workflowFor = (args) => (args.waves.some((w) => w.length > 1 || w.some((t) => t.tdd)) ? "muster:team" : "muster:build");
+
+// One line per task, exactly what go.md tells the session to print:
+// `<taskId> · <agent_hint or muster-executor> · <skills or ->` (+ ` · tdd`).
+export function taskLines(args) {
+  return args.waves.flatMap((w, i) => w.map((t) => `W${i + 1} ${t.taskId} · ${t.agentHint || "muster-executor"} · ${(t.skills || []).map((k) => k.id).join(", ") || "-"}${t.tdd ? " · tdd" : ""}`));
+}
+
 async function readJsonOrNull(path) {
   try { return JSON.parse(await readFile(path, "utf8")); } catch { return null; }
 }
 
-// Reads PLAN.md (and the seat models preflight computed), writes build-args.json, returns a
-// compact report. ok:false leaves no file behind.
+// Reads PLAN.md (and the seat models preflight computed), writes build-args.json and returns a
+// report that carries everything go.md steps 4-5 need (the task lines to print, the workflow to
+// run and the exact args to pass), so the session never re-reads the file. ok:false leaves no
+// file behind.
 export async function writeBuildArgs({ cwd, runId, base = null, branch = null }) {
   const dir = runDir(cwd, runId);
   let planText;
@@ -93,12 +115,16 @@ export async function writeBuildArgs({ cwd, runId, base = null, branch = null })
   const { args, humanNeeded, problems } = buildArgsFromPlan(planText, { runId, base, branch, models, catalog, pins: pinned.pins, cli: musterCli() });
   const rel = `.muster/runs/${runId}/build-args.json`;
   if (problems.length) return { ok: false, runId, problems, humanNeeded };
+  args.digests = { plan: planDigest(planText), args: argsDigest(args) };
   await writeContainedFile(cwd, join(dir, "build-args.json"), JSON.stringify(args, null, 2) + "\n");
   return {
     ok: true, runId, path: rel, base: args.base || null,
     waves: args.waves.map((w) => w.map((t) => t.taskId)),
+    tasks: taskLines(args),
+    workflow: workflowFor(args),
     humanNeeded,
     ...(pinned.pins.length ? { pinned: args.waves.flat().filter((t) => t.pinned).map((t) => `${t.taskId}: ${t.pinned.join(", ")}`) } : {}),
     ...(pinned.warnings.length ? { warnings: pinned.warnings } : {}),
+    args,
   };
 }

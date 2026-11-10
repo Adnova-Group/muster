@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Adapted by Muster from obra/superpowers-lab @ 51111f74f24058117752d9aa917cb19859f8ec86 (MIT): the per-file counts are checked to be plain integers before bash arithmetic.
 # ABOUTME: Generates human-readable duplicate detection report from Opus analysis output
 # Combines per-category duplicate findings into a prioritized markdown report
 
@@ -57,6 +58,9 @@ fi
         h=$(jq '[.[] | select(.confidence == "HIGH")] | length' "$f")
         m=$(jq '[.[] | select(.confidence == "MEDIUM")] | length' "$f")
         l=$(jq '[.[] | select(.confidence == "LOW")] | length' "$f")
+        # Muster hardening: duplicates/*.json is model output; only a plain integer reaches
+        # bash arithmetic (jq's length is one, but nothing else is ever evaluated).
+        for n in "$h" "$m" "$l"; do [[ "$n" =~ ^[0-9]+$ ]] || { echo "Error: non-numeric count in $f" >&2; exit 1; }; done
         high_count=$((high_count + h))
         medium_count=$((medium_count + m))
         low_count=$((low_count + l))

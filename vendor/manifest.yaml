@@ -1665,10 +1665,17 @@ sources:
     # Vendored: finding-duplicate-functions as splab-finding-duplicate-functions with its five
     # scripts/ files. Adapted: SKILL.md frontmatter (name kept, one-line description,
     # muster_builtin, SPDX license, generated upstream:) and one "In muster" note (scripts path,
-    # rg/jq prerequisites, haiku/opus as scout/prime); scripts/prepare-category-analysis.sh gains a
-    # security fix (model-produced category names are sanitized to [A-Za-z0-9._-] before they
-    # become file names, so a name like ../../x cannot write outside the output directory) and a
-    # header line noting it. The other four scripts are whole-file verbatim copies.
+    # rg/jq prerequisites, haiku/opus as scout/prime); scripts/prepare-category-analysis.sh is
+    # adapted (base copy kept) with a security fix and a header line noting it. Upstream split
+    # model-produced categorized.json on tabs and fed the second field to `[[ "$count" -ge 3 ]]`,
+    # whose arithmetic evaluation runs `BASH_VERSINFO[$(cmd)]` (command injection, HIGH), and
+    # used the category as a file name (path traversal). Muster filters 3+ inside jq, loops over
+    # NUL-separated names only, prints them JSON-encoded, validates the count it prints, and
+    # sanitizes names to [A-Za-z0-9._-] (no leading dot); test/splab-category-split-hardening.test.js
+    # pins it and kill-checks the upstream copy (skipped without bash or jq).
+    # scripts/generate-report.sh is adapted too (base copy kept): its jq-computed counts are
+    # checked to be plain integers before bash arithmetic. The other three files
+    # (extract-functions.sh and the two prompt templates) are whole-file verbatim copies.
     # Wiring: audit-pattern-dead-code-duplication names it by id.
     ref: 51111f74f24058117752d9aa917cb19859f8ec86
     tag: v0.5.0
@@ -1683,7 +1690,7 @@ sources:
       - { from: skills/finding-duplicate-functions/scripts/categorize-prompt.md, to: plugin/builtins/splab-finding-duplicate-functions/scripts/categorize-prompt.md, mode: verbatim, baseBlob: 8c09214fd2d80a84d0f3fe86cdf8c6b28fc4225c }
       - { from: skills/finding-duplicate-functions/scripts/prepare-category-analysis.sh, to: plugin/builtins/splab-finding-duplicate-functions/scripts/prepare-category-analysis.sh, mode: adapted, baseBlob: 92ddd23bddfc3ea5b4c278e817a2d0e87474cb69 }
       - { from: skills/finding-duplicate-functions/scripts/find-duplicates-prompt.md, to: plugin/builtins/splab-finding-duplicate-functions/scripts/find-duplicates-prompt.md, mode: verbatim, baseBlob: f4dc277d0bce37722530213b935e52c598ef5799 }
-      - { from: skills/finding-duplicate-functions/scripts/generate-report.sh, to: plugin/builtins/splab-finding-duplicate-functions/scripts/generate-report.sh, mode: verbatim, baseBlob: 700aa8d6dca0c98f6cdb65f7872a87f3af347fb8 }
+      - { from: skills/finding-duplicate-functions/scripts/generate-report.sh, to: plugin/builtins/splab-finding-duplicate-functions/scripts/generate-report.sh, mode: adapted, baseBlob: 700aa8d6dca0c98f6cdb65f7872a87f3af347fb8 }
 
   - id: addy-agent-skills-engineering
     kind: github

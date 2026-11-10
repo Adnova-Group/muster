@@ -8,7 +8,7 @@ phases:
   - { id: intake,   role: brainstorm,    desc: "frame the opportunity, audience, and the decision to be made" }
   - { id: research, role: docs-research, desc: "market size, competition, customer evidence, financial assumptions; size the market as low/base/high scenarios with source and claims ledgers (kdense-market-research-reports), then QA every figure and calculation before drafting (kwp-validate-data)" }
   - { id: draft,    role: author,        desc: "draft sections: problem, opportunity, options, financials/ROI, risks, recommendation" }
-  - { id: review,   role: code-review,   desc: "adversarial review gate (reuse review-gate); re-run the kwp-validate-data checklist on the financials and ROI the draft cites" }
+  - { id: review,   role: code-review,   desc: "adversarial review gate: every number traces to a cited source or a stated assumption, and the recommendation follows from the options compared; re-run the kwp-validate-data checklist on the financials and ROI the draft cites" }
   - { id: score,    role: score,         desc: "score vs rubric, apply floor principle" }
   - { id: humanize, role: humanize,     desc: "final pass: strip AI tells (em-dashes, banned words, robotic cadence) for human delivery" }
 gate:

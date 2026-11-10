@@ -32,11 +32,16 @@ test("the roadmap pipeline loads, validates, and routes for prioritization outco
   assert.equal(classifyDomain("prioritize our roadmap").domain, "pm");
 });
 
-test("the roadmap skill wires the deterministic scorer + graceful gh issues", async () => {
-  const skill = await readFile(new URL("../plugin/skills/roadmap-prioritization/SKILL.md", import.meta.url), "utf8");
-  assert.match(skill, /runtime\/muster\.sh" prioritize/, "skill must call the deterministic scorer");
-  assert.match(skill, /gh issue create|gh\b/, "skill must offer GitHub issues");
-  assert.match(skill, /AskUserQuestion/, "skill must use the selection UI for choices");
+// PM domain stage D moved the roadmap-prioritization skill into the muster-roadmap builtin, which
+// the roadmap pipeline's generate and prioritize phases bind by path.
+test("the roadmap builtin wires the deterministic scorer + graceful gh issues", async () => {
+  const skill = await readFile(new URL("../plugin/builtins/muster-roadmap/SKILL.md", import.meta.url), "utf8");
+  assert.match(skill, /muster prioritize <file>/, "builtin must call the deterministic scorer");
+  assert.match(skill, /gh issue create|gh\b/, "builtin must offer GitHub issues");
+  assert.match(skill, /AskUserQuestion/, "the main thread uses the selection UI for choices");
+  const ps = await loadPipelines(PIPELINES);
+  const prioritize = ps.find(p => p.id === "roadmap").phases.find(ph => ph.id === "prioritize");
+  assert.deepEqual(prioritize.skills, ["muster-roadmap"]);
 });
 
 test("README documents roadmap prioritization", async () => {

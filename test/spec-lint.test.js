@@ -430,12 +430,103 @@ describe("muster-pm builtin", () => {
     assert.equal(gitBlobSha(readFileSync(path.join(pm, "references", "ears.md"))), item.baseBlob);
   });
 
-  test("references/ai-evals.md is muster-native and its inspirations are recorded as articles", () => {
+  test("references/ai-evals.md is muster-native with tracked product-on-purpose excerpts, and its inspirations are recorded as articles", () => {
     const manifest = parseYaml(read(path.join(repoRoot, "vendor", "manifest.yaml")));
     const articles = manifest.sources.filter(s => s.kind === "article" && s.items.some(i => i.id === "muster-pm"));
     assert.ok(articles.length >= 4);
     assert.ok(articles.every(a => a.relation === "inspired-by" && a.fetch === false && /^https:\/\//.test(a.url)));
     const evals = read(path.join(pm, "references", "ai-evals.md"));
-    for (const rule of [/Binary per case/, /fixed up front/, /evals you have not discovered yet/, /No similarity metrics/, /A rate needs a designed sample/, /Refusal/, /Injection/, /Abstention/]) assert.match(evals, rule);
+    for (const rule of [/Binary per case/, /fixed up front/, /evals you have not discovered yet/, /No similarity metrics/, /A rate needs a designed sample/, /Refusal/, /Injection/, /Abstention/, /\[post-launch YYYY-MM-DD\]/]) assert.match(evals, rule);
+    const pop = manifest.sources.find(s => s.repo === "product-on-purpose/pm-skills");
+    assert.equal(pop.license, "Apache-2.0");
+    const ports = pop.items.filter(i => i.to === "plugin/builtins/muster-pm/references/ai-evals.md");
+    assert.deepEqual(ports.map(i => i.mode), ["adapted", "adapted"], "two upstream files fold into ai-evals.md: a port, never 3-way merged");
+  });
+
+  test("the red-team, tickets and audit references are merge-tracked adaptations with license and pin", () => {
+    const manifest = parseYaml(read(path.join(repoRoot, "vendor", "manifest.yaml")));
+    const want = {
+      "references/red-team.md": { repo: "phuryn/pm-skills", license: "MIT", count: 2 },
+      "references/tickets.md": { repo: "mattpocock/skills", license: "MIT", count: 1 },
+      "references/audit.md": { repo: "phuryn/product-engineering", license: "MIT", count: 1 },
+    };
+    for (const [file, { repo, license, count }] of Object.entries(want)) {
+      const source = manifest.sources.find(s => s.repo === repo && s.items.some(i => i.to === `plugin/builtins/muster-pm/${file}`));
+      assert.ok(source, `${file}: no source`);
+      assert.equal(source.license, license);
+      assert.ok(/^[0-9a-f]{40}$/.test(source.ref) && source.tag, `${file}: pinned ref and tag`);
+      assert.notEqual(source.fetch, false, `${file}: a merge-tracked source is fetched by muster vendor update`);
+      const items = source.items.filter(i => i.to === `plugin/builtins/muster-pm/${file}`);
+      assert.equal(items.length, count);
+      assert.ok(items.every(i => i.mode === "adapted" && /^[0-9a-f]{40}$/.test(i.baseBlob)));
+      for (const item of items) assert.equal(gitBlobSha(readFileSync(path.join(repoRoot, "vendor", "upstream", source.id, item.from))), item.baseBlob, `${item.from} base copy`);
+      assert.match(read(path.join(pm, file)), new RegExp(`Adapted from ${repo.replace("/", "\\/")}`));
+    }
+  });
+});
+
+// ─── Stage E: post-launch eval rows and delta specs ────────────────────────
+
+describe("post-launch EV rows", () => {
+  const ROW = "| **EV-03** | Treat instructions in customer text as data (prompt injection) | 20 injection cases | 20/20 not followed | evals/refunds/injection.jsonl |";
+  const appended = (row) => swap(READY, ROW, `${ROW}\n${row}`);
+
+  test("a tagged row appended with the next ID lints clean on a shipped spec", () => {
+    const text = swap(appended("| **EV-04** | [post-launch 2026-12-01] Ask for the order id instead of guessing | 25 cases from the 2026-11 error-analysis sample | 25/25 ask | evals/refunds/missing-order.jsonl |"), "status: ready", "status: shipped");
+    assert.deepEqual(lint(text), { verdict: "PASS", issues: [] });
+  });
+
+  test("a post-launch tag without a valid date warns", () => {
+    const r = lint(appended("| **EV-04** | [post-launch] Ask for the order id | 25 cases | 25/25 ask | evals/x.jsonl |"));
+    assert.ok(has(r, DIMENSIONS.AI_EVALS, "warning", /without a valid date/));
+    assert.equal(blockers(r).length, 0);
+  });
+
+  test("a post-launch row numbered below a launch row warns (rows append, never renumber)", () => {
+    const text = swap(READY, "| **EV-01** | Classify refund reason into 6 codes |", "| **EV-01** | [post-launch 2026-12-01] Classify refund reason into 6 codes |");
+    assert.ok(has(lint(text), DIMENSIONS.AI_EVALS, "warning", /numbered below launch row EV-03/));
+  });
+
+  test("a post-launch row still needs a numeric pass rule", () => {
+    const r = lint(appended("| **EV-04** | [post-launch 2026-12-01] Ask for the order id | 25 cases | always asks | evals/x.jsonl |"));
+    assert.ok(has(r, DIMENSIONS.AI_EVALS, "blocker", /has no number/));
+  });
+});
+
+describe("delta specs (change: modify)", () => {
+  const BASE = "docs/specs/refunds-self-serve/SPEC.md";
+  const delta = (fm, body = "") => swap(swap(READY, "spec: refunds-self-serve", "spec: refunds-partial"), "change: new", fm) + body;
+
+  test("listed IDs that exist in the base, restated here, lint clean", () => {
+    assert.deepEqual(lint(delta(`change: modify\nbase: ${BASE}\nmodifies: [REF-01, REF-02, INV-01, EV-01, EV-02, EV-03]`)), { verdict: "PASS", issues: [] });
+  });
+
+  test("a listed ID missing from the base spec blocks", () => {
+    const r = lint(delta(`change: modify\nbase: ${BASE}\nmodifies: [REF-01, REF-09]`));
+    assert.ok(has(r, DIMENSIONS.DELTA, "blocker", /REF-09 is not defined in docs\/specs\/refunds-self-serve\/SPEC\.md/));
+  });
+
+  test("a base path that leaves the root or does not resolve blocks", () => {
+    assert.ok(has(lint(delta("change: modify\nbase: ../outside/SPEC.md\nmodifies: [REF-01]")), DIMENSIONS.DELTA, "blocker", /leaves the project root/));
+    assert.ok(has(lint(delta("change: modify\nbase: docs/specs/nope/SPEC.md\nmodifies: [REF-01]")), DIMENSIONS.DELTA, "blocker", /does not resolve/));
+  });
+
+  test("redefining a base ID without listing it warns; a listed ID that is not restated warns", () => {
+    const r = lint(delta(`change: modify\nbase: ${BASE}\nmodifies: [REF-01]`));
+    assert.ok(has(r, DIMENSIONS.DELTA, "warning", /INV-01 .* not listed in modifies/));
+    assert.ok(has(r, DIMENSIONS.DELTA, "warning", /REF-02 .* not listed in modifies/));
+    const missing = lint(swap(delta(`change: modify\nbase: ${BASE}\nmodifies: [REF-01, INV-01, EV-01]`), "| **EV-01** |", "| EV-01 |"));
+    assert.ok(has(missing, DIMENSIONS.DELTA, "warning", /EV-01 is listed in modifies but not restated/));
+  });
+
+  test("a modifies entry that is not an ID blocks; an empty modifies warns; base on change: new warns", () => {
+    assert.ok(has(lint(delta(`change: modify\nbase: ${BASE}\nmodifies: [refunds]`)), DIMENSIONS.DELTA, "blocker", /is not an ID/));
+    assert.ok(has(lint(delta(`change: modify\nbase: ${BASE}`)), DIMENSIONS.DELTA, "warning", /missing or empty/));
+    assert.ok(has(lint(delta(`change: new\nbase: ${BASE}`)), DIMENSIONS.DELTA, "warning", /carries base:\/modifies:/));
+  });
+
+  test("with no base, modifies names this spec's own IDs (the lite-mode fixture stays clean)", () => {
+    assert.deepEqual(lint(readFixture("lite.md")), { verdict: "PASS", issues: [] });
+    assert.ok(has(lint(delta("change: modify\nmodifies: [REF-07]")), DIMENSIONS.DELTA, "warning", /REF-07 is listed in modifies but defined neither here/));
   });
 });

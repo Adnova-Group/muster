@@ -84,11 +84,11 @@ if (profile === "full" || activationReceiptPath || installedRuntime) {
         "builtins.generated.yaml", "builtins.muster.yaml", "software.yaml",
       ].map(relative => `catalog/${relative}`),
       ...[
-        "ai-implementation-spec.yaml", "ai-test-plan.yaml", "blog-post.yaml", "book.yaml",
-        "business-case.yaml", "case-study.yaml", "competitive-battlecard.yaml", "epic.yaml",
+        "ai-test-plan.yaml", "blog-post.yaml", "book.yaml",
+        "business-case.yaml", "case-study.yaml", "competitive-battlecard.yaml", "design.yaml", "epic.yaml",
         "executive-summary.yaml", "launch-plan.yaml", "lead-magnet.yaml", "newsletter.yaml",
         "okrs.yaml", "prd.yaml", "release-notes.yaml", "roadmap.yaml", "runbook.yaml",
-        "social-post.yaml", "user-story.yaml", "video-content.yaml",
+        "social-post.yaml", "video-content.yaml",
       ].map(relative => `pipelines/${relative}`),
     ];
     if (Object.keys(receipt.artifacts ?? {}).sort().join("\0") !== artifactPaths.slice().sort().join("\0")) {

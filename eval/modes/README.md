@@ -8,21 +8,22 @@ than response-quality fixtures. The harness also covers
 the 10 skill-protocol skills the modes delegate to (`plugin/skills/*` —
 `orchestrator`, `review-gate`, `coordination`,
 `interview`, `tournament`, `domain-router`, `advisor`, `greenfield`, `prd-pipeline`,
-`roadmap-prioritization`; `router` is excluded, it already has its own `eval:router`),
+`roadmap-prioritization`; PM domain stage D retired `prd-pipeline` (its cases now carry mode
+`prd`) and moved `roadmap-prioritization` to the `muster-roadmap` builtin; `router` is excluded, it already has its own `eval:router`),
 plus `improve`, graded structurally like `init` above — a `context: fork` background
 dispatcher onto `muster-improver`'s own retrospective judgment (an agent, already outside
 this eval's graded universe), with no independent response-quality behavior of its own to
 fixture; its coverage is `test/skill-improve.test.js`'s contract guard,
-the 8 native builtins (`plugin/builtins/muster-*/SKILL.md` — the pipeline-role providers
+the 9 native builtins (`plugin/builtins/muster-*/SKILL.md` — the pipeline-role providers
 `muster-research`, `muster-image`, `muster-video`, `muster-humanizer`, `muster-scorer`,
-`muster-prompt-smith`, `muster-author`, plus the `muster-pm` artifact kit; the vendored `gsd-*`/`sp-*`/`wsh-*` builtins are
+`muster-prompt-smith`, `muster-author`, plus the `muster-pm` artifact kit and the `muster-roadmap` prioritizer; the vendored `gsd-*`/`sp-*`/`wsh-*` builtins are
 generic technique skills, not muster's own pipeline-role prompts, and are out of scope),
-**and** all 20 pipeline phase prompts (`pipelines/*.yaml`), split into two layers: 9
+**and** all 19 pipeline phase prompts (`pipelines/*.yaml`), split into two layers: 9
 content pipelines (`blog-post`, `social-post`, `newsletter`, `case-study`, `lead-magnet`,
-`release-notes`, `video-content`, `executive-summary`, `competitive-battlecard`) and 11
-knowledge/software pipelines (`ai-implementation-spec`, `ai-test-plan`, `book`,
-`business-case`, `epic`, `launch-plan`, `okrs`, `prd`, `roadmap`, `runbook`,
-`user-story`). Like `eval/router`, this measures **response quality** against
+`release-notes`, `video-content`, `executive-summary`, `competitive-battlecard`) and 10
+knowledge/software pipelines (`design`, formerly `ai-implementation-spec`; `ai-test-plan`,
+`book`, `business-case`, `epic`, `launch-plan`, `okrs`, `prd`, `roadmap`, `runbook`; the
+`user-story` pipeline was retired in PM domain stage D). Like `eval/router`, this measures **response quality** against
 deterministic assertions, so future edits to a mode prompt, a skill, a native builtin, or
 a pipeline phase get regression-graded instead of only structurally linted (`muster prompt
 lint`).
@@ -115,13 +116,12 @@ new grader):
 |---|---|
 | epic's breakdown phase (story-splitting sequenced by risk+dependency) | reuses `sprint-waves`/`computeSprintWaves` directly — the same generic `{id}`/`{deps}` checkbox grammar greenfield's plan already reuses |
 | okrs's key-results phase ("Verb + Metric from X to Y by Date") | reuses `assess`/`assessOutcome` directly — a real KR line clears the same measurability gate run.md's vague-outcome cases grade |
-| roadmap's prioritize phase ("run the deterministic RICE scorer") | reuses `roadmap-rice`/`prioritizeRICE` directly — the same real function the roadmap-prioritization skill layer already grades |
+| roadmap's prioritize phase ("run the deterministic RICE scorer") | reuses `roadmap-rice`/`prioritizeRICE` directly — the same real function the muster-roadmap builtin layer already grades |
 | prd's intake phase (`{decision\|action\|fact, owner, deadline, source-anchor}` rows) | reuses `evidence-table-shape` directly — the unowned-action-flagging rule is prd.yaml's own words, verbatim |
 | runbook's steps phase (numbered, copy-pasteable, expected-output-per-step) | no `src/*.js` home — `runbookStepPairsCheck` |
 | book's continuity-ledger chapter manifest (sequential, status-tracked) | no `src/*.js` home — `bookChapterManifestCheck` |
 | ai-test-plan's cases phase (risk-tiered happy/boundary/negative/security table) | no `src/*.js` home — `aiTestPlanCaseTableCheck` |
-| user-story's acceptance phase (Given/When/Then Gherkin, happy + 2 edge/negative) | no `src/*.js` home — `userStoryGherkinShapeCheck` |
-| ai-implementation-spec's adr phase (MADR 4.0 status lifecycle) | no `src/*.js` home — `adrStatusLifecycleCheck` |
+| design's adr phase (MADR 4.0 status lifecycle) | no `src/*.js` home — `adrStatusLifecycleCheck` |
 | business-case, launch-plan | **skipped honestly** — gate-achievability is graded, but neither pipeline's phase prose pins a literal row/table grammar beyond its gate criteria names (business-case's financials/roi are numeric asks with no fixed shape; launch-plan names "RACI" only as a gate-criterion label, never a documented table format) — see the coverage table below |
 
 A case whose behavior lives in one of those functions grades **directly against the real
@@ -275,7 +275,7 @@ this eval), **deliberate-none** (out of scope for this eval, with a stated reaso
 
 ### Structurally graded modes
 
-`init.md`, `design.md` and `skills.md` are covered by prompt lint plus their focused contract suites (`skills.md`: `test/skills.test.js`, every verb against the CLI it runs).
+`init.md`, `design.md`, `skills.md` and `pm.md` are covered by prompt lint plus their focused contract suites (`skills.md`: `test/skills.test.js`, every verb against the CLI it runs; `pm.md`: `test/pm-domain.test.js` and `test/spec-lint.test.js`, the spec-lint gate and muster-pm references each verb uses).
 They perform filesystem and context lifecycle work that the no-I/O response grader does
 not model. `write-book.md` (2026-11-10) is the same kind of surface: it only sequences the
 `muster:book` Workflow and the `muster book` CLI, graded by `test/book-workflow.test.js`
@@ -293,8 +293,6 @@ not model. `write-book.md` (2026-11-10) is the same kind of surface: it only seq
 | domain-router | empirical | 4 |
 | advisor | empirical | 6 |
 | greenfield | empirical | 4 |
-| prd-pipeline | empirical | 4 |
-| roadmap-prioritization | empirical | 3 |
 | router | empirical (separate suite) | see `eval/router` — not duplicated here |
 | improve | structural | 0 — a `context: fork` background dispatcher onto muster-improver's agent-owned judgment, no independent behavior of its own; see `test/skill-improve.test.js` |
 | audit-pattern-architecture | structural | 0 — read-on-demand hunt-list content composed onto the architecture-review dimension's persona via `plan[].skills`, no independent response-quality behavior of its own to grade; see `test/audit-pattern-skills.test.js` |
@@ -320,6 +318,7 @@ not model. `write-book.md` (2026-11-10) is the same kind of surface: it only seq
 | muster-prompt-smith | empirical | 2 |
 | muster-author | empirical | 2 |
 | muster-pm | empirical | 2 |
+| muster-roadmap | empirical | 3 — the RICE ranking cases of the retired roadmap-prioritization skill (PM domain stage D moved it to this builtin): `prioritizeRICE`, code does the math |
 
 The `gsd-*`/`sp-*`/`wsh-*` builtins (39 dirs under `plugin/builtins/`) are
 **deliberate-none**: vendored generic technique skills (superpowers/get-shit-done/
@@ -349,10 +348,9 @@ an eval whose whole premise is grading muster's own authored prompt contracts.
 | runbook | empirical | 3 (gate + step-pairs clean/violating pair) |
 | book | empirical | 3 (gate + chapter-manifest clean/violating pair) |
 | ai-test-plan | empirical | 3 (gate + case-table clean/violating pair) |
-| ai-implementation-spec | empirical | 3 (gate + adr-status clean/violating pair) |
+| design | empirical | 3 (gate + adr-status clean/violating pair; formerly ai-implementation-spec) |
 | roadmap | empirical | 2 (gate + roadmap-rice-reused ranking) |
-| user-story | empirical | 3 (gate + gherkin-shape clean/violating pair) |
-| prd | empirical | 3 (gate + evidence-table-shape-reused intake-row clean/violating pair; distinct `mode` from the skill-protocol layer's own `prd-pipeline` cases above, which grade the same real gate via a different dispatch) |
+| prd | empirical | 7 (gate + evidence-table-shape-reused intake-row clean/violating pair, plus the 4 shape/gate cases of the retired prd-pipeline skill, which grade the same real gate via a different dispatch) |
 | business-case | empirical (gate only) / **deliberate-none** (structural) | 1 — no literal row/table grammar is pinned in business-case.yaml's phase prose beyond gate-criteria names |
 | launch-plan | empirical (gate only) / **deliberate-none** (structural) | 1 — "RACI" is named only as a gate-criterion label, never a documented table format |
 

@@ -36,7 +36,7 @@ upstream:
 phases:
   - { id: intake,      role: brainstorm,  desc: "problem, outcome, scope, target users" }
   - { id: hypothesis,  role: brainstorm,  desc: "frame the epic as a falsifiable bet (Lean UX hypothesis): the capability, the persona it serves, the outcome it should cause, and the signal plus threshold that would show it worked or failed; anchor the outcome in the persona's job-to-be-done" }
-  - { id: breakdown,   role: author,      desc: "Richard Lawrence story-splitting (9 patterns: workflow steps, operations such as create/read/update/delete, business-rule / data / data-entry-method variations, major effort, simple-then-complex, defer performance, break out a spike) + the reduce-variations meta-pattern; user-story-mapping; sequence by risk + dependency" }
+  - { id: breakdown,   role: author,      desc: "Richard Lawrence story-splitting (9 patterns: workflow steps, operations such as create/read/update/delete, business-rule / data / data-entry-method variations, major effort, simple-then-complex, defer performance, break out a spike) + the reduce-variations meta-pattern; user-story-mapping; sequence by risk + dependency. The breakdown is a map of slices, not the tickets: it ends with a 'Next step' line pointing at /muster:pm spec for the first slice (a SPEC per change) and /muster:pm tickets <SPEC.md> to turn that spec into backlog items citing its acceptance-criterion IDs; never write the backlog from here" }
   - { id: acceptance,  role: author,      desc: "epic-level acceptance criteria + success metrics" }
   - { id: review,      role: code-review, desc: "adversarial review gate" }
   - { id: score,       role: score,       desc: "score vs rubric, floor principle" }

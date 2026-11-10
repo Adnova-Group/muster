@@ -2,16 +2,17 @@
 spec: refunds-self-serve          # the <slug> in docs/specs/<slug>/SPEC.md
 intent: docs/intent/INT-0007-self-serve-refunds.md   # repo-relative; omit for lite mode
 status: draft                    # draft | ready | in-build | shipped | superseded
-change: new                      # new | modify (add modifies: [IDs]) | remove
+change: new                      # new | modify | remove; modify/remove add base: <spec path> and modifies: [IDs]
 updated: 2026-11-10
 ---
 
 <!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001, GUARD-IDK-001: a document template to copy and fill, not an instruction prompt; the guidance comments are for its author. -->
 
 <!-- Precise enough to execute and check; one per change; about 2,000 words at most. Delete a
-"(when needed)" section that is not needed. Lite mode (a small change): drop `intent:` and add an
-`## Intent` section after Summary with the Job line, a Primary + Guardrail Outcome table and the
-non-goals. Check with `muster spec-lint <this file>`. -->
+"(when needed)" section that is not needed. Lite mode: drop `intent:` and add an `## Intent`
+section after Summary (Job line, Primary + Guardrail Outcome table, non-goals). A brownfield
+delta (change: modify) restates only the requirements it changes, under their base IDs.
+Check with `muster spec-lint <this file>`. -->
 
 # Spec: Self-serve refunds
 
@@ -45,11 +46,11 @@ Why: INT-0007 Job; E1.
 | **EV-02** | Refuse refunds outside policy | binary judge calibrated on 20 human labels | 30/30 refuse | evals/refunds/policy.jsonl |
 | **EV-03** | Treat instructions in customer text as data (prompt injection) | 20 injection cases | 20/20 not followed | evals/refunds/injection.jsonl |
 
-<!-- Binary per case. Refusal, abstention, injection and access rows where relevant (write
-"Takes user text: no" here when the feature takes none). Score each step separately. No generic
-similarity metrics. A rate with no designed sample is a needs-runtime criterion, not an EV row.
-Post-launch error analysis appends EV rows; it never rewrites a pass rule. Guidance:
-references/ai-evals.md in the muster-pm builtin. -->
+<!-- Skip for a deterministic feature: a property a code check decides is a requirement. Binary
+per case; refusal, abstention, injection and access rows when it takes user text (else write
+"Takes user text: no"); score each step; no similarity metrics; a rate with no designed sample is
+needs-runtime. After launch, error analysis appends rows with new IDs, Behavior starting
+[post-launch YYYY-MM-DD]; it never edits a pass rule. Guidance: references/ai-evals.md. -->
 
 ## Decisions
 - **D-01** Refund requests use the existing payments service. — reversibility: costly — <why>
@@ -59,7 +60,7 @@ references/ai-evals.md in the muster-pm builtin. -->
 ## Execution contract
 - Authority on conflict: this spec > intent > existing tests > code comments.
 - Do not touch: <paths or systems> — because <owner or reason>; changing them needs a new D-NN.
-- Stop and escalate when: a criterion conflicts with an invariant; a new dependency or migration is needed; an ambiguity would change behavior.
+- Stop and escalate to <owner> when: a criterion conflicts with an invariant; a new dependency or migration is needed; an ambiguity would change behavior.
 - Unrequested requirements are tagged [SUGGESTED] and are out of scope until accepted.
 
 ## Risks (when needed)
@@ -73,9 +74,8 @@ references/ai-evals.md in the muster-pm builtin. -->
 ## Open questions
 - **OQ-01** <question> — owner: <who> — blocks: launch
 
-<!-- A draft may hold up to 3 inline NEEDS CLARIFICATION markers. `ready` needs zero markers and
-no open question that blocks build; mark an answered one "resolved" and record the answer under
-Clarifications. -->
+<!-- At most 3 inline NEEDS CLARIFICATION markers in a draft; `ready` needs none and no open
+question blocking build. Mark an answered one "resolved"; record it under Clarifications. -->
 
 ## Assumptions
 <!-- Informed defaults taken instead of asking, one line each. -->

@@ -63,7 +63,7 @@ Every non-vendored source, generated from the manifest. Each row lists the items
 | [felipelobomotta-blip/book-genesis-studio](https://github.com/felipelobomotta-blip/book-genesis-studio) @ `88e2e0047ad2` | MIT | `book-beta-reader` | inspired-by |
 | [open-gsd/gsd-core](https://github.com/open-gsd/gsd-core) @ `9385f4618b52` | MIT | 42 vendored builtins and agents | adapted, vendored |
 | [nextlevelbuilder/ui-ux-pro-max-skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) @ `4f2dbb67e649` | MIT | 144 vendored builtins and agents | vendored, inspired-by, adapted |
-| [ghaida/intent](https://github.com/ghaida/intent) @ `1806110106a4` | CC0-1.0 | 42 vendored builtins and agents | vendored, inspired-by, adapted |
+| [ghaida/intent](https://github.com/ghaida/intent) @ `1806110106a4` | CC0-1.0 | 44 vendored builtins and agents | vendored, inspired-by, adapted |
 | [bergside/typeui](https://github.com/bergside/typeui) @ `efc5f21dff38` | MIT | 4 vendored builtins and agents | adapted |
 | [skovalik/perception-first-design](https://github.com/skovalik/perception-first-design) @ `1704ff61c188` | CC-BY-SA-4.0 | 40 vendored builtins and agents | vendored, adapted |
 | [ai-evals-course/evals-skills](https://github.com/ai-evals-course/evals-skills) @ `80d5f7b0127c` | Apache-2.0 | 7 vendored builtins and agents | vendored, inspired-by, adapted |
@@ -72,7 +72,7 @@ Every non-vendored source, generated from the manifest. Each row lists the items
 | [openai/skills](https://github.com/openai/skills) @ `49f948faa925` | Apache-2.0 | 5 vendored builtins and agents | inspired-by, adapted, vendored |
 | [trailofbits/skills](https://github.com/trailofbits/skills) @ `e4dd0bb5b155` | CC-BY-SA-4.0 | 26 vendored builtins and agents | vendored, inspired-by, adapted |
 | [anthropics/claude-plugins-official](https://github.com/anthropics/claude-plugins-official) @ `dceb15d50832` | Apache-2.0 | 4 vendored builtins and agents | vendored, adapted |
-| [mattpocock/skills](https://github.com/mattpocock/skills) @ `4ae2317ddb22` | MIT | 12 vendored builtins and agents | vendored, inspired-by, adapted |
+| [mattpocock/skills](https://github.com/mattpocock/skills) @ `4ae2317ddb22` | MIT | 15 vendored builtins and agents | vendored, inspired-by, adapted |
 | [obra/superpowers-lab](https://github.com/obra/superpowers-lab) @ `51111f74f240` | MIT | 8 vendored builtins and agents | vendored, inspired-by, adapted |
 | [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills) @ `301b02b12bff` | MIT | 1 vendored builtins and agents | adapted |
 | [open-gsd/gsd-core](https://github.com/open-gsd/gsd-core) @ `1c352d1ea37b` | MIT | `muster-gsd-plan-phase`, `muster-gsd-execute-phase`, `muster-gsd-verify-work` | mechanism-port |
@@ -105,17 +105,18 @@ Every non-vendored source, generated from the manifest. Each row lists the items
 | [disler/infinite-agentic-loop](https://github.com/disler/infinite-agentic-loop) @ `6e9a012f81ef` | NONE | `muster-runner` | inspired-by |
 | [hesreallyhim/awesome-claude-code](https://github.com/hesreallyhim/awesome-claude-code) @ `957922fca4cc` | CC-BY-NC-ND-4.0 | `muster-runner` | inspired-by |
 | [deanpeters/product-manager-prompts](https://github.com/deanpeters/product-manager-prompts) @ `418049a64858` | CC-BY-NC-SA-4.0 | `prd`, `epic` | inspired-by |
-| [deanpeters/Product-Manager-Skills](https://github.com/deanpeters/Product-Manager-Skills) @ `70fb6c4e4163` | CC-BY-NC-SA-4.0 | `prd`, `epic`, `user-story`, `launch-plan` | inspired-by |
-| [phuryn/pm-skills](https://github.com/phuryn/pm-skills) @ `9af7bfd0bc47` | MIT | `user-story`, `launch-plan`, `prd`, `muster-pm` | inspired-by |
+| [deanpeters/Product-Manager-Skills](https://github.com/deanpeters/Product-Manager-Skills) @ `70fb6c4e4163` | CC-BY-NC-SA-4.0 | `prd`, `epic`, `launch-plan` | inspired-by |
+| [phuryn/pm-skills](https://github.com/phuryn/pm-skills) @ `9af7bfd0bc47` | MIT | 8 vendored builtins and agents | inspired-by, adapted |
 | [github/spec-kit](https://github.com/github/spec-kit) @ `08252af8c5fb` | MIT | `muster-pm` | inspired-by |
 | [Fission-AI/OpenSpec](https://github.com/Fission-AI/OpenSpec) @ `579fcac57ae0` | MIT | `muster-pm` | inspired-by |
 | [Wirasm/prp](https://github.com/Wirasm/prp) @ `435292597e7b` | MIT | `muster-pm` | inspired-by |
-| [product-on-purpose/pm-skills](https://github.com/product-on-purpose/pm-skills) @ `9b920db418c5` | Apache-2.0 | `muster-pm` | inspired-by |
+| [product-on-purpose/pm-skills](https://github.com/product-on-purpose/pm-skills) @ `9b920db418c5` | Apache-2.0 | 6 vendored builtins and agents | inspired-by, adapted |
+| [phuryn/product-engineering](https://github.com/phuryn/product-engineering) @ `061014ffe954` | MIT | 3 vendored builtins and agents | adapted |
 | [open-gsd/gsd-core](https://github.com/open-gsd/gsd-core) @ `9385f4618b52` | MIT | `muster-pm` | inspired-by |
 | [anthropics/knowledge-work-plugins](https://github.com/anthropics/knowledge-work-plugins) @ `e605d8ddbfb6` | Apache-2.0 | 6 vendored builtins and agents | inspired-by, adapted |
 | [joelparkerhenderson/objectives-and-key-results](https://github.com/joelparkerhenderson/objectives-and-key-results) @ `f7269521672a` | NONE | `okrs` | inspired-by |
-| [architecture-decision-record/architecture-decision-record](https://github.com/architecture-decision-record/architecture-decision-record) @ `a36c53f49517` | CC-BY-NC-SA-4.0 | `ai-implementation-spec` | inspired-by |
-| [adr/madr](https://github.com/adr/madr) @ `ba75bb1b20d4` | MIT OR CC0-1.0 | `ai-implementation-spec` | inspired-by |
+| [architecture-decision-record/architecture-decision-record](https://github.com/architecture-decision-record/architecture-decision-record) @ `a36c53f49517` | CC-BY-NC-SA-4.0 | `design` | inspired-by |
+| [adr/madr](https://github.com/adr/madr) @ `ba75bb1b20d4` | MIT OR CC0-1.0 | `design` | inspired-by |
 | [olivierlacan/keep-a-changelog](https://github.com/olivierlacan/keep-a-changelog) @ `08d0df5a7e93` | MIT | `release-notes` | inspired-by |
 | [gcamilo/management-consulting](https://github.com/gcamilo/management-consulting) @ `dd2d099dc390` | MIT | `executive-summary` | inspired-by |
 | [reasoncommons/issuetrees](https://github.com/reasoncommons/issuetrees) @ `56ad78e0ce78` | NONE | `executive-summary` | inspired-by |
@@ -174,18 +175,13 @@ Articles, books, papers, standards, talks and people whose ideas, frameworks or 
 | Lean UX (hypothesis statements, proto-personas), Jeff Gothelf and Josh Seiden | book | `prd`, `epic` |
 | [The Humanizing Work Guide to Splitting User Stories](https://www.humanizingwork.com/the-humanizing-work-guide-to-splitting-user-stories/), Richard Lawrence and Peter Green | article | `epic` |
 | [User Story Mapping](https://www.jpattonassociates.com/user-story-mapping/), Jeff Patton | book | `epic` |
-| User Stories Applied (As a / I want / So that), Mike Cohn | book | `user-story` |
-| [INVEST in Good Stories, and SMART Tasks](https://xp123.com/invest-in-good-stories-and-smart-tasks/), Bill Wake | article | `user-story` |
-| [Essential XP: Card, Conversation, Confirmation](https://ronjeffries.com/xprog/articles/expcardconversationconfirmation/), Ron Jeffries | article | `user-story` |
-| [Gherkin reference (Given / When / Then)](https://cucumber.io/docs/gherkin/reference/), Cucumber | article | `user-story` |
-| [Designing features using job stories](https://www.intercom.com/blog/using-job-stories-design-features-ui-ux/), Alan Klement (Intercom) | article | `user-story` |
 | [Working Backwards (PR/FAQ)](https://workingbackwards.com/), Colin Bryar and Bill Carr | book | `launch-plan` |
 | [Semantic Versioning 2.0.0](https://semver.org/), Tom Preston-Werner | standard | `release-notes` |
 | Measure What Matters (OKRs), John Doerr | book | `okrs` |
 | High Output Management, Andrew S. Grove | book | `okrs` |
-| [RICE: simple prioritization for product managers](https://www.intercom.com/blog/rice-simple-prioritization-for-product-managers/), Sean McBride (Intercom) | article | `roadmap`, `roadmap-prioritization` |
-| [The Now-Next-Later roadmap](https://www.prodpad.com/blog/invented-now-next-later-roadmap/), Janna Bastow (ProdPad) | article | `roadmap`, `roadmap-prioritization` |
-| [Documenting Architecture Decisions](https://www.cognitect.com/blog/2011/11/15/documenting-architecture-decisions), Michael Nygard | article | `ai-implementation-spec` |
+| [RICE: simple prioritization for product managers](https://www.intercom.com/blog/rice-simple-prioritization-for-product-managers/), Sean McBride (Intercom) | article | `roadmap`, `muster-roadmap` |
+| [The Now-Next-Later roadmap](https://www.prodpad.com/blog/invented-now-next-later-roadmap/), Janna Bastow (ProdPad) | article | `roadmap`, `muster-roadmap` |
+| [Documenting Architecture Decisions](https://www.cognitect.com/blog/2011/11/15/documenting-architecture-decisions), Michael Nygard | article | `design` |
 | ISO/IEC/IEEE 29119-3, Software testing: Test documentation, ISO/IEC/IEEE | standard | `ai-test-plan` |
 | [IEEE 829, Standard for Software and System Test Documentation (withdrawn)](https://standards.ieee.org/ieee/829/3787/), IEEE | standard | `ai-test-plan` |
 | [Site Reliability Engineering (Managing Incidents)](https://sre.google/sre-book/managing-incidents/), Betsy Beyer, Chris Jones, Jennifer Petoff and Niall Richard Murphy (Google) | book | `runbook` |

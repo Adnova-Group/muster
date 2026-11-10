@@ -1858,6 +1858,11 @@ sources:
       - { id: intent-journey, kind: builtin, from: skills/journey/SKILL.md, to: plugin/builtins/intent-journey/SKILL.md, mode: adapted, relation: adapted, baseBlob: eeabbd8fdfa5ca52e328373b810c973627232123 }
       - { id: intent-localize, kind: builtin, from: skills/localize/SKILL.md, to: plugin/builtins/intent-localize/SKILL.md, mode: adapted, relation: adapted, baseBlob: 797c7cfb0b72f57a391a30cc10a3c478ef95452b }
       - { id: intent-measure, kind: builtin, from: skills/measure/SKILL.md, to: plugin/builtins/intent-measure/SKILL.md, mode: adapted, relation: adapted, baseBlob: 7bef280a352d185525859579abd7e56e3a0ec55b }
+      # PM domain stage C: the muster-pm INTENT template's Outcome guidance adapts the measure skill's
+      # Goal-Signal-Metric chain, counter-metrics, paired user metrics and dark-metric test (CC0, a
+      # condensed paraphrase in one comment); report-only, so an upstream change is re-ported by hand.
+      - { id: muster-pm, kind: builtin, from: skills/measure/SKILL.md, relation: adapted }
+      - { from: skills/measure/SKILL.md, to: plugin/builtins/muster-pm/templates/INTENT.md, mode: watch, baseBlob: 7bef280a352d185525859579abd7e56e3a0ec55b }
       - { id: intent-organize, kind: builtin, from: skills/organize/SKILL.md, to: plugin/builtins/intent-organize/SKILL.md, mode: adapted, relation: adapted, baseBlob: bfa2bb364ea2625c911f9396cc032ec5bed2b7ed }
       - { id: intent-philosopher, kind: builtin, from: skills/philosopher/SKILL.md, to: plugin/builtins/intent-philosopher/SKILL.md, mode: adapted, relation: adapted, baseBlob: 6406b25447e3811c81af8feba63a565acdf876b0 }
       - { id: intent-present, kind: builtin, from: skills/present/SKILL.md, to: plugin/builtins/intent-present/SKILL.md, mode: adapted, relation: adapted, baseBlob: 759c57726b5cab4d8fad4f631efeb518df31fd46 }
@@ -2206,6 +2211,13 @@ sources:
     # vendor/upstream/mattpocock-skills/ (frontmatter swap, a prompt-lint-disable comment at the top
     # of the body since upstream has no H1, the packaging-only header on SKILL-MECHANICS.md). Wired
     # into muster-prompt-smith and the prompt-quality audit pattern.
+    # PM domain stage C (2026-11-10): skills/engineering/to-tickets/SKILL.md is adapted into
+    # plugin/builtins/muster-pm/references/tickets.md (frontmatter dropped, the source is a muster
+    # SPEC and every ticket cites its acceptance-criterion IDs, the tracker step replaced by
+    # `muster backlog-publish`; an adaptation note in the file lists the changes), 3-way merged
+    # against its base copy. The interview skill's question rounds with a recommended answer are
+    # inspired by skills/productivity/grilling/SKILL.md (no text carried). Same pin, re-verified
+    # with gh api on 2026-11-10 (main HEAD unchanged).
     ref: 4ae2317ddb22b046e26455e4f9c9b3aaaf62212d
     tag: v1.3.2-3-g4ae2317
     license: MIT
@@ -2224,6 +2236,9 @@ sources:
       - { from: skills/engineering/domain-modeling/GLOSSARY-FORMAT.md, to: plugin/builtins/mp-domain-modeling/GLOSSARY-FORMAT.md, mode: verbatim, baseBlob: 9c0b4c7a2e8507c23cbb5e0baa66d81699321cc6 }
       - { id: mp-writing-for-agents, kind: builtin, from: skills/productivity/writing-for-agents/SKILL.md, to: plugin/builtins/mp-writing-for-agents/SKILL.md, mode: adapted, baseBlob: a37608daf6e835e767deecfb498facecaaba82ba }
       - { from: skills/productivity/writing-for-agents/SKILL-MECHANICS.md, to: plugin/builtins/mp-writing-for-agents/SKILL-MECHANICS.md, mode: adapted, baseBlob: 9cdbdb22aadc438755392216e75ad9a14cc9832e }
+      - { id: muster-pm, kind: builtin, from: skills/engineering/to-tickets/SKILL.md, relation: adapted }
+      - { from: skills/engineering/to-tickets/SKILL.md, to: plugin/builtins/muster-pm/references/tickets.md, mode: adapted, baseBlob: 9b77a01db9460c99c22d03c910c349f890f12c0e }
+      - { id: interview, kind: skill, from: skills/productivity/grilling/SKILL.md, relation: inspired-by }
 
   - id: superpowers-lab
     kind: github
@@ -2843,7 +2858,6 @@ sources:
     items:
       - { id: prd, kind: pipeline, from: skills/prd-development/SKILL.md }
       - { id: epic, kind: pipeline, from: skills/epic-hypothesis/SKILL.md }
-      - { id: user-story, kind: pipeline, from: skills/user-story/SKILL.md }
       - { id: launch-plan, kind: pipeline, from: null }
   - id: pm-skills-phuryn
     kind: github
@@ -2854,18 +2868,30 @@ sources:
     # it changes a decision, two or three segments at most for a first version, say what was skipped.
     # Skipped: the 6-part JTBD value-proposition template (prd.yaml's framing phase already does
     # JTBD), pm-ai-shipping (moved out), live-qa / live-polls / survey-design (no muster item).
+    # Merge-tracked since 2026-11-10 (PM domain stage C): pm-execution/skills/strategy-red-team and
+    # pre-mortem are adapted together into plugin/builtins/muster-pm/references/red-team.md (an
+    # adaptation note in the file lists the changes). Two upstream files fold into one muster file,
+    # so `muster vendor update` reports their changes as a port to redo instead of merging; their
+    # byte-exact base copies and LICENSE are in vendor/upstream/pm-skills-phuryn/. Pin re-verified
+    # with gh api on 2026-11-10: main HEAD = the v2.3.0 tag commit, LICENSE MIT. The okrs (three
+    # alternative OKR sets) and roadmap (outcome framing) pipelines take ideas only, in muster's
+    # words, from its OKR and outcome-roadmap skills. The user-story item left with that pipeline.
     ref: 9af7bfd0bc47fdad43c2eaa7a43cd13918e7aaef
+    tag: v2.3.0
     license: MIT
     copyright: "Copyright (c) 2026 Pawel Huryn"
     relation: inspired-by
-    fetch: false
     items:
-      # 3 Cs + INVEST, job stories; GTM beachhead; continuous discovery
-      - { id: user-story, kind: pipeline, from: null }
+      - { from: LICENSE, mode: watch, baseBlob: f6eca502b7f3fd6a3f0b024e4c98a3dcf5611cee }
+      # GTM beachhead; continuous discovery
       - { id: launch-plan, kind: pipeline, from: null }
       - { id: prd, kind: pipeline, from: null }
-      # muster-pm INTENT template: the bets-and-assumptions table (risk type, cheapest test, kill criterion)
-      - { id: muster-pm, kind: builtin, from: null }
+      - { id: okrs, kind: pipeline, from: null }
+      - { id: roadmap, kind: pipeline, from: null }
+      # muster-pm: the INTENT bets-and-assumptions table (ideas) and references/red-team.md (adapted text)
+      - { id: muster-pm, kind: builtin, from: pm-execution/skills/strategy-red-team/SKILL.md, relation: adapted }
+      - { from: pm-execution/skills/strategy-red-team/SKILL.md, to: plugin/builtins/muster-pm/references/red-team.md, mode: adapted, baseBlob: fe7b7feaaa7a7662d72aac226d40d3abea7e0596 }
+      - { from: pm-execution/skills/pre-mortem/SKILL.md, to: plugin/builtins/muster-pm/references/red-team.md, mode: adapted, baseBlob: 3fc7007114980219fd024b4f7267af795361fdef }
   # --- muster-pm: PM artifact kit (docs/strategy/2026-11-pm-domain-design.md, stage A) ---
   # Templates, references and src/spec-lint.js take ideas and structure from these, in muster's
   # own words; only cc-sdd's ears-format is carried as text (the merge-tracked cc-sdd source).
@@ -2910,13 +2936,51 @@ sources:
   - id: pm-skills-product-on-purpose
     kind: github
     repo: product-on-purpose/pm-skills
-    # The AI behavior / eval table and the agent execution contract in the SPEC template.
+    # The AI behavior / eval table and the agent execution contract in the SPEC template (ideas,
+    # in muster's words), and adapted excerpts in plugin/builtins/muster-pm/references/ai-evals.md:
+    # the deterministic-feature rule, the injection / access / refusal wording, and case-set sizing
+    # by risk with per-slice floors, runs per case and held-out cases, from skills/deliver-prd/
+    # SKILL.md step 5 and references/TEMPLATE.md "AI Behavior and Evaluation". The prd pipeline's
+    # AI behavior section takes the same ideas. Merge-tracked since 2026-11-10 (PM domain stage C):
+    # two upstream files fold into ai-evals.md, so `muster vendor update` reports their changes as a
+    # port to redo; the SPEC template is a watch consumer of TEMPLATE.md. Base copies and LICENSE in
+    # vendor/upstream/pm-skills-product-on-purpose/. License basis (gh api, 2026-11-10): top-level
+    # LICENSE is the Apache License 2.0 and deliver-prd's frontmatter says `license: Apache-2.0`;
+    # the repository ships no NOTICE file, so Apache-2.0 4(d) carries nothing extra, and NOTICE
+    # records the attribution. ai-evals.md carries the 4(b) modification notice. No copyright line
+    # is filled in: upstream states none beyond "product-on-purpose". Pinned to main HEAD
+    # 9b920db, 3 commits past v2.35.0.
     ref: 9b920db418c5bf641edea9afb4915a286e1d42ea
+    tag: v2.35.0-3-g9b920db
     license: Apache-2.0
     relation: inspired-by
-    fetch: false
     items:
-      - { id: muster-pm, kind: builtin, from: null }
+      - { from: LICENSE, mode: watch, baseBlob: d4b693421cc16a1b7d55db8b8c2ad647902b090a }
+      - { id: muster-pm, kind: builtin, from: skills/deliver-prd/SKILL.md, relation: adapted }
+      - { id: prd, kind: pipeline, from: skills/deliver-prd/SKILL.md }
+      - { from: skills/deliver-prd/SKILL.md, to: plugin/builtins/muster-pm/references/ai-evals.md, mode: adapted, baseBlob: c4dbd77a628e17849dd72f9307dbe3b77042a636 }
+      - { from: skills/deliver-prd/references/TEMPLATE.md, to: plugin/builtins/muster-pm/references/ai-evals.md, mode: adapted, baseBlob: f35ff949506b0ac3df27a42a71b5800e9a1dda2d }
+      - { from: skills/deliver-prd/references/TEMPLATE.md, to: plugin/builtins/muster-pm/templates/SPEC.md, mode: watch, baseBlob: f35ff949506b0ac3df27a42a71b5800e9a1dda2d }
+  - id: product-engineering-phuryn
+    kind: github
+    repo: phuryn/product-engineering
+    # Added 2026-11-10 (PM domain stage E, /muster:pm audit). ai-shipping/skills/
+    # intended-vs-implemented/SKILL.md is adapted into plugin/builtins/muster-pm/references/
+    # audit.md: an edited copy (frontmatter dropped, muster's INTENT/SPEC as the recorded intent,
+    # spec IDs in findings, an output table feeding /muster:capture; an adaptation note in the file
+    # lists the changes), so `muster vendor update` 3-way merges it against the base copy in
+    # vendor/upstream/product-engineering-phuryn/. License basis (gh api, 2026-11-10): top-level
+    # LICENSE.md is MIT, "Copyright (c) 2026 Pawel Huryn"; no per-skill license files. Pinned to
+    # main HEAD 061014f, one commit past v1.8.6.
+    ref: 061014ffe954b4dca1f108de614ce25e4607161e
+    tag: v1.8.6-1-g061014f
+    license: MIT
+    copyright: "Copyright (c) 2026 Pawel Huryn"
+    relation: adapted
+    items:
+      - { from: LICENSE.md, mode: watch, baseBlob: f6eca502b7f3fd6a3f0b024e4c98a3dcf5611cee }
+      - { id: muster-pm, kind: builtin, from: ai-shipping/skills/intended-vs-implemented/SKILL.md, relation: adapted }
+      - { from: ai-shipping/skills/intended-vs-implemented/SKILL.md, to: plugin/builtins/muster-pm/references/audit.md, mode: adapted, baseBlob: e8a1e4acbe09b85b3f98dbf20c3103d603276e92 }
   - id: gsd-core-pm
     kind: github
     repo: open-gsd/gsd-core
@@ -2998,7 +3062,7 @@ sources:
         2026-11-10: upstream 170 commits ahead, licence unchanged; ai-implementation-spec is
         unchanged and takes nothing from it.
     items:
-      - { id: ai-implementation-spec, kind: pipeline, from: null }
+      - { id: design, kind: pipeline, from: null }
   - id: madr
     kind: github
     repo: adr/madr
@@ -3011,7 +3075,7 @@ sources:
     relation: inspired-by
     fetch: false
     items:
-      - { id: ai-implementation-spec, kind: pipeline, from: null }
+      - { id: design, kind: pipeline, from: null }
   - id: keep-a-changelog
     kind: github
     repo: olivierlacan/keep-a-changelog
@@ -3638,50 +3702,6 @@ sources:
     fetch: false
     items:
       - { id: epic, kind: pipeline, from: null }
-  - id: user-stories-applied
-    kind: book
-    title: "User Stories Applied (As a / I want / So that)"
-    author: Mike Cohn
-    relation: inspired-by
-    fetch: false
-    items:
-      - { id: user-story, kind: pipeline, from: null }
-  - id: invest
-    kind: article
-    title: "INVEST in Good Stories, and SMART Tasks"
-    author: Bill Wake
-    url: https://xp123.com/invest-in-good-stories-and-smart-tasks/
-    relation: inspired-by
-    fetch: false
-    items:
-      - { id: user-story, kind: pipeline, from: null }
-  - id: three-cs
-    kind: article
-    title: "Essential XP: Card, Conversation, Confirmation"
-    author: Ron Jeffries
-    url: https://ronjeffries.com/xprog/articles/expcardconversationconfirmation/
-    relation: inspired-by
-    fetch: false
-    items:
-      - { id: user-story, kind: pipeline, from: null }
-  - id: gherkin
-    kind: article
-    title: "Gherkin reference (Given / When / Then)"
-    author: Cucumber
-    url: https://cucumber.io/docs/gherkin/reference/
-    relation: inspired-by
-    fetch: false
-    items:
-      - { id: user-story, kind: pipeline, from: null }
-  - id: job-stories
-    kind: article
-    title: "Designing features using job stories"
-    author: Alan Klement (Intercom)
-    url: https://www.intercom.com/blog/using-job-stories-design-features-ui-ux/
-    relation: inspired-by
-    fetch: false
-    items:
-      - { id: user-story, kind: pipeline, from: null }
   - id: working-backwards
     kind: book
     title: "Working Backwards (PR/FAQ)"
@@ -3725,7 +3745,7 @@ sources:
     fetch: false
     items:
       - { id: roadmap, kind: pipeline, from: null }
-      - { id: roadmap-prioritization, kind: skill, from: null }
+      - { id: muster-roadmap, kind: builtin, from: null }
   - id: now-next-later
     kind: article
     title: "The Now-Next-Later roadmap"
@@ -3735,7 +3755,7 @@ sources:
     fetch: false
     items:
       - { id: roadmap, kind: pipeline, from: null }
-      - { id: roadmap-prioritization, kind: skill, from: null }
+      - { id: muster-roadmap, kind: builtin, from: null }
 
   # --- engineering documents and operations ---
   - id: documenting-architecture-decisions
@@ -3746,7 +3766,7 @@ sources:
     relation: inspired-by
     fetch: false
     items:
-      - { id: ai-implementation-spec, kind: pipeline, from: null }
+      - { id: design, kind: pipeline, from: null }
   - id: iso-29119-3
     kind: standard
     title: "ISO/IEC/IEEE 29119-3, Software testing: Test documentation"

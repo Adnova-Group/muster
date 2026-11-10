@@ -155,9 +155,9 @@ const USAGE = [
   // harness-native dispatch packets (codex lane)
   "codex-audit-provider --role <role> --task-id <id> --callable-apis <v1,v2> --callable-agent-ids <id,...> [--api-override <v1|v2>] [--message <text>|--message-file <f>]|codex-spawn-packet --task-id <id> --agent-type <id> [--message <text>|--message-file <f>] [--version v1|v2] [--fork-turns <none|N>]|codex-wait-packet [--version v1|v2] [--targets a,b] [--timeout-ms N]|",
   // memory + vendor + init lifecycle
-  "memory read|write ...|vendor [update <source> --to <tag> [--dry-run]|report <source> --to <tag> [--stdout]|check]|provenance [--write]|init [dir]|init transition [dir] --to <handoff|attempted|completed>|init normalize [dir] --approve CLAUDE.md|init acknowledge [dir] --reason unavailable|init finalize [dir]|setup [dir]|design <init|status|resolve|detect|ignores|provider|gate|workflows|run> ...|",
+  "memory read|write ...|vendor [update <source> --to <tag> [--dry-run]|report <source> --to <tag> [--stdout]|check]|provenance [--write]|init [dir]|init transition [dir] --to <handoff|attempted|completed>|init normalize [dir] --approve CLAUDE.md|init acknowledge [dir] --reason unavailable|init finalize [dir]|init pm-link [dir] [--approve pm-link]|setup [dir]|design <init|status|resolve|detect|ignores|provider|gate|workflows|run> ...|",
   // planning + routing artifacts
-  "plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|",
+  "plan-checklist <file>|domain <outcome>|pipeline <domain|id|--list>|route <outcome>|score <file>|",
   // skill discovery: browse builtins, registry search, per-project enable/add, pins, usage
   "skills <list [domain]|show <id>|search <query> [--offline]|enable <id>|disable <id>|add <publisher>/<skill>|pin <id> [--role <role>]|unpin <id>|usage> [--json]|",
   // prompt tooling
@@ -1057,8 +1057,15 @@ async function handleCoreCommandPart3(cmd, rest) {
     out(await scaffoldProject(rest[0] || process.cwd()));
     return true;
   } else if (cmd === "init") {
-    const action = ["transition", "normalize", "acknowledge", "finalize"].includes(rest[0]) ? rest[0] : null;
-    if (!action) {
+    const action = ["transition", "normalize", "acknowledge", "finalize", "pm-link"].includes(rest[0]) ? rest[0] : null;
+    if (action === "pm-link") {
+      // Optional AGENTS.md pointer to docs/intent and docs/specs (src/agents-link.js): preview by
+      // default; --approve pm-link appends it after the attended confirmation.
+      const { linkPmDocs } = await import("./agents-link.js");
+      const approve = flagValue(rest, "--approve");
+      if (approve !== undefined && approve !== "pm-link") fail("init pm-link [dir] [--approve pm-link]: exact approval is required");
+      out(await linkPmDocs(rest[1] && !rest[1].startsWith("--") ? rest[1] : process.cwd(), { approved: approve === "pm-link" }));
+    } else if (!action) {
       out(await initializeProject(rest[0] || process.cwd()));
     } else {
       const dir = rest[1] && !rest[1].startsWith("--") ? rest[1] : process.cwd();
@@ -1230,9 +1237,18 @@ async function handleCoreCommandPart7(cmd, rest) {
     out(prioritize(items, model));
     return true;
   } else if (cmd === "pipeline") {
-    if (!rest[0]) fail("pipeline <domain|id>: missing arg");
+    if (!rest[0]) fail("pipeline <domain|id> | pipeline --list: missing arg");
     const ps = await loadPipelines(new URL("../pipelines/", import.meta.url));
-    out(pipelineForDomain(ps, rest[0]) || ps.find(p => p.id === rest[0]) || null);
+    const { resolvePipeline, PIPELINE_ALIASES } = await import("./pipeline.js");
+    if (rest[0] === "--list") {
+      out({
+        pipelines: ps.map(p => ({ id: p.id, title: p.title || p.id, domain: p.domain })).sort((a, b) => a.id.localeCompare(b.id)),
+        aliases: Object.fromEntries(Object.entries(PIPELINE_ALIASES).map(([id, a]) => [id, a.to || `retired: ${a.use}`])),
+      });
+      return true;
+    }
+    const r = resolvePipeline(ps, rest[0]);
+    out(pipelineForDomain(ps, rest[0]) || r.pipeline || (r.retired ? { retired: rest[0], use: r.retired } : null));
   // ── routing (cont.): domain classification, pipeline routing, diagnose/audit modes, issue/assess/steer/scope ──
     return true;
   } else if (cmd === "domain") {

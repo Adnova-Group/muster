@@ -6,7 +6,7 @@
 // contract, which are mostly warnings. The ID grammar is Appendix C.
 //
 // Spec text is untrusted, LLM-authored markdown. Nothing here executes, spawns or shells out:
-// the only I/O is one bounded read of the spec's linked intent file under the project root.
+// the only I/O is a bounded read of the spec's linked intent (and, for a delta, its base spec) under the project root.
 // No network. Regex and line structure only, so the same file always lints the same way.
 //
 // Output is plan-lint's CheckResult (src/plan-lint.js, docs/plan-format.md):
@@ -32,6 +32,7 @@ export const DIMENSIONS = Object.freeze({
   SCOPE: "scope",
   OUTCOME_LINK: "outcome_link",
   LENGTH: "spec_length",
+  DELTA: "delta",
   // INTENT
   INTENT_STRUCTURE: "intent_structure",
   OUTCOME: "outcome",
@@ -94,6 +95,9 @@ export const MAX_SPEC_BYTES = 1024 * 1024;
 
 const FRONTMATTER_RE = /^﻿?---\n([\s\S]*?)\n---[ \t]*(?:\n|$)/;
 const MARKER_RE = /\[NEEDS CLARIFICATION/g;
+const POST_LAUNCH_RE = /\[post-launch(?:\s+(\d{4}-\d{2}-\d{2}))?[^\]]*\]/i;
+// Kinds whose IDs are stable and global across specs, so a delta may only redefine them on purpose.
+const DELTA_KINDS = new Set(["requirement", "ac", "invariant", "eval"]);
 const LIST_ITEM_RE = /^\s*(?:[-*+]|\d+[.)])\s/;
 const LIST_LEAD_RE = /^(\s*)(?:[-*+]|\d+[.)])\s+\*\*([^*\n]{1,60}?)\*\*(.*)$/;
 const TABLE_LEAD_RE = /^\s*\|\s*\*\*([^*\n|]{1,60}?)\*\*\s*\|/;
@@ -432,6 +436,19 @@ export function lintSpec(rawText, options = {}) {
       }
       if (!/\d/.test(rule)) add(DIMENSIONS.AI_EVALS, SEVERITY.BLOCKER, "Each EV pass rule is fixed before the run as a number or N/N (≥190/200, 30/30)", `${d.token} (${at(d)}) pass rule "${quote(rule, 60) || "(empty)"}" has no number`);
     }
+    // Post-launch rows (error analysis appends them; references/ai-evals.md): tagged
+    // [post-launch YYYY-MM-DD] and numbered after every launch row, never rewriting one.
+    const rowText = d => (d.form === "table" ? doc.lines[d.line] : d.text);
+    const evNum = d => Number(d.token.slice(3));
+    const postLaunch = evs.filter(d => POST_LAUNCH_RE.test(rowText(d)));
+    for (const d of postLaunch) {
+      const date = POST_LAUNCH_RE.exec(rowText(d))[1];
+      if (!date || Number.isNaN(Date.parse(date))) add(DIMENSIONS.AI_EVALS, SEVERITY.WARNING, "A post-launch EV row is tagged [post-launch YYYY-MM-DD] with the date of the error analysis", `${d.token} (${at(d)}) has a post-launch tag without a valid date`);
+    }
+    const lastLaunch = Math.max(0, ...evs.filter(d => !postLaunch.includes(d)).map(evNum));
+    for (const d of postLaunch.filter(x => evNum(x) < lastLaunch)) {
+      add(DIMENSIONS.AI_EVALS, SEVERITY.WARNING, "Post-launch EV rows are appended with new IDs after every launch row; existing rows and pass rules are never rewritten", `${d.token} (${at(d)}) is a post-launch row numbered below launch row EV-${String(lastLaunch).padStart(2, "0")}`);
+    }
     const text = sectionText(doc, aiSection);
     if (evs.length === 0) add(DIMENSIONS.AI_EVALS, SEVERITY.WARNING, "An AI behavior section carries EV rows, or is deleted when no model output is part of the feature", "the AI behavior section has no EV-NN rows");
     else if (!/takes user text:\s*no\b/i.test(text)) {
@@ -466,6 +483,10 @@ export function lintSpec(rawText, options = {}) {
     add(DIMENSIONS.OUTCOME_LINK, SEVERITY.WARNING, "A needs-runtime criterion is measured by the intent's primary Outcome metric", `${needsRuntime.join(", ")} ${needsRuntime.length === 1 ? "is" : "are"} needs-runtime but the intent has no filled-in Primary outcome row`);
   }
 
+  // Delta specs (brownfield, OpenSpec-style): change: modify | remove names its base spec and the
+  // base IDs it changes; every listed ID must exist there, and no base ID is redefined unlisted.
+  checkDelta(doc, fm, projectRoot, add, at);
+
   // Length: about 2,000 words, the generated Traceability block excluded.
   const trace = findSection(doc, k => k === "traceability");
   const counted = doc.lines.filter((_, i) => !(trace && i >= trace.start - 1 && i < trace.end)).join("\n");
@@ -473,6 +494,58 @@ export function lintSpec(rawText, options = {}) {
   if (words > SPEC_WORD_BUDGET) add(DIMENSIONS.LENGTH, SEVERITY.WARNING, `The spec body stays under about ${SPEC_WORD_BUDGET} words; split the change or move context into linked files`, `the body is ${words} words`);
 
   return { verdict: issues.length === 0 ? "PASS" : "ISSUES", issues };
+}
+
+function checkDelta(doc, fm, projectRoot, add, at) {
+  if (!fm) return;
+  const kind = fm.change === undefined ? "new" : String(fm.change).trim().split(/\s/)[0];
+  const hasDeltaFields = fm.base !== undefined || fm.modifies !== undefined;
+  if (kind !== "modify" && kind !== "remove") {
+    if (hasDeltaFields && CHANGE_KINDS.includes(kind)) add(DIMENSIONS.DELTA, SEVERITY.WARNING, "base: and modifies: belong to change: modify | remove", `change is ${kind} but the frontmatter carries base:/modifies:`);
+    return;
+  }
+  const listed = Array.isArray(fm.modifies) ? fm.modifies.map(x => String(x).trim()) : [];
+  if (!Array.isArray(fm.modifies) || listed.length === 0) add(DIMENSIONS.DELTA, SEVERITY.WARNING, `change: ${kind} lists the IDs it changes (modifies: [REF-01, INV-02])`, "modifies: is missing or empty");
+  for (const id of listed.filter(x => !looksLikeId(x))) add(DIMENSIONS.DELTA, SEVERITY.BLOCKER, "modifies: lists spec IDs (CAT-NN, CAT-NN.N, INV-NN, EV-NN)", `"${quote(id, 40)}" in modifies is not an ID`);
+  const ownIds = new Set(doc.definitions.map(d => d.token));
+  if (fm.base === undefined || fm.base === null || fm.base === "") {
+    // No base spec: the change modifies behavior nothing specified yet, so modifies names this
+    // spec's own IDs for that behavior.
+    for (const id of listed.filter(x => looksLikeId(x) && !ownIds.has(x))) {
+      add(DIMENSIONS.DELTA, SEVERITY.WARNING, "With no base: spec, modifies names IDs this spec defines; add base: <spec path> when the behavior already has a spec", `${id} is listed in modifies but defined neither here nor in a base spec`);
+    }
+    return;
+  }
+  if (typeof fm.base !== "string") {
+    add(DIMENSIONS.DELTA, SEVERITY.BLOCKER, "base is one repo-relative spec path", `base is a ${Array.isArray(fm.base) ? "list" : typeof fm.base}, not a path`);
+    return;
+  }
+  const rel = fm.base.split("#")[0].trim();
+  const target = path.resolve(projectRoot, rel);
+  if (path.isAbsolute(rel) || !withinRootLexical(target, projectRoot)) {
+    add(DIMENSIONS.DELTA, SEVERITY.BLOCKER, "The base path is repo-relative and stays inside the project root", `base path "${quote(rel, 80)}" is absolute or leaves the project root`);
+    return;
+  }
+  let baseText;
+  try { baseText = readBounded(target); } catch (error) {
+    add(DIMENSIONS.DELTA, SEVERITY.BLOCKER, "The base path resolves to a spec under the project root", `base path "${quote(rel, 80)}" does not resolve (${error.code ?? error.message})`);
+    return;
+  }
+  const baseIds = new Set(parseDocument(baseText).definitions.map(d => d.token));
+  for (const id of listed.filter(x => looksLikeId(x) && !baseIds.has(x))) {
+    add(DIMENSIONS.DELTA, SEVERITY.BLOCKER, "Every ID in modifies is defined in the base spec", `${id} is not defined in ${rel}`);
+  }
+  const listedSet = new Set(listed);
+  const coveredBy = token => listedSet.has(token) || (classifyId(token)?.kind === "ac" && listedSet.has(classifyId(token).requirement));
+  const restated = ownIds;
+  for (const d of doc.definitions.filter(x => DELTA_KINDS.has(x.cls?.kind) && baseIds.has(x.token) && !coveredBy(x.token))) {
+    add(DIMENSIONS.DELTA, SEVERITY.WARNING, "A delta redefines a base ID only when modifies lists it; new behavior takes a new ID", `${d.token} (${at(d)}) is defined in ${rel} but not listed in modifies`);
+  }
+  if (kind === "modify") {
+    for (const id of listed.filter(x => baseIds.has(x) && DELTA_KINDS.has(classifyId(x)?.kind) && !restated.has(x))) {
+      add(DIMENSIONS.DELTA, SEVERITY.WARNING, "A modify delta restates each changed requirement, invariant or EV row in full under its base ID", `${id} is listed in modifies but not restated here`);
+    }
+  }
 }
 
 // ─── INTENT ───────────────────────────────────────────────────────────────────

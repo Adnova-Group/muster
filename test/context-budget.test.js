@@ -21,7 +21,10 @@ const ORCHESTRATOR_BUDGET = 18 * KB;
 // +84: /muster:skills (skill discovery follow-up, 2026-11-10) adds exactly its description's bytes.
 // +428 on 2026-11-10 for book runs, exactly the bytes they added: the write-book command (134) and
 // the five Workflow-only book-* agents (294), whose descriptions are already minimal.
-const DESCRIPTION_BUDGET = 4_614;
+// PM domain stages C-D (2026-11-10): +124 for /muster:pm's description, -83 and -73 for the
+// retired prd-pipeline and roadmap-prioritization skills (the latter now the muster-roadmap
+// builtin, read by path), net -32.
+const DESCRIPTION_BUDGET = 4_582;
 
 function frontmatter(text) {
   const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);

@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import { parse as parseYaml } from "yaml";
 import { CODEX_MODEL_POLICY, codexProfileForConfig } from "../src/codex.js";
 import { CODEX_COUNTS } from "../src/codex-inventory.js";
-import { isCodexExcludedBuiltin } from "../src/codex-inventory.js";
+import { isCodexFrozenOutBuiltin } from "../src/codex-inventory.js";
 import { resolveCodexPlugin } from "../src/codex-release.js";
 import { parseHookCommand } from "../src/shell-command.js";
 
@@ -85,7 +85,7 @@ for (const name of ["muster-plan-backlog", "muster-go-backlog", "muster-runner"]
 for (const name of modes) if (!skills.has(name)) fail(`missing mode skill ${name}`);
 for (const name of ["run", "autopilot", "sprint"]) if (skills.has(name)) fail(`retired alias skill ${name} must not ship`);
 const native = await dirs(join(root, "plugin/skills"));
-const builtins = (await dirs(join(root, "plugin/builtins"))).filter(name => !isCodexExcludedBuiltin(name));
+const builtins = (await dirs(join(root, "plugin/builtins"))).filter(name => !isCodexFrozenOutBuiltin(name));
 const codexSkillId = name => name.startsWith("gsd-") ? `muster-${name}` : name;
 for (const name of [...native, ...builtins].map(codexSkillId)) if (!internalSkills.has(name)) fail(`missing internal workflow ${name}`);
 const ported = new Set([...native, ...builtins].map(codexSkillId));

@@ -15,28 +15,21 @@ const startupCodexHome = process.env.CODEX_HOME;
 
 // The Codex lane is frozen: builtins added after the freeze (the merge-tracked UX family:
 // uupm-*, intent-*, typeui, pfd; impeccable-*; the complementary evaluation/security/engineering
-// skills: evals-*, sentry-*, openai-*, tob-*, mp-*, splab-*, addy-source-driven-development) are
-// Claude-plugin only and never copied into the Codex bundle's internal skills, so CODEX_COUNTS
-// below stays the frozen census.
-export const isUxFamilyBuiltin = name => /^(uupm|intent)-/.test(name) || name === "typeui" || name === "pfd";
-export const isComplementBuiltin = name => /^(evals|sentry|openai|tob|mp|splab)-/.test(name) || name === "addy-source-driven-development";
-export const isCodexFrozenOutBuiltin = name => isUxFamilyBuiltin(name) || isComplementBuiltin(name) || /^impeccable-/.test(name);
-
-// The complementary skills vendored on 2026-11-10 (research/data, SRE, writing and stack: the
-// kdense-skills, knowledge-work-skills, mattpocock-skills, simple-english, supabase-agent-skills
-// and samber-golang sources plus the items added to wshobson, superpowers and marketingskills)
-// are Claude-plugin only as well. Listed by id, not prefix: wsh-*, sp-* and mkt-* also name
-// builtins that predate the freeze and ship in the Codex bundle.
-export const CODEX_FROZEN_OUT_COMPLEMENTS = Object.freeze(new Set([
-  "kdense-market-research-reports", "kdense-literature-review",
-  "kwp-knowledge-synthesis", "kwp-validate-data",
+// skills: evals-*, sentry-*, openai-*, tob-*, mp-*, splab-*, addy-source-driven-development; the
+// complementary research/data, SRE, writing and stack skills: kdense-*, kwp-*, go-*, simple-english,
+// supabase-postgres-best-practices and the ids below) are Claude-plugin only and never copied into
+// the Codex bundle's internal skills, so CODEX_COUNTS below stays the frozen census.
+// wsh-*, sp-* and mkt-* also name builtins that predate the freeze and ship in the Codex bundle,
+// so the complements added to those sources are listed by id.
+const COMPLEMENT_IDS = new Set([
+  "addy-source-driven-development", "simple-english", "supabase-postgres-best-practices",
   "wsh-slo-implementation", "wsh-postmortem-writing", "wsh-incident-runbook-templates",
   "wsh-security-requirement-extraction", "wsh-changelog-automation",
-  "mkt-copy-editing", "simple-english", "mp-writing-for-agents", "sp-writing-skills",
-  "supabase-postgres-best-practices", "go-error-handling", "go-testing", "go-security", "go-safety"
-]));
-// Every builtin the frozen Codex bundle leaves out: the UX family and the complements.
-export const isCodexExcludedBuiltin = name => isCodexFrozenOutBuiltin(name) || CODEX_FROZEN_OUT_COMPLEMENTS.has(name);
+  "mkt-copy-editing", "sp-writing-skills"
+]);
+export const isUxFamilyBuiltin = name => /^(uupm|intent)-/.test(name) || name === "typeui" || name === "pfd";
+export const isComplementBuiltin = name => /^(evals|sentry|openai|tob|mp|splab|kdense|kwp|go)-/.test(name) || COMPLEMENT_IDS.has(name);
+export const isCodexFrozenOutBuiltin = name => isUxFamilyBuiltin(name) || isComplementBuiltin(name) || /^impeccable-/.test(name);
 
 // Expected contents of one generated Codex bundle. This census belongs with
 // inventory/build validation; model adapters only translate tiers to models.

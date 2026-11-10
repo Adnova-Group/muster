@@ -288,7 +288,8 @@ test("runVendor: a rewritten builtins catalog keeps the entries of merge-tracked
       items: [{ id: "wsh-kept", kind: "builtin", from: "k/SKILL.md", to: "plugin/builtins/wsh-kept/SKILL.md", mode: "adapted", baseBlob: "b".repeat(40) }] }
   ]};
   const res = await runVendor({ home, repoRoot, manifest });
-  assert.equal(res.builtins, 2);
+  assert.equal(res.builtins, 1, "builtins counts fetched entries only");
+  assert.equal(res.tracked, 1, "the carried merge-tracked entry is reported as tracked");
   const ids = parse(await readFile(join(repoRoot, "catalog/builtins.generated.yaml"), "utf8")).map(e => e.id);
   assert.deepEqual(ids, ["sp-bs", "wsh-kept"], "merge-tracked entries are carried; untracked stale entries are not");
 });

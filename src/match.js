@@ -84,8 +84,8 @@ export function matchProviders(task, catalog, installed = {}, opts = {}) {
 }
 
 // Same weighted-bag ranking as matchProviders, scoped to the skills-inventory shape
-// resolveCapabilities returns ({id, source, description} — no roles/keywords fields,
-// so the bag is just id tokens (HIGH weight) + description tokens (LOW weight)).
+// resolveCapabilities returns ({id, source, description, keywords?} — no roles, so the
+// bag is id + catalog keyword tokens (HIGH weight) + description tokens (LOW weight)).
 // Used by `muster match --skills <task>`.
 export function matchSkills(task, skills, opts = {}) {
   if (typeof task !== "string" || !task.trim()) return [];
@@ -103,8 +103,12 @@ export function matchSkills(task, skills, opts = {}) {
       if (weight > prev) bag.set(token, weight);
     };
 
-    // HIGH weight: id, split on -, _ and : (skill ids may be colon-namespaced, e.g. vercel:nextjs).
+    // HIGH weight: id, split on -, _ and : (skill ids may be colon-namespaced, e.g. vercel:nextjs),
+    // and catalog keywords when a builtin declares them (same weight as in matchProviders).
     for (const t of String(entry.id || "").toLowerCase().split(/[-_:]+/)) add(t, TOKEN_WEIGHT_HIGH);
+    if (Array.isArray(entry.keywords)) {
+      for (const kw of entry.keywords) for (const t of String(kw).toLowerCase().split(/[-_]+/)) add(t, TOKEN_WEIGHT_HIGH);
+    }
     // LOW weight: description tokens (same tokenize/stopword treatment).
     if (entry.description) for (const t of tokenize(entry.description)) add(t, TOKEN_WEIGHT_LOW);
 
@@ -146,7 +150,10 @@ const VERCEL_NEXT_SKILLS = [
   { id: "shadcn", reason: "Next.js projects commonly pair with shadcn/ui components" },
   { id: "ai-sdk", reason: "Next.js projects commonly integrate the Vercel AI SDK" },
 ];
+// uupm-ui-ux-pro-max leads: it is muster's default UX review skill (priority table +
+// pre-delivery checklist), the first reviewer skill bound for a UI surface.
 const DESIGN_UX_SKILLS = [
+  { id: "uupm-ui-ux-pro-max", reason: "user-facing UI work gets muster's default UX review: the uupm priority table and pre-delivery checklist" },
   { id: "frontend-design", reason: "user-facing UI work benefits from a dedicated frontend-design pass" },
   { id: "wsh-design-system-patterns", reason: "user-facing UI work benefits from design-system consistency" },
   { id: "wsh-responsive-design", reason: "user-facing UI work benefits from a responsive-design review" },
@@ -168,7 +175,7 @@ const STACK_SKILL_MAP = {
     {
       // user-facing UI work
       surface: "ui",
-      triggers: ["ui", "frontend", "page", "screen", "component", "design", "layout"],
+      triggers: ["ui", "frontend", "page", "screen", "component", "design", "layout", "ux", "usability", "accessibility"],
       skills: DESIGN_UX_SKILLS,
     },
     {

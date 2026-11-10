@@ -169,7 +169,9 @@ export function resolveCapabilities(catalog, installed, home = homedir(), opts =
     if (e.kind !== "builtin" || seen.has(e.id)) continue;
     if (agentPlugins && !agentPluginSkills.has(e.id)) continue;
     seen.add(e.id);
-    skills.push({ id: e.id, source: "builtin", description: e.description || "" });
+    // Catalog keywords ride along when an entry declares them, so `match --skills` searches
+    // them like `muster match` does (entries without keywords keep the {id, source, description} shape).
+    skills.push({ id: e.id, source: "builtin", description: e.description || "", ...(Array.isArray(e.keywords) && e.keywords.length ? { keywords: e.keywords } : {}) });
   }
 
   return { roles, installedRaw: installed, skills };

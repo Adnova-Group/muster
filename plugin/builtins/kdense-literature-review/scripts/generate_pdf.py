@@ -6,6 +6,22 @@ import os
 import subprocess
 from pathlib import Path
 
+# Reviews embed untrusted text (paper titles and abstracts from search exports), so the
+# Markdown is parsed with raw TeX and raw-attribute blocks disabled, and the TeX engine runs
+# with kpathsea's paranoid file access (no absolute paths, no parent directories, no
+# dotfiles) for both reading and writing. Together they keep an injected \input or
+# \include from embedding a local file in the PDF. TeX math stays enabled for real reviews;
+# Pandoc passes math through verbatim, so the paranoid engine setting is what covers it.
+PANDOC_INPUT_FORMAT = 'markdown-raw_tex-raw_attribute'
+
+
+def tex_env(base=None):
+    """Environment for pandoc and the TeX engine it spawns: paranoid TeX file access."""
+    env = dict(os.environ if base is None else base)
+    env['openin_any'] = 'p'
+    env['openout_any'] = 'p'
+    return env
+
 
 def check_dependencies():
     """Check both executables; TeX package availability still needs a real render."""
@@ -36,11 +52,22 @@ def generate_pdf(markdown_file: str, output_pdf: str = None,
         return False
     if not check_dependencies():
         return False
-    cmd = ['pandoc', str(source), '-o', str(destination), '--pdf-engine=xelatex',
-           '--resource-path', os.pathsep.join([str(source.parent), str(Path.cwd())]),
+    return run_pandoc(build_command(source, destination), destination, citation_style, template, toc, number_sections,
+                      bibliography, source)
+
+
+def build_command(source: Path, destination: Path) -> list:
+    """Base pandoc command: untrusted-text-safe input format, resources from the source dir only."""
+    return ['pandoc', str(source), '-f', PANDOC_INPUT_FORMAT, '-o', str(destination),
+           '--pdf-engine=xelatex', '--resource-path', str(source.parent),
            '-V', 'geometry:margin=1in', '-V', 'fontsize=11pt',
            '-V', 'colorlinks=true', '-V', 'linkcolor=blue', '-V', 'urlcolor=blue',
            '-V', 'citecolor=blue', '--citeproc']
+
+
+def run_pandoc(cmd, destination, citation_style, template, toc, number_sections,
+               bibliography, source) -> bool:
+    """Add the optional flags to the base command and render."""
     if toc:
         cmd.extend(['--toc', '--toc-depth=3'])
     if number_sections:
@@ -65,7 +92,7 @@ def generate_pdf(markdown_file: str, output_pdf: str = None,
             return False
         cmd.extend(['--template', str(Path(template).resolve())])
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True, env=tex_env())
         if result.stderr:
             print(result.stderr.strip())  # Surface missing citation and rendering warnings.
         if not destination.is_file() or not destination.read_bytes().startswith(b'%PDF-'):

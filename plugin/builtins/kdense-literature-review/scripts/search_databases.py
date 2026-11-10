@@ -10,9 +10,31 @@ import math
 import re
 import sys
 from pathlib import Path
-from urllib.parse import unquote
+from urllib.parse import quote, unquote
 from typing import Dict, List
 from datetime import datetime
+
+# Exported fields are fetched text (titles, abstracts, author lists) that later flows into
+# Pandoc and LaTeX, so it is written as data: whitespace collapsed to one line, Markdown and TeX
+# punctuation backslash-escaped in Markdown, and TeX specials escaped in BibTeX fields.
+_MD_SPECIAL = re.compile(r'([\\`*_{}\[\]<>()#+!|$~^&%=:@-])')
+_TEX_SPECIAL = {'\\': r'\textbackslash{}', '{': r'\{', '}': r'\}', '$': r'\$', '%': r'\%',
+                '&': r'\&', '#': r'\#', '_': r'\_', '^': r'\^{}', '~': r'\~{}'}
+
+
+def _one_line(value) -> str:
+    return ' '.join(str(value).split())
+
+
+def md_escape(value) -> str:
+    """Fetched text as inert Markdown: one line, every Markdown/TeX-significant character escaped."""
+    return _MD_SPECIAL.sub(r'\\\1', _one_line(value))
+
+
+def tex_escape(value) -> str:
+    """Fetched text as an inert BibTeX field value: TeX control characters escaped."""
+    return ''.join(_TEX_SPECIAL.get(ch, ch) for ch in _one_line(value))
+
 
 def format_search_results(results: List[Dict], output_format: str = 'json') -> str:
     """
@@ -34,22 +56,23 @@ def format_search_results(results: List[Dict], output_format: str = 'json') -> s
         md += f"**Total Results**: {len(results)}\n\n"
 
         for i, result in enumerate(results, 1):
-            md += f"## {i}. {result.get('title', 'Untitled')}\n\n"
-            md += f"**Authors**: {result.get('authors', 'Unknown')}\n\n"
-            md += f"**Year**: {result.get('year', 'N/A')}\n\n"
-            md += f"**Source**: {result.get('source', 'Unknown')}\n\n"
+            md += f"## {i}. {md_escape(result.get('title', 'Untitled'))}\n\n"
+            md += f"**Authors**: {md_escape(result.get('authors', 'Unknown'))}\n\n"
+            md += f"**Year**: {md_escape(result.get('year', 'N/A'))}\n\n"
+            md += f"**Source**: {md_escape(result.get('source', 'Unknown'))}\n\n"
 
             if result.get('abstract'):
-                md += f"**Abstract**: {result['abstract']}\n\n"
+                md += f"**Abstract**: {md_escape(result['abstract'])}\n\n"
 
             if result.get('doi'):
-                md += f"**DOI**: [{result['doi']}](https://doi.org/{result['doi']})\n\n"
+                doi = _one_line(result['doi'])
+                md += f"**DOI**: [{md_escape(doi)}](https://doi.org/{quote(doi, safe='/:;.-_')})\n\n"
 
             if result.get('url'):
-                md += f"**URL**: {result['url']}\n\n"
+                md += f"**URL**: {md_escape(result['url'])}\n\n"
 
             if result.get('citations') is not None:
-                md += f"**Citations**: {result['citations']}\n\n"
+                md += f"**Citations**: {md_escape(result['citations'])}\n\n"
 
             md += "---\n\n"
 
@@ -59,7 +82,7 @@ def format_search_results(results: List[Dict], output_format: str = 'json') -> s
         bibtex = ""
         used_keys = set()
         for i, result in enumerate(results, 1):
-            entry_type = result.get('type', 'article')
+            entry_type = re.sub(r'[^a-zA-Z]', '', str(result.get('type') or 'article')) or 'article'
             base_key = re.sub(r'[^a-zA-Z0-9_-]', '',
                               f"{result.get('first_author') or 'unknown'}{result.get('year') or '0000'}")
             cite_key, suffix = base_key, 2
@@ -69,21 +92,21 @@ def format_search_results(results: List[Dict], output_format: str = 'json') -> s
             used_keys.add(cite_key)
 
             bibtex += f"@{entry_type}{{{cite_key},\n"
-            bibtex += f"  title = {{{result.get('title', '')}}},\n"
-            bibtex += f"  author = {{{result.get('authors', '')}}},\n"
-            bibtex += f"  year = {{{result.get('year', '')}}},\n"
+            bibtex += f"  title = {{{tex_escape(result.get('title', ''))}}},\n"
+            bibtex += f"  author = {{{tex_escape(result.get('authors', ''))}}},\n"
+            bibtex += f"  year = {{{tex_escape(result.get('year', ''))}}},\n"
 
             if result.get('journal'):
-                bibtex += f"  journal = {{{result['journal']}}},\n"
+                bibtex += f"  journal = {{{tex_escape(result['journal'])}}},\n"
 
             if result.get('volume'):
-                bibtex += f"  volume = {{{result['volume']}}},\n"
+                bibtex += f"  volume = {{{tex_escape(result['volume'])}}},\n"
 
             if result.get('pages'):
-                bibtex += f"  pages = {{{result['pages']}}},\n"
+                bibtex += f"  pages = {{{tex_escape(result['pages'])}}},\n"
 
             if result.get('doi'):
-                bibtex += f"  doi = {{{result['doi']}}},\n"
+                bibtex += f"  doi = {{{tex_escape(result['doi'])}}},\n"
 
             bibtex += "}\n\n"
 

@@ -1055,10 +1055,10 @@ sources:
     # one-line description, muster_builtin, SPDX license, generated upstream:; allowed-tools,
     # compatibility and metadata dropped) and adds a prompt-lint-disable comment after the H1; each
     # supporting Markdown file gains the packaging-only prompt-lint header. Scripts, templates and
-    # data are verbatim.
+    # data are verbatim, except the two security-adapted literature-review scripts noted below.
     # market-research-reports: carried whole. Its scripts are offline standard-library tools (no
     # network, LLM or image calls) and official_data_sources.md routes to public statistical APIs,
-    # so there is no vendor-API dependency to remove (relation: vendored).
+    # so there is no vendor-API dependency to remove (SKILL.md relation: vendored).
     # literature-review (relation: adapted): the vendor-API dependencies are removed. Parallel's paid
     # parallel-cli (scoping search and URL extraction, PARALLEL_API_KEY) becomes the harness's own web
     # search and fetch tools with the same query/date/hits logging, in SKILL.md, core_workflow.md,
@@ -1066,8 +1066,16 @@ sources:
     # is dropped. The OpenRouter schematic generator (scripts/generate_schematic.py and
     # generate_schematic_ai.py, OPENROUTER_API_KEY, paid Gemini image calls) is not carried, and the
     # SKILL.md figures paragraph now says to draw schematics from the extraction table deterministically.
-    # verify_citations.py (Crossref, public and keyless), search_databases.py and generate_pdf.py
-    # (Pandoc) are verbatim. Cross-references to upstream skills muster does not carry (parallel-web,
+    # Security adaptation (2026-11-10 review, local file disclosure): reviews embed untrusted fetched
+    # text, so scripts/generate_pdf.py parses Markdown as markdown-raw_tex-raw_attribute, runs pandoc
+    # and xelatex with openin_any=p / openout_any=p (kpathsea paranoid file access) and resolves
+    # resources from the source directory only (Path.cwd() dropped); scripts/search_databases.py
+    # writes every fetched field as one escaped line (Markdown and TeX punctuation backslash-escaped,
+    # TeX specials escaped in BibTeX fields, the entry type reduced to letters). Both are adapted
+    # with base copies; test/kdense-pdf-safety.test.js pins it. market-research-reports'
+    # assets/FORMATTING_GUIDE.md (adapted for its header) runs its documented xelatex command under
+    # the same openin_any=p / openout_any=p; it is the only other pandoc/LaTeX invocation shipped. verify_citations.py (Crossref,
+    # public and keyless) is verbatim. Cross-references to upstream skills muster does not carry (parallel-web,
     # citation-management, pubmed-database) are kept as upstream names.
     # Wired into muster-research's ledger and coverage discipline, which names both by id.
     ref: 2d2065fb4520fa3f3f2bcf61cff26ec8b7eba4b5
@@ -1109,8 +1117,8 @@ sources:
       - { from: skills/literature-review/references/example_workflow.md, to: plugin/builtins/kdense-literature-review/references/example_workflow.md, mode: adapted, baseBlob: 521308758c8847254edb1d62ad242e982f00dbe5 }
       - { from: skills/literature-review/references/search_and_citation.md, to: plugin/builtins/kdense-literature-review/references/search_and_citation.md, mode: adapted, baseBlob: ed27ee9d24c9cef3381cc414834dda7d69a4a019 }
       - { from: skills/literature-review/assets/review_template.md, to: plugin/builtins/kdense-literature-review/assets/review_template.md, mode: adapted, baseBlob: d4188470de723bc75d617b8aaf2fb47a0b65dce4 }
-      - { from: skills/literature-review/scripts/generate_pdf.py, to: plugin/builtins/kdense-literature-review/scripts/generate_pdf.py, mode: verbatim, baseBlob: dea8d556e808c006c911131ee761b2bd1ae8ecc0 }
-      - { from: skills/literature-review/scripts/search_databases.py, to: plugin/builtins/kdense-literature-review/scripts/search_databases.py, mode: verbatim, baseBlob: d14e3202055844ea47a4d19b8b5ceeb4321dceab }
+      - { from: skills/literature-review/scripts/generate_pdf.py, to: plugin/builtins/kdense-literature-review/scripts/generate_pdf.py, mode: adapted, baseBlob: dea8d556e808c006c911131ee761b2bd1ae8ecc0 }
+      - { from: skills/literature-review/scripts/search_databases.py, to: plugin/builtins/kdense-literature-review/scripts/search_databases.py, mode: adapted, baseBlob: d14e3202055844ea47a4d19b8b5ceeb4321dceab }
       - { from: skills/literature-review/scripts/verify_citations.py, to: plugin/builtins/kdense-literature-review/scripts/verify_citations.py, mode: verbatim, baseBlob: 39fb278f7896e275784f7ea23ba395b1929863e5 }
   - id: gsd
     kind: github

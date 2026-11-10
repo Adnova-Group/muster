@@ -69,9 +69,13 @@ Compile from that directory with a TeX Live or MiKTeX installation containing
 LuaLaTeX; the Unicode font setup does not target pdfLaTeX. Run twice for the contents:
 
 ```bash
-xelatex -no-shell-escape -halt-on-error -interaction=nonstopmode market_report_template.tex
-xelatex -no-shell-escape -halt-on-error -interaction=nonstopmode market_report_template.tex
+openin_any=p openout_any=p xelatex -no-shell-escape -halt-on-error -interaction=nonstopmode market_report_template.tex
+openin_any=p openout_any=p xelatex -no-shell-escape -halt-on-error -interaction=nonstopmode market_report_template.tex
 ```
+
+Report text pasted from sources is untrusted: `openin_any=p` and `openout_any=p` keep TeX
+from reading or writing files outside this directory. They are TeX Live (kpathsea) settings;
+on MiKTeX, compile only text you have reviewed.
 
 The template and snippets contain placeholders and synthetic examples, not current
 market findings. Inspect every rendered page for clipping, table overflow, font

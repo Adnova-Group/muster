@@ -427,3 +427,139 @@
   keywords: [docs, documentation, official, framework, citations, version, api]
   description: "Ground framework-specific code in current official documentation: detect versions, fetch the docs, implement the documented pattern and cite each source."
   provenance: { license: MIT, upstream: [addyosmani/agent-skills] }
+
+# ----- Complementary skills (2026-11-10): merge-tracked vendored builtins for research/data,
+# SRE, writing and stack work (vendor/manifest.yaml sources kdense-skills, simple-english,
+# supabase-agent-skills and samber-golang, plus the items added to knowledge-work-plugins,
+# mattpocock-skills, wshobson, superpowers and marketingskills). Listed here for the same reason
+# as the UX family.
+# Every entry ranks below its role's default provider so none displaces it: research stays with
+# muster-research (40) and the rank-50 agents, author with muster-author, prompt-quality with
+# muster-prompt-smith, implement/test-author/security-review/performance with the rank-50 wsh and
+# sp builtins they complement. Distinct ranks per role and single-token keywords, as above.
+- id: kdense-market-research-reports
+  kind: builtin
+  roles: [research]
+  rank: 37
+  keywords: [market, tam, sam, som, sizing, forecast, competitor, ledger]
+  description: "Evidence-traceable market research: source and claims ledgers, scenario-based TAM/SAM/SOM sizing, forecast sensitivity and an audit-ready release gate."
+  provenance: { license: MIT, upstream: [K-Dense-AI/scientific-agent-skills] }
+- id: kdense-literature-review
+  kind: builtin
+  roles: [research]
+  rank: 36
+  keywords: [literature, systematic, scoping, prisma, citations, papers, pubmed, arxiv]
+  description: "Systematic, scoping or narrative literature reviews: recorded search strategies, coverage logs, screening counts, citation verification and thematic synthesis."
+  provenance: { license: MIT, upstream: [K-Dense-AI/scientific-agent-skills] }
+- id: kwp-knowledge-synthesis
+  kind: builtin
+  roles: [research]
+  rank: 35
+  keywords: [synthesis, synthesize, deduplicate, attribution, conflicting, sources]
+  description: "Merge results from many sources into one deduplicated, attributed answer, with freshness and authority confidence and conflicts surfaced."
+  provenance: { license: Apache-2.0, upstream: [anthropics/knowledge-work-plugins] }
+- id: kwp-validate-data
+  kind: builtin
+  roles: [research]
+  rank: 34
+  keywords: [validate, analysis, sql, metrics, sanity, qa, pitfalls, denominator]
+  description: "QA an analysis before it ships: methodology, calculation spot-checks, common data pitfalls, chart honesty and a ready, caveats or revise verdict."
+  provenance: { license: Apache-2.0, upstream: [anthropics/knowledge-work-plugins] }
+- id: wsh-incident-runbook-templates
+  kind: builtin
+  roles: [author]
+  rank: 39
+  keywords: [runbook, incident, oncall, escalation, outage, mitigation]
+  description: "Create structured incident response runbooks with step-by-step procedures, escalation paths, and recovery actions. Use this skill when building a service outage runbook for a payment processing system; creating database incident procedures covering connection pool exhaustion, replication lag, and disk space alerts; onboarding new on-call engineers who need step-by-step recovery guides written for a 3 AM brain; or standardizing escalation matrices across multiple engineering teams."
+  provenance: { license: MIT, upstream: [wshobson/agents] }
+- id: wsh-postmortem-writing
+  kind: builtin
+  roles: [author]
+  rank: 38
+  keywords: [postmortem, blameless, retrospective, rootcause, timeline]
+  description: "Write effective blameless postmortems with root cause analysis, timelines, and action items. Use when conducting incident reviews, writing postmortem documents, or improving incident response processes."
+  provenance: { license: MIT, upstream: [wshobson/agents] }
+- id: wsh-changelog-automation
+  kind: builtin
+  roles: [author]
+  rank: 37
+  keywords: [changelog, conventional, commits, semver, release, commitlint]
+  description: "Automate changelog generation from commits, PRs, and releases following Keep a Changelog format. Use when setting up release workflows, generating release notes, or standardizing commit conventions."
+  provenance: { license: MIT, upstream: [wshobson/agents] }
+- id: wsh-slo-implementation
+  kind: builtin
+  roles: [architecture-review, author]
+  rank: 36
+  keywords: [slo, sli, sre, reliability, errorbudget, burnrate]
+  description: "Define and implement Service Level Indicators (SLIs) and Service Level Objectives (SLOs) with error budgets and alerting. Use when establishing reliability targets, implementing SRE practices, or measuring service performance."
+  provenance: { license: MIT, upstream: [wshobson/agents] }
+- id: wsh-security-requirement-extraction
+  kind: builtin
+  roles: [security-review, plan]
+  rank: 45
+  keywords: [requirements, threats, compliance, abuse, acceptance]
+  description: "Derive security requirements from threat models and business context. Use when translating threats into actionable requirements, creating security user stories, or building security test cases."
+  provenance: { license: MIT, upstream: [wshobson/agents] }
+- id: mkt-copy-editing
+  kind: builtin
+  roles: [author]
+  rank: 41
+  keywords: [copyediting, proofread, proofreading, tighten, refresh, sweeps]
+  description: "Edit existing copy without rewriting it: seven focused sweeps, point edits for single lines, AI-tell removal and a content-refresh checklist."
+  provenance: { license: MIT, upstream: [coreyhaines31/marketingskills] }
+- id: simple-english
+  kind: builtin
+  roles: [author]
+  rank: 40
+  keywords: [plain, plainenglish, ste, simplified, controlled, jargon, readability]
+  description: "Plain, ASD-STE100-style controlled English for docs, runbooks, procedures, error messages and release notes, with a Strict mode and a rule-catalog CHECK mode."
+  provenance: { license: MIT, upstream: [AminBlg/SimpleEnglish] }
+- id: mp-writing-for-agents
+  kind: builtin
+  roles: [prompt-quality]
+  rank: 45
+  keywords: [agentsmd, claudemd, skill, pointer, disclosure, pruning]
+  description: "Write documents agents consume (skills, AGENTS.md, CLAUDE.md): context pointers, information hierarchy, completion criteria, leading words and pruning."
+  provenance: { license: MIT, upstream: [mattpocock/skills] }
+- id: sp-writing-skills
+  kind: builtin
+  roles: [prompt-quality]
+  rank: 44
+  keywords: [skills, skillmd, pressure, baseline, bulletproofing, rationalization]
+  description: "Use when creating new skills, editing existing skills, or verifying skills work before deployment"
+  provenance: { license: MIT, upstream: [obra/superpowers] }
+- id: supabase-postgres-best-practices
+  kind: builtin
+  roles: [implement, performance]
+  rank: 45
+  keywords: [postgres, postgresql, sql, rls, schema, migration, index, supabase]
+  description: "Supabase's Postgres rules for schema design, indexes, RLS, connection pooling, locking, migrations and query diagnosis, for Postgres running anywhere."
+  provenance: { license: MIT, upstream: [supabase/agent-skills] }
+- id: go-error-handling
+  kind: builtin
+  roles: [implement]
+  rank: 44
+  keywords: [golang, errors, wrapping, sentinel, slog]
+  description: "Idiomatic Go error handling: creation, %w wrapping, errors.Is/As, sentinel and custom types, the single-handling rule and structured slog logging."
+  provenance: { license: MIT, upstream: [samber/cc-skills-golang] }
+- id: go-safety
+  kind: builtin
+  roles: [implement]
+  rank: 43
+  keywords: [golang, nil, panic, aliasing, overflow]
+  description: "Defensive Go against accidental bugs: nil panics, typed-nil interfaces, append aliasing, integer truncation, float comparison, defer in loops and safe zero values."
+  provenance: { license: MIT, upstream: [samber/cc-skills-golang] }
+- id: go-testing
+  kind: builtin
+  roles: [test-author]
+  rank: 45
+  keywords: [golang, testify, fuzzing, goleak, tabledriven]
+  description: "Production Go tests: table-driven and parallel tests, testify, fuzzing, fixtures, goleak, coverage, integration tests and flaky-test diagnosis."
+  provenance: { license: MIT, upstream: [samber/cc-skills-golang] }
+- id: go-security
+  kind: builtin
+  roles: [security-review]
+  rank: 44
+  keywords: [golang, gosec, govulncheck, injection, crypto]
+  description: "Go security review: injection, cryptography, path traversal, SSRF, cookies, secrets, PII in logs, threat modeling, gosec and govulncheck."
+  provenance: { license: MIT, upstream: [samber/cc-skills-golang] }

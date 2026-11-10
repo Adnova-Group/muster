@@ -164,20 +164,26 @@ test("a line edit that moves a canon fact opens a debt; an edited file is re-che
   const hashes = { ch01: sha256("rewritten by the author"), ch02: book.chapters[1].hash, ch03: null, ch04: null };
   const { args, stale } = bookArgs(book, { hashes });
   assert.deepEqual(stale, ["ch01"]);
-  assert.deepEqual(args.recheck.map((c) => [c.id, c.reason, c.debts.map((d) => d.id)]), [["ch01", "edited since last record", ["D-001"]]]);
+  assert.deepEqual(args.recheck.map((c) => [c.id, c.reason, c.debts.map((d) => d.id)]), [["ch01", "edited since last record", ["D-001"]], ["ch02", "no continuity check has passed yet", []]]);
   assert.deepEqual(bookStatus(book, { hashes }).next.action, "recheck");
 });
 
 test("status walks draft -> recheck -> polish -> review", () => {
   const book = fresh();
+  const ids = ["ch01", "ch02", "ch03", "ch04"];
   assert.equal(bookStatus(book).next.action, "draft");
-  recordResult(book, { drafts: ["ch01", "ch02", "ch03", "ch04"].map((id) => draft(id)) }, { files: files(["ch01", "ch02", "ch03", "ch04"]) });
+  recordResult(book, { drafts: ids.map((id) => draft(id)), continuity: [{ chapterId: "ch01", debtsShown: [], final: { verdict: "ABSTAIN", issues: [], debtsResolved: [] } }] }, { files: files(ids) });
+  // An abstained (or never-run) check is no evidence: those chapters are re-checked before polishing.
+  assert.equal(bookStatus(book).next.action, "recheck");
+  assert.deepEqual(bookArgs(book).args.recheck.map((c) => [c.id, c.reason]), ids.map((id) => [id, "no continuity check has passed yet"]));
+  recordResult(book, { continuity: ids.map((id) => ({ chapterId: id, debtsShown: [], final: { verdict: "PASS", issues: [], debtsResolved: [] } })) }, { files: files(ids) });
+  assert.deepEqual(bookArgs(book).args.recheck, []);
   assert.equal(bookStatus(book).next.action, "polish");
   recordResult(book, { beta: [{ persona: "devourer", source: "simulated", finished: false, putDownChapter: "ch03", engagement: [], confusions: [], highlights: [], verdict: "" }] }, { files: {} });
   const s = bookStatus(book);
   assert.equal(s.next.action, "review");
   assert.match(s.next.why, /never marks a book ready/);
-  assert.equal(s.chapters.drafted, 4);
+  assert.equal(s.chapters.checked, 4);
   assert.deepEqual(book.passes.at(-1).beta, [{ persona: "devourer", finished: false, putDown: "ch03" }]);
 });
 

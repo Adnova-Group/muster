@@ -201,6 +201,9 @@ function closeDebt(book, id, resolution) {
 export const openDebts = (book, chapter) => book.debts.filter((d) => d.status === "open" && (!chapter || d.chapter === chapter));
 const chapterById = (book, id) => book.chapters.find((c) => c.id === id);
 const isWritten = (c) => !!c && c.status !== "planned";
+// Drafted, but no continuity check has passed (it abstained, errored or never ran) and no debt
+// explains why: there is no evidence either way, so the next pass re-checks it.
+const unchecked = (c) => c.status === "drafted";
 
 // ---- propagation: amending a canon fact puts every chapter that relied on it in debt -----------
 
@@ -252,10 +255,10 @@ export function bookArgs(book, { hashes = {}, limit = DEFAULT_LIMIT, models = nu
   const brief = (c) => ({ id: c.id, title: c.title, goal: c.goal, pov: c.pov, tense: c.tense, targetWords: c.targetWords, dependsOn: c.dependsOn, path: c.path });
   const drafting = new Set(waves.flat().map((c) => c.id));
   const recheck = book.chapters
-    .filter((c) => isWritten(c) && !drafting.has(c.id) && !missing.includes(c.id) && (stale.has(c.id) || openDebts(book, c.id).length))
+    .filter((c) => isWritten(c) && !drafting.has(c.id) && !missing.includes(c.id) && (stale.has(c.id) || openDebts(book, c.id).length || unchecked(c)))
     .map((c) => ({
       ...brief(c),
-      reason: stale.has(c.id) ? "edited since last record" : "open continuity debts",
+      reason: stale.has(c.id) ? "edited since last record" : openDebts(book, c.id).length ? "open continuity debts" : "no continuity check has passed yet",
       debts: openDebts(book, c.id).map((d) => ({ id: d.id, canonId: d.canonId, line: d.line, quote: d.quote, summary: d.summary })),
     }));
   const remainingAfter = planned.length - taken;
@@ -383,8 +386,9 @@ export function bookStatus(book, { hashes = {} } = {}) {
   const stale = staleChapters(book, hashes);
   const debts = openDebts(book);
   const planned = count("planned");
+  const unverified = book.chapters.filter((c) => unchecked(c) && !openDebts(book, c.id).length).length;
   let next;
-  if (stale.length || debts.length) next = { action: "recheck", why: `${debts.length} open debt(s), ${stale.length} edited chapter(s)` };
+  if (stale.length || debts.length || unverified) next = { action: "recheck", why: `${debts.length} open debt(s), ${stale.length} edited chapter(s), ${unverified} chapter(s) with no passing continuity check` };
   else if (planned) next = { action: "draft", why: `${planned} chapter(s) not drafted` };
   else if (!book.passes.some((p) => p.beta?.length)) next = { action: "polish", why: "all chapters drafted; developmental, line and beta passes not yet run" };
   else next = { action: "review", why: "manuscript complete and clean: the author decides; a simulated beta read never marks a book ready" };

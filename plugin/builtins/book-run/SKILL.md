@@ -85,7 +85,7 @@ A **continuity debt** is an open contradiction between a chapter and the canon. 
 - a canon fact is amended (`muster book amend`): every written chapter that relied on the old fact gets a debt against the new one;
 - a line edit changed a canon-bearing passage.
 
-A chapter whose file changed since the last `record` is **stale**: the next pass re-checks it before drafting anything new. Debts close only when a re-check that was shown the debt passes, or when the author closes one by hand with a reason ("intentional: Teo lies here"). A simulated beta read never marks a book ready.
+A chapter whose file changed since the last `record` is **stale**, and a drafted chapter whose continuity check abstained has no evidence either way: the next pass re-checks both before drafting anything new. Debts close only when a re-check that was shown the debt passes, or when the author closes one by hand with a reason ("intentional: Teo lies here"). A simulated beta read never marks a book ready.
 
 ## Outline methods (fiction)
 

@@ -47,6 +47,17 @@ authoritative and `CLAUDE.md` only imports it.
 Current investigations live under [`research/`](research/). They are evidence
 inputs, not runtime contracts.
 
+Claude Code, current as of 2026-11-10:
+
+- [Claude Code CLI](research/claude-code-cli.md): harness internals; §13 covers
+  the changelog through 2.1.322.
+- [Claude Code Desktop and web](research/claude-code-desktop.md): §12 covers the
+  Code tab through Desktop v4.23118.1 (bundled 2.1.321).
+- [Live probes, 2026-11](research/claude-code-live-probes-2026-11.md): frontmatter
+  hooks and plugin Workflow scripts on 2.1.319.
+- [2026-11 Claude Code findings](research/2026-11-claude-code-findings.md): what
+  muster's current design should adopt, fix or stop doing.
+
 ## Strategy
 
 - [2026-11 revival review](strategy/2026-11-revival-review.md): owner decisions

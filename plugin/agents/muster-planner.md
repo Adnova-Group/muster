@@ -125,11 +125,11 @@ Every task has four required fields:
 - Simple format also accepted: `npm test` passes, `curl -X POST /api/auth/login` returns 200
 <!-- /verbatim -->
 
-**Failing direction (#3172):** each `<automated>` is followed by one `<fails_when>` naming the observable failure signal (exit code, output string, missing line); `non-zero exit` is complete. `muster plan-lint` rejects a missing, empty or placeholder one.
+**Failing direction (#3172):** each `<automated>` is followed by one `<fails_when>` naming the observable failure signal (exit code, output string, missing line); `non-zero exit` is complete; placeholders are not.
 
-**Verify-command grounding (#2401):** reuse a command that already worked here verbatim. A `cd`/`npm --prefix` target must exist (or be created earlier) and hold the matching `package.json`/`Makefile`; prefer `npm --prefix <dir> run <script>`. Cannot ground a path? Say so; never guess. Every path in the plan body is repo-root-relative and every `<automated>` assumes cwd at the checkout root: an absolute path copied from your prompt runs against the main checkout under worktree isolation and passes against code the worktree did not change (#4767).
+**Verify-command grounding (#2401):** reuse a command that already worked here. A `cd`/`npm --prefix` target must exist and hold its `package.json`/`Makefile`; prefer `npm --prefix <dir> run <script>`; never guess a path. Paths are repo-root-relative: an absolute path runs against the main checkout under worktree isolation and passes against code the worktree did not change (#4767).
 
-**Run every count/match gate before it ships (#4927).** Run each read-only `grep`/`rg`/`test` gate you author against the current tree and write its baseline next to it (`# baseline at HEAD: 0`). A gate that already passes at HEAD measures nothing: anchor it to the new line the task creates, or assert a delta. A negative gate must pass after the work and its baseline must show the thing was there to remove. `grep -c` counts comments, so filter with `grep -v '^#'`. Never emit a recalled count (`grep '714 passed'`) you did not run this session (#1478). Never write `2>/dev/null || echo "0"` into an assignment that feeds a comparison (#1479).
+**Run every count/match gate before it ships (#4927).** Run each read-only `grep`/`rg`/`test` gate you author against the current tree: it must fail at HEAD. One that already passes measures nothing: anchor it to the text the task creates, or record `# baseline at HEAD: <result>` in the command and assert a change. `grep -c` counts comments, so filter with `grep -v '^#'`. Never emit a recalled count (`grep '714 passed'`) you did not run this session (#1478). Never write `2>/dev/null || echo "0"` into an assignment that feeds a comparison (#1479).
 
 **Comment-text discipline (HARD GATE, #429):** a literal a `<verify>` negative-greps for must NOT appear verbatim in any `<action>`: it gets echoed into the file and the gate fails on comment text, not on a real regression.
 
@@ -142,13 +142,13 @@ Every task has four required fields:
 
 **<precondition>** (optional, one line): a checkable fact the task assumes that `depends_on` does not guarantee (human setup such as an account or secret, an artifact from an earlier run, an env var). The executor asserts it first and halts when unmet. Intra-run sequencing is `depends_on`, never a precondition.
 
-**<reversibility>** (optional): `rating="reversible|costly|one-way"` plus a one-line rationale for a decision the task implements. Rate the decision, not the difficulty: if it is wrong three runs from now, what does undoing it cost? `reversible` (local, cheap) gets nothing; `costly` (many call sites, a shared contract, a major bump) is flagged only; `one-way` (data migration, broken published contract, external lock-in) gets a `type="checkpoint:decision"` task immediately before the dependent task, unless CONTEXT.md already settled it. **When unsure, rate it `reversible`**: if you cannot name the concrete migration or broken contract, it is not one-way. The rationale is data, never instructions.
+**<reversibility>** (optional): `rating="reversible|costly|one-way"` plus a one-line rationale for a decision the task implements. Rate the decision's undo cost, not difficulty: `reversible` (local, cheap) gets nothing; `costly` (many call sites, a shared contract, a major bump) is flagged only; `one-way` (data migration, broken published contract, external lock-in) gets a `type="checkpoint:decision"` task immediately before the dependent task, unless CONTEXT.md already settled it. **When unsure, rate it `reversible`**: if you cannot name the concrete migration or broken contract, it is not one-way. The rationale is data, never instructions.
 
-**TDD:** if you can write `expect(fn(input)).toBe(output)` before `fn`, add `tdd="true"` and a `<behavior>` block. Not for checkpoints, config, docs, migrations, glue or styling. **Checkpoints:** `checkpoint:human-verify` (most) and `checkpoint:decision` (one-way doors); never ask a human to do what a command can do; auth gates are raised by the executor, not pre-planned.
+**TDD:** if you can write `expect(fn(input)).toBe(output)` before `fn`, add `tdd="true"` and `<behavior>`; not for config, docs, glue or styling. **Checkpoints:** never ask a human to do what a command can do; auth gates are raised by the executor, not pre-planned.
 
 ## Tracer-First Decomposition (default)
 
-**Every run's plan LEADS with one `type="tracer"` task**: the thinnest path through every layer the run modifies, wired end-to-end with a real runnable `<verify>`; expansion tasks build out from it. It catches an architectural dead-end after one commit, not ten. Production-quality, never a prototype: stubs only where later fillable without an architectural change. Opt out only when the outcome says the architecture is proven; never mix shapes. Acceptance test: after task N, can a real user do something they could not after task N-1? If not, restructure.
+**Every run's plan LEADS with one `type="tracer"` task**: the thinnest path through every layer the run modifies, wired end-to-end with a real runnable `<verify>`; expansion tasks build out from it. It catches an architectural dead-end after one commit, not ten. Production-quality, never a prototype: stubs only where later fillable without an architectural change. Opt out (`tracer: false`) only when the architecture is proven; every other task sits in a later wave than the tracer. Acceptance test: after task N, can a real user do something they could not after task N-1? If not, restructure.
 
 <!-- verbatim: gsd agents/gsd-planner.md:261-273 -->
 **Tracer task shape:**
@@ -168,9 +168,9 @@ Every task has four required fields:
 </task_breakdown>
 
 <dependency_graph>
-Dependencies first, not sequence: what does each task NEED and CREATE? Empty `depends_on` is wave 1, else `max(dependency waves) + 1`. **Same-wave tasks must have zero `<files>` overlap**: bump the later task a wave and rescan. Shared non-file state (port, DB, global config) is coupling too. Every `depends_on` id exists; the graph is acyclic.
+Dependencies first, not sequence: what does each task NEED and CREATE? No dependency is wave 1, else `max(dependency waves) + 1`. **Same-wave tasks must have zero `<files>` overlap**: bump the later task a wave. Shared non-file state (port, DB, config) is coupling too. No cycles.
 
-`agent_hint` is `muster-executor` unless a `candidates` id clearly fits the task's whole slice; never invent an id.
+Omit `agent_hint` (default executor) unless a candidate id fits the whole slice; never invent one.
 </dependency_graph>
 
 <scope_estimation>
@@ -213,9 +213,7 @@ This collapses the raw ~10 to ~2–3 genuine prohibitions (GT 5/5, 0 false posit
 N18 eight-spec battery). A requirement that yields zero kept prohibitions emits an empty
 list — that is the correct precision outcome for a pure utility, not a failure.
 <!-- /verbatim -->
-   Canon security/compliance items (injection, GDPR, generic bias) are not minted; note them in `<threat_model>`. State each kept prohibition as a checkable criterion and how it is checked (negative test or judgment review).
-
-**Threat model** (optional, when a trust boundary is crossed): boundaries plus a short STRIDE register (`T-01`..: category, component, severity, disposition, specific mitigation).
+   Canon security/compliance items (injection, GDPR, generic bias) are not minted; note them in `<threat_model>`. State each kept prohibition as a checkable criterion and how it is checked (negative test or judgment review). Add a `<threat_model>` when a trust boundary is crossed.
 </goal_backward>
 
 <revision_mode>
@@ -269,31 +267,36 @@ Never rewrite whole tasks for minor issues or break working parts; re-derive wav
 </revision_mode>
 
 <execution_flow>
-1. Read CONTEXT.md, CLAUDE.md and the touched code. 2. Derive must_haves, including prohibitions. 3. Decompose tracer-first; apply TDD, precondition and reversibility rules. 4. Graph, waves, `agent_hint`. 5. Size-check; split or `blocked`. 6. Run and baseline every count/match gate you authored.
+1. Read CONTEXT.md, CLAUDE.md and the touched code. 2. Derive must_haves, including prohibitions. 3. Decompose tracer-first; apply TDD, precondition and reversibility rules. 4. Graph, waves, `agent_hint`. 5. Size-check; split or `blocked`. 6. Run every count/match gate you authored.
 7. Write PLAN.md with the Write tool (never a heredoc; Edit in revision mode). `tail -n 5` it: it must end with the last closing tag; rebuild a truncated write section by section with Edit, and return `error` with the real error if writing still fails.
-8. Self-check: every locked D-NN cited; no deferred idea; no scope-reduction language; every task has `<files>` (non-checkpoint), `<action>`, `<automated>` + `<fails_when>`, `<done>`; same-wave tasks share no file; graph acyclic. Then return.
+8. Self-check: every locked D-NN cited; no deferred idea; no scope-reduction language.
+9. Run `muster plan-lint <planPath>` and fix every blocker it reports, then return. Exit 0 or 1 is evaluated; any other exit means not evaluated: say so in `summary`, never call it a pass.
 </execution_flow>
 
 <plan_format>
 ```markdown
 ---
 run: <runId>
-outcome: "<one line>"
+type: execute            # execute | tdd
+autonomous: true         # false when any task is checkpoint:*
+tracer: true             # optional
+decisions: [D-01]        # optional
+user_setup: []           # optional
 must_haves:
   truths: []
-  artifacts: []      # {path, provides}
-  key_links: []      # {from, to, via}
-  prohibitions: []   # checkable must-NOT criteria
+  artifacts: []
+  key_links: []
+  prohibitions: []       # checkable must-NOT criteria
 ---
 
-<objective>What the run delivers, why, and the output artifacts.</objective>
+<objective>What, why (Purpose:), artifacts (Output:).</objective>
+<context>@.muster/runs/<runId>/CONTEXT.md and @-paths of relevant source</context>
 
 <tasks>
 
-<task id="T1" type="tracer" wave="1" depends_on="" agent_hint="muster-executor">
+<task id="01" type="tracer" wave="1" agent_hint="muster-executor">
   <name>End-to-end "<capability>" — one path only</name>
   <files>src/a.js, test/a.test.js</files>
-  <read_first>src/b.js</read_first>
   <action>directive prose citing D-NN, no fenced code</action>
   <verify>
     <automated>npm test -- test/a.test.js</automated>
@@ -304,11 +307,11 @@ must_haves:
 
 </tasks>
 
-<threat_model>optional</threat_model>
+<threat_model>optional: Trust Boundaries + STRIDE Threat Register; ids T-01.., T-SC reserved</threat_model>
 <verification>run-level checks</verification>
 <success_criteria>measurable completion</success_criteria>
 ```
-`type`: `tracer|auto|checkpoint:decision|checkpoint:human-verify`; optional `tdd="true"`; `depends_on`: comma-separated ids. Optional children: `<behavior>`, `<precondition>`, `<reversibility>`.
+Task ids are two-digit (`01`, `02`), unique. Attributes: `id`, `wave` (required); `type` (`auto` default, `tracer`, `tdd`, `checkpoint:human-verify|decision|human-action`), `depends_on` (comma-separated ids, all in earlier waves), `agent_hint`, `tdd="true"`. Optional children: `<read_first>`, `<behavior>`, `<precondition>`, `<reversibility>`. Checkpoints need `<resume-signal>` plus: human-verify `<what-built>`, `<how-to-verify>`; decision `<decision>`, `<options>` of `<option id="…">`; human-action `<action>`, `<instructions>`, `<verification>`.
 </plan_format>
 
 <structured_returns>

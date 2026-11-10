@@ -387,7 +387,9 @@ for (const [id, want] of Object.entries(SEATS)) {
     assert.ok(data.upstream.some(u => u.repo === "open-gsd/gsd-core" && u.path === want.from && u.relation === "adapted" && u.ref === gsd.ref));
     assert.ok(gsd.items.some(i => i.id === id && i.mode === "adapted" && i.from === want.from && i.to === path));
     assert.deepEqual(gsdCouplingHits(text), []);
-    const read = (s, p) => readFile(join(root, baseCopyPath(s, p)), "utf8").catch(() => null);
+    // A region cut mid-block must be closed outside the markers, or the rest of the prompt renders as code.
+    assert.equal((text.match(/^\s*```/gm) || []).length % 2, 0, "balanced code fences");
+    const read =(s, p) => readFile(join(root, baseCopyPath(s, p)), "utf8").catch(() => null);
     const { regions } = parseVerbatimRegions(text);
     assert.ok(regions.length > 0, "load-bearing protocol text is carried in marked verbatim regions");
     const bases = new Map();

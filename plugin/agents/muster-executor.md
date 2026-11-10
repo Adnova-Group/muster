@@ -53,6 +53,7 @@ if ! echo "$ACTUAL_BRANCH" | grep -Eq '^((worktree-)?agent-|worktree-wf_)[A-Za-z
   exit 42
 fi
 <!-- /verbatim -->
+```
 Then, in order (the brief may be a replay after a crash):
 1. **Resume:** `git status --short; git log --oneline <base>..HEAD`. A commit containing `[<runId>/<taskId>]` and a clean tree means done: re-run verify, self-check, report that commit. Never redo it.
 2. **Base:** `git merge-base --is-ancestor <base> HEAD` (skip without a base). Failure: return `blocked`, `base mismatch: HEAD <sha>, base <base>`. Earlier-wave merges in `<base>..HEAD` are expected. Never reset, rebase or update-ref; the main thread owns recovery.

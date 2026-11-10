@@ -291,7 +291,7 @@ Return exactly one CheckResult and nothing after it. When dispatched through Wor
 
 ```json
 {"verdict": "PASS" | "ISSUES",
- "issues": [{"dimension": "context_compliance", "severity": "blocker", "required_property": "No task contradicts a locked decision in CONTEXT.md", "summary": "T2 builds a table layout; D-03 locks a card layout"}]}
+ "issues": [{"dimension": "context_compliance", "severity": "blocker", "required_property": "No task contradicts a locked decision in CONTEXT.md", "summary": "Task 02 builds a table layout; D-03 locks a card layout"}]}
 ```
 
 Count severities from the issues list itself, never from memory. If the plan or a cited file lacks the evidence a check needs, say so in that issue's summary rather than guessing.

@@ -1,4 +1,5 @@
-# Muster-authored agent definitions (role specialists). Clean-room: inspired by atomic's
+# Muster-authored agent definitions (role specialists), plus the merge-tracked Intent agents at the
+# end (vendored, not clean-room). Muster's own: inspired by atomic's
 # role taxonomy, authored fresh for muster. Discovered by Claude Code from plugin/agents/.
 # rank 55 sits just above the rank-50 vendored skills so a muster agent is preferred over a
 # bare skill for the same role (capabilities sorts by rank descending).
@@ -40,3 +41,51 @@
   rank: 55
   description: "Read-only retrospective over a finished run; proposes user-gated edits to muster's skills and agents."
   provenance: { license: Apache-2.0, upstream: [damusix/atomic-claude] }
+
+# ----- Intent agents: merge-tracked vendored from ghaida/intent (CC0-1.0; vendor/manifest.yaml
+# source intent). Not clean-room: they keep upstream text with a muster note. Ranks sit below
+# every chosen provider for their roles, so the planner assigns them by agent_hint for UX,
+# research and strategy tasks instead of displacing a role's default. roles[0] is core-tier,
+# so the frontmatter model (sonnet) equals modelForRole(roles[0]).
+- id: intent-wren
+  kind: agent
+  roles: [frontend]
+  rank: 46
+  keywords: [flows, wireframing, microcopy, ia]
+  description: "Experience design: flows, IA, screens and UI copy."
+  provenance: { license: CC0-1.0, upstream: [ghaida/intent] }
+- id: intent-vigil
+  kind: agent
+  roles: [frontend]
+  rank: 45
+  keywords: [evaluation, heuristic, wcag, resilience]
+  description: "UX evaluation: heuristics, edge cases, WCAG 2.2."
+  provenance: { license: CC0-1.0, upstream: [ghaida/intent] }
+- id: intent-sage
+  kind: agent
+  roles: [brainstorm]
+  rank: 44
+  keywords: [brainstorming, stuck, explore]
+  description: "Design brainstorming before solving a problem."
+  provenance: { license: CC0-1.0, upstream: [ghaida/intent] }
+- id: intent-ember
+  kind: agent
+  roles: [plan, research]
+  rank: 36
+  keywords: [strategy, framing, scoping, brief]
+  description: "UX strategy and research: frames problems, scopes."
+  provenance: { license: CC0-1.0, upstream: [ghaida/intent] }
+- id: intent-rune
+  kind: agent
+  roles: [plan]
+  rank: 35
+  keywords: [handoff, packaging]
+  description: "Design handoff: packages approved work for builders."
+  provenance: { license: CC0-1.0, upstream: [ghaida/intent] }
+- id: intent-noor
+  kind: agent
+  roles: [plan, frontend]
+  rank: 26
+  keywords: [ethics, darkpattern, engagement, orientation]
+  description: "UX engagement lead: context, ethics and routing."
+  provenance: { license: CC0-1.0, upstream: [ghaida/intent] }

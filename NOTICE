@@ -14,6 +14,15 @@ Per-item detail (upstream path, ref, relation) is in each item's `upstream:` fie
   Copyright (c) 2024 Seth Hobson
 - open-gsd/gsd-core @ 9385f4618b52ef68ed8a5e8bdd93cfb25bd87765, 1c352d1ea37b010e99b8353905eb5def4f784100 (MIT)
   Copyright (c) 2026 Open GSD
+- nextlevelbuilder/ui-ux-pro-max-skill @ 4f2dbb67e64969a9a30ab00742f2d55d66ddec2b (MIT)
+  Copyright (c) 2024 Next Level Builder
+- ghaida/intent @ 1806110106a472bc588d7a8a2b7e3d39aee4a4b8 (CC0-1.0)
+  CC0 1.0 Universal dedication by Ghaida Zahran
+- bergside/typeui @ efc5f21dff38692e4eaffc304fed465d7cb531e8 (MIT)
+  Copyright (c) 2026 Bergside LLC
+- skovalik/perception-first-design @ 1704ff61c18872a66d969e860c9b6e45a8f50f16 (CC-BY-SA-4.0)
+  Copyright 2025-2026 Stefan Kovalik / Aurochs
+  "Perception-First Design" is a trademark of Stefan Kovalik / Aurochs (Serial 99686343). The methodology is open; the name requires attribution.
 - blader/humanizer @ 1b48564898e999219882660237fde01bf4843a0f (MIT)
   Copyright (c) 2025 Siqi Chen
 - rudra496/StealthHumanizer @ 1aacbda6e2f66afbdcb6714a85347307068373e9 (MIT)

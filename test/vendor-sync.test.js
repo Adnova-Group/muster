@@ -12,7 +12,7 @@ import { promisify } from "node:util";
 import { parse as parseYaml } from "yaml";
 import {
   gitBlobSha, mapRange, regenerateRegions, mergeFile, gitUpstream, fetchUpstream, buildReport,
-  updateManifestText, runVendorUpdate, runVendorReport, checkVendorSync, syncItemsOf, baseCopyPath
+  updateManifestText, runVendorUpdate, runVendorReport, checkVendorSync, syncItemsOf, baseCopyPath, syncCatalogEntries
 } from "../src/vendor-sync.js";
 import { parseVerbatimRegions, checkVerbatimRegions, gsdCouplingHits } from "../src/vendor-regions.js";
 import { validateVendorManifest, toAgent, vendoredAgentModel, splitFrontmatter } from "../src/vendor.js";
@@ -421,4 +421,61 @@ test("the CLI routes vendor update/report/check and never falls through to the r
   await assert.rejects(pexec(process.execPath, [cli, "vendor", "report"]), e => /missing <source>/.test(e.stderr));
   const { stdout } = await pexec(process.execPath, [cli, "vendor", "check"]);
   assert.equal(JSON.parse(stdout).ok, true);
+});
+
+// ---- superpowers: the second merge-tracked source (generic sync) -------------------------
+
+const superpowers = manifest.sources.find(s => s.id === "superpowers");
+const SP_SKILLS = {
+  "sp-brainstorm": "brainstorming", "sp-tdd": "test-driven-development", "sp-review": "requesting-code-review",
+  "sp-review-recv": "receiving-code-review", "sp-debug": "systematic-debugging",
+  "sp-verify": "verification-before-completion", "sp-parallel": "dispatching-parallel-agents"
+};
+
+test("superpowers is merge-tracked at v7.0.2: one builtin per skill plus its supporting files, all with base copies", async () => {
+  assert.equal(superpowers.ref, "22f0b463e7a5e579904dd6211a520321035526f7");
+  assert.equal(superpowers.tag, "v7.0.2");
+  const items = syncItemsOf(superpowers);
+  assert.equal(items.length, superpowers.items.length, "every superpowers item carries a mode");
+  assert.deepEqual(items.filter(i => i.id).map(i => i.id), Object.keys(SP_SKILLS), "sp-plan and sp-subagents stay deleted");
+  for (const item of items) {
+    assert.equal(item.mode, "adapted", `${item.from} is a merged copy`);
+    const id = item.id ?? item.to.split("/")[2];
+    const prefix = `skills/${SP_SKILLS[id]}/`;
+    assert.ok(item.from.startsWith(prefix), `${item.from} belongs to ${id}'s upstream skill`);
+    assert.equal(item.to, `plugin/builtins/${id}/${item.from.slice(prefix.length)}`);
+    assert.equal(gitBlobSha(await readFile(join(root, baseCopyPath("superpowers", item.from)))), item.baseBlob);
+  }
+  const res = await checkVendorSync({ root, manifest });
+  assert.deepEqual(res.problems, []);
+});
+
+test("superpowers SKILL.md files carry no stale hand-port notes and reference only files they ship", async () => {
+  for (const id of Object.keys(SP_SKILLS)) {
+    const dir = join(root, "plugin/builtins", id);
+    const text = await readFile(join(dir, "SKILL.md"), "utf8");
+    assert.doesNotMatch(text, /hand-ported from obra\/superpowers/, `${id}: upstream carries the fix now`);
+    const refs = [...text.matchAll(/\]\(([\w./-]+\.md)\)/g), ...text.matchAll(/`([\w-]+\.md)` in this directory/g)].map(m => m[1]);
+    for (const rel of refs) await readFile(join(dir, rel));
+  }
+  await assert.rejects(readFile(join(root, "plugin/builtins/sp-tdd/testing-anti-patterns.md")), { code: "ENOENT" });
+  assert.match(await readFile(join(root, "plugin/builtins/sp-tdd/SKILL.md"), "utf8"), /\[writing-good-tests\.md\]\(writing-good-tests\.md\)/);
+});
+
+test("syncCatalogEntries keeps merge-tracked builtins in catalog/builtins.generated.yaml, in manifest order", async () => {
+  const shipped = parseYaml(await readFile(join(root, "catalog/builtins.generated.yaml"), "utf8"));
+  const { builtins, agents } = syncCatalogEntries(superpowers);
+  assert.deepEqual(agents, []);
+  assert.deepEqual(builtins, shipped.filter(e => e.id.startsWith("sp-")));
+  assert.deepEqual(syncCatalogEntries(gsd), { builtins: [], agents: [] }, "gsd's seats carry no roles: hand-registered");
+});
+
+test("merge-tracked roles are validated and regenerateRegions needs the source id", () => {
+  const src = item => ({ sources: [{ id: "s", kind: "github", repo: "o/r", ref: "a".repeat(40), tag: "v1.0.0", license: "MIT", items: [item] }] });
+  const file = { from: "x/y.md", to: "plugin/builtins/b/y.md", mode: "adapted", baseBlob: "b".repeat(40) };
+  const builtin = { ...file, id: "b", kind: "builtin", to: "plugin/builtins/b/SKILL.md" };
+  assert.deepEqual(validateVendorManifest(src({ ...builtin, roles: ["plan"], rank: 40 })).errors, []);
+  assert.match(validateVendorManifest(src({ ...file, roles: ["plan"] })).errors.join("\n"), /only a builtin or agent item/);
+  assert.match(validateVendorManifest(src({ ...builtin, roles: [] })).errors.join("\n"), /non-empty list/);
+  assert.throws(() => regenerateRegions("x\n", new Map()), /source id is required/);
 });

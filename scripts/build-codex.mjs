@@ -523,11 +523,12 @@ function codexSkill(source, id, contract) {
     .replaceAll("Agent tool", "Codex subagent dispatcher")
     .replaceAll("Task tool", "Codex subagent dispatcher");
   if (id === "sp-brainstorm") {
-    const visualCompanionAnchor = "skills/brainstorming/visual-companion.md";
-    if (!body.includes(visualCompanionAnchor)) throw new Error("sp-brainstorm visual-companion anchor not found for Codex rewrite");
-    body = body.replaceAll(
+    // superpowers v7.0.2: "If they accept, read `visual-companion.md` in this directory before starting the server."
+    const visualCompanionAnchor = /If they accept, read `visual-companion\.md` in this directory before\s+starting the server\./;
+    if (!visualCompanionAnchor.test(body)) throw new Error("sp-brainstorm visual-companion anchor not found for Codex rewrite");
+    body = body.replace(
       visualCompanionAnchor,
-      `node ${"${PLUGIN_ROOT}"}/runtime/resolve-skill-provider.mjs builtin sp-brainstorm visual-companion.md\n\nBefore invoking any \`scripts/...\` command from that guide, run \`node ${"${PLUGIN_ROOT}"}/runtime/resolve-skill-provider.mjs builtin sp-brainstorm --path\`. Treat its verified absolute output as the guide's asset root and resolve every \`scripts/...\` path beneath it; never execute a path from the internal tree without this full-tree verification.`
+      () => `If they accept, read the visual companion guide before starting the server:\n\`node ${"${PLUGIN_ROOT}"}/runtime/resolve-skill-provider.mjs builtin sp-brainstorm visual-companion.md\`\n\nBefore invoking any \`scripts/...\` command from that guide, run \`node ${"${PLUGIN_ROOT}"}/runtime/resolve-skill-provider.mjs builtin sp-brainstorm --path\`. Treat its verified absolute output as the guide's asset root and resolve every \`scripts/...\` path beneath it; never execute a path from the internal tree without this full-tree verification.`
     );
   }
   if (id === "orchestrator") body = adaptOrchestratorForCodex(body, contract);

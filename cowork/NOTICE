@@ -8,7 +8,7 @@ Per-item detail (upstream path, ref, relation) is in each item's `upstream:` fie
 
 - pbakaus/impeccable @ 32930818a109fafa87199babe92fa8e530cff5d3 (Apache-2.0)
   Copyright 2025 Paul Bakaus
-- obra/superpowers @ 284be5905ed540d34ce5bcde24728b9b7f413ea0, d884ae04edebef577e82ff7c4e143debd0bbec99 (MIT)
+- obra/superpowers @ 22f0b463e7a5e579904dd6211a520321035526f7, d884ae04edebef577e82ff7c4e143debd0bbec99 (MIT)
   Copyright (c) 2025 Jesse Vincent
 - wshobson/agents @ 9c61ab243def98f72da12abd41cfcf5bcd91af9d, 2de74ac1c8f6669821dcef13153332c3168033c1, 511f8345cf42f84676e0ad56ddfdee33c90a666f (MIT)
   Copyright (c) 2024 Seth Hobson

@@ -158,8 +158,9 @@ export async function syncCodexSkillAssets({
       if (actual !== family.ref) throw new Error(`${selection.familyId} resolved ${actual}, expected ${family.ref}`);
       manifest.sources.push({ id: selection.familyId, repository: family.repository, ref: actual });
 
-      // File items (no id: a merge-tracked reference file) belong to the skill that owns the directory.
-      for (const item of source.items.filter(item => item.id && item.as !== "agent")) {
+      // Skill items only: merge-tracked file items (no id) are supporting files, copied below
+      // with their skill directory; watch items are never carried into muster.
+      for (const item of source.items.filter(item => item.as !== "agent" && item.id !== undefined && item.mode !== "watch")) {
         const sourceDir = join(clone, dirname(item.from));
         sourceBySkillId.set(item.id, `${selection.familyId}:${dirname(item.from)}`);
         const destination = join(staging, item.id);

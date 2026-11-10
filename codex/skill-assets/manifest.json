@@ -4,7 +4,7 @@
     {
       "id": "superpowers",
       "repository": "https://github.com/obra/superpowers",
-      "ref": "d884ae04edebef577e82ff7c4e143debd0bbec99"
+      "ref": "22f0b463e7a5e579904dd6211a520321035526f7"
     },
     {
       "id": "wshobson-agents",
@@ -18,13 +18,15 @@
       "source": "superpowers:skills/brainstorming",
       "adaptation": "upstream supporting assets with prompt-lint annotations on Markdown; intentional local supporting-asset overlay",
       "files": [
+        "builder-check-prompt.md",
         "scripts",
-        "spec-document-reviewer-prompt.md",
         "visual-companion.md"
       ],
       "overlay": {
         "source": "plugin/builtins/sp-brainstorm",
         "files": [
+          "builder-check-prompt.md",
+          "scripts/frame-template.html",
           "scripts/helper.js",
           "scripts/server.cjs",
           "scripts/start-server.sh",
@@ -36,35 +38,52 @@
     {
       "id": "sp-debug",
       "source": "superpowers:skills/systematic-debugging",
-      "adaptation": "packaging-only prompt-lint annotations on Markdown supporting assets",
+      "adaptation": "upstream supporting assets with prompt-lint annotations on Markdown; intentional local supporting-asset overlay",
       "files": [
-        "CREATION-LOG.md",
         "condition-based-waiting-example.ts",
         "condition-based-waiting.md",
         "defense-in-depth.md",
         "find-polluter.sh",
-        "root-cause-tracing.md",
-        "test-academic.md",
-        "test-pressure-1.md",
-        "test-pressure-2.md",
-        "test-pressure-3.md"
-      ]
+        "root-cause-tracing.md"
+      ],
+      "overlay": {
+        "source": "plugin/builtins/sp-debug",
+        "files": [
+          "condition-based-waiting-example.ts",
+          "condition-based-waiting.md",
+          "defense-in-depth.md",
+          "find-polluter.sh",
+          "root-cause-tracing.md"
+        ]
+      }
     },
     {
       "id": "sp-review",
       "source": "superpowers:skills/requesting-code-review",
-      "adaptation": "packaging-only prompt-lint annotations on Markdown supporting assets",
+      "adaptation": "upstream supporting assets with prompt-lint annotations on Markdown; intentional local supporting-asset overlay",
       "files": [
         "code-reviewer.md"
-      ]
+      ],
+      "overlay": {
+        "source": "plugin/builtins/sp-review",
+        "files": [
+          "code-reviewer.md"
+        ]
+      }
     },
     {
       "id": "sp-tdd",
       "source": "superpowers:skills/test-driven-development",
-      "adaptation": "packaging-only prompt-lint annotations on Markdown supporting assets",
+      "adaptation": "upstream supporting assets with prompt-lint annotations on Markdown; intentional local supporting-asset overlay",
       "files": [
-        "testing-anti-patterns.md"
-      ]
+        "writing-good-tests.md"
+      ],
+      "overlay": {
+        "source": "plugin/builtins/sp-tdd",
+        "files": [
+          "writing-good-tests.md"
+        ]
+      }
     },
     {
       "id": "wsh-api-design-principles",

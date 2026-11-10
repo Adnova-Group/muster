@@ -1,6 +1,8 @@
-// Upstream sync for merge-tracked sources (today: gsd). The old `muster vendor`
-// path regenerates over local edits, which is how hand adaptations were lost.
-// A merge-tracked source instead records, per item:
+// Upstream sync for merge-tracked sources: any vendor/manifest.yaml source whose
+// items carry a `mode` (today gsd and superpowers). The old `muster vendor` path
+// regenerates over local edits, which is how hand adaptations were lost. A
+// merge-tracked source records `ref` + `tag` (the release it is pinned to) and,
+// per item:
 //
 //   from      upstream path
 //   to        muster path (adapted / verbatim items)
@@ -10,11 +12,18 @@
 //             watch     never merged; listed in the report only
 //   baseBlob  git blob SHA of `from` at the pinned ref
 //   issues    upstream issue numbers whose mechanisms the item carries
+//   roles     (optional, builtin/agent items) catalog roles; `rank` optional. The
+//             item is registered in catalog/{builtins,agents}.generated.yaml by
+//             `muster vendor` (syncCatalogEntries) without being regenerated.
 //
-// and keeps byte-exact base copies under vendor/upstream/<source>/<from>, the
-// merge base. `muster vendor update <source> --to <tag>` merges, writes
-// conflict markers where it cannot, and moves the base copies and the manifest
-// pin only when every item merged cleanly.
+// An item with id + kind is a muster item (its `to` is the item's own path); a file
+// item ({from, to, mode, baseBlob}, no id) maps any other upstream file onto a muster
+// file: a skill's supporting file, or a port into another language.
+//
+// Byte-exact base copies live under vendor/upstream/<source>/<from>, the merge base.
+// `muster vendor update <source> --to <tag>` merges, writes conflict markers where it
+// cannot, and moves the base copies and the manifest pin only when every item merged
+// cleanly.
 //
 // Everything that touches git or the network goes through an injectable
 // `upstream` object ({ resolve, readFile, fileHistory, commitsCiting }), so the
@@ -65,6 +74,10 @@ export function validateSyncItem(item, at, itemPath, sourceRef) {
   if (item.issues !== undefined && (!Array.isArray(item.issues) || !item.issues.every(n => Number.isInteger(n) && n > 0)))
     errors.push(`${at}.issues: must be a list of upstream issue numbers`);
   if (item.to !== undefined && !relPath(item.to)) errors.push(`${at}.to: must be a relative repository path`);
+  if (item.roles !== undefined && (!Array.isArray(item.roles) || !item.roles.length || !item.roles.every(r => typeof r === "string" && r)))
+    errors.push(`${at}.roles: must be a non-empty list of role names`);
+  if (item.roles !== undefined && !["builtin", "agent"].includes(item.kind)) errors.push(`${at}.roles: only a builtin or agent item is registered in the catalog`);
+  if (item.rank !== undefined && (item.roles === undefined || !Number.isFinite(item.rank))) errors.push(`${at}.rank: a number, on an item with roles`);
   if ((item.id === undefined) !== (item.kind === undefined)) errors.push(`${at}: id and kind come together (or neither, for a file item)`);
   if (item.mode === "watch") {
     if (item.id !== undefined || item.kind !== undefined) errors.push(`${at}: a watch item carries no id or kind (it is never copied into muster)`);
@@ -95,6 +108,28 @@ export function validateSyncSource(source, at) {
   if (source.tag !== null && !TAG_RE.test(String(source.tag)))
     errors.push(`${at}.tag: a merge-tracked source records the release tag of its ref (null for an untagged upstream)`);
   return errors;
+}
+
+// Catalog entries for a merge-tracked source's builtin/agent items that carry roles,
+// in manifest order and in the shape `muster vendor`'s toBuiltin / toAgent emit, so
+// catalog/*.generated.yaml keeps listing them although they are never regenerated.
+export function syncCatalogEntries(source) {
+  const builtins = [];
+  const agents = [];
+  for (const item of syncItemsOf(source)) {
+    if (item.mode === "watch" || !item.id || !Array.isArray(item.roles)) continue;
+    const provenance = { license: source.license, upstream: [source.repo] };
+    if (item.kind === "builtin") {
+      const entry = { id: item.id, kind: "builtin", roles: item.roles, rank: item.rank !== undefined ? item.rank : 50, provenance };
+      if (item.description) entry.description = item.description;
+      builtins.push(entry);
+    } else if (item.kind === "agent") {
+      const entry = { id: item.id, kind: "agent", roles: item.roles, rank: item.rank !== undefined ? item.rank : 50 };
+      if (item.description) entry.description = item.description;
+      agents.push({ ...entry, provenance });
+    }
+  }
+  return { builtins, agents };
 }
 
 // ---- line mapping (pure) -------------------------------------------------------
@@ -157,11 +192,13 @@ function conflictBlock(ours, theirs, label) {
   return [`<<<<<<< muster`, ...(ours ? [ours] : []), `=======`, ...(theirs ? [theirs] : []), `>>>>>>> ${label}`].join("\n");
 }
 
-// Refresh every verbatim region of `text` from the new upstream. `bases` maps an
+// Refresh every verbatim region of `text` that quotes `source` from the new upstream
+// (regions quoting another source are left alone). `bases` maps an
 // upstream path to { prev, next, tag } (prev = base copy at the pin, next = text
 // at the target, null when the file was removed). Returns the new text, the
 // conflicts (each also written into the region as markers) and notes.
-export function regenerateRegions(text, bases, { source = "gsd" } = {}) {
+export function regenerateRegions(text, bases, { source } = {}) {
+  if (!source) throw new Error("regenerateRegions: the merge-tracked source id is required");
   const { regions, errors } = parseVerbatimRegions(text);
   const conflicts = errors.map(detail => ({ kind: "region", detail }));
   const notes = [];
@@ -191,6 +228,7 @@ export function regenerateRegions(text, bases, { source = "gsd" } = {}) {
       lines.splice(r.openLine, r.closeLine - r.openLine - 1, conflictBlock(r.body, "", `${entry.tag} (region deleted)`));
       continue;
     }
+    // Applies to every source: gsd runtime coupling must not enter muster through any quoted region.
     const coupling = gsdCouplingHits(fresh);
     if (coupling.length) {
       conflicts.push({ kind: "region", detail: `${at}: upstream region now carries gsd runtime coupling (${coupling[0].match})` });

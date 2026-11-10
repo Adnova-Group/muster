@@ -265,7 +265,9 @@ test("packaged brainstorm server and manifest identify the byte-identical local 
   const brainstorm = manifest.skills.find((skill) => skill.id === "sp-brainstorm");
   assert.deepEqual(brainstorm.overlay, {
     source: "plugin/builtins/sp-brainstorm",
-    files: ["scripts/helper.js", "scripts/server.cjs", "scripts/start-server.sh", "scripts/stop-server.sh", "visual-companion.md"],
+    // builder-check-prompt.md and scripts/frame-template.html joined the overlay with superpowers v7.0.2:
+    // the rebuilt SKILL.md dispatches the builder check, and server.cjs reads the frame template.
+    files: ["builder-check-prompt.md", "scripts/frame-template.html", "scripts/helper.js", "scripts/server.cjs", "scripts/start-server.sh", "scripts/stop-server.sh", "visual-companion.md"],
   });
   assert.match(brainstorm.adaptation, /intentional local supporting-asset overlay/);
   if (process.platform !== "win32") {

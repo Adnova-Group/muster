@@ -2427,14 +2427,33 @@ sources:
     repo: anthropics/knowledge-work-plugins
     # Re-pinned 2026-11-10: ca461866 -> e605d8dd (main). product-management/skills/write-spec/
     # SKILL.md is byte-identical at both (blob 183cf053); nothing new to take.
+    # Merge-tracked since 2026-11-10 (owner-approved complements): enterprise-search's
+    # knowledge-synthesis and data's validate-data are vendored as kwp-<name> at this same pin
+    # (upstream HEAD that day; the repository publishes no release tags, so tag is null), with
+    # byte-exact base copies in vendor/upstream/knowledge-work-plugins/; `muster vendor update
+    # knowledge-work-plugins` 3-way merges them. prd stays an inspired-by pipeline item.
+    # Kept muster divergence: each SKILL.md swaps the upstream frontmatter for muster's (name kept,
+    # one-line description, muster_builtin, SPDX license, generated upstream:; user-invocable and
+    # argument-hint dropped) and adds a prompt-lint-disable comment after the H1.
+    # kwp-knowledge-synthesis adds one "In muster" note: the `~~chat`/`~~email` connector labels
+    # (defined in enterprise-search/CONNECTORS.md, not carried) name whichever tool fills that
+    # category, and a research run labels web pages and files by source type instead.
+    # kwp-validate-data carries data/CONNECTORS.md beside it and points its link there.
+    # Each skill's plugin LICENSE (the Apache License 2.0 text; the repository has no NOTICE file)
+    # is carried verbatim beside it. Wired into muster-research and the business-case research phase.
     ref: e605d8ddbfb688da57dfaaceebd93f12a64ef1d3
+    tag: null
     license: Apache-2.0
     relation: inspired-by
-    fetch: false
     items:
       # prd's draft structure (problem, goals / non-goals, MoSCoW requirements traced to
       # stories, leading and lagging metrics, open questions) follows write-spec.
       - { id: prd, kind: pipeline, from: product-management/skills/write-spec/SKILL.md }
+      - { id: kwp-knowledge-synthesis, kind: builtin, from: enterprise-search/skills/knowledge-synthesis/SKILL.md, to: plugin/builtins/kwp-knowledge-synthesis/SKILL.md, mode: adapted, relation: adapted, baseBlob: a5e816fb52c4d2055513eeaea446e79b81aa54f2 }
+      - { id: kwp-validate-data, kind: builtin, from: data/skills/validate-data/SKILL.md, to: plugin/builtins/kwp-validate-data/SKILL.md, mode: adapted, relation: adapted, baseBlob: 30a1bac41bf9679dc7d96b7ec59a116f03ec0575 }
+      - { from: data/CONNECTORS.md, to: plugin/builtins/kwp-validate-data/CONNECTORS.md, mode: adapted, baseBlob: bf6a50d81ff4b7065aeb0438cf5576f7ada07a9e }
+      - { from: enterprise-search/LICENSE, to: plugin/builtins/kwp-knowledge-synthesis/LICENSE, mode: verbatim, baseBlob: d645695673349e3947e8e5ae42332d0ac3164cd7 }
+      - { from: data/LICENSE, to: plugin/builtins/kwp-validate-data/LICENSE, mode: verbatim, baseBlob: d645695673349e3947e8e5ae42332d0ac3164cd7 }
   - id: okr-guide
     kind: github
     repo: joelparkerhenderson/objectives-and-key-results

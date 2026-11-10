@@ -93,7 +93,7 @@ Every non-vendored source, generated from the manifest. Each row lists the items
 | [deanpeters/product-manager-prompts](https://github.com/deanpeters/product-manager-prompts) @ `418049a64858` | CC-BY-NC-SA-4.0 | `prd`, `epic` | inspired-by |
 | [deanpeters/Product-Manager-Skills](https://github.com/deanpeters/Product-Manager-Skills) @ `70fb6c4e4163` | CC-BY-NC-SA-4.0 | `prd`, `epic`, `user-story`, `launch-plan` | inspired-by |
 | [phuryn/pm-skills](https://github.com/phuryn/pm-skills) @ `9af7bfd0bc47` | MIT | `user-story`, `launch-plan`, `prd` | inspired-by |
-| [anthropics/knowledge-work-plugins](https://github.com/anthropics/knowledge-work-plugins) @ `e605d8ddbfb6` | Apache-2.0 | `prd` | inspired-by |
+| [anthropics/knowledge-work-plugins](https://github.com/anthropics/knowledge-work-plugins) @ `e605d8ddbfb6` | Apache-2.0 | 6 vendored builtins and agents | inspired-by, adapted |
 | [joelparkerhenderson/objectives-and-key-results](https://github.com/joelparkerhenderson/objectives-and-key-results) @ `f7269521672a` | NONE | `okrs` | inspired-by |
 | [architecture-decision-record/architecture-decision-record](https://github.com/architecture-decision-record/architecture-decision-record) @ `a36c53f49517` | CC-BY-NC-SA-4.0 | `ai-implementation-spec` | inspired-by |
 | [adr/madr](https://github.com/adr/madr) @ `ba75bb1b20d4` | MIT OR CC0-1.0 | `ai-implementation-spec` | inspired-by |

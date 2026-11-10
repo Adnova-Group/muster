@@ -80,7 +80,12 @@ Load the vendored method that fits the question:
 - market, industry, competitor or TAM/SAM/SOM questions: `kdense-market-research-reports` (ledger
   templates, the sizing and sensitivity calculators, and its release gate);
 - academic or systematic evidence: `kdense-literature-review` (search strategy, screening counts,
-  citation verification).
+  citation verification);
+- merging what several sources say into one answer: `kwp-knowledge-synthesis` (deduplicate across
+  sources, confidence from freshness and authority, conflicts kept visible rather than resolved
+  silently);
+- any figure, rate or calculation the brief hands on: `kwp-validate-data` before handoff
+  (denominators, period alignment, join inflation, the ready / caveats / revise verdict).
 
 ## Document-ingestion contract (source documents: PDFs, transcripts, long notes)
 When this phase ingests source documents, work in this order — synthesis never skips ahead of it:

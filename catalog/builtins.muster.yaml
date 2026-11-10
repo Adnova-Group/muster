@@ -450,3 +450,17 @@
   keywords: [literature, systematic, scoping, prisma, citations, papers, pubmed, arxiv]
   description: "Systematic, scoping or narrative literature reviews: recorded search strategies, coverage logs, screening counts, citation verification and thematic synthesis."
   provenance: { license: MIT, upstream: [K-Dense-AI/scientific-agent-skills] }
+- id: kwp-knowledge-synthesis
+  kind: builtin
+  roles: [research]
+  rank: 35
+  keywords: [synthesis, synthesize, deduplicate, attribution, conflicting, sources]
+  description: "Merge results from many sources into one deduplicated, attributed answer, with freshness and authority confidence and conflicts surfaced."
+  provenance: { license: Apache-2.0, upstream: [anthropics/knowledge-work-plugins] }
+- id: kwp-validate-data
+  kind: builtin
+  roles: [research]
+  rank: 34
+  keywords: [validate, analysis, sql, metrics, sanity, qa, pitfalls, denominator]
+  description: "QA an analysis before it ships: methodology, calculation spot-checks, common data pitfalls, chart honesty and a ready, caveats or revise verdict."
+  provenance: { license: Apache-2.0, upstream: [anthropics/knowledge-work-plugins] }

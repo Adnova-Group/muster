@@ -28,7 +28,8 @@ export const isCodexFrozenOutBuiltin = name => isUxFamilyBuiltin(name) || isComp
 // are Claude-plugin only as well. Listed by id, not prefix: wsh-*, sp-* and mkt-* also name
 // builtins that predate the freeze and ship in the Codex bundle.
 export const CODEX_FROZEN_OUT_COMPLEMENTS = Object.freeze(new Set([
-  "kdense-market-research-reports", "kdense-literature-review"
+  "kdense-market-research-reports", "kdense-literature-review",
+  "kwp-knowledge-synthesis", "kwp-validate-data"
 ]));
 // Every builtin the frozen Codex bundle leaves out: the UX family and the complements.
 export const isCodexExcludedBuiltin = name => isCodexFrozenOutBuiltin(name) || CODEX_FROZEN_OUT_COMPLEMENTS.has(name);

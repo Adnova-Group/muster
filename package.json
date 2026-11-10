@@ -65,6 +65,7 @@
     "pretest:fast": "node scripts/build-codex.mjs",
     "eval:router": "node eval/router/grade.mjs",
     "eval:modes": "node eval/modes/grade.mjs",
+    "eval:plugin": "node scripts/plugin-eval.mjs",
     "build:codex": "node scripts/build-codex.mjs",
     "check:codex": "node scripts/check-codex.mjs",
     "build:plugin": "node scripts/build-plugin-runtime.mjs",

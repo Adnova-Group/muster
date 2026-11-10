@@ -167,6 +167,13 @@ sources:
     # no release tags, so the source records `tag: null` and is pinned by commit SHA alone.
     # Re-pinned 2026-11-10: cf6059d (2026-06-05) -> 9c61ab2 (upstream HEAD, 2026-11-08). Model
     # bumps upstream (e.g. legacy-modernizer `model: fable`) are not taken: tier policy decides.
+    # 2026-11-10 complements: slo-implementation, postmortem-writing, incident-runbook-templates,
+    # security-requirement-extraction and changelog-automation added as wsh-<name> at this pin, with
+    # their references/details.md, under the same conventions (role and output-format lines after
+    # the H1, upstream "Don'ts" rephrased positively as "Cautions", the wsh reference header).
+    # postmortem-writing's details.md example links into an internal wiki become example.com URLs
+    # so they never read as files. Catalog entries live in catalog/builtins.muster.yaml (no roles
+    # here); wired into the runbook and release-notes pipelines. Claude-plugin only (Codex frozen).
     ref: 9c61ab243def98f72da12abd41cfcf5bcd91af9d
     tag: null
     license: MIT
@@ -418,6 +425,41 @@ sources:
         mode: adapted
         baseBlob: b1a2944bb8ce67b47914edd8e7b8e7e5214aa38f
         roles: [seo]
+      # sre and release (2026-11-10 complements)
+      - from: plugins/observability-monitoring/skills/slo-implementation/SKILL.md
+        id: wsh-slo-implementation
+        kind: builtin
+        to: plugin/builtins/wsh-slo-implementation/SKILL.md
+        mode: adapted
+        baseBlob: f740d0975b0b1004cb52e2e3293118f5fbd02dc0
+      - from: plugins/incident-response/skills/postmortem-writing/SKILL.md
+        id: wsh-postmortem-writing
+        kind: builtin
+        to: plugin/builtins/wsh-postmortem-writing/SKILL.md
+        mode: adapted
+        baseBlob: f68b37f973cbca925ce4503c656166968b7faf97
+        relation: adapted
+      - from: plugins/incident-response/skills/incident-runbook-templates/SKILL.md
+        id: wsh-incident-runbook-templates
+        kind: builtin
+        to: plugin/builtins/wsh-incident-runbook-templates/SKILL.md
+        mode: adapted
+        baseBlob: 70632a7d6383d19bc32198ed52c6bee9db41bb9c
+        relation: adapted
+      - from: plugins/security-scanning/skills/security-requirement-extraction/SKILL.md
+        id: wsh-security-requirement-extraction
+        kind: builtin
+        to: plugin/builtins/wsh-security-requirement-extraction/SKILL.md
+        mode: adapted
+        baseBlob: a56194330bf9f70cc78a24539d1ce6c5fea8845d
+        relation: adapted
+      - from: plugins/documentation-generation/skills/changelog-automation/SKILL.md
+        id: wsh-changelog-automation
+        kind: builtin
+        to: plugin/builtins/wsh-changelog-automation/SKILL.md
+        mode: adapted
+        baseBlob: babb783123990bd403157bfd1de271d2224be833
+        relation: adapted
       # === Curated wshobson AGENTS (kind: agent, not skills) ===
       # `as: agent` routes these to catalog/agents.generated.yaml + plugin/agents/<id>.md.
       # Mapped to muster roles, one agent per role gap. perf + seo already vendored above — not duplicated.
@@ -653,6 +695,11 @@ sources:
       - { from: plugins/security-scanning/skills/threat-mitigation-mapping/references/details.md, to: plugin/builtins/wsh-threat-mitigation-mapping/references/details.md, mode: adapted, baseBlob: c7bac62dd0c2c1eb88f91c7e47ae3e3145dfaa4e }
       - { from: plugins/javascript-typescript/skills/typescript-advanced-types/references/details.md, to: plugin/builtins/wsh-typescript-advanced-types/references/details.md, mode: adapted, baseBlob: 6b1b9a15c1103c8ebbebba1a3cb696ab7ad9dab9 }
       - { from: plugins/accessibility-compliance/skills/wcag-audit-patterns/references/details.md, to: plugin/builtins/wsh-wcag-audit-patterns/references/details.md, mode: adapted, baseBlob: 297f388b62a7006cc6687b4147d34e17bda399d7 }
+      - { from: plugins/observability-monitoring/skills/slo-implementation/references/details.md, to: plugin/builtins/wsh-slo-implementation/references/details.md, mode: adapted, baseBlob: 8a5b02b8e662cbb63e76b531945378347adce12a }
+      - { from: plugins/incident-response/skills/postmortem-writing/references/details.md, to: plugin/builtins/wsh-postmortem-writing/references/details.md, mode: adapted, baseBlob: be4e1508d12c7333e3a7e1216db7682028a3a277 }
+      - { from: plugins/incident-response/skills/incident-runbook-templates/references/details.md, to: plugin/builtins/wsh-incident-runbook-templates/references/details.md, mode: adapted, baseBlob: 9b107078b9f88ce7d0a2db46b3b244fe16b6796a }
+      - { from: plugins/security-scanning/skills/security-requirement-extraction/references/details.md, to: plugin/builtins/wsh-security-requirement-extraction/references/details.md, mode: adapted, baseBlob: 2adbdd8b830cda6c903c572e37329bc6c47b793d }
+      - { from: plugins/documentation-generation/skills/changelog-automation/references/details.md, to: plugin/builtins/wsh-changelog-automation/references/details.md, mode: adapted, baseBlob: 1c792a8082bf78a1c51e7a317d09b177ad99cd11 }
   # ---- ui-skills.com UX skills (2026-11-10) ----
   - id: anthropic-skills
     kind: github

@@ -464,3 +464,38 @@
   keywords: [validate, analysis, sql, metrics, sanity, qa, pitfalls, denominator]
   description: "QA an analysis before it ships: methodology, calculation spot-checks, common data pitfalls, chart honesty and a ready, caveats or revise verdict."
   provenance: { license: Apache-2.0, upstream: [anthropics/knowledge-work-plugins] }
+- id: wsh-incident-runbook-templates
+  kind: builtin
+  roles: [author]
+  rank: 39
+  keywords: [runbook, incident, oncall, escalation, outage, mitigation]
+  description: "Create structured incident response runbooks with step-by-step procedures, escalation paths, and recovery actions. Use this skill when building a service outage runbook for a payment processing system; creating database incident procedures covering connection pool exhaustion, replication lag, and disk space alerts; onboarding new on-call engineers who need step-by-step recovery guides written for a 3 AM brain; or standardizing escalation matrices across multiple engineering teams."
+  provenance: { license: MIT, upstream: [wshobson/agents] }
+- id: wsh-postmortem-writing
+  kind: builtin
+  roles: [author]
+  rank: 38
+  keywords: [postmortem, blameless, retrospective, rootcause, timeline]
+  description: "Write effective blameless postmortems with root cause analysis, timelines, and action items. Use when conducting incident reviews, writing postmortem documents, or improving incident response processes."
+  provenance: { license: MIT, upstream: [wshobson/agents] }
+- id: wsh-changelog-automation
+  kind: builtin
+  roles: [author]
+  rank: 37
+  keywords: [changelog, conventional, commits, semver, release, commitlint]
+  description: "Automate changelog generation from commits, PRs, and releases following Keep a Changelog format. Use when setting up release workflows, generating release notes, or standardizing commit conventions."
+  provenance: { license: MIT, upstream: [wshobson/agents] }
+- id: wsh-slo-implementation
+  kind: builtin
+  roles: [architecture-review, author]
+  rank: 36
+  keywords: [slo, sli, sre, reliability, errorbudget, burnrate]
+  description: "Define and implement Service Level Indicators (SLIs) and Service Level Objectives (SLOs) with error budgets and alerting. Use when establishing reliability targets, implementing SRE practices, or measuring service performance."
+  provenance: { license: MIT, upstream: [wshobson/agents] }
+- id: wsh-security-requirement-extraction
+  kind: builtin
+  roles: [security-review, plan]
+  rank: 45
+  keywords: [requirements, threats, compliance, abuse, acceptance]
+  description: "Derive security requirements from threat models and business context. Use when translating threats into actionable requirements, creating security user stories, or building security test cases."
+  provenance: { license: MIT, upstream: [wshobson/agents] }

@@ -29,7 +29,9 @@ export const isCodexFrozenOutBuiltin = name => isUxFamilyBuiltin(name) || isComp
 // builtins that predate the freeze and ship in the Codex bundle.
 export const CODEX_FROZEN_OUT_COMPLEMENTS = Object.freeze(new Set([
   "kdense-market-research-reports", "kdense-literature-review",
-  "kwp-knowledge-synthesis", "kwp-validate-data"
+  "kwp-knowledge-synthesis", "kwp-validate-data",
+  "wsh-slo-implementation", "wsh-postmortem-writing", "wsh-incident-runbook-templates",
+  "wsh-security-requirement-extraction", "wsh-changelog-automation"
 ]));
 // Every builtin the frozen Codex bundle leaves out: the UX family and the complements.
 export const isCodexExcludedBuiltin = name => isCodexFrozenOutBuiltin(name) || CODEX_FROZEN_OUT_COMPLEMENTS.has(name);

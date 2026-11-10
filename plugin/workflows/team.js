@@ -210,7 +210,7 @@ function contractLines(tag) {
     '- Never reset, rebase, push, update-ref or force anything. Stage files one at a time (never git add . or git add -A).',
     `- Commit as <type>(<taskId>): <summary> ${tag}, with a conventional type (feat, fix, test, docs, refactor, chore).`,
     '- Do not install new packages (return "blocked" naming the package). An architectural choice the plan leaves open is "blocked" too, with the options.',
-    '- Create new files with Write, or with Bash (cat > path <<\'EOF\') when Write is not among your tools.',
+    '- Create new files with Write.',
     '- Return the ExecResult object: status done|blocked|error; selfCheck PASSED only when every verify command passed and git log shows your tagged commit, otherwise FAILED; deviations lists anything you did beyond or instead of the plan.',
   ]
 }

@@ -4,7 +4,7 @@ description: "Backend architecture: APIs, service boundaries, resilience."
 model: opus
 effort: high
 maxTurns: 35
-tools: Read, Grep, Glob, Edit, Bash
+tools: Read, Grep, Glob, Edit, Write, Bash
 muster_builtin: true
 license: MIT
 upstream:

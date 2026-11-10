@@ -57,7 +57,7 @@ const REVIEW_RESULT = {
 const VERIFY_RESULT = {
   type: 'object',
   properties: {
-    verdict: { type: 'string', enum: ['PASS', 'GAPS', 'ABSTAIN'] },
+    verdict: { type: 'string', enum: ['PASS', 'GAPS', 'HUMAN_NEEDED', 'ABSTAIN'] },
     truths: {
       type: 'array',
       items: {
@@ -67,6 +67,7 @@ const VERIFY_RESULT = {
       },
     },
     gaps: strList,
+    human: strList,
   },
   required: ['verdict', 'truths', 'gaps'],
 }
@@ -121,7 +122,12 @@ const gapOf = (r, keys, claim) => {
 }
 const execGap = (r) => (r.status !== 'done' ? '' : SHA_RE.test(String(r.commit || '')) ? gapOf(r, ['branch', 'worktree', 'filesChanged', 'testsRun'], 'done') : 'done without a commit sha')
 const reviewGap = (r) => (r.verdict === 'PASS' ? gapOf(r, ['commitReviewed', 'testsRun'], 'PASS') : '')
-const verifyGap = (r) => (r.verdict !== 'PASS' ? '' : !filled(r.truths) ? 'PASS without truths' : r.truths.some((x) => !x || !filled(x.evidence)) ? 'PASS with a truth that has no evidence' : '')
+// HUMAN_NEEDED (gsd's human_needed: zero gaps, items only a human can sign off) carries the
+// same evidence burden as PASS, plus the items themselves.
+const verifyGap = (r) => (r.verdict !== 'PASS' && r.verdict !== 'HUMAN_NEEDED' ? ''
+  : !filled(r.truths) ? `${r.verdict} without truths`
+  : r.truths.some((x) => !x || !filled(x.evidence)) ? `${r.verdict} with a truth that has no evidence`
+  : r.verdict === 'HUMAN_NEEDED' && !filled(r.human) ? 'HUMAN_NEEDED without human items' : '')
 const EVIDENCE = new Map([[EXEC_RESULT, execGap], [REVIEW_RESULT, reviewGap], [VERIFY_RESULT, verifyGap]])
 
 async function attempt(prompt, opts, gap) {
@@ -203,6 +209,12 @@ function contractLines(tag) {
   ]
 }
 
+// Claude Code refuses, in a worktree-isolated agent, shell it cannot prove stays inside the
+// worktree (findings: heredocs, loops and chained git commands were refused in the first live
+// run). The planned verify command is not ours to rewrite, and merge-wave re-runs it verbatim
+// from the main checkout, so the builder runs its parts and says so.
+const ISOLATION_LINE = 'Worktree isolation refuses shell it cannot prove stays in this tree (heredocs, loops, variables, ; or && chains around git): create files with Write or Edit and run each git command as its own call. If it refuses a compound verify command, run the same checks as separate plain commands, list those in testsRun and add the deviation "[Verify] <command> refused by isolation; ran its parts" (merge-wave re-runs the planned command).'
+
 function emptyExec(t, status, why) {
   return { taskId: t.taskId, status, branch: '', commit: '', worktree: '', filesChanged: [], testsRun: [], testsPassed: false, selfCheck: 'FAILED', deviations: [why] }
 }
@@ -218,6 +230,7 @@ function execBrief(cfg, t, prior) {
     ...skillLines(t, cfg),
     `Files in scope: ${list(t.files).join(', ') || '(see PLAN.md)'}`,
     `Verify commands: ${list(t.verify).join(' ; ') || '(see PLAN.md)'}`,
+    ISOLATION_LINE,
     'You are in a fresh, isolated git worktree. This brief may be replayed after a crash, so:',
     `1. Check git state first: git status --short; git log --oneline ${cfg.base || 'HEAD~20'}..HEAD. If a commit whose message contains ${tag} already exists and the tree is clean, do not redo the work: re-run the verify commands and report that commit.`,
     cfg.base
@@ -277,6 +290,38 @@ function verifyBrief(cfg, tasks) {
     `Write your report to .muster/runs/${cfg.runId}/VERIFICATION.md relative to your starting directory (the main checkout, not the scratch worktree), then remove the scratch worktree with git worktree remove --force ${wt}.`,
     'ABSTAIN when you cannot gather the evidence; never guess PASS.',
   ].join('\n')
+}
+
+// One verifier per run. ABSTAIN means the verification could not run (a halted build, no
+// tasks, a crashed or turn-limited verifier); judgment-only items are HUMAN_NEEDED, never
+// ABSTAIN, so they reach the attended merge decision. gsd's decision tree ranks gaps first, so
+// HUMAN_NEEDED with gaps is GAPS (the human items stay listed).
+async function verifyRun(cfg, tasks, halted) {
+  if (halted || !tasks.length) return { verdict: 'ABSTAIN', truths: [], gaps: [halted || 'no tasks to verify'] }
+  const v = await call(verifyBrief(cfg, tasks), {
+    label: `${cfg.labelPrefix || ''}verify ${cfg.runId}`, phase: 'Verify', schema: VERIFY_RESULT, agentType: 'muster:muster-verifier', ...seat(cfg, 'verifier'),
+  })
+  if (v.status === 'error') return { verdict: 'ABSTAIN', truths: [], gaps: [v.error], status: 'error', reason: v.reason }
+  return v.verdict === 'HUMAN_NEEDED' && filled(v.gaps) ? { ...v, verdict: 'GAPS' } : v
+}
+
+// The Workflow tool inlines at most 8000 characters of a result and names its output file for
+// the rest (findings: a 3-task team result was 16.6 KB). So the headline leads (a one-line
+// summary, the verdict with its gaps and human items, the halt) and the per-task records come
+// last; merge-wave reads the full result from that output file. VERIFICATION.md holds every
+// truth's evidence and build-args.json each task's verify commands, so neither is repeated.
+// argsDigest echoes the build-args digest this build ran with, for merge-wave to match.
+function resultOf(cfg, tasks, verification, halted, extra) {
+  const v = verification
+  const ok = tasks.filter(passed).length
+  const counts = [list(v.gaps).length ? `${list(v.gaps).length} gap(s)` : '', list(v.human).length ? `${list(v.human).length} human check(s)` : ''].filter(Boolean).join(', ')
+  const summary = `${ok}/${tasks.length} task(s) done with review PASS; verifier ${v.verdict}${counts ? ` (${counts})` : ''}${halted ? `; halted: ${halted}` : ''}${filled(v.truths) ? `; details: .muster/runs/${cfg.runId}/VERIFICATION.md` : ''}`
+  const truths = list(v.truths).map((x) => (x && x.status === 'VERIFIED' ? { claim: x.claim, status: x.status } : x))
+  return {
+    runId: cfg.runId, summary, verification: { ...v, truths }, halted,
+    base: cfg.base || null, argsDigest: (cfg.digests && cfg.digests.args) || null, ...(extra || {}),
+    tasks: tasks.map(({ verify, ...t }) => t),
+  }
 }
 
 async function reviewLoop(cfg, t, ex, prior) {
@@ -344,16 +389,7 @@ async function runBuild(cfg) {
     else prior.push(...done.map((r) => ({ taskId: r.taskId, commit: r.commit })))
   }
   if (halted) log(`${pre}halted: ${halted}`)
-  let verification
-  if (halted || !tasks.length) {
-    verification = { verdict: 'ABSTAIN', truths: [], gaps: [halted || 'no tasks to verify'] }
-  } else {
-    verification = await call(verifyBrief(cfg, tasks), {
-      label: `${pre}verify ${cfg.runId}`, phase: 'Verify', schema: VERIFY_RESULT, agentType: 'muster:muster-verifier', ...seat(cfg, 'verifier'),
-    })
-    if (verification.status === 'error') verification = { verdict: 'ABSTAIN', truths: [], gaps: [verification.error], status: 'error', reason: verification.reason }
-  }
-  return { runId: cfg.runId, base: cfg.base || null, tasks, verification, halted }
+  return resultOf(cfg, tasks, await verifyRun(cfg, tasks, halted), halted)
 }
 // </shared>
 

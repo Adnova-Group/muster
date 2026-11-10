@@ -66,7 +66,7 @@ test("build: happy path across two waves, schemas, agent types, isolation and mo
   assert.equal(result.runId, "r1");
   assert.equal(result.halted, null);
   assert.deepEqual(result.tasks.map((t) => [t.taskId, t.wave, t.status, t.review.verdict]), [["A", 1, "done", "PASS"], ["B", 1, "done", "PASS"], ["C", 2, "done", "PASS"]]);
-  assert.deepEqual(result.tasks[0].verify, ["node --test A.test.js"]);
+  assert.equal(result.tasks[0].verify, undefined, "verify commands live in build-args.json, not the result");
   assert.equal(result.verification.verdict, "PASS");
 
   const builds = calls.filter((c) => c.opts.label.startsWith("build "));
@@ -270,6 +270,54 @@ test("build: self-check FAILED skips review; ABSTAIN review does not trigger a f
   assert.equal(calls.some((c) => c.opts.label === "review A r0"), false);
   assert.equal(calls.some((c) => c.opts.label.startsWith("fix B")), false);
   assert.equal(result.tasks[1].review.verdict, "ABSTAIN");
+});
+
+// Run 1 (first live e2e): every must-have verified, zero gaps, one judgment-checked prohibition
+// left for a human; the verifier mapped human_needed to ABSTAIN and the run kept its branch.
+const p05 = "P-05 (prohibition, judgment): no --json on any command other than report and stats";
+const verifyHuman = {
+  verdict: "HUMAN_NEEDED",
+  truths: [{ claim: "report --json prints one JSON document", status: "VERIFIED", evidence: "node bin/tally.js report --json -> exit 0" }, { claim: p05, status: "UNCERTAIN", evidence: "grep -rn flags src/ -> cli.js only" }],
+  gaps: [],
+  human: [`${p05}: confirm no other command grew a --json flag (judgment prohibition)`],
+};
+
+test("build: a zero-gap verification with judgment-only items is HUMAN_NEEDED with its items, never ABSTAIN", async () => {
+  const { result } = await run("build.js", { runId: "r7", waves: [[task("A")]] }, (label, prompt, opts) => (label.startsWith("verify") ? verifyHuman : happy(label, prompt, opts)));
+  assert.equal(result.verification.verdict, "HUMAN_NEEDED");
+  assert.deepEqual(result.verification.human, verifyHuman.human);
+  assert.deepEqual(result.verification.gaps, []);
+  assert.match(result.summary, /verifier HUMAN_NEEDED \(1 human check\(s\)\)/);
+});
+
+test("build: HUMAN_NEEDED with gaps is GAPS; HUMAN_NEEDED without items or evidence is an unusable result (ABSTAIN)", async () => {
+  const withGaps = await run("build.js", { runId: "r8", waves: [[task("A")]] }, (label, prompt, opts) => (label.startsWith("verify") ? { ...verifyHuman, gaps: ["report --json exits 1"] } : happy(label, prompt, opts)));
+  assert.equal(withGaps.result.verification.verdict, "GAPS");
+  assert.deepEqual(withGaps.result.verification.human, verifyHuman.human, "the human items stay listed");
+  const noItems = await run("build.js", { runId: "r9", waves: [[task("A")]] }, (label, prompt, opts) => (label.startsWith("verify") ? { ...verifyHuman, human: [] } : happy(label, prompt, opts)));
+  assert.equal(noItems.result.verification.verdict, "ABSTAIN");
+  assert.match(noItems.result.verification.gaps[0], /HUMAN_NEEDED without human items/);
+});
+
+test("build: the result leads with its headline and echoes the args digest; verify commands and VERIFIED evidence stay out", async () => {
+  const digests = { plan: "p".repeat(64), args: "a".repeat(64) };
+  const { result } = await run("build.js", { runId: "r10", base: "b0", digests, waves: [[task("A"), task("B")], [task("C")]] }, (label, prompt, opts) => (label.startsWith("verify") ? verifyHuman : happy(label, prompt, opts)));
+  const keys = Object.keys(result);
+  assert.deepEqual(keys.slice(0, 4), ["runId", "summary", "verification", "halted"]);
+  assert.equal(keys.at(-1), "tasks", "the bulky per-task records come last");
+  assert.equal(result.argsDigest, digests.args);
+  assert.match(result.summary, /^3\/3 task\(s\) done with review PASS; verifier HUMAN_NEEDED/);
+  assert.equal(result.verification.truths[0].evidence, undefined, "VERIFIED evidence lives in VERIFICATION.md");
+  assert.ok(result.verification.truths[1].evidence, "a truth a human must judge keeps its evidence");
+  assert.ok(result.tasks.every((t) => !("verify" in t)));
+  // The Workflow tool inlines the first 8000 characters: the verdict and human items are in them.
+  assert.ok(JSON.stringify(result).indexOf(verifyHuman.human[0]) < 8000);
+});
+
+test("backlog: the result opens with one headline per item", async () => {
+  const { result } = await run("backlog.js", { items: [{ itemId: "I1", runId: "ra", waves: [[task("A")]] }] }, (label, prompt, opts) => happy(label.split(" ").slice(1).join(" "), prompt, opts));
+  assert.deepEqual(Object.keys(result), ["summary", "items"]);
+  assert.match(result.summary[0], /^I1: 1\/1 task\(s\) done with review PASS; verifier PASS/);
 });
 
 test("build: string args are parsed; junk args return an error instead of throwing", async () => {

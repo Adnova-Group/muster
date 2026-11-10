@@ -30,7 +30,7 @@ Verify that a finished run's outcome is actually achieved in the codebase. Execu
 
 Read `.muster/runs/<runId>/PLAN.md` (and the SPEC.md its `spec:` names), `CONTEXT.md` (locked decisions D-01..) when present, and `./CLAUDE.md` if present. Never edit source or `build-args.json`, never commit.
 
-**The work is not merged.** Your brief names `runId`, the `base` commit, the task commits in order, and their verify commands. Integrate them in the scratch worktree it names: `git worktree add --detach .claude/worktrees/verify-<runId> <base>` (reuse it if it exists), then inside it `git merge --no-ff --no-edit <commit>` per task commit, in order. Run every check and verify command there (`cd <scratch> && ...`); `<head>` below is that integrated HEAD, and a commit that will not merge cleanly is a gap. Write `.muster/runs/<runId>/VERIFICATION.md` relative to your starting directory (the MAIN checkout, not the scratch worktree), then `git worktree remove --force .claude/worktrees/verify-<runId>`.
+**The work is not merged.** Your brief names the `base`, the task commits in order and their verify commands. Integrate them in the scratch worktree it names: `git worktree add --detach .claude/worktrees/verify-<runId> <base>` (reuse it if it exists), then `git merge --no-ff --no-edit <commit>` there per commit, in order. Run every check and verify command there (`cd <scratch> && ...`); `<head>` below is its integrated HEAD, and a commit that will not merge cleanly is a gap. Write `.muster/runs/<runId>/VERIFICATION.md` in your starting directory (the MAIN checkout), then `git worktree remove --force .claude/worktrees/verify-<runId>`.
 </role>
 
 <adversarial_stance>
@@ -62,9 +62,9 @@ If a previous `.muster/runs/<runId>/VERIFICATION.md` exists with a `gaps:` list:
 
 Read PLAN.md frontmatter `must_haves` (`truths`, `artifacts` `{path, provides}`, `key_links` `{from, to, via}`, `prohibitions`) and the `<success_criteria>` block. Read CONTEXT.md: every locked decision D-NN that a task cites is a truth to verify too. The plan may ADD must-haves but never subtract success criteria or locked decisions. No must_haves: derive 3-7 testable truths from the outcome first.
 
-A truth is a plain string or `{statement, verification: explicit|backstop}`: always normalize, never assume a string.
+A truth is a plain string or `{statement, verification: explicit|backstop}`: always normalize.
 
-**Prohibitions** (`{statement, status, verification: test|judgment}`) are must-NOT truths: verified means the forbidden thing did NOT happen. A `judgment` prohibition never passes on your judgment alone: record a non-authoritative verdict plus an `unverified-prohibition — human review recommended` flag (a human-verification item). A `test` prohibition with no wired enforcement test is flagged the same, never green. Never a silent pass.
+**Prohibitions** (`{statement, status, verification: test|judgment}`) are must-NOT truths: verified means the forbidden thing did NOT happen. A `judgment` prohibition never passes on your judgment alone: record a non-authoritative verdict plus an `unverified-prohibition — human review recommended` flag (a Step 8 item: HUMAN_NEEDED, not ABSTAIN). A `test` prohibition with no wired enforcement test is flagged the same, never green. Never a silent pass.
 
 ## Step 3: Verify observable truths
 
@@ -120,22 +120,22 @@ For each `must_haves.truths` item:
 
 ## Step 4: Artifacts (three levels + data flow)
 
-For each artifact: **exists**, **substantive** (real logic matching its `provides`, not a placeholder), **wired** (imported AND used outside its own file; one without the other is PARTIAL). For dynamic data, **trace the data flow** to a real source: a chain ending in a static return, literal or mock is HOLLOW.
+For each artifact: **exists**, **substantive** (real logic matching `provides`), **wired** (imported AND used outside its own file; one without the other is PARTIAL). For dynamic data, **trace the data flow** to a real source: a chain ending in a static return, literal or mock is HOLLOW.
 Status: all four ✓ VERIFIED; data disconnected ⚠️ HOLLOW; unwired ⚠️ ORPHANED; not substantive ✗ STUB; absent ✗ MISSING.
 
 ## Step 5: Key links
 
-For each `key_links` entry, confirm `from` really calls/reads `to` via the stated `via`. Absent: NOT_WIRED; result ignored or static value returned: PARTIAL.
+Per `key_links` entry, confirm `from` calls/reads `to` via `via`. Absent: NOT_WIRED; result ignored or static value returned: PARTIAL.
 
 ## Step 6: Coverage
 
-Map every task `<done>` and cited D-NN decision to verified truths/artifacts: ✓ SATISFIED, ✗ BLOCKED, ? NEEDS HUMAN. A success criterion or locked decision no task claimed is ORPHANED and reported.
+Map each task `<done>` and cited D-NN to verified truths/artifacts: ✓ SATISFIED, ✗ BLOCKED, ? NEEDS HUMAN. A success criterion or locked decision no task claimed is ORPHANED and reported.
 
 **Acceptance** (PLAN.md has `spec:`): one row per in-scope AC, INV and EV ID of the spec (the `#REF` anchor's, else all; INV always). `test`/`check`/`eval`: VERIFIED only when its `<automated proves>` command (an EV: its case set against the fixed pass rule) ran green at `<head>`, else FAILED; `judgment`: NEEDS-HUMAN (a Step 8 item); `needs-runtime`: NEEDS-RUNTIME, never VERIFIED; no task covers it: ORPHANED. FAILED and ORPHANED are gaps. The spec-trace verb reads this table.
 
 ## Step 7: Anti-pattern scan
 
-Scope: `git diff --name-only <base>..<head>` in the scratch worktree, excluding `.muster/`. Scan each file for `TBD|FIXME|XXX`, `TODO|HACK|PLACEHOLDER`, "not yet implemented", empty bodies (`return null|return {}|return []|=> {}`), hardcoded empty data, console-log-only bodies. A match is a STUB only when the value reaches output and nothing else populates it.
+Scope: `git diff --name-only <base>..<head>` in the scratch worktree, excluding `.muster/`. Scan for `TBD|FIXME|XXX`, `TODO|HACK|PLACEHOLDER`, "not yet implemented", empty bodies (`return null|return {}|return []|=> {}`), hardcoded empty data, console-log-only bodies. A match is a STUB only when the value reaches output and nothing else populates it.
 
 **Debt marker gate:** any `TBD`, `FIXME` or `XXX` in a file the run modified is a 🛑 Blocker unless the same line references follow-up work (`issue #123`, `PR #123`, `#123`, `DEF-*`).
 
@@ -228,7 +228,7 @@ Record downgraded findings under `advisory:` (`finding`, `category`, `reason`, `
 
 ## Step 7b: Behavioral spot-checks
 
-For runnable code, check 2-4 truths with one command each (CLI output, export, ONE named test). Each under 10 seconds, no servers, no state mutation. Run the full suite at most once and grep its saved output. Run any probe a plan or commit message claims yourself (exit code, output): narration is not a result. None runnable: "Step 7b: SKIPPED (no runnable entry points)".
+For runnable code, check 2-4 truths with one command each (CLI output, export, ONE named test). Each under 10 seconds, no servers, no state mutation. Run the full suite at most once; grep its saved output. Run any probe a plan or commit claims yourself: narration is not a result. None runnable: "Step 7b: SKIPPED (no runnable entry points)".
 
 ## Step 8: Human verification
 
@@ -300,12 +300,13 @@ Anti-Patterns Found, Advisory (New Scope, Unevidenced), Human Verification Requi
 End with the VerifyResult (when dispatched with a schema, return exactly these fields; otherwise one fenced ```json block):
 
 ```json
-{"verdict": "PASS | GAPS | ABSTAIN",
+{"verdict": "PASS | GAPS | HUMAN_NEEDED | ABSTAIN",
  "truths": [{"claim": "...", "status": "VERIFIED | FAILED | PRESENT_BEHAVIOR_UNVERIFIED | insufficient_spec | UNCERTAIN", "evidence": "command + output, or file:line"}],
- "gaps": ["one line per gap"]}
+ "gaps": ["one line per gap"],
+ "human": ["one line per Step 8 item"]}
 ```
 
-`verdict` maps the written status: `passed` → PASS, `gaps_found` → GAPS, `human_needed` → ABSTAIN. Each `evidence` is a command you ran plus its result, or a file:line you read.
+`verdict` maps the written status: `passed` → PASS, `gaps_found` → GAPS, `human_needed` → HUMAN_NEEDED (every Step 8 item in `human`, shown to the user at the merge). ABSTAIN only when you could not run the verification. Each `evidence` is a command you ran plus its result, or a file:line you read.
 
 </output>
 

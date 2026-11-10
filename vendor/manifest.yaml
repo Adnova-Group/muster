@@ -1043,10 +1043,15 @@ sources:
   - id: blader-humanizer
     kind: github
     repo: blader/humanizer
-    # No v2.8.2 tag exists upstream. SKILL.md `version: 2.8.2` first appears at this
-    # commit (2026-06-29), which was the default-branch HEAD on the 2026-07-13 survey
-    # date recorded in codex/upstreams.json.
-    ref: 1b48564898e999219882660237fde01bf4843a0f
+    # Re-pinned 2026-11-10: 1b48564 (SKILL.md 2.8.2, 2026-06-29) -> b48c832 (v4.0.0 release
+    # merge). Adapted into muster-humanizer (upstream path SKILL.md): the planted-instruction
+    # guard (#317), whole-file read with a coverage report (#326/#327), the facts-first draft
+    # check, strongest-first ordering with "weak alone", patterns 2-5, 7, 9, 10, 14, 16, 23-26,
+    # the spaced ` -- ` dash with its code/URL exemption (8), meticulous / interplay / quietly /
+    # garner. Skipped: 4.0.0's allowance to add true details (muster keeps claims fixed because
+    # the humanizer runs after review) and the writer's sample overriding the dash ban.
+    # codex/upstreams.json (frozen Codex lane, researched 2026-07-13) keeps the old pin.
+    ref: b48c832f0f809c1b5658edbb838c2521b72f2413
     license: MIT
     copyright: "Copyright (c) 2025 Siqi Chen"
     relation: adapted
@@ -1056,7 +1061,11 @@ sources:
   - id: stealthhumanizer
     kind: github
     repo: rudra496/StealthHumanizer
-    ref: 1aacbda6e2f66afbdcb6714a85347307068373e9
+    # Re-pinned 2026-11-10: 1aacbda -> 8b0e908 (master, 2026-11-09; past v2.4.2). Adapted from
+    # lib/prompts.ts (rule 7, 33ea2db) and CHANGELOG.md: never add pronouns or filler the source
+    # lacked, no contractions in academic or technical text, vary sentence length without
+    # fragments. Its detector weights and transform engine are detector-evasion code: not taken.
+    ref: 8b0e90874c6137c68476d5f4a7139e0ef30e198f
     license: MIT
     copyright: "Copyright (c) 2025-2026 Rudra Sarker"
     relation: adapted
@@ -1066,7 +1075,15 @@ sources:
   - id: avoid-ai-writing
     kind: github
     repo: conorbronsdon/avoid-ai-writing
-    ref: 500ff59006f19c27120c5ddbd9b56fc3d937b6bf
+    # Re-pinned 2026-11-10: 500ff59 -> 30971f1 (main, after v3.38.0 f9f626b, which predates the
+    # detector/patterns.js lists taken). Adapted from SKILL.md, references/patterns.md and
+    # detector/patterns.js: Tier 1/2 placement (harness, foster, elevate, facilitate, multifaceted
+    # to Tier 2; vibrant, nestled, enduring to Tier 1; quietly to Tier 2), the exact Tier 3 density
+    # rule, curly quotes weak alone, protected content, the no-op rule, "never inject", and in
+    # src/humanizer-score.js the masking of code, URLs, blockquotes and quoted spans plus the
+    # cutoff-disclaimer, hedge-stack, generic-conclusion and tier2-cluster checks. Skipped: the
+    # em-dash rate guideline (muster's dash ban is a house rule) and the 54-type stylometrics.
+    ref: 30971f1c50c6412a0c414e8c7b15032a32b21939
     license: MIT
     copyright: "Copyright (c) 2026 Conor Bronsdon"
     relation: adapted
@@ -1093,13 +1110,23 @@ sources:
         licensed source. muster-humanizer was rewritten clean-room on 2026-11-09: every
         list entry now traces to blader/humanizer or conorbronsdon/avoid-ai-writing (MIT),
         "Indeed" and "Overall" left the opener list and "as an AI" left the scorer.
+        Corrections and re-check 2026-11-10: "as an AI (language) model" is in avoid-ai-writing's
+        MIT detector (CUTOFF_DISCLAIMERS) already at 500ff59, so the scorer carries it again
+        under that attribution; "unlock", "essential", "various", "vital" and "needless to say"
+        trace to aaaronmiller/humanize-writing's references/ai-vocabulary-list.md (MIT), and
+        "unlock" and "happy to help" left the scorer because no MIT source lists them as tells.
+        Upstream is unchanged since the pin; after the 2026-11-10 humanizer update the item and
+        src/humanizer-score.js share no 7-gram with it, and the only shared 5-grams are its own
+        path in the upstream: block and the stock frame "not just X but Y", which blader lists.
     items:
       - { id: muster-humanizer, kind: builtin, from: skills/anti-ai-slop-writing }
   - id: humanize-writing
     kind: github
     repo: aaaronmiller/humanize-writing
     # No recorded pin: default-branch HEAD on 2026-06-23 (the humanizer enrichment).
-    # Still the upstream HEAD on 2026-11-09.
+    # Still the upstream HEAD on 2026-11-10 (checked): nothing new to take. The Tier 3 words
+    # unlock / essential / various / vital and "needless to say" come from its
+    # references/ai-vocabulary-list.md.
     ref: c07a2a8dab1f6033ad0da713766df43d0dc374b9
     license: MIT
     copyright: "Copyright (c) 2025 Aaron Miller"
@@ -1122,9 +1149,42 @@ sources:
       evidence: >-
         Compared prompts/Humanizer Pro.md at the pin with muster-humanizer: no shared
         5-gram. Muster took two ideas (calibrate to the author's samples; ask one question
-        when intent is unclear) and states them in its own words.
+        when intent is unclear) and states them in its own words. Re-checked 2026-11-10:
+        upstream unchanged since the pin; the updated muster-humanizer still shares no 5-gram.
     items:
       - { id: muster-humanizer, kind: builtin, from: prompts/Humanizer Pro.md }
+  - id: stop-slop
+    kind: github
+    repo: hardikpandya/stop-slop
+    # 2026-11-10 (main HEAD): muster-humanizer takes, in its own words, negation countdowns,
+    # throat-clearing and meta-commentary frames, vague declaratives and false agency
+    # (references/structures.md, references/phrases.md), plus two humanize-score signposting
+    # phrases ("let me be clear", "the uncomfortable truth is"). Skipped: "kill all adverbs",
+    # the blanket passive ban, rewriting universals (changes claims), adding "you" (injects a
+    # pronoun the source lacked), and its 1-10 self-score (muster has humanize-score).
+    ref: 8da1f030185bdfe8471220585162991eaeb970e9
+    license: MIT
+    copyright: "Copyright (c) 2025 Hardik Pandya"
+    relation: adapted
+    fetch: false
+    items:
+      - { id: muster-humanizer, kind: builtin, from: references/structures.md }
+  - id: no-ai-slop
+    kind: github
+    repo: petergyang/no-ai-slop
+    # 2026-11-10 (main HEAD): muster-humanizer takes, in its own words, the detect-only mode, the
+    # minimum-effective-edit voice rules, faux-insight setups, colon reveals, interpretive
+    # metadiscourse, fake-profound kickers, recap endings, the portability test, empty adverbs
+    # (weak alone) and direct verbs (skills/no-ai-slop/SKILL.md, eval.md), plus three
+    # humanize-score signposting phrases. Skipped: its em-dash allowance (muster's dash ban is
+    # a house rule) and its banned-word list (muster's tiers cover it).
+    ref: 000650b156983f5159695b441477f4e63b25dc85
+    license: MIT
+    copyright: "Copyright (c) 2026 Peter Yang"
+    relation: adapted
+    fetch: false
+    items:
+      - { id: muster-humanizer, kind: builtin, from: skills/no-ai-slop/SKILL.md }
 
   # --- muster-prompt-smith: lint rule taxonomy and eval/optimizer patterns ---
   - id: lintlang

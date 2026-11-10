@@ -9,22 +9,26 @@
     license: MIT
     upstream:
       - wshobson/agents
-- id: wsh-code-reviewer
-  kind: agent
-  roles:
-    - code-review
-  rank: 50
-  description: Code review for quality, security and production reliability.
-  provenance:
-    license: MIT
-    upstream:
-      - wshobson/agents
 - id: wsh-debugger
   kind: agent
   roles:
     - debug
   rank: 50
   description: Debugging errors, test failures and unexpected behavior.
+  provenance:
+    license: MIT
+    upstream:
+      - wshobson/agents
+- id: wsh-team-debugger
+  kind: agent
+  roles:
+    - debug
+  rank: 45
+  keywords:
+    - hypothesis
+    - root-cause
+    - investigate
+  description: Tests one bug hypothesis with cited evidence.
   provenance:
     license: MIT
     upstream:

@@ -41,6 +41,23 @@
   rank: 55
   description: "Read-only retrospective over a finished run; proposes user-gated edits to muster's skills and agents."
   provenance: { license: Apache-2.0, upstream: [damusix/atomic-claude] }
+# Dev-team workflow seats (docs/strategy/dev-team-topologies.md). Both are workflow seats in
+# src/specialists.js, so an agent_hint never makes them a task's builder: muster:team
+# dispatches the test writer for tdd tasks and the integration checker per wave.
+- id: muster-test-writer
+  kind: agent
+  roles: [test-author]
+  rank: 45 # below wsh-test-automator: a workflow seat need not win the role, and the frozen Codex lane's test-author pick stays put
+  keywords: [tdd, red, failing-test, regression]
+  description: "TDD red: writes a task's failing tests, never the code."
+  provenance: { license: Apache-2.0, upstream: [open-gsd/gsd-core] }
+- id: muster-integration-checker
+  kind: agent
+  roles: [code-review]
+  rank: 40 # below muster-reviewer: it never displaces the code-review default
+  keywords: [integration, wiring, contracts, parallel]
+  description: "Checks a wave's parallel tasks wire together."
+  provenance: { license: Apache-2.0, upstream: [open-gsd/gsd-core] }
 
 # ----- Intent agents: merge-tracked vendored from ghaida/intent (CC0-1.0; vendor/manifest.yaml
 # source intent). Not clean-room: they keep upstream text with a muster note. Ranks sit below

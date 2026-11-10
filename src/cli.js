@@ -158,6 +158,8 @@ const USAGE = [
   "memory read|write ...|vendor [update <source> --to <tag> [--dry-run]|report <source> --to <tag> [--stdout]|check]|provenance [--write]|init [dir]|init transition [dir] --to <handoff|attempted|completed>|init normalize [dir] --approve CLAUDE.md|init acknowledge [dir] --reason unavailable|init finalize [dir]|setup [dir]|design <init|status|resolve|detect|ignores|provider|gate|workflows|run> ...|",
   // planning + routing artifacts
   "plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|",
+  // skill discovery: browse builtins, registry search, per-project enable/add, pins, usage
+  "skills <list [domain]|show <id>|search <query> [--offline]|enable <id>|disable <id>|add <publisher>/<skill>|pin <id> [--role <role>]|unpin <id>|usage> [--json]|",
   // prompt tooling
   "prompt <lint|variations|eval|optimize|scan> [file|dir]|humanize-score <file> [--threshold N]|citation-check <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|",
   // diagnose/audit/issue/assess/steer/scope
@@ -1540,6 +1542,12 @@ async function handleCoreCommand(cmd, rest) {
     // 1 = blockers, 2 = not evaluated; set via exitCode so a usage error never reads as exit 1.
     const { runPlanLintCli } = await import("./plan-lint.js");
     process.exitCode = runPlanLintCli(rest);
+    return true;
+  }
+  if (cmd === "skills") {
+    // Skill discovery and per-project opt-in (src/skills.js). Network only on search and add.
+    const { runSkillsCli } = await import("./skills.js");
+    process.exitCode = await runSkillsCli(rest);
     return true;
   }
   if (await handleCoreCommandPart1(cmd, rest)) return true;

@@ -9,6 +9,7 @@ import { decodeEntityAmps, parsePlan } from "./plan-lint.js";
 import { runDir } from "./run-dir.js";
 import { writeContainedFile } from "./fs-safe.js";
 import { agentTypeFor, specialistCatalog } from "./specialists.js";
+import { pinApplies, resolvePins, taskRoles } from "./skill-pins.js";
 
 const AUTOMATED_RE = /<automated[^>]{0,200}>([\s\S]*?)<\/automated>/g;
 
@@ -26,7 +27,9 @@ function verifyCommands(verifyBody) {
 // A task's agent_hint becomes `agentType` only when it names a dispatchable plugin agent
 // (build.js otherwise runs muster-executor with the hint as a domain lens); its `skills`
 // become [{id, path}] with the absolute SKILL.md path the executor reads before working.
-export function buildArgsFromPlan(planText, { runId, base = null, branch = null, models = null, catalog = specialistCatalog() } = {}) {
+// `pins` ([{id, role?, path}], src/skill-pins.js) are the project's pinned skills: each is
+// appended to every task it applies to (all tasks, or the tasks carrying its role).
+export function buildArgsFromPlan(planText, { runId, base = null, branch = null, models = null, catalog = specialistCatalog(), pins = [] } = {}) {
   const plan = parsePlan(planText);
   const problems = [];
   const humanNeeded = [];
@@ -52,6 +55,14 @@ export function buildArgsFromPlan(planText, { runId, base = null, branch = null,
     // tdd="true" or type="tdd" selects muster:team's test-first split (muster-test-writer, then
     // the builder); muster:build ignores the flag.
     if (t.tdd === "true" || t.type === "tdd") task.tdd = true;
+    if (pins.length) {
+      const roles = taskRoles(t, catalog);
+      const add = pins.filter((p) => pinApplies(p, roles) && !(task.skills || []).some((k) => k.id === p.id));
+      if (add.length) {
+        task.skills = [...(task.skills || []), ...add.map((p) => ({ id: p.id, path: p.path }))];
+        task.pinned = add.map((p) => p.id);
+      }
+    }
     if (!task.verify.length) problems.push(`task ${t.id} has no <automated> verify command`);
     if (!byWave.has(t.wave)) byWave.set(t.wave, []);
     byWave.get(t.wave).push(task);
@@ -75,7 +86,10 @@ export async function writeBuildArgs({ cwd, runId, base = null, branch = null })
     return { ok: false, runId, problems: [`.muster/runs/${runId}/PLAN.md not found`] };
   }
   const models = (await readJsonOrNull(join(dir, "preflight.json")))?.models || null;
-  const { args, humanNeeded, problems } = buildArgsFromPlan(planText, { runId, base, branch, models });
+  const catalog = specialistCatalog();
+  let pinned = { pins: [], warnings: [] };
+  try { pinned = resolvePins(cwd, catalog); } catch (e) { pinned.warnings.push(e.message); }
+  const { args, humanNeeded, problems } = buildArgsFromPlan(planText, { runId, base, branch, models, catalog, pins: pinned.pins });
   const rel = `.muster/runs/${runId}/build-args.json`;
   if (problems.length) return { ok: false, runId, problems, humanNeeded };
   await writeContainedFile(cwd, join(dir, "build-args.json"), JSON.stringify(args, null, 2) + "\n");
@@ -83,5 +97,7 @@ export async function writeBuildArgs({ cwd, runId, base = null, branch = null })
     ok: true, runId, path: rel, base: args.base || null,
     waves: args.waves.map((w) => w.map((t) => t.taskId)),
     humanNeeded,
+    ...(pinned.pins.length ? { pinned: args.waves.flat().filter((t) => t.pinned).map((t) => `${t.taskId}: ${t.pinned.join(", ")}`) } : {}),
+    ...(pinned.warnings.length ? { warnings: pinned.warnings } : {}),
   };
 }

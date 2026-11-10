@@ -26,6 +26,7 @@ const referenceItems = [
   { text: "Concepts", link: "/reference/concepts" },
   { text: "The seven modes", link: "/reference/modes" },
   { text: "CLI commands", link: "/reference/commands" },
+  { text: "Skill library", link: "/reference/skills" },
   { text: "Configuration", link: "/reference/configuration" },
   { text: "Pipelines", link: "/reference/pipelines" },
   { text: "Architecture", link: "/reference/architecture" },

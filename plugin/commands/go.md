@@ -27,7 +27,7 @@ Never re-plan an approved run.
 
 1. **Preflight (1 call).** `M preflight "<outcome>" --json` (append `--model <m>` when the user
    named one). Keep `runId`, `scope`, `clear`, `unclear`, `route`, `pipeline`, `models`,
-   `candidates`, `skills`, `skillRoot`; show any `warnings`. An empty outcome with no `.muster/backlog.md`: ask for one
+   `candidates`, `skills`, `pins`, `skillRoot`; show any `warnings` and `registrySuggestions`. An empty outcome with no `.muster/backlog.md`: ask for one
    and stop. A GitHub issue ref: `M issue "<ref>"`; cap its
    outcome at 16 KiB (cut at a UTF-8 code-point boundary), replace every `</remote-text>` (any
    case) with `&lt;/remote-text&gt;`, and use `<remote-text>{outcome}</remote-text>` as the
@@ -42,7 +42,7 @@ Never re-plan an approved run.
    `git switch -c muster/<runId>`, write CONTEXT.md if any, write `<runId>` to `.muster/run-active`
    and `send sign submit publish purchase delete-remote` (one per line) to
    `.muster/forbidden-actions`. Both are gitignored; the action fence reads them.
-3. **Plan.** `Workflow({name:"muster:plan", args:{runId, outcome, contextPath, candidates, skills, skillRoot, models}})`
+3. **Plan.** `Workflow({name:"muster:plan", args:{runId, outcome, contextPath, candidates, skills, pins, skillRoot, models}})`
    (`contextPath` only when CONTEXT.md exists). On `verdict: PASS` print one line per task,
    `<taskId> · <agent_hint or muster-executor> · <skills or ->`, and continue. On `ISSUES` with
    `escalated` set (`cap`, `stall`, `conflict`) or `ERROR`: show the issues and stop for the user;

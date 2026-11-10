@@ -69,6 +69,9 @@ const EXPECTED_ARGUMENT_HINTS = {
   go: "<outcome | backlog ref>",
   init: "[dir]",
   plan: "<outcome | backlog ref>",
+  // Each fragment is a row of skills.md's verb table (the description keeps only `<verb>`
+  // because descriptions are always-on context).
+  skills: "list [domain] | show <id> | search <query> | enable <id> | disable <id> | add <publisher>/<skill> | pin <id> [--role <role>] | unpin <id> | usage",
 };
 
 test("every plugin/commands/*.md file carries argument-hint, matching the Usage string already in its description", async () => {

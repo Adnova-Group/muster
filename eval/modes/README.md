@@ -274,7 +274,7 @@ this eval), **deliberate-none** (out of scope for this eval, with a stated reaso
 
 ### Structurally graded modes
 
-`init.md` and `design.md` are covered by prompt lint plus their focused contract suites.
+`init.md`, `design.md` and `skills.md` are covered by prompt lint plus their focused contract suites (`skills.md`: `test/skills.test.js`, every verb against the CLI it runs).
 They perform filesystem and context lifecycle work that the no-I/O response grader does
 not model.
 

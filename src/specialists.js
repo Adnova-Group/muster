@@ -14,7 +14,11 @@ import { matchFrontmatter } from "./frontmatter.js";
 import { agentProfiles } from "./agent-manifest.js";
 
 const ROOT = fileURLToPath(new URL("../", import.meta.url));
-export const PLUGIN_ROOT = join(ROOT, "plugin");
+// Source tree and npm package: <root>/plugin. The bundled plugin runtime runs from
+// plugin/runtime/cli/bin/, so ROOT is plugin/runtime/cli/ and the plugin is two levels up.
+export const PLUGIN_ROOT = !existsSync(join(ROOT, "plugin", "builtins")) && existsSync(join(ROOT, "..", "..", "builtins"))
+  ? join(ROOT, "..", "..")
+  : join(ROOT, "plugin");
 
 // Workflow seats run their own stages; they are never a task's executor.
 export const WORKFLOW_SEATS = Object.freeze(["muster-planner", "muster-plan-checker", "muster-reviewer", "muster-verifier", "muster-test-writer", "muster-integration-checker"]);
@@ -39,7 +43,9 @@ function catalogEntries(catalogDir) {
 
 const cache = new Map();
 
-// { agents: Map<id, {agentType, description, dispatchable}>, skills: Map<id, {path, description}> }
+// { agents: Map<id, {agentType, description, dispatchable, roles}>,
+//   skills: Map<id, {path, description, roles, keywords, rank, license}> }
+// Roles let project pins (src/skill-pins.js) bind a skill to the tasks of one role.
 // `dispatchable` = a plugin agent that can do an executor's job: not a workflow seat, not
 // declared read-only in the agent manifest, and able to run git (Bash) to commit.
 export function specialistCatalog({ catalogDir = join(ROOT, "catalog"), pluginRoot = PLUGIN_ROOT } = {}) {
@@ -55,12 +61,15 @@ export function specialistCatalog({ catalogDir = join(ROOT, "catalog"), pluginRo
       if (!fm || !fm.name) continue;
       const tools = String(fm.tools || "").split(/[\s,]+/);
       const dispatchable = !WORKFLOW_SEATS.includes(e.id) && !profiles[e.id]?.readOnly && tools.includes("Bash");
-      agents.set(e.id, { agentType: `muster:${fm.name}`, description: String(fm.description || e.description || ""), dispatchable });
+      agents.set(e.id, { agentType: `muster:${fm.name}`, description: String(fm.description || e.description || ""), dispatchable, roles: e.roles || [] });
     } else if (e.kind === "builtin") {
       const path = join(pluginRoot, "builtins", e.id, "SKILL.md");
       if (!existsSync(path)) continue;
       const fm = readFrontmatter(path) || {};
-      skills.set(e.id, { path, description: String(fm.description || e.description || "") });
+      skills.set(e.id, {
+        path, description: String(fm.description || e.description || ""),
+        roles: e.roles || [], keywords: e.keywords || [], rank: e.rank ?? 0, license: String(fm.license || e.provenance?.license || ""),
+      });
     }
   }
   const result = { agents, skills };

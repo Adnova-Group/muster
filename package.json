@@ -64,6 +64,7 @@
     "build:plugin": "node scripts/build-plugin-runtime.mjs",
     "check:plugin": "node scripts/build-plugin-runtime.mjs --check",
     "sync:codex-assets": "node scripts/sync-codex-skill-assets.mjs",
+    "docs:skills": "node scripts/gen-skills-page.mjs",
     "prepublishOnly": "npm run check:plugin && npm run build:codex && npm run check:codex && node --test"
   },
   "dependencies": {

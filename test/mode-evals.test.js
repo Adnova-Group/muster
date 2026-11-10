@@ -685,7 +685,7 @@ const dataset = JSON.parse(await read("eval/modes/dataset.json"));
 // plan/plan-backlog/go/go-backlog modes. The aliases themselves retired in 0.7.0.
 // Revival stage 2b deleted plan-backlog, go-backlog and runner (backlog scope folds into plan/go).
 const MODES = ["plan", "go", "audit", "diagnose", "capture"];
-const STRUCTURAL_MODES = ["init", "design"];
+const STRUCTURAL_MODES = ["init", "design", "skills"];
 const RETIRED_ALIASES = new Set(["run", "autopilot", "sprint"]);
 // The skill-protocol layer (plugin/skills/*, router excluded — it already has
 // eval:router). Every case's `mode` field names either one of the 8 mode prompts above

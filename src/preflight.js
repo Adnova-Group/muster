@@ -1,6 +1,7 @@
 // `muster preflight <outcome>`: one call replacing scope, assess, fast-path, detect,
 // capabilities and memory (docs/strategy/stage-2-contracts.md). It prints a compact
 // summary (target < 2 KB) and writes the full detail to .muster/runs/<runId>/preflight.json.
+import { existsSync } from "node:fs";
 import { lstat, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { detectScope } from "./scope.js";
@@ -18,6 +19,12 @@ import { classifyDomain } from "./domain.js";
 import { loadPipelines, pickPipeline, routePipeline } from "./pipeline.js";
 import { writeContainedFile } from "./fs-safe.js";
 import { assertRunId, ensureRunDir, slugRunId } from "./run-dir.js";
+import { readPins } from "./skill-pins.js";
+import { suggestFromCachedRegistry, userCacheDir } from "./skill-registry.js";
+
+// A builtin candidate at or above this score is a strong match (plan-lint's HIGH_SKILL_SCORE);
+// below it, preflight may suggest registry skills from the cached catalog.
+const STRONG_SKILL_SCORE = 4;
 
 // Workflow seats -> conceptual tier + semantic effort (claude.js maps workhorse=medium,
 // judgment=high). The gates whose output other work trusts (planner, checker, verifier) get
@@ -144,7 +151,15 @@ export async function runPreflight({ outcome, cwd, home, catalogDir, runId, mode
   const builtinSkills = [...specialists.skills].map(([id, s]) => ({ id, source: "builtin", description: s.description }));
   // score >= 3 = an id-token hit or three description hits; one shared word ("write") is noise.
   const skillCandidates = matchSkills(outcome, builtinSkills, { limit: 6 }).filter((m) => m.score >= 3).map((m) => ({ id: m.id, score: m.score }));
-  const skills = skillCandidates.map((m) => m.id);
+  // Project pins (.muster/config) lead the candidates; build-args binds them to matching tasks.
+  let pins = [];
+  try { pins = readPins(cwd).filter((p) => specialists.skills.has(p.id) || existsSync(join(cwd, ".claude", "skills", p.id, "SKILL.md"))); } catch { pins = []; }
+  // Only builtin pins join `skills` (plan-lint accepts builtin ids in a task's skills attribute).
+  const skills = [...new Set([...pins.filter((p) => specialists.skills.has(p.id)).map((p) => p.id), ...skillCandidates.map((m) => m.id)])];
+  // No strong builtin: up to 3 suggestions from the cached ui-skills.com registry (never fetched here).
+  const registrySuggestions = skillCandidates.some((m) => m.score >= STRONG_SKILL_SCORE)
+    ? []
+    : await suggestFromCachedRegistry(outcome, { cacheDir: userCacheDir(env, home) });
   const routing = routeOutcome(outcome, await loadPipelines(PIPELINES_DIR), project);
   const memory = rankMemory(await readMemory(join(cwd, ".muster", "memory"), ""), outcome);
   const baseRef = await worktreeBaseRef(cwd, home);
@@ -155,7 +170,7 @@ export async function runPreflight({ outcome, cwd, home, catalogDir, runId, mode
   const detailPath = join(dir, "preflight.json");
   const detail = {
     runId: id, outcome, createdAt: now.toISOString(), scope, assess, fastPath, project, models,
-    candidates, skills, skillCandidates, ...routing, worktreeBaseRef: baseRef, warnings, matches, memory, detected,
+    candidates, skills, skillCandidates, pins, registrySuggestions, ...routing, worktreeBaseRef: baseRef, warnings, matches, memory, detected,
     roles: capabilities.roles,
     installedSkills: capabilities.skills.map((s) => s.id),
   };
@@ -175,7 +190,9 @@ export async function runPreflight({ outcome, cwd, home, catalogDir, runId, mode
     models,
     candidates,
     skills,
+    ...(pins.length ? { pins } : {}),
     skillRoot: join(PLUGIN_ROOT, "builtins"),
+    ...(registrySuggestions.length ? { registrySuggestions } : {}),
     ...(warnings.length ? { warnings } : {}),
     memory: memory.slice(0, 3).map((m) => m.slug),
     detected: { gsd: detected.gsd.installed, plugins: Object.keys(detected.plugins).filter((k) => detected.plugins[k]) },

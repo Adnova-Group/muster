@@ -12,29 +12,29 @@ const outsideVerbatim = (s) => s.replace(/<!-- verbatim:[^>]*-->[\s\S]*?<!-- \/v
 test("checker: downstream defences and the blocker-only gate are muster text, outside verbatim regions", async () => {
   const own = outsideVerbatim(await read("muster-plan-checker.md"));
   assert.match(own, /<downstream_defences>[\s\S]*muster-test-writer[\s\S]*muster-reviewer[\s\S]*muster-integration-checker[\s\S]*muster-verifier[\s\S]*merge-wave[\s\S]*<\/downstream_defences>/);
-  assert.match(own, /The executor never authors a tdd task's tests\./);
+  assert.match(own, /the executor never authors or edits them/);
   assert.match(own, /\*\*Only a BLOCKER holds the gate\.\*\* A WARNING never blocks, never forces a revision and never counts toward the stall rule/);
 });
 
 test("checker: a malicious-implementer hole is a warning unless it names a concrete input AND why nothing downstream catches it", async () => {
   const own = outsideVerbatim(await read("muster-plan-checker.md"));
-  assert.match(own, /a hole is a WARNING at most, unless the summary names BOTH:\n1\. a concrete, plausible input/);
-  assert.match(own, /2\. why no stage in `<downstream_defences>` would catch it/);
-  assert.match(own, /"any finite set of tests or gates can be beaten by hard-coding the asserted values"/);
-  assert.match(own, /"the executor authors the test file that judges it" on a `tdd="true"` task/);
+  assert.match(own, /\*\*Severity:\*\* WARNING at most, unless the summary names both \(1\) a concrete, plausible input or implementation/);
+  assert.match(own, /\(2\) why nothing in `<downstream_defences>` catches it\. Only then BLOCKER/);
+  assert.match(own, /Never raise "any finite test set can be beaten by hard-coding the asserted values"/);
+  assert.match(own, /on a `tdd="true"` task, "the executor authors the test that judges it"/);
   assert.doesNotMatch(own, /BLOCKER when the outcome could go undelivered with every gate green/, "the old unconditional blocker rule is gone");
 });
 
 test("checker: tool-output framing tags are not file content; stray tags are plan-lint's call", async () => {
   const own = outsideVerbatim(await read("muster-plan-checker.md"));
-  assert.match(own, /framing tags \(`<output>`, `<\/output>`, `<persisted-output>`, …\) that are not in the file\. Never report a tag plan-lint does not report/);
+  assert.match(own, /framing tags \(`<output>`, `<\/output>`, …\) that are not in the file\. Never report a tag plan-lint does not report/);
 });
 
 test("planner and checker: independent tasks share the tracer's wave; no sequencing-only depends_on", async () => {
   const planner = outsideVerbatim(await read("muster-planner.md"));
-  assert.match(planner, /\*\*Waves follow real dependencies, not the tracer\.\*\*/);
-  assert.match(planner, /Never add a `depends_on` only to sequence after the tracer\./);
-  assert.match(planner, /set `tracer: false` and put them all in wave 1/);
+  assert.match(planner, /\*\*The tracer is not a dependency:\*\* only a task that uses what it creates or edits its files follows it/);
+  assert.match(planner, /Never add a `depends_on` just to follow the tracer\./);
+  assert.match(planner, /All tasks independent: `tracer: false`, all in wave 1\./);
   assert.doesNotMatch(planner, /every other task sits in a later wave/);
   const checker = outsideVerbatim(await read("muster-plan-checker.md"));
   assert.match(checker, /never ask for a `depends_on` that only sequences/);

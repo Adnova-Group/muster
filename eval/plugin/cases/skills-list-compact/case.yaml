@@ -1,0 +1,40 @@
+schema_version: "1.1"
+name: skills-list-compact
+description: >-
+  /muster:skills list runs exactly one CLI call and relays the compact role summary (one line
+  per role, about 22 lines for 183 builtins) instead of dumping every skill id. Stage 3 made the
+  unfiltered list summarize by role so it stays compact as the builtins grow.
+tags: [smoke, skills]
+plugins: ["../../../../plugin"]
+runs: 1
+execution:
+  model: haiku
+  max_turns: 6
+  timeout_seconds: 300
+  allowed_tools: [Read]
+  prompt: /muster:skills list
+graders:
+  # skills.md: "Run exactly one CLI call for the verb."
+  - name: one-cli-call
+    type: tool_used
+    tool: Bash
+    input_match: 'runtime/muster\.sh\\?"? skills list'
+    min: 1
+    max: 1
+  - name: role-summary-shown
+    type: regex
+    pattern: 'by role'
+  # Compact: at most 40 lines and 6000 characters (the CLI prints about 22 lines, 3.9 KB).
+  - name: at-most-40-lines
+    type: regex
+    pattern: '(?:[^\n]*\n){40}'
+    match: not_contains
+  - name: at-most-6000-chars
+    type: regex
+    pattern: '[\s\S]{6000}'
+    match: not_contains
+  # The role summary names sources, not ids; ten or more builtin ids means a per-skill dump.
+  - name: no-id-dump
+    type: regex
+    pattern: '(?:\b(?:wsh|sp|mp|impeccable|gsap)-[a-z0-9-]+[\s\S]*?){10}'
+    match: not_contains

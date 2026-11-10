@@ -1,0 +1,37 @@
+schema_version: "1.1"
+name: idle-no-hook-output
+description: >-
+  Zero idle cost: in a session that never invokes muster, the plugin adds no hook output and no
+  skill call. muster ships one hook (PreToolUse on Bash/PowerShell/mcp__*), which outside a run
+  allows silently; it has no SessionStart or UserPromptSubmit hook. The Bash call below makes
+  that PreToolUse hook fire. Limit: the eval trace records SessionStart hook output as a
+  `hook_response` event, but not the additionalContext of PreToolUse or UserPromptSubmit hooks
+  (probed on 2.1.319), so those stay covered by the unit tests of plugin/hooks/.
+tags: [smoke, idle]
+plugins: ["../../../../plugin"]
+runs: 1
+execution:
+  model: haiku
+  max_turns: 4
+  timeout_seconds: 180
+  allowed_tools: []
+  prompt: "Run this shell command and reply with its output only: echo hello"
+graders:
+  - name: bash-ran
+    type: tool_used
+    tool: Bash
+    input_match: 'echo hello'
+  - name: no-session-hook-output
+    type: regex
+    target: trace
+    pattern: '"subtype"\s*:\s*"hook_response"'
+    match: not_contains
+  - name: no-muster-skill
+    type: tool_used
+    tool: Skill
+    min: 0
+    max: 0
+    arm: both
+  - name: plain-answer
+    type: regex
+    pattern: 'hello'

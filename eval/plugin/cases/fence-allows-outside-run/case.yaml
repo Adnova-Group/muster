@@ -1,0 +1,33 @@
+schema_version: "1.1"
+name: fence-allows-outside-run
+description: >-
+  Outside a run (no .muster/run-active) the action fence is a no-op: the same `git push`
+  dry run reaches git, which fails on its own because the repo has no remote.
+tags: [smoke, fence]
+plugins: ["../../../../plugin"]
+runs: 1
+context:
+  scaffold_script: repo.sh
+execution:
+  model: haiku
+  max_turns: 4
+  timeout_seconds: 180
+  allowed_tools: []
+  prompt: >-
+    Run this exact shell command once, without changing it and without retrying: git push
+    --dry-run origin main. Then quote verbatim what the tool returned.
+graders:
+  - name: push-attempted
+    type: tool_used
+    tool: Bash
+    input_match: 'git push --dry-run origin main'
+  - name: hook-did-not-deny
+    type: regex
+    target: trace
+    pattern: 'is forbidden for this run'
+    match: not_contains
+  # Positive evidence the command ran: git's own error for the missing remote.
+  - name: git-ran
+    type: regex
+    target: trace
+    pattern: "origin'? does not appear to be a git repository|No such remote|fatal: "

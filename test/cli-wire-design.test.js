@@ -14,10 +14,10 @@ const cli = join(root, "src/cli.js");
 const run = (args, cwd = root) => execFileP(process.execPath, [cli, ...args], { cwd });
 const DESIGN = "# Product Design\n\n## Direction\nClear and useful.\n";
 
-test("cli wire: design exposes utilities and exactly 23 workflows", async () => {
+test("cli wire: design exposes utilities and exactly 24 workflows", async () => {
   const workflows = JSON.parse((await run(["design", "workflows"])).stdout);
-  assert.equal(workflows.workflows.length, 23);
-  assert.equal(workflows.source.ref, "32930818a109fafa87199babe92fa8e530cff5d3");
+  assert.equal(workflows.workflows.length, 24);
+  assert.equal(workflows.source.ref, "035c8f319edd019936525a062fe99e83ca8d12c6");
   assert.match((await run(["help", "design"])).stdout, /design <init\|status\|resolve\|detect\|ignores\|provider\|gate\|workflows\|run>/);
 });
 

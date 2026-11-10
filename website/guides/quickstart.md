@@ -77,7 +77,7 @@ Prefix with `backlog` to sweep read-only instead of fixing: `/muster:audit backl
 
 ## Design a human-facing surface: `/muster:design`
 
-Initialize or inspect canonical `DESIGN.md` context, then run one of 23
+Initialize or inspect canonical `DESIGN.md` context, then run one of 24
 design workflows. Human-facing implementation carries a scope-bound digest
 receipt; ordinary backend work never pays the design scan or provider cost.
 

@@ -8,7 +8,7 @@ Muster exposes seven entry points as slash commands under the `muster:` namespac
 | Go | `/muster:go <outcome \| backlog ref>` | Plan, build in isolated worktrees, review, verify, then the merge decision |
 | Diagnose | `/muster:diagnose <symptom>` | Failure-first single-bug fix |
 | Audit | `/muster:audit [path]` | Breadth-first whole-codebase review and fix |
-| Design | `/muster:design <action>` | Canonical design context, bounded evidence detection, write gates, and 23 pinned workflows |
+| Design | `/muster:design <action>` | Canonical design context, bounded evidence detection, write gates, and 24 pinned workflows |
 | Capture | `/muster:capture [hint]` | Mine the conversation into approval-gated backlog items, then stop -- no crew, no waves |
 | Init | `/muster:init [dir]` | Prepare repository state, hand native instruction work to the active runtime, and finalize from positive evidence or an acknowledged unavailable handoff |
 
@@ -117,9 +117,9 @@ accessibility, responsive, visual, or other human-facing implementation.
 npx -y @adnova-group/muster design status .
 ```
 
-Muster exposes 23 pinned Impeccable-inspired workflows without requiring the
-Impeccable CLI: `craft`, `init`, `document`, `extract`, `live`, `adapt`,
-`animate`, `audit`, `bolder`, `clarify`, `colorize`, `critique`, `delight`,
+Muster exposes 24 pinned Impeccable-inspired workflows without requiring the
+Impeccable CLI: `craft`, `init`, `document`, `extract`, `live`, `generate`,
+`adapt`, `animate`, `audit`, `bolder`, `clarify`, `colorize`, `critique`, `delight`,
 `distill`, `harden`, `onboard`, `layout`, `optimize`, `overdrive`, `polish`,
 `quieter`, `shape`, and `typeset`. Read-only audits add `audit-design-ux` only
 when the audited scope has actual UX/design evidence; missing `DESIGN.md` is a

@@ -4,7 +4,7 @@ description: "Resolve, gate or initialize DESIGN.md context, or run a pinned des
 argument-hint: "<init|status|resolve|detect|ignores|provider|workflow> [target]"
 upstream:
   - repo: pbakaus/impeccable
-    ref: 32930818a109fafa87199babe92fa8e530cff5d3
+    ref: 035c8f319edd019936525a062fe99e83ca8d12c6
     path: null
     license: Apache-2.0
     relation: inspired-by
@@ -18,7 +18,7 @@ Markdown checklist followed by the design-context receipt.
 
 Use Muster's own deterministic CLI and workflow surface. End users never need
 the Impeccable CLI. The design vocabulary is inspired by Impeccable at pinned
-commit `32930818a109fafa87199babe92fa8e530cff5d3` under Apache-2.0.
+commit `035c8f319edd019936525a062fe99e83ca8d12c6` under Apache-2.0.
 
 Resolve the CLI once:
 
@@ -65,14 +65,43 @@ Read-only audit is different. When the audited scope contains real UI/design
 evidence, run `audit-design-ux`; a missing `DESIGN.md` is a finding, not a
 blocker. Any later remediation is a write and must satisfy `design gate`.
 
-The 23 workflows are:
+The 24 workflows are:
 
-`craft`, `init`, `document`, `extract`, `live`, `adapt`, `animate`, `audit`,
-`bolder`, `clarify`, `colorize`, `critique`, `delight`, `distill`, `harden`,
-`onboard`, `layout`, `optimize`, `overdrive`, `polish`, `quieter`, `shape`,
-and `typeset`.
+`craft`, `init`, `document`, `extract`, `live`, `generate`, `adapt`, `animate`,
+`audit`, `bolder`, `clarify`, `colorize`, `critique`, `delight`, `distill`,
+`harden`, `onboard`, `layout`, `optimize`, `overdrive`, `polish`, `quieter`,
+`shape`, and `typeset`.
+
+`generate` is the one-request variant lane: the user names an element, a
+direction, and optionally a count (default 3, at most 8). Map the direction
+onto an existing refinement workflow (`bolder`, `quieter`, `distill`,
+`polish`, `typeset`, `colorize`, `layout`, `adapt`, `animate`, `delight`,
+`overdrive`); when the request names none, ask the user to pick one from that list.
+Write each variant by that direction's `impeccable-<direction>` playbook as a
+complete replacement of the element, let the user pick
+one, then remove the rest. It is web-only; on native targets offer `bolder` or
+`quieter` instead.
 
 Run the selected workflow through `design run`; load the returned canonical
 context and prompt, preserve the target scope, and follow Muster's ordinary
 isolation, TDD, review, and disposition gates. `audit` and `critique` remain
 read-only unless the user separately authorizes remediation.
+
+Impeccable stays the workflow engine and `DESIGN.md` the canonical context.
+Each `design run` packet names its primary playbook, Impeccable's own skill
+and reference vendored as `impeccable-*` builtins: follow it for the design
+method; the packet adds only the context gate, the confirmed `DESIGN.md` write
+flow and the receipt. It also names the supporting builtins read on demand by
+id (`uupm-*`, `typeui`, `intent-*`, `pfd`, `emil-*`, `gsap-*`, `taste-*`,
+`hallmark`, `anthropic-*`, `jk-*`, `elaya-*`, `addy-*`). Style, color, type,
+layout and motion choices take data-backed candidates from the uupm search;
+the user confirms, and the result goes into `DESIGN.md` through the workflow.
+Critique, audit and polish apply uupm's rule-priority table and pre-delivery
+checklist. Without Python 3, read uupm's reference files instead. When the
+session has Mobbin MCP tools, pattern- and flow-choosing workflows search
+Mobbin for cited references first; without them, skip that silently. The
+workflow map and the reasons for it are in
+`${CLAUDE_PLUGIN_ROOT}/commands/design/references/supporting-skills.md`; read
+it when a packet's skills need explaining.
+
+When sources disagree: project DESIGN.md > accessibility/WCAG > Impeccable workflow guidance > supporting skills and references (uupm, typeui, intent, pfd, emil, gsap, taste, hallmark, anthropic, jk, elaya, addy, Mobbin).

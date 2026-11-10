@@ -7,6 +7,7 @@ import { trackedMkdtemp as mkdtemp } from "../test-support/helpers.js";
 import {
   DESIGN_SOURCE,
   DESIGN_WORKFLOWS,
+  GENERATE_DIRECTIONS,
   addDesignIgnore,
   designGate,
   designProviderCheck,
@@ -23,16 +24,16 @@ import {
 const tmp = () => mkdtemp(join(tmpdir(), "muster-design-"));
 const DESIGN = "# Design System\n\n<!-- muster:design-schema 1 -->\n\n## Direction\nPrecise and calm.\n";
 
-test("the bundled design vocabulary exposes exactly 23 pinned Impeccable-inspired workflows", () => {
-  assert.equal(DESIGN_WORKFLOWS.length, 23);
-  assert.equal(new Set(DESIGN_WORKFLOWS.map((entry) => entry.id)).size, 23);
+test("the bundled design vocabulary exposes exactly 24 pinned Impeccable-inspired workflows", () => {
+  assert.equal(DESIGN_WORKFLOWS.length, 24);
+  assert.equal(new Set(DESIGN_WORKFLOWS.map((entry) => entry.id)).size, 24);
   assert.deepEqual(
     DESIGN_WORKFLOWS.map((entry) => entry.id),
-    ["craft", "init", "document", "extract", "live", "adapt", "animate", "audit", "bolder",
+    ["craft", "init", "document", "extract", "live", "generate", "adapt", "animate", "audit", "bolder",
       "clarify", "colorize", "critique", "delight", "distill", "harden", "onboard", "layout",
       "optimize", "overdrive", "polish", "quieter", "shape", "typeset"],
   );
-  assert.equal(DESIGN_SOURCE.ref, "32930818a109fafa87199babe92fa8e530cff5d3");
+  assert.equal(DESIGN_SOURCE.ref, "035c8f319edd019936525a062fe99e83ca8d12c6");
   assert.equal(DESIGN_SOURCE.license, "Apache-2.0");
 });
 
@@ -203,4 +204,18 @@ test("every workflow produces a context-gated harness-neutral dispatch packet", 
     assert.match(packet.context.digest, /^[a-f0-9]{64}$/);
     assert.match(packet.prompt, new RegExp(`\\b${workflow.id}\\b`, "i"));
   }
+});
+
+test("generate maps its direction onto existing refinement workflows and bounds the variant count", async () => {
+  const root = await tmp();
+  await writeFile(join(root, "DESIGN.md"), DESIGN);
+  const ids = new Set(DESIGN_WORKFLOWS.map(({ id }) => id));
+  for (const direction of GENERATE_DIRECTIONS) assert.ok(ids.has(direction), `${direction} is a workflow id`);
+  const packet = await runDesignWorkflow(root, "generate", { args: "3 bolder variants of the pricing cards" });
+  assert.equal(packet.workflow, "generate");
+  assert.match(packet.prompt, /bolder, quieter, distill/);
+  assert.match(packet.prompt, /never exceed 8/);
+  assert.match(packet.prompt, /ask one question/);
+  const polish = await runDesignWorkflow(root, "polish", { args: "checkout" });
+  assert.doesNotMatch(polish.prompt, /never exceed 8/);
 });

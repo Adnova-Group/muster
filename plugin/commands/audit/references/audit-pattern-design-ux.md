@@ -3,7 +3,7 @@ name: audit-pattern-design-ux
 description: Hunt-list pattern skill for muster's UX/design audit dimension -- points into the pinned Impeccable design-workflow vocabulary, the uupm priority table and pre-delivery checklist, and muster's design-gate machinery rather than duplicating them. Loaded by the audit orchestrator as a REQUIRED SKILLS binding on the frontend (design-ux) dimension task; read on demand, never dispatched standalone.
 upstream:
   - repo: pbakaus/impeccable
-    ref: 32930818a109fafa87199babe92fa8e530cff5d3
+    ref: 035c8f319edd019936525a062fe99e83ca8d12c6
     path: null
     license: Apache-2.0
     relation: inspired-by
@@ -41,11 +41,11 @@ read the cited files directly, they are the canonical source.
 ## Where to dig
 
 - Run `muster design workflows` (or read `src/design.js`'s `WORKFLOW_METADATA`) for the complete
-  list of 23 pinned Impeccable-inspired workflows (`vendor/impeccable.json`, upstream
-  `github.com/pbakaus/impeccable` @ `32930818a109fafa87199babe92fa8e530cff5d3`, Apache-2.0). The
+  list of 24 pinned Impeccable-inspired workflows (`vendor/impeccable.json`, upstream
+  `github.com/pbakaus/impeccable` @ `035c8f319edd019936525a062fe99e83ca8d12c6`, Apache-2.0). The
   two READ-ONLY workflows this audit dimension actually maps to are `audit` ("Audit
-  accessibility, performance, responsiveness, and design quality") and `critique` ("Evaluate
-  hierarchy, information architecture, resonance, and cognitive load") -- read their full
+  accessibility, performance, theming, responsiveness, touch interaction, and anti-patterns") and
+  `critique` ("Evaluate hierarchy, information architecture, resonance, and cognitive load") -- read their full
   descriptions in `src/design.js` before dispatching, don't paraphrase from memory.
 - Read `plugin/commands/design.md` end to end for the full workflow vocabulary, the `design gate`
   contract, and how a missing `DESIGN.md` is handled during a read-only audit (it is a FINDING,

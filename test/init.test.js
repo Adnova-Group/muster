@@ -564,10 +564,18 @@ test("repository fingerprints reject a path-set addition during hashing", async 
     await writeFile(join(dir, "inserted.txt"), "late\n");
   })();
   // The insertion races the 128 MiB hash, so it can land during the directory walk ("repository
-  // directory changed") or during hashing ("repository changed while fingerprinting"). Both are the
-  // fail-closed outcome this test pins.
-  await assert.rejects(() => learnProjectProfile(dir), /repository (directory changed|changed while fingerprinting)/);
+  // directory changed") or during hashing ("repository changed while fingerprinting"), or, on a
+  // loaded machine, between the learning snapshot and the first hash ("repository changed while
+  // learning"). All three are the fail-closed outcome this test pins. Under load the 20 ms timer can
+  // also complete the insertion before learning takes its first snapshot; then the insertion is not
+  // mid-walk and the profile must resolve with the fingerprint of the final tree, never a stale one.
+  let profile = null;
+  try { profile = await learnProjectProfile(dir); }
+  catch (error) { assert.match(error.message, /repository (directory changed|changed while (fingerprinting|learning))/); }
   await writer;
+  if (profile) {
+    assert.equal(profile.repositoryFingerprint.digest, (await learnProjectProfile(dir)).repositoryFingerprint.digest);
+  }
 });
 
 test("directory learning limits remain explicit without blocking fingerprinting", async () => {

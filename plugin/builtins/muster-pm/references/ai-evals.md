@@ -22,7 +22,7 @@ One row per behavior the model must get right. Each row fixes four things before
 | Pass rule | the bar, as a number | "high accuracy", "most cases" | "≥190/200 exact", "30/30 refuse" |
 | Case set | where the cases live | "we'll collect some" | `evals/refunds/reason.jsonl` |
 
-`muster spec-lint` blocks an EV row whose pass rule has no number.
+The CLI's `spec-lint` blocks an EV row whose pass rule has no number.
 
 ## Rules
 
@@ -105,7 +105,7 @@ appended below the existing ones:
   is appended beside it. Retire a row by noting it under `## Clarifications`, not by deleting it.
 - Append rows to a `shipped` spec freely; the next run plans them like any other EV ID.
 
-`muster spec-lint` accepts these rows: it checks the tag's date and warns when a post-launch row
+The CLI's `spec-lint` accepts these rows: it checks the tag's date and warns when a post-launch row
 carries a lower EV number than a launch row (an appended row always gets a new, higher ID).
 
 ## How it reaches the verifier

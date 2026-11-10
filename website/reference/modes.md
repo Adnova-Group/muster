@@ -12,7 +12,7 @@ Muster exposes seven entry points as slash commands under the `muster:` namespac
 | Capture | `/muster:capture [hint]` | Mine the conversation into approval-gated backlog items, then stop -- no crew, no waves |
 | Init | `/muster:init [dir]` | Prepare repository state, hand native instruction work to the active runtime, and finalize from positive evidence or an acknowledged unavailable handoff |
 
-Plan and Go run on Claude Code's native Workflow tool. The main thread makes one `muster preflight` call, asks questions only when the outcome is unclear, and then gates between three plugin workflows: `muster:plan`, `muster:build` and, for several items, `muster:backlog`. Workflow consent is asked per run in manual and accept-edits permission modes; add the allow rules `Workflow(muster:plan)`, `Workflow(muster:build)` and `Workflow(muster:backlog)` to skip the prompt. Where the Workflow tool is missing (some Desktop and Cowork surfaces), the orchestrator skill's prose fallback dispatches the same agents one call at a time.
+Plan and Go run on Claude Code's native Workflow tool. The main thread makes one `muster preflight` call, asks questions only when the outcome is unclear, and then gates between three plugin workflows: `muster:make-plan`, `muster:build` and, for several items, `muster:backlog`. Workflow consent is asked per run in manual and accept-edits permission modes; add the allow rules `Workflow(muster:make-plan)`, `Workflow(muster:build)` and `Workflow(muster:backlog)` to skip the prompt. Where the Workflow tool is missing (some Desktop and Cowork surfaces), the orchestrator skill's prose fallback dispatches the same agents one call at a time.
 
 ## Init
 
@@ -40,7 +40,7 @@ The approve-first planner. In order:
 
 1. **Preflight.** One `muster preflight "<outcome>" --json` call replaces the old scope, assess, fast-path, detect, capabilities and memory round trips. It returns the run id, the scope (item or backlog), whether the outcome is clear, the per-seat models, and candidate specialists; the full detail goes to `.muster/runs/<runId>/preflight.json`. `--model <m>` pins every seat to one model.
 2. **Interview, only when unclear.** Up to four questions in one AskUserQuestion. The answers become numbered decisions (`D-01`...) in `.muster/runs/<runId>/CONTEXT.md`, which the planner must honour.
-3. **Plan.** `Workflow({name:"muster:plan"})` runs `muster-planner`, then `muster-plan-checker` (which runs `muster plan-lint`), revising at most three times. It escalates when the issue count stops falling or a checker issue contradicts a D-NN decision.
+3. **Plan.** `Workflow({name:"muster:make-plan"})` runs `muster-planner`, then `muster-plan-checker` (which runs `muster plan-lint`), revising at most three times. It escalates when the issue count stops falling or a checker issue contradicts a D-NN decision.
 4. **Approval stop.** Plan shows the checker verdict and a compact view of PLAN.md (tasks by wave, files, verify commands, must-haves, checkpoints) and stops: **Approve & build** continues as Go on the same branch without re-planning; **Revise** records your feedback as new decisions and re-plans; **Cancel** stops. In native plan mode the plan rides ExitPlanMode instead.
 
 ```sh
@@ -51,7 +51,7 @@ Plan and Go both accept a GitHub issue reference (a bare number, `#123`, or an i
 
 ### Backlog scope
 
-Plan also accepts a backlog -- a backlog `.md` path, or text that names several independent deliverables. After an AskUserQuestion confirm, each item gets its own preflight and `muster:plan` call, and Plan stops once with every item's plan summary.
+Plan also accepts a backlog -- a backlog `.md` path, or text that names several independent deliverables. After an AskUserQuestion confirm, each item gets its own preflight and `muster:make-plan` call, and Plan stops once with every item's plan summary.
 
 ```sh
 /muster:plan .muster/backlog.md

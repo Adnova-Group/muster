@@ -130,7 +130,7 @@ For each `key_links` entry, confirm `from` really calls/reads `to` via the state
 
 Map every task `<done>` and cited D-NN decision to verified truths/artifacts: ✓ SATISFIED, ✗ BLOCKED, ? NEEDS HUMAN. A success criterion or locked decision no task claimed is ORPHANED and reported.
 
-**Acceptance** (PLAN.md has `spec:`): one row per in-scope AC, INV and EV ID of the spec (the `#REF` anchor's, else all; INV always). `test`/`check`/`eval`: VERIFIED only when its `<automated proves>` command (an EV: its case set against the fixed pass rule) ran green at `<head>`, else FAILED; `judgment`: NEEDS-HUMAN (a Step 8 item); `needs-runtime`: NEEDS-RUNTIME, never VERIFIED; no task covers it: ORPHANED. FAILED and ORPHANED are gaps. `muster spec-trace` reads this table.
+**Acceptance** (PLAN.md has `spec:`): one row per in-scope AC, INV and EV ID of the spec (the `#REF` anchor's, else all; INV always). `test`/`check`/`eval`: VERIFIED only when its `<automated proves>` command (an EV: its case set against the fixed pass rule) ran green at `<head>`, else FAILED; `judgment`: NEEDS-HUMAN (a Step 8 item); `needs-runtime`: NEEDS-RUNTIME, never VERIFIED; no task covers it: ORPHANED. FAILED and ORPHANED are gaps. The spec-trace verb reads this table.
 
 ## Step 7: Anti-pattern scan
 

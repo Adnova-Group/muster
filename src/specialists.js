@@ -20,6 +20,16 @@ export const PLUGIN_ROOT = !existsSync(join(ROOT, "plugin", "builtins")) && exis
   ? join(ROOT, "..", "..")
   : join(ROOT, "plugin");
 
+// The exact shell prefix that runs this install's CLI, for agents and workflow briefs: `muster`
+// is rarely on PATH in a user's project and CLAUDE_PLUGIN_ROOT may be unset in an agent's shell,
+// so it names runtime/muster.sh by absolute path, derived from PLUGIN_ROOT like skillRoot.
+// The path is double-quoted with sh's four in-quote specials escaped.
+export function musterCli(pluginRoot = PLUGIN_ROOT, platform = process.platform) {
+  let path = join(pluginRoot, "runtime", "muster.sh");
+  if (platform === "win32") path = path.replace(/\\/g, "/");
+  return `sh "${path.replace(/[\\"$`]/g, "\\$&")}"`;
+}
+
 // Workflow seats run their own stages; they are never a task's executor.
 export const WORKFLOW_SEATS = Object.freeze(["muster-planner", "muster-plan-checker", "muster-reviewer", "muster-verifier", "muster-test-writer", "muster-integration-checker"]);
 

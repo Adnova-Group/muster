@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { decodeEntityAmps, parsePlan } from "./plan-lint.js";
 import { runDir } from "./run-dir.js";
 import { writeContainedFile } from "./fs-safe.js";
-import { agentTypeFor, specialistCatalog } from "./specialists.js";
+import { agentTypeFor, musterCli, specialistCatalog } from "./specialists.js";
 import { pinApplies, resolvePins, taskRoles } from "./skill-pins.js";
 
 const AUTOMATED_RE = /<automated[^>]{0,200}>([\s\S]*?)<\/automated>/g;
@@ -29,7 +29,8 @@ function verifyCommands(verifyBody) {
 // become [{id, path}] with the absolute SKILL.md path the executor reads before working.
 // `pins` ([{id, role?, path}], src/skill-pins.js) are the project's pinned skills: each is
 // appended to every task it applies to (all tasks, or the tasks carrying its role).
-export function buildArgsFromPlan(planText, { runId, base = null, branch = null, models = null, catalog = specialistCatalog(), pins = [] } = {}) {
+// `cli` is the absolute CLI prefix (src/specialists.js musterCli) for bound skills that run it.
+export function buildArgsFromPlan(planText, { runId, base = null, branch = null, models = null, catalog = specialistCatalog(), pins = [], cli = null } = {}) {
   const plan = parsePlan(planText);
   const problems = [];
   const humanNeeded = [];
@@ -69,7 +70,7 @@ export function buildArgsFromPlan(planText, { runId, base = null, branch = null,
   }
   const waves = [...byWave.keys()].sort((a, b) => a - b).map((w) => byWave.get(w));
   if (!waves.length) problems.push("PLAN.md has no buildable tasks");
-  const args = { runId, ...(base ? { base } : {}), ...(branch ? { branch } : {}), ...(models ? { models } : {}), waves };
+  const args = { runId, ...(base ? { base } : {}), ...(branch ? { branch } : {}), ...(models ? { models } : {}), ...(cli ? { cli } : {}), waves };
   return { args, humanNeeded, problems };
 }
 
@@ -89,7 +90,7 @@ export async function writeBuildArgs({ cwd, runId, base = null, branch = null })
   const catalog = specialistCatalog();
   let pinned = { pins: [], warnings: [] };
   try { pinned = resolvePins(cwd, catalog); } catch (e) { pinned.warnings.push(e.message); }
-  const { args, humanNeeded, problems } = buildArgsFromPlan(planText, { runId, base, branch, models, catalog, pins: pinned.pins });
+  const { args, humanNeeded, problems } = buildArgsFromPlan(planText, { runId, base, branch, models, catalog, pins: pinned.pins, cli: musterCli() });
   const rel = `.muster/runs/${runId}/build-args.json`;
   if (problems.length) return { ok: false, runId, problems, humanNeeded };
   await writeContainedFile(cwd, join(dir, "build-args.json"), JSON.stringify(args, null, 2) + "\n");

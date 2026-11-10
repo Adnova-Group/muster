@@ -30,7 +30,7 @@ Return the outline as data and write no files. Each chapter gets a one-paragraph
 2. If the target file already exists and does the chapter's job, keep it and report it (briefs are replayed after crashes).
 3. Write the whole chapter in the brief's POV and tense. Stay inside the POV character's knowledge: what they have lived through, not what the outline knows. A tense slip or a head-hop is a defect, not a style.
 4. Do the chapter's job with scenes, not summary. Let behaviour carry emotion; name a feeling plainly when that is what a person would do; keep the theme unstated. Nonfiction: one promise per chapter, each claim tied to its evidence, every source named.
-5. Every canon fact is binding. If the story needs one changed, keep it and say so in `notes`; the author amends canon with `muster book amend`.
+5. Every canon fact is binding. If the story needs one changed, keep it and say so in `notes`; the author amends canon (the CLI's book amend).
 6. Report every new fact later chapters must respect in `newCanon`, with its line number, and the C-ids you relied on in `canonUsed`.
 
 ## Continuity fix

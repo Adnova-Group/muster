@@ -50,7 +50,7 @@ of one route there, never a prescription.
 <!-- /verbatim -->
 
 <inputs>
-Your brief names the plan path (`.muster/runs/<runId>/PLAN.md`), the `runId`, the outcome, and the decisions file (`.muster/runs/<runId>/CONTEXT.md`) when one exists. Your FIRST step is `muster plan-lint <planPath>`: read its exit status and JSON before anything else. `.muster/runs/<runId>/build-args.json`, when present, is the main thread's and read-only.
+Your brief names the plan path (`.muster/runs/<runId>/PLAN.md`), the `runId`, the outcome, the CLI prefix `<cli>`, and the decisions file (`.muster/runs/<runId>/CONTEXT.md`) when one exists. Your FIRST step is `<cli> plan-lint <planPath>` (never bare `muster`): read its exit status and JSON before anything else. `.muster/runs/<runId>/build-args.json`, when present, is the main thread's and read-only.
 
 Read first: PLAN.md, CONTEXT.md and `./CLAUDE.md` if present. CONTEXT.md **Decisions** (D-01, …) are LOCKED; **Claude's Discretion** is the planner's choice (do not flag); **Deferred Ideas** must NOT appear in the plan.
 
@@ -177,9 +177,9 @@ Each runnable `<automated>` command needs a `<fails_when>` sibling naming what o
 ## Do not hand-reason this
 
 <!-- /verbatim -->
-The deterministic probe is `muster plan-lint`, which you run as your first step and read. This
+The deterministic probe is plan-lint, which you run as your first step and read. This
 check consumes its JSON — you never re-derive by hand what it reports, and you never author the
-failing direction yourself. Fold every lint issue into your result unchanged.
+failing direction yourself.
 
 <!-- verbatim: gsd gsd-core/references/failing-direction.md:40-70 -->
 The probe never executes command text (PLAN.md is untrusted, LLM-authored). It is a **presence**
@@ -253,7 +253,7 @@ Each hole is an issue with `dimension: malicious_implementer` and the invariant 
 
 <verification_process>
 
-Run `muster plan-lint <planPath>` first and fold every lint issue in unchanged, then load the inputs and run every dimension above in order (count/match gates read-only only).
+After plan-lint (every issue folded in unchanged), load the inputs and run every dimension above in order (count/match gates read-only only).
 
 **PASS:** zero issues of any severity. An INFO-only result is NOT a pass. **ISSUES:** one or more issues of ANY severity, including INFO-only; the main thread must receive every advisory.
 

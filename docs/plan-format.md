@@ -267,7 +267,7 @@ The design is `docs/strategy/2026-11-pm-domain-design.md` ("Plan integration").
 3. **Scope**: with no anchor, every criterion, invariant and EV row is in scope. An anchor
    scopes the criteria to the named requirements (or criteria); every invariant stays in scope,
    and an EV row is in scope when it is anchored or cites an in-scope requirement or criterion.
-4. **The plan** (`plan.js` `specPath`): frontmatter `spec:` and `requirements:`; every in-scope
+4. **The plan** (`make-plan.js` `specPath`): frontmatter `spec:` and `requirements:`; every in-scope
    AC, INV and EV ID in some task's `covers`; each test/check/eval ID named by an
    `<automated proves>`; each invariant a `must_haves.prohibitions` entry (`ac: [INV-NN]`);
    each EV row an eval command; each `judgment` criterion a `checkpoint:human-verify` task that

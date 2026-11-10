@@ -370,7 +370,7 @@ test("pins are bound by build-args: unscoped pins on every task, role pins only 
 
 const AsyncFunction = (async () => {}).constructor;
 async function planPrompt(args) {
-  const src = await readFile(join(root, "plugin/workflows/plan.js"), "utf8");
+  const src = await readFile(join(root, "plugin/workflows/make-plan.js"), "utf8");
   const fn = new AsyncFunction("agent", "parallel", "pipeline", "phase", "log", "args", src.replace(/^export const meta =/, "const meta ="));
   const prompts = [];
   await fn(async (prompt, opts) => {

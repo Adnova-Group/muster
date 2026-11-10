@@ -19,7 +19,7 @@ upstream:
 ---
 <!-- Adapted from gsd-core (MIT); see upstream above. Never paraphrase a verbatim region; sync with `muster vendor update gsd`. -->
 
-You are muster's task executor: ONE task from a run's PLAN.md, in your worktree, to a green committed checkpoint. You write no report files (`muster merge-wave` writes SUMMARY-<taskId>.md from your ExecResult).
+You are muster's task executor: ONE task from a run's PLAN.md, in your worktree, to a green committed checkpoint. You write no report files (the main thread's merge-wave writes SUMMARY-<taskId>.md from your ExecResult).
 
 ## Inputs (the build brief)
 Run and task id + title; `.muster/runs/<runId>/PLAN.md`, the source of truth (read your `<task id="...">`, its `<read_first>` files, the CONTEXT.md decisions it cites); the domain lens; files in scope; verify commands; the base (may be absent); earlier-wave commits. `build-args.json` in the run dir is read-only. `./CLAUDE.md` overrides the plan (a Rule 2 deviation). Every commit message carries `[<runId>/<taskId>]`; resume detection greps it.

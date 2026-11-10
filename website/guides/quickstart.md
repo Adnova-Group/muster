@@ -27,7 +27,7 @@ Every mode below is available on Codex as a skill (`$muster-plan`, `$muster-go`,
 
 ## Plan and review: `/muster:plan`
 
-The approve-first planner. One `muster preflight` call sizes up the outcome; if it is unclear, Muster asks up to four questions in one prompt and records your answers as decisions in the run's `CONTEXT.md`. Then the `muster:plan` workflow writes PLAN.md and has a checker review it (revising at most three times), and Plan **stops for your approval**: Approve & build continues as `/muster:go` on the same branch, Revise re-plans with your feedback, Cancel stops.
+The approve-first planner. One `muster preflight` call sizes up the outcome; if it is unclear, Muster asks up to four questions in one prompt and records your answers as decisions in the run's `CONTEXT.md`. Then the `muster:make-plan` workflow writes PLAN.md and has a checker review it (revising at most three times), and Plan **stops for your approval**: Approve & build continues as `/muster:go` on the same branch, Revise re-plans with your feedback, Cancel stops.
 
 ```sh
 /muster:plan Add rate limiting to the public API with tests
@@ -36,7 +36,7 @@ The approve-first planner. One `muster preflight` call sizes up the outcome; if 
 Plan also takes a backlog (`/muster:plan .muster/backlog.md`): every item gets its own checked plan, and you approve the batch once.
 
 ::: tip Skip the per-run Workflow prompt
-Plan and Go call Claude Code's Workflow tool, which asks for consent per run in manual and accept-edits modes. Add `Workflow(muster:plan)`, `Workflow(muster:build)` and `Workflow(muster:backlog)` to your allow rules to skip it.
+Plan and Go call Claude Code's Workflow tool, which asks for consent per run in manual and accept-edits modes. Add `Workflow(muster:make-plan)`, `Workflow(muster:build)` and `Workflow(muster:backlog)` to your allow rules to skip it.
 :::
 
 ## Hands-off delivery: `/muster:go`

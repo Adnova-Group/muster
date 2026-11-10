@@ -51,4 +51,6 @@ Surprises:
 - Wrap each `agent()` call so one schema failure doesn't kill the run.
 - Gitignore `.claude/worktrees/`.
 - Offer the named allow rules `Workflow(muster:plan|build|backlog)`, not a bare `Workflow`.
+  (Superseded 2026-11-10: a workflow named `plan` takes over the `/muster:plan` command, so the
+  planning workflow is `muster:make-plan`; docs/strategy/stage-2-contracts.md amendment 19.)
 - Resume always passes `{name, resumeFromRunId}`.

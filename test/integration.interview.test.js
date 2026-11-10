@@ -19,7 +19,7 @@ test("plan.md runs the gap-check + interview before the planner", async () => {
   assert.match(plan, /M preflight/, "plan must run preflight (scope + assess in one call)");
   assert.match(plan, /`clear` is false[\s\S]{0,200}AskUserQuestion/, "plan must interview on a gap");
   assert.match(plan, /CONTEXT\.md/, "interview answers must land in CONTEXT.md");
-  assert.ok(plan.indexOf("AskUserQuestion built from `unclear`") < plan.indexOf('Workflow({name:"muster:plan"'), "the interview must come before planning");
+  assert.ok(plan.indexOf("AskUserQuestion built from `unclear`") < plan.indexOf('Workflow({name:"muster:make-plan"'), "the interview must come before planning");
 });
 
 test("go.md triggers the interview on a gap, but never blocks when unattended", async () => {

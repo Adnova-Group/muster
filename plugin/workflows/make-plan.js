@@ -1,14 +1,15 @@
 export const meta = {
-  name: 'plan',
+  name: 'make-plan',
   description: 'Write and check a muster PLAN.md: planner, then plan-checker, revising at most 3 times',
-  whenToUse: 'After `muster preflight` (and the interview, when the outcome is unclear). Returns the plan path and the checker verdict.',
+  whenToUse: 'After preflight (and the interview, when the outcome is unclear); pass its cli. Returns the plan path and the checker verdict. Named make-plan, never plan: a workflow named like the /muster:plan command takes over that command.',
   phases: [
     { title: 'Plan', detail: 'muster-planner writes or revises PLAN.md' },
     { title: 'Check', detail: 'muster-plan-checker, plan-lint first; stop on PASS, cap or stalled issue count' },
   ],
 }
 
-// Contract: docs/strategy/stage-2-contracts.md. Schemas mirror plugin/workflows/schemas.js.
+// Contract: docs/strategy/stage-2-contracts.md (amendment 19 renamed it from `plan`). Schemas
+// mirror plugin/workflows/schemas.js.
 
 const str = { type: 'string' }
 const CHECK_RESULT = {
@@ -69,6 +70,12 @@ async function call(prompt, opts) {
   }
 }
 
+// `muster` is not on PATH in a user's project, and CLAUDE_PLUGIN_ROOT may be unset in an agent's
+// shell: agents run the CLI through the absolute prefix preflight returns as `cli`.
+const CLI_FALLBACK = 'sh "$CLAUDE_PLUGIN_ROOT/runtime/muster.sh"'
+const cliPrefix = (cfg) => (typeof cfg.cli === 'string' && /^[^\r\n]{1,1024}$/.test(cfg.cli.trim()) ? cfg.cli.trim() : CLI_FALLBACK)
+const cliLine = (cfg) => `Run muster CLI commands as: ${cliPrefix(cfg)} <verb> ... (the bare muster command is not on PATH).`
+
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48) || 'run'
 
 // Project pins (.muster/config, `muster skills pin`): build-args binds each one to every
@@ -99,6 +106,7 @@ function planBrief(cfg, planPath, issues, revision) {
     cfg.candidates ? `Candidate specialists for each task's agent_hint: ${JSON.stringify(cfg.candidates)}` : '',
     cfg.skills ? `Candidate builtin skills for each task's skills attribute: ${JSON.stringify(cfg.skills)}${cfg.skillRoot ? `; every other builtin id is a directory name under ${cfg.skillRoot}` : ''}` : '',
     pinLine(cfg.pins),
+    cliLine(cfg),
   ]
   if (!issues) {
     lines.push(
@@ -121,14 +129,16 @@ function checkBrief(cfg, planPath) {
     `Check the plan at ${planPath} for run ${cfg.runId}. Outcome: ${cfg.outcome || '(see CONTEXT.md)'}`,
     cfg.contextPath ? `Decisions it must honour: ${cfg.contextPath}.` : '',
     cfg.specPath ? `Spec: ${cfg.specPath}. Dimension 1 covers its in-scope AC, INV and EV IDs too, and a task whose covers cites an ID must deliver that ID in full.` : '',
-    `Run muster plan-lint ${planPath} first and carry every lint issue into your result unchanged.`,
+    cliLine(cfg),
+    `Run ${cliPrefix(cfg)} plan-lint ${planPath} first and carry every lint issue into your result unchanged.`,
     'Read only: do not edit the plan. verdict PASS only when no blocker remains.',
   ].filter(Boolean).join('\n')
 }
 
 const cfg = parseArgs(args)
-if (!cfg.runId && !cfg.outcome) return { status: 'error', error: 'plan needs args {runId, outcome, contextPath, specPath, candidates, skills, skillRoot}' }
+if (!cfg.runId && !cfg.outcome) return { status: 'error', error: 'make-plan needs args {runId, outcome, contextPath, specPath, candidates, skills, skillRoot, cli}' }
 if (!cfg.runId) cfg.runId = slug(cfg.outcome)
+if (cliPrefix(cfg) === CLI_FALLBACK) log('no cli arg: agents fall back to $CLAUDE_PLUGIN_ROOT, which an agent shell may lack; pass preflight\'s cli')
 const planPath = `.muster/runs/${cfg.runId}/PLAN.md`
 const result = (verdict, revisions, issues, escalated, extra) => ({ runId: cfg.runId, planPath, verdict, revisions, issues, escalated, ...extra })
 

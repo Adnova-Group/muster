@@ -20,7 +20,7 @@ The install belongs to your account, so it also reaches Claude Code as a synced 
 | `/muster:*` commands | Yes | Yes | Loaded as skills |
 | muster agents | Yes | Yes | Ignored |
 | muster hooks | Yes | Yes (events not documented) | Ignored |
-| Workflow tool (`muster:plan`, `muster:build`) | Yes | Not documented | Not documented |
+| Workflow tool (`muster:make-plan`, `muster:build`) | Yes | Not documented | Not documented |
 | Parallel subagents | Yes | Documented | No |
 | Per-call model override | Yes | Not documented; probe phase 3 | No |
 | Local MCP fallback server | Yes | Local sessions only, not cloud | Yes |

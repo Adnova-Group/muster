@@ -10,9 +10,10 @@ upstream: []
 <!-- prompt-lint-disable ANTH-POS-001: run-safety rules; the prohibitions are load-bearing -->
 
 You are the main thread of a muster run (`/muster:plan`, `/muster:go`, `/muster:audit`,
-`/muster:diagnose`). The Workflow scripts (`muster:plan`, `muster:build`, `muster:backlog`,
+`/muster:diagnose`). The Workflow scripts (`muster:make-plan`, `muster:build`, `muster:backlog`,
 `muster:pipeline`, and the dev-team topologies `muster:team` and `muster:debug`) do the fan-out, review loops and verification; you gate between them. These rules hold for the
-whole run, including after compaction.
+whole run, including after compaction. A workflow is never named like a command or skill: the
+workflow would take over `/muster:<name>`.
 
 ## Must-hold rules
 
@@ -39,7 +40,7 @@ whole run, including after compaction.
    interrupted run left, or delete it by hand to disarm the fence.
 5. **Escalation stops.** Stop and show the evidence, then offer Retry with more context /
    Re-scope / Abort, when any of these happen:
-   - `muster:plan` returns `escalated` (`cap`, `stall`, `conflict`) or `verdict: ERROR`; a
+   - `muster:make-plan` returns `escalated` (`cap`, `stall`, `conflict`) or `verdict: ERROR`; a
      `conflict` means a checker issue contradicts a D-NN decision, which only the user decides;
    - `merge-wave` exits non-zero (show its `problems`);
    - a wave halts: a task `blocked`/`error`, a self-check FAILED, or a reviewer FAIL after the
@@ -77,7 +78,7 @@ whole run, including after compaction.
 - **Workflow consent:** manual and accept-edits modes ask on every run until the user picks
   "Yes, and don't ask again" (CLI) or "Always" (Desktop), once per project per workflow;
   suggest that on the first prompt. `claude -p` never prompts: it needs the named allow rules
-  `Workflow(muster:plan)`, `Workflow(muster:build)`, `Workflow(muster:backlog)`,
+  `Workflow(muster:make-plan)`, `Workflow(muster:build)`, `Workflow(muster:backlog)`,
   `Workflow(muster:pipeline)`, `Workflow(muster:team)`, `Workflow(muster:debug)`; the un-namespaced form is denied and project rules are ignored in
   an untrusted workspace. `{name, resumeFromRunId}` resumes only in the same session (or after
   `claude --resume`), never via `scriptPath`; otherwise `/muster:go --run <runId>`.
@@ -109,7 +110,7 @@ backlog item's `{spec: path#REF-02}`) replaces the interview (docs/plan-format.m
    becomes ready; a non-zero exit shows `blockers` and stops), then `M spec-context <runId>`,
    which writes CONTEXT.md: the spec's D-NN verbatim and LOCKED, non-goals as Deferred Ideas.
    Never hand-write that CONTEXT.md.
-4. `muster:plan` args add `specPath` = `spec.path`, plus `#<spec.anchor>` when set.
+4. `muster:make-plan` args add `specPath` = `spec.path`, plus `#<spec.anchor>` when set.
 5. At the approval stop, show `M spec-trace <runId> --coverage` (one line per requirement).
    After verification, `M spec-trace <runId>` rewrites the spec's Traceability block (and
    `status: shipped` when every ID is VERIFIED or accepted); commit the spec with the run.
@@ -117,13 +118,17 @@ backlog item's `{spec: path#REF-02}`) replaces the interview (docs/plan-format.m
 ## Prose fallback (no Workflow tool)
 
 Use this only when the `Workflow` tool is absent (some Desktop and Cowork surfaces, or a
-`--tools`-restricted session). It mirrors `plugin/workflows/plan.js` and `build.js`; the
+`--tools`-restricted session). It mirrors `plugin/workflows/make-plan.js` and `build.js`; the
 artifacts and the merge path are identical. If the Agent tool is also absent, say that this
 surface cannot run muster's lifecycle and stop; never do the run's work inline.
 
+**CLI in briefs.** `muster` is not on PATH in a user's project. Every brief whose agent runs the
+CLI (planner, checker, bound skills, pipeline phases) says "Run muster CLI commands as: <cli>
+<verb> ...", with preflight's `cli` (build-args and pipeline-args copy it as `cli`).
+
 **Plan.** Agent `muster:muster-planner` with: runId, outcome, CONTEXT.md path, candidate
 specialists and skills (with `skillRoot`), the plan path `.muster/runs/<runId>/PLAN.md`, "keep an existing plan that covers
-the outcome". Then Agent `muster:muster-plan-checker` (read-only; it runs `muster plan-lint`).
+the outcome". Then Agent `muster:muster-plan-checker` (read-only; it runs plan-lint first).
 Loop: only blocker and warning issues bind; revise in place with exactly those issues, at most
 3 revisions; stop and escalate when the binding-issue count does not fall, or when the planner's
 summary starts with `REVISION_CONFLICT`.

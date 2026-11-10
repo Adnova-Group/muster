@@ -64,6 +64,7 @@ test("writePipelineArgs reads preflight.json, refuses a code-routed run, and nex
   const written = JSON.parse(await readFile(join(dir, "pipeline-args.json"), "utf8"));
   assert.equal(written.pipeline.id, "social-post");
   assert.deepEqual(written.models, { executor: { model: "haiku" } });
+  assert.match(written.cli, /^sh ".+\/runtime\/muster\.sh"$/, "phase skills (roadmap's prioritize) run the CLI through this prefix");
 
   assert.equal((await nextForRun({ cwd: root, runId: "r1" })).position, "pipeline");
   await writeFile(join(dir, "pipeline-result.json"), JSON.stringify({ verdict: "FAIL" }));
@@ -88,9 +89,9 @@ async function runPipeline(args, respond) {
   return { result, calls };
 }
 
-const blogArgs = () => pipelineArgsFrom(pipelines.find((p) => p.id === "blog-post"), {
+const blogArgs = () => ({ ...pipelineArgsFrom(pipelines.find((p) => p.id === "blog-post"), {
   runId: "r1", outcome: "a short blog post", models: { executor: { model: "haiku" }, reviewer: { model: "haiku" }, verifier: { model: "sonnet" } },
-}).args;
+}).args, cli: 'sh "/p/runtime/muster.sh"' });
 const allScores = (n) => ({ scores: blogArgs().pipeline.gate.criteria.map((criterion) => ({ criterion, score: n, evidence: "e" })) });
 const phaseOk = (label) => ({ phase: label.split(" ")[0], status: "done", wrote: ["x"], summary: "ok", skillsApplied: [] });
 
@@ -108,7 +109,8 @@ test("pipeline.js: phases in order with their skills, then review + score, then 
   assert.match(draft.prompt, /Read the earlier phase notes first: .*01-intake\.md.*03-outline\.md/);
   assert.equal(draft.opts.model, "haiku");
   assert.equal(draft.opts.isolation, undefined, "content phases write in the main checkout");
-  assert.match(calls.find((c) => c.opts.label === "score r0").prompt, /Do not run muster score/);
+  assert.match(calls.find((c) => c.opts.label === "score r0").prompt, /Do not run the CLI's score verb/);
+  for (const c of calls) assert.ok(c.prompt.includes('Run muster CLI commands as: sh "/p/runtime/muster.sh" <verb>'), `${c.opts.label} carries the CLI prefix`);
   assert.equal(calls.find((c) => c.opts.label === "score r0").opts.model, "sonnet");
   assert.equal(result.score.total, 21);
   assert.equal(result.revisions, 0);

@@ -10,6 +10,7 @@ import { homedir } from "node:os";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { exists, readJson, readdirSafe } from "./fs-util.js";
+import { coworkConfigDirs, readAccountPluginList } from "./harness.js";
 
 // All event names Claude Code recognises as valid hook event keys.
 const KNOWN_HOOK_EVENTS = new Set([
@@ -498,4 +499,246 @@ export async function runDoctor({ root, home, exec, cwd } = {}) {
 
   if (cwd) checks.push(await runStateCheck(cwd));
   return { ok: checks.every(c => c.ok), checks };
+}
+
+// --- doctor --desktop ---------------------------------------------------------
+// Read-only report on Claude Desktop's view of muster. It never edits Desktop
+// config. Covers: which config dirs exist (Windows %APPDATA% and the MSIX
+// LocalCache copy, reached through /mnt/c from WSL); each `mcpServers` entry that
+// launches muster, with its checkout's version and git state (stale or dirty is
+// flagged); whether muster is in the account plugin list the app caches under
+// plugin-list/ (the documented Desktop route is the plugin marketplace); and the
+// log directory (%LOCALAPPDATA%\Claude\Logs on Windows).
+// Facts and quotes behind each check: docs/research/claude-cowork.md §5.
+
+const WINDOWS_PROFILE_SKIP = new Set(["All Users", "Default", "Default User", "Public", "desktop.ini"]);
+
+// Other Windows profiles (service and sandbox accounts) deny access from WSL; a
+// path we may not stat is simply not this user's Desktop, so it reads as absent.
+async function reachable(p) {
+  try { return await exists(p); }
+  catch (err) { if (err.code === "EACCES" || err.code === "EPERM") return false; throw err; }
+}
+
+export function isWsl(env = process.env, platform = process.platform, procVersion = "") {
+  if (platform !== "linux") return false;
+  return !!(env.WSL_DISTRO_NAME || env.WSL_INTEROP || /microsoft/i.test(procVersion));
+}
+
+// C:\Users\me\x -> /mnt/c/Users/me/x (drive-letter paths only; anything else -> null).
+export function windowsToWslPath(p, mountRoot = "/mnt") {
+  const m = /^([A-Za-z]):[\\/](.*)$/.exec(String(p));
+  if (!m) return null;
+  return `${mountRoot}/${m[1].toLowerCase()}/${m[2].replace(/\\/g, "/")}`;
+}
+
+// Candidate Desktop config dirs, in the app's read order per profile:
+// [{ dir, kind: "msix" | "appdata" | "native", profile, logsDir }].
+export async function desktopConfigCandidates({ platform = process.platform, home = homedir(), wsl = false, usersRoot = "/mnt/c/Users" } = {}) {
+  const out = [];
+  if (wsl) {
+    for (const user of await readdirSafe(usersRoot)) {
+      if (WINDOWS_PROFILE_SKIP.has(user)) continue;
+      const profile = join(usersRoot, user);
+      const logsDir = join(profile, "AppData/Local/Claude/Logs");
+      const packages = join(profile, "AppData/Local/Packages");
+      for (const e of await readdirSafe(packages)) {
+        if (e.startsWith("Claude_")) out.push({ dir: join(packages, e, "LocalCache/Roaming/Claude"), kind: "msix", profile, logsDir });
+      }
+      out.push({ dir: join(profile, "AppData/Roaming/Claude"), kind: "appdata", profile, logsDir });
+    }
+    return out;
+  }
+  const logsDir = platform === "win32"
+    ? join(home, "AppData/Local/Claude/Logs")
+    : platform === "darwin" ? join(home, "Library/Logs/Claude") : null;
+  for (const dir of await coworkConfigDirs(home, platform)) {
+    const kind = /[\\/]Packages[\\/]Claude_/.test(dir) ? "msix" : platform === "win32" ? "appdata" : "native";
+    out.push({ dir, kind, profile: home, logsDir });
+  }
+  return out;
+}
+
+// A muster MCP entry: named muster, or launching one of muster's server entrypoints.
+const MUSTER_SERVER_SCRIPT = /(?:^|[\\/])(?:cowork[\\/](?:mcp-server|chatgpt-work-server)|mcp[\\/](?:server|codex-server|chatgpt-work-server))\.mjs$/;
+function musterServerScript(name, entry) {
+  const args = Array.isArray(entry?.args) ? entry.args.map(String) : [];
+  const script = args.find(a => MUSTER_SERVER_SCRIPT.test(a)) || null;
+  const npxSpec = args.find(a => /^@adnova-group\/muster(?:@|$)/.test(a)) || null;
+  if (!script && !npxSpec && !/muster/i.test(name)) return null;
+  return { script, npxSpec };
+}
+
+async function inspectCheckout(scriptPath, { wsl, exec, mountRoot }) {
+  const local = wsl ? (windowsToWslPath(scriptPath, mountRoot) || scriptPath) : scriptPath;
+  const root = join(local, "..", "..");
+  const info = { scriptPath, localPath: local, root, exists: await reachable(local) };
+  if (!info.exists) return info;
+  const pkg = await readJson(join(root, "package.json"));
+  info.version = pkg && pkg.name === "@adnova-group/muster" ? pkg.version : null;
+  const git = async args => {
+    try { return (await exec("git", ["-C", root, ...args], { timeout: 20000 })).stdout.trim(); } catch { return null; }
+  };
+  info.headFull = await git(["rev-parse", "HEAD"]);
+  info.head = info.headFull ? info.headFull.slice(0, 7) : null;
+  if (info.head) {
+    info.subject = await git(["log", "-1", "--format=%s"]);
+    const porcelain = await git(["status", "--porcelain"]);
+    info.dirtyFiles = porcelain === null ? null : porcelain.split("\n").filter(Boolean).length;
+  }
+  return info;
+}
+
+function checkoutChecks(where, server, cliVersion) {
+  if (server.npxSpec && !server.script) {
+    const pinned = server.npxSpec.split("@")[2] || null;
+    const stale = !!(pinned && cliVersion && semverCompare(pinned, cliVersion) < 0);
+    return [{ name: "desktop-mcp-checkout", ok: !stale, detail: `${where}: npx ${server.npxSpec}${stale ? ` -- stale: older than this CLI (${cliVersion})` : ""}` }];
+  }
+  const co = server.checkout;
+  if (!co) return [{ name: "desktop-mcp-checkout", ok: false, detail: `${where}: no muster entrypoint in args` }];
+  if (!co.exists) return [{ name: "desktop-mcp-checkout", ok: false, detail: `${where}: ${co.scriptPath} does not exist` }];
+  const stale = !!(co.version && cliVersion && semverCompare(co.version, cliVersion) < 0);
+  const head = co.head ? `${co.head}${co.subject ? ` "${co.subject}"` : ""}` : "not a git checkout";
+  const out = [{
+    name: "desktop-mcp-checkout",
+    ok: !stale && !!co.version,
+    detail: `${where}: ${co.scriptPath} -> v${co.version ?? "unknown"} at ${head}`
+      + (stale ? ` -- stale: older than this CLI (${cliVersion})` : "")
+      + (co.version ? "" : " -- not a muster package"),
+  }];
+  if (co.behind) {
+    out.push({ name: "desktop-mcp-checkout-behind", ok: true, warn: true, detail: `${where}: ${co.behind} commit(s) behind this CLI's checkout (same history); pull it or point the entry here` });
+  }
+  if (co.dirtyFiles) {
+    out.push({ name: "desktop-mcp-checkout-dirty", ok: true, warn: true, detail: `${where}: ${co.dirtyFiles} uncommitted change(s); the Desktop server runs that working tree` });
+  }
+  return out;
+}
+
+// Code-tab sessions and saved environments that run inside WSL, from Desktop's own
+// files (observed 2026-11-10, undocumented): ccd-session-presets.json targets with a
+// `wslDistro`, and claude-code-sessions/<org>/<account>/local_*.json with a
+// `wslConfig`. Desktop WSL sessions load no plugins (code.claude.com/docs/en/
+// desktop-wsl.md: "Plugins: not available in WSL sessions"), so muster is absent there.
+async function readWslCodeSessions(dir) {
+  const distros = new Set();
+  let presets = 0;
+  let sessions = 0;
+  const presetFile = await readJson(join(dir, "ccd-session-presets.json"));
+  for (const account of Object.values(presetFile?.byAccount || {})) {
+    for (const p of account?.presets || []) {
+      if (p?.target?.wslDistro) { presets += 1; distros.add(p.target.wslDistro); }
+    }
+  }
+  const root = join(dir, "claude-code-sessions");
+  for (const org of await readdirSafe(root)) {
+    for (const account of await readdirSafe(join(root, org))) {
+      for (const f of await readdirSafe(join(root, org, account))) {
+        if (!/^local_.*\.json$/.test(f)) continue;
+        const s = await readJson(join(root, org, account, f));
+        if (s?.wslConfig && !s.isArchived) { sessions += 1; if (s.wslConfig.distro) distros.add(s.wslConfig.distro); }
+      }
+    }
+  }
+  return { presets, sessions, distros: [...distros] };
+}
+
+// Commits the Desktop checkout's HEAD trails this CLI's own checkout by, when both
+// share history (null when this CLI is not a git checkout or the sha is unknown).
+async function commitsBehind(base, sha, exec) {
+  if (!sha) return null;
+  try {
+    const { stdout } = await exec("git", ["-C", base, "rev-list", "--count", `${sha}..HEAD`], { timeout: 20000 });
+    const n = Number(stdout.trim());
+    return Number.isInteger(n) ? n : null;
+  } catch { return null; }
+}
+
+export async function runDesktopDoctor({
+  root, env = process.env, platform = process.platform, home = homedir(),
+  wsl, usersRoot = "/mnt/c/Users", mountRoot = "/mnt", exec,
+} = {}) {
+  const base = root instanceof URL ? fileURLToPath(root) : (root || process.cwd());
+  const execImpl = exec || promisify(execFile);
+  let procVersion = "";
+  if (wsl === undefined && platform === "linux") {
+    try { procVersion = await readFile("/proc/version", "utf8"); } catch { /* not readable */ }
+  }
+  const onWsl = wsl === undefined ? isWsl(env, platform, procVersion) : !!wsl;
+  const cliVersion = (await readJson(join(base, "package.json")))?.version || null;
+  const checks = [];
+  const desktop = { platform, wsl: onWsl, cliVersion, configs: [], logs: [] };
+  const seenLogs = new Set();
+
+  for (const c of await desktopConfigCandidates({ platform, home, wsl: onWsl, usersRoot })) {
+    if (c.logsDir && !seenLogs.has(c.logsDir)) {
+      seenLogs.add(c.logsDir);
+      if (await reachable(c.logsDir)) {
+        const files = await readdirSafe(c.logsDir);
+        desktop.logs.push({ dir: c.logsDir, musterLog: files.includes("mcp-server-muster.log") });
+      }
+    }
+    if (!(await reachable(c.dir))) {
+      // An MSIX install without a LocalCache copy reads %APPDATA% (observed).
+      if (c.kind === "msix") desktop.msixWithoutLocalCache = [...(desktop.msixWithoutLocalCache || []), c.dir];
+      continue;
+    }
+    const cfg = await readJson(join(c.dir, "claude_desktop_config.json"));
+    const plugins = await readAccountPluginList(c.dir);
+    const record = {
+      dir: c.dir, kind: c.kind, configFile: !!cfg,
+      mcpServers: cfg?.mcpServers ? Object.keys(cfg.mcpServers) : [],
+      musterServers: [], accountPlugins: plugins ? plugins.length : null,
+    };
+    desktop.configs.push(record);
+
+    for (const [name, entry] of Object.entries(cfg?.mcpServers || {})) {
+      const hit = musterServerScript(name, entry);
+      if (!hit) continue;
+      const server = { name, command: entry.command || null, ...hit };
+      if (hit.script) {
+        server.checkout = await inspectCheckout(hit.script, { wsl: onWsl, exec: execImpl, mountRoot });
+        server.checkout.behind = await commitsBehind(base, server.checkout.headFull, execImpl);
+      }
+      record.musterServers.push(server);
+      checks.push(...checkoutChecks(`${c.kind} mcpServers.${name}`, server, cliVersion));
+    }
+
+    const wslUse = await readWslCodeSessions(c.dir);
+    record.wslCodeSessions = wslUse;
+    if (wslUse.presets || wslUse.sessions) {
+      checks.push({
+        name: "desktop-wsl-sessions", ok: true, warn: true,
+        detail: `${c.kind}: ${wslUse.sessions} open Code-tab session(s) and ${wslUse.presets} saved environment(s) run in WSL (${wslUse.distros.join(", ") || "unknown distro"}). Desktop WSL sessions load no plugins, so muster is absent there; use a local or SSH session, or the CLI inside WSL`,
+      });
+    }
+
+    if (plugins) {
+      const m = plugins.find(p => p.name === "muster" || p.id.startsWith("muster@"));
+      record.musterPlugin = m || null;
+      checks.push(m
+        ? { name: "desktop-account-plugin", ok: true, warn: !m.enabled, detail: `${c.kind}: ${m.id} is ${m.enabled ? "enabled" : "installed but disabled"} in the account plugin list` }
+        : { name: "desktop-account-plugin", ok: true, warn: true, detail: `${c.kind}: muster is not in the account plugin list (${plugins.length} plugin(s)), so Chat and Cowork get only the MCP fallback; add the marketplace in Customize > Plugins` });
+    }
+  }
+
+  if (desktop.configs.length === 0) {
+    checks.push({ name: "desktop-config", ok: true, detail: `no Claude Desktop config dir found (${onWsl ? `searched ${usersRoot}/*/AppData` : platform})` });
+  } else {
+    const active = desktop.configs.find(r => r.configFile) || desktop.configs[0];
+    const msixNote = desktop.msixWithoutLocalCache ? "; MSIX package present without a LocalCache copy, so the app reads %APPDATA%" : "";
+    checks.push({ name: "desktop-config", ok: true, detail: `${desktop.configs.length} config dir(s); active: ${active.dir} (${active.kind})${active.configFile ? "" : ", no claude_desktop_config.json"}${msixNote}` });
+    if (!desktop.configs.some(r => r.musterServers.length)) {
+      checks.push({ name: "desktop-mcp-checkout", ok: true, detail: "no muster entry in mcpServers (expected when muster rides in as a plugin)" });
+    }
+    if (!desktop.configs.some(r => r.accountPlugins !== null)) {
+      checks.push({ name: "desktop-account-plugin", ok: true, warn: true, detail: "account plugin list not readable here; check Customize > Plugins in the app" });
+    }
+  }
+  checks.push(desktop.logs.length
+    ? { name: "desktop-logs", ok: true, detail: desktop.logs.map(l => `${l.dir}${l.musterLog ? " (mcp-server-muster.log present)" : ""}`).join("; ") }
+    : { name: "desktop-logs", ok: true, detail: platform === "win32" || onWsl ? "%LOCALAPPDATA%\\Claude\\Logs not found" : "no Desktop log dir found" });
+
+  return { ok: checks.every(c => c.ok), checks, desktop };
 }

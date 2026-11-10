@@ -34,24 +34,24 @@ export function resolveCapabilities(catalog, installed, home = homedir(), opts =
     || process.env.MUSTER_RUNTIME === "agent-plugins";
   const agentPluginSkills = new Set(installed.skills || []);
   const agentPluginMcpServers = new Set(installed.mcpServers || []);
-  // Cowork has no agent or skill loader by default: its host can invoke
-  // registered MCP servers and can always execute a task inline, but a Claude
-  // Code plugin merely being present on disk does not make that plugin's
-  // agents/skills callable from Cowork -- UNLESS Cowork's own plugin loader
-  // (shipped ~May 2026, bundling skills/hooks/subagents in the Claude Code
-  // plugin format -- docs/research/claude-cowork.md section 3d) actually
-  // loaded muster's plugin/ tree natively. That load is UNVERIFIED without a
-  // live Cowork session, so it rides in as a DECLARED signal
-  // (installed.nativePluginRide -- see readInstalledCowork's
-  // MUSTER_COWORK_NATIVE_PLUGIN / opts.nativePluginRide), never an
-  // auto-probe: false (the default) keeps today's MCP-only filtering; true
-  // resolves agent/skill providers exactly as this function does for
-  // Claude Code (the non-cowork path below), since a native load, if real,
-  // loaded this same checkout's plugin/ tree. The MCP wrapper also exports
-  // MUSTER_RUNTIME=cowork for nested CLI commands (notably `audit`) whose
-  // installed inventory is resolved inside the child process.
+  // Cowork loads plugin skills, commands, agents and hooks from the claude.ai
+  // account (claude.com/docs/plugins/platform-support; docs/research/
+  // claude-cowork.md §3), so when muster's plugin rides in, its builtin skills
+  // and agents resolve exactly as on Claude Code. readInstalledCowork decides
+  // installed.nativePluginRide: a declaration wins, then the Desktop app's
+  // account plugin list, then the documented plugin route (true). Only a
+  // plugin-less install (list readable without muster, or
+  // MUSTER_COWORK_NATIVE_PLUGIN=0) falls back to MCP servers plus inline.
+  //
+  // Two Cowork-lane rules hold either way:
+  //   - Cowork never reads ~/.claude, so an "installed" non-MCP external
+  //     provider (a ~/.claude skill or agent) is not invocable there.
+  //   - The MCP wrapper exports MUSTER_RUNTIME=cowork for nested CLI commands
+  //     (notably `audit`) that resolve a non-Cowork inventory in the child.
+  //     Such a child has no plugin-list reading, so it stays MCP-only unless
+  //     the inventory itself carries nativePluginRide: true.
   const cowork = installed.runtime === "cowork" || process.env.MUSTER_RUNTIME === "cowork";
-  const coworkMcpOnly = cowork && !installed.nativePluginRide;
+  const coworkMcpOnly = cowork && installed.nativePluginRide !== true;
   // Work has no native agent/skill dispatch lane. Its deterministic MCP
   // inventory is supplied by readInstalledWork; even if a caller passes a
   // contaminated inventory, fail closed to installed MCP entries + inline.
@@ -79,6 +79,7 @@ export function resolveCapabilities(catalog, installed, home = homedir(), opts =
         if (!portable) entry = null;
       }
       if (mcpOnly && entry?.kind !== "mcp") entry = null;
+      if (cowork && entry?.source === "installed" && entry.kind !== "mcp") entry = null;
       if (!entry) continue;
       chain.push(entry);
       if (!chosen) {
@@ -95,7 +96,7 @@ export function resolveCapabilities(catalog, installed, home = homedir(), opts =
     const recommendations = [];
     for (const e of forRole) {
       if (e.kind === "external" && e.recommended && !isInstalled(e, installed) && e.rank > chosenRank
-          && !work && (!coworkMcpOnly || providerType(e) === "mcp")) {
+          && !work && (!cowork || providerType(e) === "mcp")) {
         recommendations.push(`install ${e.id} for ${role} — better than the ${chosen.id} fallback`);
       }
     }
@@ -147,14 +148,31 @@ export function resolveCapabilities(catalog, installed, home = homedir(), opts =
   // same id — installed wins on a name collision, matching the roles ladder's
   // installed-beats-builtin precedence.
   const skills = [];
-  if (mcpOnly) return { roles, installedRaw: installed, skills };
+  // Cowork dispatch evidence, split per primitive (docs/research/claude-cowork.md
+  // §4): parallel subagents are documented ("Sub-agent coordination -- Complex
+  // work gets divided into smaller tasks with parallel workstreams",
+  // claude.com/docs/cowork/overview), so they need no probe; a per-call model
+  // override is documented nowhere for Cowork, so claudeModel/claudeProfile are
+  // advisory there until a phase-3 probe receipt from the active build proves it.
+  const extra = cowork
+    ? {
+        dispatch: {
+          pluginLoad: installed.pluginLoad || { state: coworkMcpOnly ? "absent" : "present", source: "inventory" },
+          parallelSubagents: "documented",
+          perCallModelOverride: "unverified: requires a phase-3 probe receipt from the active Cowork build",
+          cite: "docs/research/claude-cowork.md §4",
+        },
+      }
+    : {};
+  if (mcpOnly) return { roles, installedRaw: installed, skills, ...extra };
   const seen = new Set();
   // One shared cache for this call's whole installed-skills loop (see
   // installedSkillDescription / findSkillMdSync in plugin-inventory.js) —
   // every skill name shares the same plugins-tree walk instead of each
   // re-walking it from scratch. Call-scoped, not module-level state.
   const skillDescriptionCache = {};
-  for (const name of new Set(installed.skills || [])) {
+  // Cowork never reads ~/.claude, so installed skills from it are not advertised.
+  for (const name of new Set(cowork ? [] : installed.skills || [])) {
     seen.add(name);
     const portableDescription = installed.skillDescriptions?.[name];
     skills.push({
@@ -172,5 +190,5 @@ export function resolveCapabilities(catalog, installed, home = homedir(), opts =
     skills.push({ id: e.id, source: "builtin", description: e.description || "" });
   }
 
-  return { roles, installedRaw: installed, skills };
+  return { roles, installedRaw: installed, skills, ...extra };
 }

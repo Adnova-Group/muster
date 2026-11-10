@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { detectProject, hasPromptingSignal } from "./detect.js";
 import { loadCatalog } from "./catalog.js";
-import { readInstalled, readInstalledCowork, readInstalledWork } from "./harness.js";
+import { declaredPluginRide, readInstalled, readInstalledCowork, readInstalledWork } from "./harness.js";
 import { resolveCapabilities } from "./capabilities.js";
 import { validateManifest, manifestWarnings } from "./manifest.js";
 import { writeMemory, readMemory } from "./memory.js";
@@ -24,7 +24,7 @@ import { spawnSync } from "node:child_process";
 import { lstat, readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
-import { runDoctor } from "./doctor.js";
+import { runDesktopDoctor, runDoctor } from "./doctor.js";
 import { initScratchpad } from "./scratchpad.js";
 import { readProfile } from "./profile.js";
 import { buildSignals } from "./signals.js";
@@ -81,7 +81,7 @@ import { runCodexWave, runCodexWaveContinuation } from "./codex-wave-runner.js";
 import { resolvePlanSurface } from "./plan-surface.js";
 import { classifyPlanTurn, createCodexAppServerClient, fallbackPlanLaunch, launchCodexPlan, readSecretTerminalInput, renderPlanNotification, sanitizeTerminalText } from "./codex-plan-launch.js";
 import { resolveDesktopHarness } from "./desktop-harness.js";
-import { envInt, isTruthyFlag } from "./env-util.js";
+import { envInt } from "./env-util.js";
 import { scoreOutcomeForFastPath, buildFastPathManifest } from "./fast-path.js";
 import { detectReviewTriggers, lightBriefEligible } from "./review-brief.js";
 import { BACKLOG_PUBLICATION_MAX_BYTES } from "./backlog-publication.js";
@@ -163,7 +163,7 @@ const USAGE = [
   // diagnose/audit/issue/assess/steer/scope
   "diagnose <symptom>|--ci <file>|audit [--backlog] [path...]|issue <ref>|assess <outcome>|steer <message>|scope [text]|",
   // doctor/conformance/scratchpad/profile/install/signals/hygiene/help
-  "doctor [--codex]|codex-conformance [YYYY/MM/DD | --days N] [--cwd <repo>] [--current-pins-only]|scratchpad <runId>|profile|install <codex [--scope project-or-user]|chatgpt-work --connection-id <id> --profile <pro-safe|full> [--scope project|user] [--allow-full-actions]> [--dry-run]|uninstall <codex [--scope project-or-user]> [--dry-run]|signals [dir]|hygiene [--reap] [--json] [--backlog <file>] [--worktree-threshold N] [--zombie-stale-min N] [--claim-stale-min N]|help [command]>",
+  "doctor [--codex | --desktop]|codex-conformance [YYYY/MM/DD | --days N] [--cwd <repo>] [--current-pins-only]|scratchpad <runId>|profile|install <codex [--scope project-or-user]|chatgpt-work --connection-id <id> --profile <pro-safe|full> [--scope project|user] [--allow-full-actions]> [--dry-run]|uninstall <codex [--scope project-or-user]> [--dry-run]|signals [dir]|hygiene [--reap] [--json] [--backlog <file>] [--worktree-threshold N] [--zombie-stale-min N] [--claim-stale-min N]|help [command]>",
 ].join("");
 
 function out(obj) { process.stdout.write(JSON.stringify(obj, null, 2) + "\n"); }
@@ -533,15 +533,10 @@ async function handleCoreCommandPart1(cmd, rest) {
     } else if (rest.includes("--cowork")) {
       const declared = (flagValue(rest, "--connectors") || process.env.MUSTER_COWORK_CONNECTORS || "")
         .split(",").map(s => s.trim()).filter(Boolean);
-      // Native plugin ride: whether Cowork's own plugin loader (see
-      // docs/research/claude-cowork.md section 3d) actually accepted muster's
-      // plugin/ tree is unverified and has no on-disk/protocol detection signal,
-      // so it is DECLARED the same way remote connectors are -- --native-plugin
-      // or MUSTER_COWORK_NATIVE_PLUGIN (MCPB-boolean-safe: only "1"/"true"-ish
-      // values enable -- isTruthyFlag in src/env-util.js, the same parse
-      // MUSTER_ENABLE_APEX uses in src/model.js).
-      const nativePluginRide = rest.includes("--native-plugin")
-        || isTruthyFlag(process.env.MUSTER_COWORK_NATIVE_PLUGIN);
+      // Plugin ride (docs/research/claude-cowork.md §3): a declaration
+      // (--native-plugin / --plugin-less / MUSTER_COWORK_NATIVE_PLUGIN) wins;
+      // undeclared, readInstalledCowork reads the Desktop account plugin list.
+      const nativePluginRide = declaredPluginRide(rest, process.env);
       installed = await readInstalledCowork(home, { declaredConnectors: declared, nativePluginRide });
     } else {
       installed = await readInstalled(home);
@@ -1313,7 +1308,9 @@ async function handleCoreCommandPart4(cmd, rest) {
   } else if (cmd === "doctor") {
     const r = rest.includes("--codex")
       ? await runCodexDoctor({ root: new URL("../", import.meta.url) })
-      : await runDoctor({ root: new URL("../", import.meta.url), cwd: process.cwd() });
+      : rest.includes("--desktop")
+        ? await runDesktopDoctor({ root: new URL("../", import.meta.url) })
+        : await runDoctor({ root: new URL("../", import.meta.url), cwd: process.cwd() });
     out(r);
     if (!r.ok) process.exit(2);
     return true;

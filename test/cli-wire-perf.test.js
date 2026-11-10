@@ -296,12 +296,18 @@ test("cli wire: plan-surface hermes selects the native plan-skill + goal-contrac
   assert.equal(parsed.primitive, "plan-skill+goal-contract");
 });
 
-test("cli wire: plan-surface cowork resolves to the prose degradation (no native primitive)", async () => {
+test("cli wire: plan-surface cowork resolves to a prose plan with an AskUserQuestion approval (no plan mode)", async () => {
   const { stdout } = await run(["plan-surface", "cowork"]);
   const parsed = JSON.parse(stdout);
   assert.equal(parsed.runtime, "cowork");
   assert.equal(parsed.surface, "prose");
-  assert.equal(parsed.primitive, null);
+  assert.equal(parsed.primitive, "AskUserQuestion");
+});
+
+test("cli wire: plan-surface claude-desktop (the Code tab) resolves to native ExitPlanMode", async () => {
+  const parsed = JSON.parse((await run(["plan-surface", "claude-desktop"])).stdout);
+  assert.equal(parsed.surface, "native");
+  assert.equal(parsed.primitive, "ExitPlanMode");
 });
 
 test("cli wire: plan-surface with an unknown runtime resolves to the AskUserQuestion fallback (exit 0, never throws)", async () => {

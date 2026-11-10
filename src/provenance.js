@@ -76,6 +76,22 @@ export const isNonCommercialLicense = license => /(^|-)NC(-|$)/.test(String(lice
 // NonCommercial, NoDerivatives, or a proprietary LicenseRef.
 export const isRestrictedLicense = license =>
   license === "NONE" || /(^|-)(NC|ND)(-|$)/.test(String(license)) || /^LicenseRef-/.test(String(license));
+// ShareAlike terms (CC BY-SA and the like) allow reuse but bind the adapted copy to the
+// same license. That is a per-file rule, not a waiver: an item that carries vendored or
+// adapted text from a share-alike source must itself declare that license (checkShareAlike).
+export const isShareAlikeLicense = license => String(license).split(/ (?:AND|OR) /).some(id => /(^|-)SA(-|$)/.test(id));
+
+// The share-alike rule for one item: every vendored/adapted entry from a share-alike source
+// requires the item's own `license:` to be exactly that source license. Returns error strings.
+export function checkShareAlike(key, entries, fileLicense) {
+  const errors = [];
+  for (const e of entries) {
+    if (e.kind !== undefined || !isShareAlikeLicense(e.license) || !["vendored", "adapted"].includes(e.relation)) continue;
+    if (fileLicense !== e.license)
+      errors.push(`${key}: carries ${e.relation} text from ${e.repo} (${e.license}, share-alike), so its license must be ${e.license}, not ${fileLicense ?? "unset"}`);
+  }
+  return errors;
+}
 
 // One upstream entry, keys in a fixed order so serialization is deterministic.
 // Repository entries keep their original shape (no `kind` key); work entries lead with it.
@@ -279,10 +295,11 @@ export function generateNotice(manifest) {
   const byRepo = new Map();
   for (const source of manifest?.sources || []) {
     if (!source.repo) continue;
-    const row = byRepo.get(source.repo) || { license: source.license, refs: [], copyright: null, formerly: [], waived: false };
+    const row = byRepo.get(source.repo) || { license: source.license, refs: [], copyright: null, trademark: null, formerly: [], waived: false };
     const refs = [source.ref, ...(source.items || []).map(i => i.ref)].filter(Boolean);
     for (const ref of refs) if (!row.refs.includes(ref)) row.refs.push(ref);
     row.copyright ||= source.copyright || null;
+    row.trademark ||= source.trademark || null;
     for (const f of source.formerly || []) if (!row.formerly.includes(f)) row.formerly.push(f);
     byRepo.set(source.repo, row);
   }
@@ -293,6 +310,7 @@ export function generateNotice(manifest) {
     out += `\n- ${repo}${row.refs.length ? ` @ ${row.refs.join(", ")}` : ""} (${row.license})`;
     if (row.formerly.length) out += `\n  formerly: ${row.formerly.join(", ")}`;
     if (row.copyright) out += `\n  ${row.copyright}`;
+    if (row.trademark) out += `\n  ${row.trademark}`;
   }
   const works = (manifest?.sources || []).filter(s => isWorkSource(s) && s.kind !== "unknown");
   if (works.length) {
@@ -376,11 +394,17 @@ export async function runProvenance({ root, manifest, write = false }) {
     drift.push(path);
     if (write) await writeFile(join(root, path), next);
   };
+  const shareAlike = [];
   for (const item of items) {
     const entries = projection.get(itemKey(item.kind, item.id)) || [];
     entries.length ? counts.withUpstream++ : counts.cleanRoom++;
     const text = await readFile(join(root, item.path), "utf8");
     await sync(item.path, stampItem(item.kind, text, entries));
+    if (item.kind !== "pipeline" && entries.some(e => isShareAlikeLicense(e.license))) {
+      const m = matchFrontmatter(text);
+      const license = m ? parseFrontmatterLenient(m.body, parse).license : undefined;
+      shareAlike.push(...checkShareAlike(itemKey(item.kind, item.id), entries, license));
+    }
   }
   for (const { path, stamp } of CATALOGS) {
     const text = await readFile(join(root, path), "utf8").catch(e => (e.code === "ENOENT" ? null : Promise.reject(e)));
@@ -398,6 +422,7 @@ export async function runProvenance({ root, manifest, write = false }) {
   // Every recorded entry must name its source, and the license gate must hold.
   for (const [key, entries] of projection) for (const e of validateUpstreamEntries(entries)) problems.push(`${key}: ${e}`);
   problems.push(...checkLicenseWaivers(manifest).errors);
+  problems.push(...shareAlike);
   return { ok: drift.length === 0 && orphans.length === 0 && problems.length === 0, written: write, drift, orphans, problems, counts };
 }
 

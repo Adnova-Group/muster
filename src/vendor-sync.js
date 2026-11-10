@@ -1,4 +1,5 @@
-// Upstream sync for merge-tracked sources (today: gsd). The old `muster vendor`
+// Upstream sync for merge-tracked sources (gsd, and the UX sources uupm, intent,
+// typeui and pfd). The old `muster vendor`
 // path regenerates over local edits, which is how hand adaptations were lost.
 // A merge-tracked source instead records, per item:
 //
@@ -6,7 +7,10 @@
 //   to        muster path (adapted / verbatim items)
 //   mode      adapted   muster file is an edited copy: 3-way `git merge-file`
 //             verbatim  upstream text carried inside marked verbatim regions of `to`:
-//                       the regions are regenerated from the new upstream lines
+//                       the regions are regenerated from the new upstream lines.
+//                       A verbatim FILE item (no id, sole item for its `to`) is a
+//                       whole-file byte copy instead: `to` is its own base copy
+//                       (its blob must equal baseBlob) and an update replaces it.
 //             watch     never merged; listed in the report only
 //   baseBlob  git blob SHA of `from` at the pinned ref
 //   issues    upstream issue numbers whose mechanisms the item carries
@@ -32,6 +36,14 @@ export const SYNC_MODES = Object.freeze(["adapted", "verbatim", "watch"]);
 const SHA40_RE = /^[0-9a-f]{40}$/;
 // Release tags only: no leading dash (git would read an option), no refspec characters.
 export const TAG_RE = /^v?\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.]+)?$/;
+// A pin between releases records `git describe --tags --long` of its ref
+// (<release>-<commits since>-g<abbrev sha>) as its tag. The abbreviated sha must
+// prefix the pinned ref; the fetch then pins the commit itself, not a tag.
+export const DESCRIBE_RE = /^(v?\d+\.\d+\.\d+)-(\d+)-g([0-9a-f]{7,40})$/;
+export const isDescribePin = source => {
+  const m = String(source?.tag ?? "").match(DESCRIBE_RE);
+  return Boolean(m && String(source.ref ?? "").startsWith(m[3]));
+};
 
 export const isSyncItem = item => item != null && item.mode !== undefined;
 export const isSyncSource = source => (source?.items || []).some(isSyncItem);
@@ -79,7 +91,14 @@ export function validateSyncItem(item, at, itemPath, sourceRef) {
 // An adapted item is merged with git merge-file only when its muster file is an edited
 // copy of exactly that upstream file. A port (another language, or several upstream files
 // folded into one muster file) cannot be 3-way merged: it is reported as a port to redo.
-export const needsBaseCopy = (item, items) => item.mode === "verbatim" || isMergeable(item, items);
+export const needsBaseCopy = (item, items) => (item.mode === "verbatim" && !isWholeFileVerbatim(item, items)) || isMergeable(item, items);
+
+// A verbatim file item that alone owns its muster file is a byte-for-byte copy of the
+// upstream file (data, scripts, unedited references): the muster file is the base copy.
+export function isWholeFileVerbatim(item, items) {
+  return item.mode === "verbatim" && item.id === undefined && item.to !== undefined &&
+    items.filter(i => i.mode !== "watch" && i.to === item.to).length === 1;
+}
 
 export function isMergeable(item, items) {
   if (item.mode !== "adapted") return false;
@@ -90,7 +109,8 @@ export function isMergeable(item, items) {
 export function validateSyncSource(source, at) {
   const errors = [];
   if (!SHA40_RE.test(String(source.ref))) errors.push(`${at}.ref: a merge-tracked source pins a 40-hex commit SHA`);
-  if (!TAG_RE.test(String(source.tag))) errors.push(`${at}.tag: a merge-tracked source records the release tag of its ref`);
+  if (!TAG_RE.test(String(source.tag)) && !isDescribePin(source))
+    errors.push(`${at}.tag: a merge-tracked source records the release tag of its ref (or its git describe --tags --long between releases)`);
   return errors;
 }
 
@@ -266,18 +286,21 @@ export function gitUpstream(dir, { exec = pexec } = {}) {
 // Network. Returns { upstream, cleanup }.
 export async function fetchUpstream(source, toTag, { exec = pexec } = {}) {
   if (!TAG_RE.test(toTag)) throw new Error(`invalid tag ${toTag}`);
-  if (!TAG_RE.test(String(source.tag))) throw new Error(`source ${source.id} records no valid pin tag`);
+  const describe = isDescribePin(source);
+  if (!describe && !TAG_RE.test(String(source.tag))) throw new Error(`source ${source.id} records no valid pin tag`);
   const url = source.url || `https://github.com/${source.repo}.git`;
   const root = await mkdtemp(join(tmpdir(), "muster-upstream-"));
   const dir = join(root, "repo");
   try {
     await exec("git", ["init", "-q", dir]);
     await exec("git", ["-C", dir, "remote", "add", "origin", url]);
-    const tags = [...new Set([source.tag, toTag])].map(t => `+refs/tags/${t}:refs/tags/${t}`);
-    await exec("git", ["-C", dir, "fetch", "-q", "--filter=blob:none", "--no-tags", "origin", ...tags], { maxBuffer: 64 << 20 });
+    // A describe pin is fetched by commit (GitHub serves any reachable sha) instead of by tag.
+    const refspecs = [...new Set(describe ? [toTag] : [source.tag, toTag])].map(t => `+refs/tags/${t}:refs/tags/${t}`);
+    if (describe) refspecs.push(`+${source.ref}:refs/muster/pin`);
+    await exec("git", ["-C", dir, "fetch", "-q", "--filter=blob:none", "--no-tags", "origin", ...refspecs], { maxBuffer: 64 << 20 });
     const upstream = gitUpstream(dir, { exec });
-    const pinned = await upstream.resolve(`refs/tags/${source.tag}`);
-    if (pinned !== source.ref) throw new Error(`tag ${source.tag} resolves to ${pinned}, but the manifest pins ${source.ref}`);
+    const pinned = await upstream.resolve(describe ? "refs/muster/pin" : `refs/tags/${source.tag}`);
+    if (pinned !== source.ref) throw new Error(`pin ${source.tag} resolves to ${pinned}, but the manifest pins ${source.ref}`);
     return { upstream, cleanup: () => rm(root, { recursive: true, force: true }) };
   } catch (error) {
     await rm(root, { recursive: true, force: true });
@@ -380,11 +403,14 @@ export async function runVendorUpdate({ root, manifest, manifestText, sourceId, 
     for (const item of items) {
       if (bases.has(item.from)) continue;
       // Merged and verbatim items must have a base copy; a watch item or a port may have one.
-      const prev = await readText(join(root, baseCopyPath(source.id, item.from)));
-      if (needsBaseCopy(item, items) && prev === null) throw new Error(`missing base copy ${baseCopyPath(source.id, item.from)} (run the offline vendor check)`);
-      if (prev !== null && gitBlobSha(prev) !== item.baseBlob) throw new Error(`base copy ${baseCopyPath(source.id, item.from)} does not match baseBlob ${item.baseBlob}`);
+      // A whole-file verbatim item is its own base copy.
+      const whole = isWholeFileVerbatim(item, items);
+      const basePath = whole ? item.to : baseCopyPath(source.id, item.from);
+      const prev = await readText(join(root, basePath));
+      if ((whole || needsBaseCopy(item, items)) && prev === null) throw new Error(`missing base copy ${basePath} (run the offline vendor check)`);
+      if (prev !== null && gitBlobSha(prev) !== item.baseBlob) throw new Error(`base copy ${basePath} does not match baseBlob ${item.baseBlob}`);
       const next = await upstream.readFile(toSha, item.from);
-      bases.set(item.from, { prev, next, tag: toTag });
+      bases.set(item.from, { prev, next, tag: toTag, whole });
       if (next === null) conflicts.push({ file: item.to ?? item.from, kind: "removed", detail: `${item.from} no longer exists at ${toTag}` });
     }
     const files = [];
@@ -405,6 +431,8 @@ export async function runVendorUpdate({ root, manifest, manifestText, sourceId, 
         const { prev, next } = bases.get(port.from);
         if (next !== null && next !== prev) ports.push({ file: to, from: port.from, detail: `${port.from} changed upstream; re-port the change by hand (see the report)` });
       }
+      const wholeFile = fileItems.find(i => isWholeFileVerbatim(i, items));
+      if (wholeFile && bases.get(wholeFile.from).next !== null) text = bases.get(wholeFile.from).next;
       const adapted = fileItems.find(i => isMergeable(i, items));
       if (adapted) {
         const { prev, next } = bases.get(adapted.from);
@@ -425,9 +453,9 @@ export async function runVendorUpdate({ root, manifest, manifestText, sourceId, 
       await writeText(root, reportPath(source.id, toTag), report.text);
       if (clean) {
         const blobs = new Map();
-        for (const [from, { prev, next }] of bases) {
+        for (const [from, { prev, next, whole }] of bases) {
           blobs.set(from, gitBlobSha(next));
-          if (prev !== null) await writeText(root, baseCopyPath(source.id, from), next);
+          if (prev !== null && !whole) await writeText(root, baseCopyPath(source.id, from), next);
         }
         const nextManifest = updateManifestText(manifestText, source.id, { ref: toSha, tag: toTag, blobs });
         await writeText(root, "vendor/manifest.yaml", nextManifest);
@@ -484,6 +512,12 @@ export async function checkVendorSync({ root, manifest }) {
     const items = syncItemsOf(source);
     for (const item of items) {
       checked++;
+      if (isWholeFileVerbatim(item, items)) {
+        const copy = await readText(join(root, item.to));
+        if (copy === null) problems.push(`${source.id}: verbatim file ${item.to} is missing`);
+        else if (gitBlobSha(copy) !== item.baseBlob) problems.push(`${source.id}: verbatim file ${item.to} is ${gitBlobSha(copy)}, manifest records ${item.baseBlob} (a whole-file copy is never edited)`);
+        continue;
+      }
       const base = await readText(join(root, baseCopyPath(source.id, item.from)));
       if (base === null && !needsBaseCopy(item, items)) continue;
       if (base === null) problems.push(`${source.id}: missing base copy ${baseCopyPath(source.id, item.from)}`);

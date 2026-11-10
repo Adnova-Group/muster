@@ -1,6 +1,6 @@
 # Design mode
 
-Muster Design gives human-facing work one canonical context and one digest receipt before implementation. Its workflows run on [Impeccable](https://github.com/pbakaus/impeccable)'s own skill and references, vendored as `impeccable-*` builtins from commit `035c8f319edd019936525a062fe99e83ca8d12c6` (skill-v4.8.2) under Apache-2.0 and merge-tracked in `vendor/manifest.yaml`; each workflow names supporting skills from other vendored families as well. Muster does not silently import or overwrite upstream content: an upstream update is a reviewed 3-way merge.
+Muster Design gives human-facing work one canonical context and one digest receipt before implementation. Its workflows run on [Impeccable](https://github.com/pbakaus/impeccable)'s own skill and references, vendored as `impeccable-*` builtins from commit `b856e5010f2dd86bd97f9b2d5e38e33f3d5bd992` (skill-v4.8.2) under Apache-2.0 and merge-tracked in `vendor/manifest.yaml`; each workflow names supporting skills from other vendored families as well. Muster does not silently import or overwrite upstream content: an upstream update is a reviewed 3-way merge.
 
 ## Establish context
 

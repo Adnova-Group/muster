@@ -44,7 +44,8 @@ sources:
     kind: github
     repo: pbakaus/impeccable
     # Re-pinned 2026-11-10: 32930818 (2026-07-30) -> 035c8f31, the skill-v4.8.2 tag commit
-    # (2026-11-09); main's later commits are engine/CLI plumbing with no command change.
+    # (2026-11-09), then -> b856e501 (main, 2026-11-10: 7 reference files changed; the
+    # command metadata is byte-identical, so the design workflow vocabulary is unchanged).
     # Merge-tracked since 2026-11-10 (every impeccable-* item has a `mode`): the skill and 22 of
     # its reference files are vendored as impeccable-* builtins, each an adapted copy (muster
     # frontmatter, one adaptation note, links to vendored references pointed at their builtins;
@@ -58,8 +59,8 @@ sources:
     # The `design` command and the design-ux audit pattern stay muster's own text (inspired-by):
     # src/design.js / vendor/impeccable.json carry the 24-workflow vocabulary, incl. `generate`.
     # Upstream tags are product-prefixed (skill-v*, engine-v*, ext-v*), none in the plain
-    # vMAJOR.MINOR.PATCH form `muster vendor` fetches by, so the pin is the commit alone:
-    # 035c8f31 is the skill-v4.8.2 tag commit.
+    # vMAJOR.MINOR.PATCH form `muster vendor` fetches by, so the pin is the commit alone
+    # (b856e501 is main after skill-v4.8.2; `muster vendor outdated` compares it with main).
     ref: b856e5010f2dd86bd97f9b2d5e38e33f3d5bd992
     tag: null
     license: Apache-2.0

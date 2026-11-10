@@ -33,7 +33,7 @@ test("the bundled design vocabulary exposes exactly 24 pinned Impeccable workflo
       "clarify", "colorize", "critique", "delight", "distill", "harden", "onboard", "layout",
       "optimize", "overdrive", "polish", "quieter", "shape", "typeset"],
   );
-  assert.equal(DESIGN_SOURCE.ref, "035c8f319edd019936525a062fe99e83ca8d12c6");
+  assert.equal(DESIGN_SOURCE.ref, "b856e5010f2dd86bd97f9b2d5e38e33f3d5bd992");
   assert.equal(DESIGN_SOURCE.license, "Apache-2.0");
 });
 

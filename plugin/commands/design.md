@@ -18,7 +18,7 @@ Markdown checklist followed by the design-context receipt.
 
 Use Muster's own deterministic CLI and workflow surface. End users never need
 the Impeccable CLI. The workflows run Impeccable's vendored skills (impeccable-*,
-pinned commit `035c8f319edd019936525a062fe99e83ca8d12c6`, Apache-2.0).
+pinned commit `b856e5010f2dd86bd97f9b2d5e38e33f3d5bd992`, Apache-2.0).
 
 `M` below means `sh "${CLAUDE_PLUGIN_ROOT}/runtime/muster.sh"`: it runs this plugin's own source checkout, else the npm release pinned to this plugin's version, never a global `muster`. Repeat it in full in every Bash call; shell variables do not survive between calls.
 

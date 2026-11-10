@@ -1212,6 +1212,62 @@ sources:
       - { from: skills/simple-english/references/strict-vocabulary.md, to: plugin/builtins/simple-english/references/strict-vocabulary.md, mode: adapted, baseBlob: 2233a6da3b35c3e6845722496644e6d555b66b7f }
       - { from: skills/simple-english/references/use-cases.md, to: plugin/builtins/simple-english/references/use-cases.md, mode: adapted, baseBlob: 10b2862740a57f3b091a8c7ff7e5399d548dea18 }
       - { from: skills/simple-english/references/word-swaps.md, to: plugin/builtins/simple-english/references/word-swaps.md, mode: adapted, baseBlob: 5747f6cb58c029c52b09620f2212acd3ae843336 }
+  - id: supabase-agent-skills
+    kind: github
+    repo: supabase/agent-skills
+    # Added 2026-11-10 (owner-approved complements). supabase/agent-skills is the official home of
+    # supabase-postgres-best-practices (no supabase-community copy exists). Merge-tracked (every
+    # item has a `mode`), with byte-exact base copies in vendor/upstream/supabase-agent-skills/;
+    # `muster vendor update supabase-agent-skills` 3-way merges them. Pinned to upstream HEAD on
+    # 2026-11-10, 1 commit past release v0.1.9.
+    # Carried: SKILL.md and every rule file under references/ plus _sections.md, which SKILL.md
+    # names. Not carried: references/_contributing.md and _template.md (rule-authoring scaffolding
+    # nothing links) and the skill's CHANGELOG.md.
+    # Kept muster divergence: the SKILL.md frontmatter swap (name kept, a one-line description
+    # instead of upstream's long trigger paragraph, muster_builtin, SPDX license, generated
+    # upstream:; metadata dropped), a prompt-lint-disable comment after the H1 and the
+    # packaging-only header on each reference.
+    # Catalog: implement and performance, complementing wsh-database-optimizer (the rank-50
+    # performance agent) rather than replacing it.
+    ref: c9be0e931b7930f7d02126d04774d904c381e7d7
+    tag: v0.1.9-1-gc9be0e9
+    license: MIT
+    copyright: "Copyright (c) 2026 Supabase"
+    relation: vendored
+    items:
+      - { id: supabase-postgres-best-practices, kind: builtin, from: skills/supabase-postgres-best-practices/SKILL.md, to: plugin/builtins/supabase-postgres-best-practices/SKILL.md, mode: adapted, baseBlob: 6400792389dfcc82c81953054e546bd72ebcd259 }
+      - { from: skills/supabase-postgres-best-practices/references/_sections.md, to: plugin/builtins/supabase-postgres-best-practices/references/_sections.md, mode: adapted, baseBlob: 8ba57c23e8119e411fcc8a230cda08e695792cac }
+      - { from: skills/supabase-postgres-best-practices/references/advanced-full-text-search.md, to: plugin/builtins/supabase-postgres-best-practices/references/advanced-full-text-search.md, mode: adapted, baseBlob: 582cbeaada9378a280ad61f57e06c10d258e3c43 }
+      - { from: skills/supabase-postgres-best-practices/references/advanced-jsonb-indexing.md, to: plugin/builtins/supabase-postgres-best-practices/references/advanced-jsonb-indexing.md, mode: adapted, baseBlob: e3d261ea117fd7b1ad9c4f0d45308407b898ed5a }
+      - { from: skills/supabase-postgres-best-practices/references/conn-idle-timeout.md, to: plugin/builtins/supabase-postgres-best-practices/references/conn-idle-timeout.md, mode: adapted, baseBlob: 40b9cc50dd12cf347ed189fac965673b533f3f99 }
+      - { from: skills/supabase-postgres-best-practices/references/conn-limits.md, to: plugin/builtins/supabase-postgres-best-practices/references/conn-limits.md, mode: adapted, baseBlob: cb3e400c0234e7e9196c1650423faad66375b70b }
+      - { from: skills/supabase-postgres-best-practices/references/conn-pooling.md, to: plugin/builtins/supabase-postgres-best-practices/references/conn-pooling.md, mode: adapted, baseBlob: e2ebd581d3c85bff0a077e8d9a2cb562d2513d03 }
+      - { from: skills/supabase-postgres-best-practices/references/conn-prepared-statements.md, to: plugin/builtins/supabase-postgres-best-practices/references/conn-prepared-statements.md, mode: adapted, baseBlob: 555547d834e35b5059152dfb2288eca5e9838ea0 }
+      - { from: skills/supabase-postgres-best-practices/references/data-batch-inserts.md, to: plugin/builtins/supabase-postgres-best-practices/references/data-batch-inserts.md, mode: adapted, baseBlob: 997947cb17bfed67f29eaa8da2a58de2306cc2c1 }
+      - { from: skills/supabase-postgres-best-practices/references/data-n-plus-one.md, to: plugin/builtins/supabase-postgres-best-practices/references/data-n-plus-one.md, mode: adapted, baseBlob: 2109186ff88b3ba1cc32789f81e2a00d345c6e3f }
+      - { from: skills/supabase-postgres-best-practices/references/data-pagination.md, to: plugin/builtins/supabase-postgres-best-practices/references/data-pagination.md, mode: adapted, baseBlob: 633d839323612e212a833dd96828cb31fdfb39f8 }
+      - { from: skills/supabase-postgres-best-practices/references/data-upsert.md, to: plugin/builtins/supabase-postgres-best-practices/references/data-upsert.md, mode: adapted, baseBlob: bc95e2305d955679446c70854cb2b56b183aa56d }
+      - { from: skills/supabase-postgres-best-practices/references/lock-advisory.md, to: plugin/builtins/supabase-postgres-best-practices/references/lock-advisory.md, mode: adapted, baseBlob: 572eaf0dcf518ac925c4cde41beb60b62852b79c }
+      - { from: skills/supabase-postgres-best-practices/references/lock-deadlock-prevention.md, to: plugin/builtins/supabase-postgres-best-practices/references/lock-deadlock-prevention.md, mode: adapted, baseBlob: 974da5edec32f79de0fcdc771d4ef759dc3e049d }
+      - { from: skills/supabase-postgres-best-practices/references/lock-short-transactions.md, to: plugin/builtins/supabase-postgres-best-practices/references/lock-short-transactions.md, mode: adapted, baseBlob: e6b8ef2633248a4aa4394628e48d8cb693e7e6ab }
+      - { from: skills/supabase-postgres-best-practices/references/lock-skip-locked.md, to: plugin/builtins/supabase-postgres-best-practices/references/lock-skip-locked.md, mode: adapted, baseBlob: 77bdbb97045010ce2fdbd90733e8f764be82881a }
+      - { from: skills/supabase-postgres-best-practices/references/monitor-explain-analyze.md, to: plugin/builtins/supabase-postgres-best-practices/references/monitor-explain-analyze.md, mode: adapted, baseBlob: 542978c3bafc510fa8d7a8864cff994ad40be4d7 }
+      - { from: skills/supabase-postgres-best-practices/references/monitor-pg-stat-statements.md, to: plugin/builtins/supabase-postgres-best-practices/references/monitor-pg-stat-statements.md, mode: adapted, baseBlob: d7e82f1aacd105d53789eb6188d11e8ea39e7310 }
+      - { from: skills/supabase-postgres-best-practices/references/monitor-vacuum-analyze.md, to: plugin/builtins/supabase-postgres-best-practices/references/monitor-vacuum-analyze.md, mode: adapted, baseBlob: e0e8ea0b7db8c1513a0d1605be477192bc21d91d }
+      - { from: skills/supabase-postgres-best-practices/references/query-composite-indexes.md, to: plugin/builtins/supabase-postgres-best-practices/references/query-composite-indexes.md, mode: adapted, baseBlob: fea64523fd5bb3696f943d486ccaf2aea75d27b8 }
+      - { from: skills/supabase-postgres-best-practices/references/query-covering-indexes.md, to: plugin/builtins/supabase-postgres-best-practices/references/query-covering-indexes.md, mode: adapted, baseBlob: 9d2a4947b94516dd975e1044d132bb007280f478 }
+      - { from: skills/supabase-postgres-best-practices/references/query-index-types.md, to: plugin/builtins/supabase-postgres-best-practices/references/query-index-types.md, mode: adapted, baseBlob: 93b32590f4bfe377869274f45414ae6e43d168fa }
+      - { from: skills/supabase-postgres-best-practices/references/query-missing-indexes.md, to: plugin/builtins/supabase-postgres-best-practices/references/query-missing-indexes.md, mode: adapted, baseBlob: e6daace7dd368c75cdf87dc61be4afd6ff66cbbe }
+      - { from: skills/supabase-postgres-best-practices/references/query-partial-indexes.md, to: plugin/builtins/supabase-postgres-best-practices/references/query-partial-indexes.md, mode: adapted, baseBlob: 3e61a3417b9cce3c8cee99b39b78b7ebf495dd1f }
+      - { from: skills/supabase-postgres-best-practices/references/schema-constraints.md, to: plugin/builtins/supabase-postgres-best-practices/references/schema-constraints.md, mode: adapted, baseBlob: 1d2ef8f9a968cd6fa882c7299134c30ace06373c }
+      - { from: skills/supabase-postgres-best-practices/references/schema-data-types.md, to: plugin/builtins/supabase-postgres-best-practices/references/schema-data-types.md, mode: adapted, baseBlob: f253a5819d05531371e04485ab84f552fbb32fbe }
+      - { from: skills/supabase-postgres-best-practices/references/schema-foreign-key-indexes.md, to: plugin/builtins/supabase-postgres-best-practices/references/schema-foreign-key-indexes.md, mode: adapted, baseBlob: 6c3d6ff622b8a9df358f6673f323292e682ce87c }
+      - { from: skills/supabase-postgres-best-practices/references/schema-lowercase-identifiers.md, to: plugin/builtins/supabase-postgres-best-practices/references/schema-lowercase-identifiers.md, mode: adapted, baseBlob: f0072940b159ff64e0c2d4fbb499133cb8f49a66 }
+      - { from: skills/supabase-postgres-best-practices/references/schema-partitioning.md, to: plugin/builtins/supabase-postgres-best-practices/references/schema-partitioning.md, mode: adapted, baseBlob: 13137a03275fa45001c870a40b0069204d44e005 }
+      - { from: skills/supabase-postgres-best-practices/references/schema-primary-keys.md, to: plugin/builtins/supabase-postgres-best-practices/references/schema-primary-keys.md, mode: adapted, baseBlob: fb0fbb166fac9ea38c127d807a263282acc2dc93 }
+      - { from: skills/supabase-postgres-best-practices/references/security-privileges.md, to: plugin/builtins/supabase-postgres-best-practices/references/security-privileges.md, mode: adapted, baseBlob: 448ec345fab6c5a0116c584d65638b86d758c558 }
+      - { from: skills/supabase-postgres-best-practices/references/security-rls-basics.md, to: plugin/builtins/supabase-postgres-best-practices/references/security-rls-basics.md, mode: adapted, baseBlob: c61e1a8503de113be0981759b82f5e37090f344c }
+      - { from: skills/supabase-postgres-best-practices/references/security-rls-performance.md, to: plugin/builtins/supabase-postgres-best-practices/references/security-rls-performance.md, mode: adapted, baseBlob: c3c7c416d57d9a46a9993f4e0c20f772fb64483d }
   - id: gsd
     kind: github
     repo: open-gsd/gsd-core

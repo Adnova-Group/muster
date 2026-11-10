@@ -527,3 +527,10 @@
   keywords: [skills, skillmd, pressure, baseline, bulletproofing, rationalization]
   description: "Use when creating new skills, editing existing skills, or verifying skills work before deployment"
   provenance: { license: MIT, upstream: [obra/superpowers] }
+- id: supabase-postgres-best-practices
+  kind: builtin
+  roles: [implement, performance]
+  rank: 45
+  keywords: [postgres, postgresql, sql, rls, schema, migration, index, supabase]
+  description: "Supabase's Postgres rules for schema design, indexes, RLS, connection pooling, locking, migrations and query diagnosis, for Postgres running anywhere."
+  provenance: { license: MIT, upstream: [supabase/agent-skills] }

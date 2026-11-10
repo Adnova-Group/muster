@@ -48,6 +48,7 @@ Every non-vendored source, generated from the manifest. Each row lists the items
 | [jakubkrehel/skills](https://github.com/jakubkrehel/skills) @ `72bdd6121cd5` | MIT | 46 vendored builtins and agents | vendored |
 | [K-Dense-AI/scientific-agent-skills](https://github.com/K-Dense-AI/scientific-agent-skills) @ `2d2065fb4520` | MIT | 36 vendored builtins and agents | vendored, adapted |
 | [AminBlg/SimpleEnglish](https://github.com/AminBlg/SimpleEnglish) @ `a6fcb4fde098` | MIT | 5 vendored builtins and agents | vendored |
+| [supabase/agent-skills](https://github.com/supabase/agent-skills) @ `c9be0e931b79` | MIT | 33 vendored builtins and agents | vendored |
 | [open-gsd/gsd-core](https://github.com/open-gsd/gsd-core) @ `9385f4618b52` | MIT | 42 vendored builtins and agents | adapted, vendored |
 | [nextlevelbuilder/ui-ux-pro-max-skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) @ `4f2dbb67e649` | MIT | 144 vendored builtins and agents | vendored, inspired-by, adapted |
 | [ghaida/intent](https://github.com/ghaida/intent) @ `1806110106a4` | CC0-1.0 | 42 vendored builtins and agents | vendored, inspired-by, adapted |

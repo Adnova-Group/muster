@@ -1397,6 +1397,322 @@ sources:
       - { from: skills/pfd/references/learnings/meta/l027-internal-acknowledgment-signals.md, to: plugin/builtins/pfd/references/learnings/meta/l027-internal-acknowledgment-signals.md, mode: verbatim, baseBlob: f67b55c1cc0dbd40b3d9f7cf0e237d44aad8d9d1 }
       - { from: skills/pfd/references/learnings/meta/l029-port-dont-install-motion-audit.md, to: plugin/builtins/pfd/references/learnings/meta/l029-port-dont-install-motion-audit.md, mode: verbatim, baseBlob: 72c104addee1efcf96df869964be0af07039229b }
 
+  # ===== Complementary skills: evaluation, security, review, engineering (revival stage 3) =====
+  # Owner-approved complements, merge-tracked like the UX family above: adapted files 3-way merge
+  # against byte-exact base copies in vendor/upstream/<source>/; whole-file verbatim items are
+  # their own base copies, checked by blob (plugin/builtins/{evals,sentry,openai,tob,mp,splab}-*
+  # are -text in .gitattributes). Catalog roles, ranks and keywords live in
+  # catalog/builtins.muster.yaml and catalog/agents.muster.yaml, ranked below every role's
+  # default provider so routing only changes where a pipeline or audit pattern names them.
+  # Codex is frozen: src/codex-inventory.js isCodexFrozenOutBuiltin keeps these builtins out of
+  # the Codex bundle and the prt-* agents carry "codex": false in catalog/agents.manifest.json.
+  # Share-alike (CC BY-SA 4.0) sources ship verbatim and separate: only path and frontmatter
+  # changes, a license header line stating them, and no muster file blends their text (muster
+  # files reference them by id).
+  - id: evals-skills
+    kind: github
+    repo: ai-evals-course/evals-skills
+    # Added 2026-11-10. Pinned to upstream HEAD (2026-09-24). Its only tag, evals--v0.3.1, is not
+    # a release tag muster's TAG_RE reads (git describe: evals--v0.3.1-9-g80d5f7b), so tag is null.
+    # License basis: top-level LICENSE is the Apache License 2.0 (no per-skill license files;
+    # GitHub reports Apache-2.0); no copyright line is filled in (authors per plugin.json:
+    # Shreya Shankar and Hamel Husain).
+    # Vendored: validate-evaluator, write-judge-prompt, generate-synthetic-data and eval-audit as
+    # evals-<name>. Adapted: frontmatter (name kept, one-line description, muster_builtin, SPDX
+    # license, generated upstream:), the prompt-lint directive, and one "In muster" note mapping
+    # sibling names to builtin paths and the unvendored siblings (evals-start, error-discovery,
+    # write-code-eval, evaluate-rag, build-review-interface) to the pinned upstream tree.
+    # Not vendored: those five siblings, agents/openai.yaml, the plugin manifests, workflow.png.
+    # Wiring: muster-scorer (judge calibration) and muster-prompt-smith (dataset and grader steps)
+    # point at these builtins by path, in muster's own words (no upstream text carried).
+    ref: 80d5f7b0127c7572ed9e9339937adbfd7240ffeb
+    tag: null
+    license: Apache-2.0
+    relation: vendored
+    items:
+      - { from: LICENSE, mode: watch, baseBlob: 261eeb9e9f8b2b4b0d119366dda99c6fd7d35c64 }
+      - { id: muster-scorer, kind: builtin, from: null, relation: inspired-by }
+      - { id: muster-prompt-smith, kind: builtin, from: null, relation: inspired-by }
+      - { id: evals-validate-evaluator, kind: builtin, from: skills/validate-evaluator/SKILL.md, to: plugin/builtins/evals-validate-evaluator/SKILL.md, mode: adapted, relation: adapted, baseBlob: 8b677b3f02ce26bb784de8404914545dd4faaf20 }
+      - { id: evals-write-judge-prompt, kind: builtin, from: skills/write-judge-prompt/SKILL.md, to: plugin/builtins/evals-write-judge-prompt/SKILL.md, mode: adapted, relation: adapted, baseBlob: 606fcb86c629b05202c5e4570910a865e47ee78f }
+      - { id: evals-generate-synthetic-data, kind: builtin, from: skills/generate-synthetic-data/SKILL.md, to: plugin/builtins/evals-generate-synthetic-data/SKILL.md, mode: adapted, relation: adapted, baseBlob: 0954334c590cbd3329f31d8555f1ffa8d7fdaf45 }
+      - { id: evals-eval-audit, kind: builtin, from: skills/eval-audit/SKILL.md, to: plugin/builtins/evals-eval-audit/SKILL.md, mode: adapted, relation: adapted, baseBlob: 4c932d9d6b8630797c38d50591933329b7f8bb27 }
+
+  - id: sentry-skills
+    kind: github
+    repo: getsentry/skills
+    # Added 2026-11-10. Pinned to upstream HEAD (2026-11-05); the repository publishes no tags, so
+    # tag is null. License basis: top-level LICENSE is the Apache License 2.0 ("Copyright 2025
+    # Functional Software, Inc. dba Sentry"); gha-security-review carries no license file of its
+    # own, so the repository license governs it. Its attack patterns cite StepSecurity's
+    # HackerBot Claw analysis by link (upstream's own comment, kept).
+    # Vendored: gha-security-review as sentry-gha-security-review with its nine references/
+    # verbatim. Adapted: SKILL.md frontmatter (name kept, one-line description, muster_builtin,
+    # SPDX license, generated upstream:; allowed-tools dropped) and the prompt-lint directive.
+    # Its CLAUDE.md/AGENTS.md mentions name files of the reviewed repository (project files in
+    # test/builtin-references.test.js). security-review lives in the share-alike source below.
+    # Not vendored: every other skill, agents/, warden.toml.
+    ref: e94f22214528d69899d09c627b3315ddc3544816
+    tag: null
+    license: Apache-2.0
+    copyright: "Copyright 2025 Functional Software, Inc. dba Sentry"
+    relation: vendored
+    items:
+      - { from: LICENSE, mode: watch, baseBlob: 753a6c03c60a9232405d05170bd3ad3cab49a1ef }
+      - { id: audit-pattern-security, kind: audit-pattern, from: null, relation: inspired-by }
+      - { id: sentry-gha-security-review, kind: builtin, from: skills/gha-security-review/SKILL.md, to: plugin/builtins/sentry-gha-security-review/SKILL.md, mode: adapted, relation: adapted, baseBlob: 7ef6c6ed67a57539e62e6465acf5a8a45fab12d0 }
+      - { from: skills/gha-security-review/references/ai-prompt-injection-via-ci.md, to: plugin/builtins/sentry-gha-security-review/references/ai-prompt-injection-via-ci.md, mode: verbatim, baseBlob: be1c9497f4c140818dd2bc925244fa0d3a48d53e }
+      - { from: skills/gha-security-review/references/comment-triggered-commands.md, to: plugin/builtins/sentry-gha-security-review/references/comment-triggered-commands.md, mode: verbatim, baseBlob: a1d651ed35ec333c9afcaf328cadca4c6b7fb5e4 }
+      - { from: skills/gha-security-review/references/credential-escalation.md, to: plugin/builtins/sentry-gha-security-review/references/credential-escalation.md, mode: verbatim, baseBlob: 805a301dff90376a947cab3ab953074378814e57 }
+      - { from: skills/gha-security-review/references/expression-injection.md, to: plugin/builtins/sentry-gha-security-review/references/expression-injection.md, mode: verbatim, baseBlob: dca326d2f7067b8921c4fc47e01ccc8a56bb6c78 }
+      - { from: skills/gha-security-review/references/permissions-and-secrets.md, to: plugin/builtins/sentry-gha-security-review/references/permissions-and-secrets.md, mode: verbatim, baseBlob: 3a809e928c13d537af5527dcf3c7fbe63d588c03 }
+      - { from: skills/gha-security-review/references/pwn-request.md, to: plugin/builtins/sentry-gha-security-review/references/pwn-request.md, mode: verbatim, baseBlob: 0a2046843146aaff7dd09e303715e0bda0e0db89 }
+      - { from: skills/gha-security-review/references/real-world-attacks.md, to: plugin/builtins/sentry-gha-security-review/references/real-world-attacks.md, mode: verbatim, baseBlob: 2b24e2a5b30a0463d2a750d752a68d9b05799418 }
+      - { from: skills/gha-security-review/references/runner-infrastructure.md, to: plugin/builtins/sentry-gha-security-review/references/runner-infrastructure.md, mode: verbatim, baseBlob: 6aafbdbf62e29cc3ca6355bd31bc3780672f9120 }
+      - { from: skills/gha-security-review/references/supply-chain.md, to: plugin/builtins/sentry-gha-security-review/references/supply-chain.md, mode: verbatim, baseBlob: 7a9d1a012dcef748de83b5960bce715ffc3758c0 }
+  - id: sentry-security-review
+    kind: github
+    repo: getsentry/skills
+    # Added 2026-11-10, same pin as sentry-skills. License basis: skills/security-review/LICENSE
+    # (blob 45d290bd) states that the skill's reference material derives from the OWASP Cheat
+    # Sheet Series under CC BY-SA 4.0, and the upstream SKILL.md frontmatter sets
+    # `license: LICENSE`, licensing the whole skill under that file. Muster therefore treats the
+    # whole skill directory as CC-BY-SA-4.0 (stricter than the repository's Apache-2.0): a
+    # separate source, so the share-alike rule (src/provenance.js checkShareAlike) binds only
+    # these files, and NOTICE lists both licenses for the repository.
+    # Vendored as sentry-security-review: SKILL.md adapted with frontmatter (license
+    # CC-BY-SA-4.0; allowed-tools dropped), a license header line stating the changes, the
+    # prompt-lint directive, and paths only (bare reference names qualified with references/);
+    # LICENSE and the 17 references/, 2 languages/ and 1 infrastructure/ files verbatim. Not
+    # vendored: SPEC.md (authoring notes the skill never loads). Muster files cite it by id only.
+    ref: e94f22214528d69899d09c627b3315ddc3544816
+    tag: null
+    license: CC-BY-SA-4.0
+    copyright: "skills/security-review: reference material derived from the OWASP Cheat Sheet Series (https://cheatsheetseries.owasp.org/), CC BY-SA 4.0"
+    relation: vendored
+    items:
+      - { id: audit-pattern-security, kind: audit-pattern, from: null, relation: inspired-by }
+      - { id: sentry-security-review, kind: builtin, from: skills/security-review/SKILL.md, to: plugin/builtins/sentry-security-review/SKILL.md, mode: adapted, relation: adapted, baseBlob: 63d362f046e78729cd3ac563d20238b2da2e7392 }
+      - { from: skills/security-review/LICENSE, to: plugin/builtins/sentry-security-review/LICENSE, mode: verbatim, baseBlob: 45d290bd539a284149f9a6efc8da050d763881e2 }
+      - { from: skills/security-review/references/api-security.md, to: plugin/builtins/sentry-security-review/references/api-security.md, mode: verbatim, baseBlob: 8ae657407cdb16b5b5ba0481927f9bf2920ea640 }
+      - { from: skills/security-review/references/authentication.md, to: plugin/builtins/sentry-security-review/references/authentication.md, mode: verbatim, baseBlob: ddd41dffff9f469a4f73cb38b50c30d3eda56e96 }
+      - { from: skills/security-review/references/authorization.md, to: plugin/builtins/sentry-security-review/references/authorization.md, mode: verbatim, baseBlob: cd0f94a614bbaa7d217d524de1191064084b6466 }
+      - { from: skills/security-review/references/business-logic.md, to: plugin/builtins/sentry-security-review/references/business-logic.md, mode: verbatim, baseBlob: ae87ad885d7298a0cce60262955eea0f236fa5da }
+      - { from: skills/security-review/references/cryptography.md, to: plugin/builtins/sentry-security-review/references/cryptography.md, mode: verbatim, baseBlob: c4cc4260d81b1a5fb9a748f93959859f51e7c966 }
+      - { from: skills/security-review/references/csrf.md, to: plugin/builtins/sentry-security-review/references/csrf.md, mode: verbatim, baseBlob: 7b712ba45c644db40ebfda00138264f2ba785855 }
+      - { from: skills/security-review/references/data-protection.md, to: plugin/builtins/sentry-security-review/references/data-protection.md, mode: verbatim, baseBlob: 77c73235b2f7fd0996885ff18f5f32483e13bc99 }
+      - { from: skills/security-review/references/deserialization.md, to: plugin/builtins/sentry-security-review/references/deserialization.md, mode: verbatim, baseBlob: 038bc0fdd716f1f60197a0b90e756d0f1e725fd7 }
+      - { from: skills/security-review/references/error-handling.md, to: plugin/builtins/sentry-security-review/references/error-handling.md, mode: verbatim, baseBlob: 54f2763eb70980fc3dbc3f340ebaefcd27be5a89 }
+      - { from: skills/security-review/references/file-security.md, to: plugin/builtins/sentry-security-review/references/file-security.md, mode: verbatim, baseBlob: be310e084ecbc6d4d6a027cb1d553f347c4dea86 }
+      - { from: skills/security-review/references/injection.md, to: plugin/builtins/sentry-security-review/references/injection.md, mode: verbatim, baseBlob: 4374c460726eb3f57d997548923b65f53a6299d0 }
+      - { from: skills/security-review/references/logging.md, to: plugin/builtins/sentry-security-review/references/logging.md, mode: verbatim, baseBlob: e446b01412e122a100079450ec1c83711db569de }
+      - { from: skills/security-review/references/misconfiguration.md, to: plugin/builtins/sentry-security-review/references/misconfiguration.md, mode: verbatim, baseBlob: 41132da74728cb0190f530c55ce40359e146ea68 }
+      - { from: skills/security-review/references/modern-threats.md, to: plugin/builtins/sentry-security-review/references/modern-threats.md, mode: verbatim, baseBlob: efdadcf38830264d26d77cd42443532cf665a846 }
+      - { from: skills/security-review/references/ssrf.md, to: plugin/builtins/sentry-security-review/references/ssrf.md, mode: verbatim, baseBlob: 971fe8d9d8933670ef34ed10ee8d5251aa063b3f }
+      - { from: skills/security-review/references/supply-chain.md, to: plugin/builtins/sentry-security-review/references/supply-chain.md, mode: verbatim, baseBlob: 97ffb35326e56524478fb5a41f1ddc73f2cbd3e7 }
+      - { from: skills/security-review/references/xss.md, to: plugin/builtins/sentry-security-review/references/xss.md, mode: verbatim, baseBlob: f3deadc84ecc0cb034fc708a01e17f6bcdf68f9e }
+      - { from: skills/security-review/languages/javascript.md, to: plugin/builtins/sentry-security-review/languages/javascript.md, mode: verbatim, baseBlob: 53ac8f6c30940acf2b239937cb9ed9a02e63b112 }
+      - { from: skills/security-review/languages/python.md, to: plugin/builtins/sentry-security-review/languages/python.md, mode: verbatim, baseBlob: f0a2e6bd64f7f01fa96fc947ac2a08b582e1c519 }
+      - { from: skills/security-review/infrastructure/docker.md, to: plugin/builtins/sentry-security-review/infrastructure/docker.md, mode: verbatim, baseBlob: b66d79aec631de32c138515c17c4a23c5beae6b5 }
+
+  - id: openai-skills
+    kind: github
+    repo: openai/skills
+    # Added 2026-11-10. Pinned to upstream HEAD (2026-06-23); the repository publishes no tags, so
+    # tag is null. License basis: the repository has no top-level LICENSE (GitHub reports none);
+    # each curated skill carries its own LICENSE.txt, and
+    # skills/.curated/security-threat-model/LICENSE.txt (blob 13e25df8) is the Apache License 2.0
+    # with no copyright line filled in. Apache-2.0 permits redistribution, so the skill is
+    # vendored with its LICENSE.txt.
+    # Vendored: security-threat-model as openai-security-threat-model; LICENSE.txt and both
+    # references/ verbatim. Adapted: SKILL.md frontmatter (name kept, one-line description,
+    # muster_builtin, SPDX license, generated upstream:) and the prompt-lint directive.
+    # Not vendored: agents/openai.yaml and every other skill.
+    ref: 49f948faa9258a0c61caceaf225e179651397431
+    tag: null
+    license: Apache-2.0
+    relation: vendored
+    items:
+      - { id: audit-pattern-security, kind: audit-pattern, from: null, relation: inspired-by }
+      - { id: openai-security-threat-model, kind: builtin, from: skills/.curated/security-threat-model/SKILL.md, to: plugin/builtins/openai-security-threat-model/SKILL.md, mode: adapted, relation: adapted, baseBlob: abd3c1c95d49c4e0e0664f198f4bf168c6291aec }
+      - { from: skills/.curated/security-threat-model/LICENSE.txt, to: plugin/builtins/openai-security-threat-model/LICENSE.txt, mode: verbatim, baseBlob: 13e25df86ce06eb6488e6a6bc5c5847f5dedc352 }
+      - { from: skills/.curated/security-threat-model/references/prompt-template.md, to: plugin/builtins/openai-security-threat-model/references/prompt-template.md, mode: verbatim, baseBlob: b6affb0d2f873ffe398f7a8df00095dc0ff01f59 }
+      - { from: skills/.curated/security-threat-model/references/security-controls-and-assets.md, to: plugin/builtins/openai-security-threat-model/references/security-controls-and-assets.md, mode: verbatim, baseBlob: 63d1455aeacfc97eaca4e371040dbadfbd791635 }
+
+  - id: trailofbits-skills
+    kind: github
+    repo: trailofbits/skills
+    # Added 2026-11-10. Pinned to upstream HEAD (2026-11-06); the repository publishes no tags, so
+    # tag is null. License basis: top-level LICENSE is CC BY-SA 4.0 (GitHub: CC-BY-SA-4.0; README:
+    # "Made by Trail of Bits"); none of the three plugins carries a license file of its own.
+    # ShareAlike: every tob-* file stays CC-BY-SA-4.0 (frontmatter license, catalog provenance) and
+    # ships verbatim and separate. Changed files carry a license header line naming the license,
+    # the upstream path and the changes, which are frontmatter (allowed-tools/effort dropped),
+    # paths ({baseDir} spelled as the builtin directory or a relative link) and the prompt-lint
+    # directive where rules fired. Muster files never blend their text; they cite tob-* by id
+    # (audit-pattern-security, audit-pattern-coverage).
+    # Vendored: supply-chain-risk-auditor (SKILL.md, scripts collect/model/render/sources.py,
+    # pyproject.toml, uv.lock), fp-check (SKILL.md, six references, its three analysis agents as
+    # unmodified files under agents/ inside the builtin, not as plugin agents, so they cost no
+    # always-on description budget) and property-based-testing (SKILL.md, five references).
+    # Not vendored: the scripts' test_*.py, evals/ and evals-extra/ trees, fp-check's Stop and
+    # SubagentStop prompt hooks (muster ships no always-on hooks), the plugin READMEs,
+    # agents/openai.yaml and the Trail of Bits mark SVG (an icon only those yaml files use).
+    # Security hardening (2026-11-10, after a security review flagged two MEDIUM issues), noted
+    # in each file's license header: scripts/collect.py and scripts/render.py are adapted, not
+    # verbatim (base copies kept). collect.py _git_commit refuses a symlinked .git or .git/HEAD
+    # (O_NOFOLLOW reads), requires .git to resolve inside the project root and emits only a
+    # 40-64 character hex object id; render.py _safe_text entity-escapes & < >, backslash-escapes
+    # backslash, backtick, |, [, *, _ and ~, and caps third-party text at 200 characters.
+    # test/tob-supply-chain-hardening.test.js pins both (skipped without python3 >= 3.11).
+    ref: e4dd0bb5b15535f7c5a0834187dffba6ac37e4ff
+    tag: null
+    license: CC-BY-SA-4.0
+    copyright: "Copyright Trail of Bits (https://www.trailofbits.com/)"
+    relation: vendored
+    items:
+      - { from: LICENSE, mode: watch, baseBlob: 3b7b82d0da2db857eda1a798dbd908ea136f07b5 }
+      - { id: audit-pattern-security, kind: audit-pattern, from: null, relation: inspired-by }
+      - { id: audit-pattern-coverage, kind: audit-pattern, from: null, relation: inspired-by }
+      - { id: tob-supply-chain-risk-auditor, kind: builtin, from: plugins/supply-chain-risk-auditor/skills/supply-chain-risk-auditor/SKILL.md, to: plugin/builtins/tob-supply-chain-risk-auditor/SKILL.md, mode: adapted, relation: adapted, baseBlob: 83affaaf2841182c5eb610338256f7f540b270aa }
+      - { id: tob-fp-check, kind: builtin, from: plugins/fp-check/skills/fp-check/SKILL.md, to: plugin/builtins/tob-fp-check/SKILL.md, mode: adapted, relation: adapted, baseBlob: b7e7278cbae101f948f39890e5dcc088248d789d }
+      - { id: tob-property-based-testing, kind: builtin, from: plugins/property-based-testing/skills/property-based-testing/SKILL.md, to: plugin/builtins/tob-property-based-testing/SKILL.md, mode: adapted, relation: adapted, baseBlob: 1cc39d8d8cba5955bf9c8d7c9a2aef348722a55e }
+      - { from: plugins/supply-chain-risk-auditor/skills/supply-chain-risk-auditor/scripts/collect.py, to: plugin/builtins/tob-supply-chain-risk-auditor/scripts/collect.py, mode: adapted, baseBlob: d3238e3fdfb700c6e239f6f41d359be2bad4fca8 }
+      - { from: plugins/supply-chain-risk-auditor/skills/supply-chain-risk-auditor/scripts/model.py, to: plugin/builtins/tob-supply-chain-risk-auditor/scripts/model.py, mode: verbatim, baseBlob: 81407c29544a2a84ca19a286f01c25d76ab927e9 }
+      - { from: plugins/supply-chain-risk-auditor/skills/supply-chain-risk-auditor/scripts/render.py, to: plugin/builtins/tob-supply-chain-risk-auditor/scripts/render.py, mode: adapted, baseBlob: b4aa9ca5f40ea76bc7b7f56cf6cb59a77d0487af }
+      - { from: plugins/supply-chain-risk-auditor/skills/supply-chain-risk-auditor/scripts/sources.py, to: plugin/builtins/tob-supply-chain-risk-auditor/scripts/sources.py, mode: verbatim, baseBlob: 0d65664fa3bc18f1fad72e01704eed0d9e4b32c5 }
+      - { from: plugins/supply-chain-risk-auditor/skills/supply-chain-risk-auditor/scripts/pyproject.toml, to: plugin/builtins/tob-supply-chain-risk-auditor/scripts/pyproject.toml, mode: verbatim, baseBlob: e435affcc1cc64171dcd449fa61fd6afb588785e }
+      - { from: plugins/supply-chain-risk-auditor/skills/supply-chain-risk-auditor/scripts/uv.lock, to: plugin/builtins/tob-supply-chain-risk-auditor/scripts/uv.lock, mode: verbatim, baseBlob: 2fb44882a94a99013d613493e38bb372dfbbdd84 }
+      - { from: plugins/fp-check/skills/fp-check/references/bug-class-verification.md, to: plugin/builtins/tob-fp-check/references/bug-class-verification.md, mode: verbatim, baseBlob: 3eb666d646b4c6071b82012d4911ba0650665078 }
+      - { from: plugins/fp-check/skills/fp-check/references/deep-verification.md, to: plugin/builtins/tob-fp-check/references/deep-verification.md, mode: adapted, baseBlob: 1b2499d03627b0d8a025f115f2137292766abdf7 }
+      - { from: plugins/fp-check/skills/fp-check/references/evidence-templates.md, to: plugin/builtins/tob-fp-check/references/evidence-templates.md, mode: verbatim, baseBlob: c0227e56238eb856d9d4efc6d2bde6c85ebd3339 }
+      - { from: plugins/fp-check/skills/fp-check/references/false-positive-patterns.md, to: plugin/builtins/tob-fp-check/references/false-positive-patterns.md, mode: verbatim, baseBlob: 7ad448441b882e1f801f31550f9528f7ff7d9310 }
+      - { from: plugins/fp-check/skills/fp-check/references/gate-reviews.md, to: plugin/builtins/tob-fp-check/references/gate-reviews.md, mode: verbatim, baseBlob: b9dd2f4eaf118ca5206ef94ecf12c6b826d4fded }
+      - { from: plugins/fp-check/skills/fp-check/references/standard-verification.md, to: plugin/builtins/tob-fp-check/references/standard-verification.md, mode: adapted, baseBlob: c9e5b901ad4b3008950c31f24806f7bacdbf6cfe }
+      - { from: plugins/fp-check/agents/data-flow-analyzer.md, to: plugin/builtins/tob-fp-check/agents/data-flow-analyzer.md, mode: verbatim, baseBlob: 750d280f353036717918dfddd00abc9cd1e30e88 }
+      - { from: plugins/fp-check/agents/exploitability-verifier.md, to: plugin/builtins/tob-fp-check/agents/exploitability-verifier.md, mode: verbatim, baseBlob: e08550fbfdbd0bb9c707e7797a10937cfebc74db }
+      - { from: plugins/fp-check/agents/poc-builder.md, to: plugin/builtins/tob-fp-check/agents/poc-builder.md, mode: verbatim, baseBlob: 1f62da7af046a548f7d4a5070904bced3be3b6a6 }
+      - { from: plugins/property-based-testing/skills/property-based-testing/references/generating.md, to: plugin/builtins/tob-property-based-testing/references/generating.md, mode: verbatim, baseBlob: 0133ccd27580a6f68d662807832de67cb1d91514 }
+      - { from: plugins/property-based-testing/skills/property-based-testing/references/interpreting-failures.md, to: plugin/builtins/tob-property-based-testing/references/interpreting-failures.md, mode: verbatim, baseBlob: 10aeac48d239da352206b8c49f72ee776e5ca5be }
+      - { from: plugins/property-based-testing/skills/property-based-testing/references/libraries.md, to: plugin/builtins/tob-property-based-testing/references/libraries.md, mode: verbatim, baseBlob: 6b9964a46c014f5ecee78cd356fb0bdc4cbcd830 }
+      - { from: plugins/property-based-testing/skills/property-based-testing/references/refactoring.md, to: plugin/builtins/tob-property-based-testing/references/refactoring.md, mode: verbatim, baseBlob: d4be7fb1fd4f00e53fde109254dd6dc937248011 }
+      - { from: plugins/property-based-testing/skills/property-based-testing/references/reviewing.md, to: plugin/builtins/tob-property-based-testing/references/reviewing.md, mode: verbatim, baseBlob: a2ca783a7dabaece9e383f0ace972bb4fe2f7881 }
+
+  - id: pr-review-toolkit
+    kind: github
+    repo: anthropics/claude-plugins-official
+    # Added 2026-11-10. Pinned to upstream HEAD (2026-11-09); the repository publishes no tags, so
+    # tag is null. License basis: the repository LICENSE and the plugin's own
+    # plugins/pr-review-toolkit/LICENSE (blob d6456956, watched) are the Apache License 2.0 with no
+    # copyright line filled in (plugin.json author: Anthropic).
+    # Vendored as plugin agents (upstream ships agents, not skills): silent-failure-hunter,
+    # type-design-analyzer and pr-test-analyzer as prt-<name>. Ids are stable: the development
+    # subagent teams reference them. Adapted: frontmatter (name prt-<name>; minimal one-line
+    # description, since agent descriptions are always-on context; model from muster's tier policy
+    # (core: sonnet) instead of inherit; effort high; maxTurns 35, the review class; read-only
+    # tools Read, Grep, Glob, Bash; color dropped; muster_builtin, SPDX license, generated
+    # upstream:) and one "In muster" note per agent (read-only; silent-failure-hunter's
+    # upstream-project logging names map to the reviewed project's own conventions). Bodies are
+    # upstream's. catalog/agents.manifest.json: core/judgment, readOnly, "codex": false.
+    # Not vendored: code-reviewer, code-simplifier, comment-analyzer, the review-pr command.
+    ref: dceb15d50832e6adf380bedc26dde03d251324b9
+    tag: null
+    license: Apache-2.0
+    relation: vendored
+    items:
+      - { from: plugins/pr-review-toolkit/LICENSE, mode: watch, baseBlob: d645695673349e3947e8e5ae42332d0ac3164cd7 }
+      - { id: prt-silent-failure-hunter, kind: agent, from: plugins/pr-review-toolkit/agents/silent-failure-hunter.md, to: plugin/agents/prt-silent-failure-hunter.md, mode: adapted, relation: adapted, baseBlob: b8a8dfa41e18ef6ac801ae64be38b2508aa04f44 }
+      - { id: prt-type-design-analyzer, kind: agent, from: plugins/pr-review-toolkit/agents/type-design-analyzer.md, to: plugin/agents/prt-type-design-analyzer.md, mode: adapted, relation: adapted, baseBlob: 9c17fec6b276cbe42f80b5e96e21e016b59c8e06 }
+      - { id: prt-pr-test-analyzer, kind: agent, from: plugins/pr-review-toolkit/agents/pr-test-analyzer.md, to: plugin/agents/prt-pr-test-analyzer.md, mode: adapted, relation: adapted, baseBlob: 05b342b9175af85c5d7404bac67f5c62da375aa2 }
+
+  - id: mattpocock-skills
+    kind: github
+    repo: mattpocock/skills
+    # Added 2026-11-10. Pinned to upstream HEAD of the default branch (2026-10-31), 3 commits past
+    # release v1.3.2, recorded as its describe pin. License basis: top-level LICENSE is MIT
+    # ("Copyright (c) 2026 Matt Pocock"); no per-skill license files.
+    # Vendored: skills/engineering/codebase-design, improve-codebase-architecture and
+    # domain-modeling as mp-<name>, with their supporting files verbatim (DEEPENING.md,
+    # DESIGN-IT-TWICE.md, HTML-REPORT.md, ADR-FORMAT.md, GLOSSARY-FORMAT.md). Adapted: SKILL.md
+    # frontmatter (name kept, one-line description, muster_builtin, SPDX license, generated
+    # upstream:; improve-codebase-architecture's disable-model-invocation dropped, its description
+    # says opt-in), the prompt-lint directive, and one "In muster" note mapping "call the Skill
+    # tool with <name>" to the builtin paths and the unvendored grilling skill to the pinned
+    # upstream file. Not vendored: every other skill, agents/openai.yaml, docs/, scripts/.
+    # Wiring: audit-pattern-architecture names all three by id.
+    ref: 4ae2317ddb22b046e26455e4f9c9b3aaaf62212d
+    tag: v1.3.2-3-g4ae2317
+    license: MIT
+    copyright: "Copyright (c) 2026 Matt Pocock"
+    relation: vendored
+    items:
+      - { from: LICENSE, mode: watch, baseBlob: f1dd2c09108dde1a5f56097cee8461b3ea834499 }
+      - { id: audit-pattern-architecture, kind: audit-pattern, from: null, relation: inspired-by }
+      - { id: mp-codebase-design, kind: builtin, from: skills/engineering/codebase-design/SKILL.md, to: plugin/builtins/mp-codebase-design/SKILL.md, mode: adapted, relation: adapted, baseBlob: 3f63c8146dd2604b419c929e9876b90c30d410e9 }
+      - { from: skills/engineering/codebase-design/DEEPENING.md, to: plugin/builtins/mp-codebase-design/DEEPENING.md, mode: verbatim, baseBlob: cd94075cfd754d147555c5d747a16431ed4c7dd8 }
+      - { from: skills/engineering/codebase-design/DESIGN-IT-TWICE.md, to: plugin/builtins/mp-codebase-design/DESIGN-IT-TWICE.md, mode: verbatim, baseBlob: aebdc9f8c05b40d7832de38e2fd8380e1e5507ac }
+      - { id: mp-improve-codebase-architecture, kind: builtin, from: skills/engineering/improve-codebase-architecture/SKILL.md, to: plugin/builtins/mp-improve-codebase-architecture/SKILL.md, mode: adapted, relation: adapted, baseBlob: f1eabb568464f03ae79a3346fc1918fdde6d8285 }
+      - { from: skills/engineering/improve-codebase-architecture/HTML-REPORT.md, to: plugin/builtins/mp-improve-codebase-architecture/HTML-REPORT.md, mode: verbatim, baseBlob: e39e8255b8797cf8257d014fb6658fb533f3a399 }
+      - { id: mp-domain-modeling, kind: builtin, from: skills/engineering/domain-modeling/SKILL.md, to: plugin/builtins/mp-domain-modeling/SKILL.md, mode: adapted, relation: adapted, baseBlob: a4438c6879c517d1a08e2b5fbca049b632688dfe }
+      - { from: skills/engineering/domain-modeling/ADR-FORMAT.md, to: plugin/builtins/mp-domain-modeling/ADR-FORMAT.md, mode: verbatim, baseBlob: d7e61f30a9fd8ca70d9ee68f019c2a9ebf2d13f7 }
+      - { from: skills/engineering/domain-modeling/GLOSSARY-FORMAT.md, to: plugin/builtins/mp-domain-modeling/GLOSSARY-FORMAT.md, mode: verbatim, baseBlob: 9c0b4c7a2e8507c23cbb5e0baa66d81699321cc6 }
+
+  - id: superpowers-lab
+    kind: github
+    repo: obra/superpowers-lab
+    # Added 2026-11-10. Pinned to upstream HEAD, which is release v0.5.0 exactly. License basis:
+    # top-level LICENSE is MIT ("Copyright (c) 2025 Jesse Vincent"); no per-skill license file.
+    # Vendored: finding-duplicate-functions as splab-finding-duplicate-functions with its five
+    # scripts/ files. Adapted: SKILL.md frontmatter (name kept, one-line description,
+    # muster_builtin, SPDX license, generated upstream:) and one "In muster" note (scripts path,
+    # rg/jq prerequisites, haiku/opus as scout/prime); scripts/prepare-category-analysis.sh is
+    # adapted (base copy kept) with a security fix and a header line noting it. Upstream split
+    # model-produced categorized.json on tabs and fed the second field to `[[ "$count" -ge 3 ]]`,
+    # whose arithmetic evaluation runs `BASH_VERSINFO[$(cmd)]` (command injection, HIGH), and
+    # used the category as a file name (path traversal). Muster filters 3+ inside jq, loops over
+    # NUL-separated names only, prints them JSON-encoded, validates the count it prints, and
+    # sanitizes names to [A-Za-z0-9._-] (no leading dot); test/splab-category-split-hardening.test.js
+    # pins it and kill-checks the upstream copy (skipped without bash or jq).
+    # scripts/generate-report.sh is adapted too (base copy kept): its jq-computed counts are
+    # checked to be plain integers before bash arithmetic. The other three files
+    # (extract-functions.sh and the two prompt templates) are whole-file verbatim copies.
+    # Wiring: audit-pattern-dead-code-duplication names it by id.
+    ref: 51111f74f24058117752d9aa917cb19859f8ec86
+    tag: v0.5.0
+    license: MIT
+    copyright: "Copyright (c) 2025 Jesse Vincent"
+    relation: vendored
+    items:
+      - { from: LICENSE, mode: watch, baseBlob: abf0390320aa14406af7a520b9b0739fdda9bf08 }
+      - { id: audit-pattern-dead-code-duplication, kind: audit-pattern, from: null, relation: inspired-by }
+      - { id: splab-finding-duplicate-functions, kind: builtin, from: skills/finding-duplicate-functions/SKILL.md, to: plugin/builtins/splab-finding-duplicate-functions/SKILL.md, mode: adapted, relation: adapted, baseBlob: 71c6a530be8271766add8147194af1063ed5c5b8 }
+      - { from: skills/finding-duplicate-functions/scripts/extract-functions.sh, to: plugin/builtins/splab-finding-duplicate-functions/scripts/extract-functions.sh, mode: verbatim, baseBlob: f22d20af338b89b25c5cd4ab55602a57b3223ac0 }
+      - { from: skills/finding-duplicate-functions/scripts/categorize-prompt.md, to: plugin/builtins/splab-finding-duplicate-functions/scripts/categorize-prompt.md, mode: verbatim, baseBlob: 8c09214fd2d80a84d0f3fe86cdf8c6b28fc4225c }
+      - { from: skills/finding-duplicate-functions/scripts/prepare-category-analysis.sh, to: plugin/builtins/splab-finding-duplicate-functions/scripts/prepare-category-analysis.sh, mode: adapted, baseBlob: 92ddd23bddfc3ea5b4c278e817a2d0e87474cb69 }
+      - { from: skills/finding-duplicate-functions/scripts/find-duplicates-prompt.md, to: plugin/builtins/splab-finding-duplicate-functions/scripts/find-duplicates-prompt.md, mode: verbatim, baseBlob: f4dc277d0bce37722530213b935e52c598ef5799 }
+      - { from: skills/finding-duplicate-functions/scripts/generate-report.sh, to: plugin/builtins/splab-finding-duplicate-functions/scripts/generate-report.sh, mode: adapted, baseBlob: 700aa8d6dca0c98f6cdb65f7872a87f3af347fb8 }
+
+  - id: addy-agent-skills-engineering
+    kind: github
+    repo: addyosmani/agent-skills
+    # Added 2026-11-10: the engineering complement from the same repository as the
+    # addy-agent-skills UX source, kept as its own source so the UX track's frontend-only
+    # contract (test/ui-skills-vendor.test.js) stays untouched. Same pin: upstream HEAD
+    # 301b02b1 (2026-11-01), where skills/source-driven-development/SKILL.md is unchanged; the
+    # latest release tag 0.6.15 (8bfcc1f) predates it, so tag is null. License basis: top-level
+    # LICENSE is MIT ("Copyright (c) 2025 Addy Osmani").
+    # Vendored: source-driven-development as addy-source-driven-development. Adapted: frontmatter
+    # (name kept, one-line description, muster_builtin, SPDX license, generated upstream:) and one
+    # "In muster" note pointing the unvendored security-and-hardening skill at its pinned upstream
+    # file and documentation fetches at muster's docs-research role.
+    ref: 301b02b12bff98e4688e6984af6556802322bbde
+    tag: null
+    license: MIT
+    copyright: "Copyright (c) 2025 Addy Osmani"
+    relation: vendored
+    items:
+      - { id: addy-source-driven-development, kind: builtin, from: skills/source-driven-development/SKILL.md, to: plugin/builtins/addy-source-driven-development/SKILL.md, mode: adapted, relation: adapted, baseBlob: fb94d0f36e2d4c53e6b507dd763d105b2e958623 }
+
   # ===== Attribution-only sources (fetch: false) =====================================
   # Never fetched or regenerated by `muster vendor`; recorded so every item based on an
   # external repository names it. Hand-maintained items stay hand-maintained.

@@ -89,3 +89,30 @@
   keywords: [ethics, darkpattern, engagement, orientation]
   description: "UX engagement lead: context, ethics and routing."
   provenance: { license: CC0-1.0, upstream: [ghaida/intent] }
+
+# ----- pr-review-toolkit agents: merge-tracked vendored from anthropics/claude-plugins-official
+# (Apache-2.0; vendor/manifest.yaml source pr-review-toolkit). Read-only specialist reviewers with
+# stable ids (the development subagent teams reference them). Ranks sit below muster-reviewer (55)
+# and every installed code-review provider, so they are dispatched by id, never as a role default.
+# roles[0] is core-tier, so the frontmatter model (sonnet) equals modelForRole(roles[0]).
+- id: prt-silent-failure-hunter
+  kind: agent
+  roles: [code-review]
+  rank: 46
+  keywords: [silent-failure, error-handling, catch, fallback, swallowed]
+  description: "Silent-failure and error-handling review."
+  provenance: { license: Apache-2.0, upstream: [anthropics/claude-plugins-official] }
+- id: prt-type-design-analyzer
+  kind: agent
+  roles: [code-review, refactor]
+  rank: 45
+  keywords: [types, type-design, invariants, encapsulation]
+  description: "Type design and invariant review."
+  provenance: { license: Apache-2.0, upstream: [anthropics/claude-plugins-official] }
+- id: prt-pr-test-analyzer
+  kind: agent
+  roles: [code-review, test-author]
+  rank: 44
+  keywords: [test-coverage, coverage, tests, edge-cases]
+  description: "PR test-coverage gap review."
+  provenance: { license: Apache-2.0, upstream: [anthropics/claude-plugins-official] }

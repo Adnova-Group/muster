@@ -469,14 +469,14 @@ export async function initBook({ cwd, runId, outlineFile }) {
   return { ok: true, runId, chapters: book.chapters.length, canon: book.canon.length };
 }
 
+export const BOOK_SEATS = Object.freeze(["writer", "continuity", "dev", "line", "beta"]);
+// One model for every book seat (`--model haiku` for a cheap run); unset, each agent's frontmatter decides.
+export const seatModelsFor = (model) => (model ? Object.fromEntries(BOOK_SEATS.map((s) => [s, { model }])) : null);
+
 export async function writeBookArgs({ cwd, runId, limit, beta, models }) {
   const book = await readBook(cwd, runId);
   if (!book) return { ok: false, problems: [`.muster/runs/${runId}/book.json not found: run \`muster book init\` first`] };
-  let seatModels = models || null;
-  if (!seatModels) {
-    const pre = await readContainedFile(cwd, join(runDir(cwd, runId), "preflight.json"), { allowMissing: true }).catch(() => null);
-    try { seatModels = pre ? JSON.parse(pre.toString("utf8")).models || null : null; } catch { seatModels = null; }
-  }
+  const seatModels = models || null;
   const files = await chapterFiles(cwd, book);
   const { args, blocked, missing, remaining, stale } = bookArgs(book, { hashes: hashesOf(files), limit, beta, models: seatModels });
   await writeContainedFile(cwd, join(runDir(cwd, runId), "book-args.json"), `${JSON.stringify(args, null, 2)}\n`);
@@ -519,7 +519,7 @@ export async function statusOfBook({ cwd, runId }) {
   return bookStatus(book, { hashes: hashesOf(await chapterFiles(cwd, book)) });
 }
 
-const USAGE = "book <init <runId> --outline <file>|args <runId> [--limit N] [--beta N]|record <runId> --result <file>|amend <runId> <canonId> <fact>|close <runId> <debtId> <resolution>|status <runId>>";
+const USAGE = "book <init <runId> --outline <file>|args <runId> [--limit N] [--beta N] [--model M]|record <runId> --result <file>|amend <runId> <canonId> <fact>|close <runId> <debtId> <resolution>|status <runId>>";
 
 function flag(rest, name) {
   const i = rest.indexOf(name);
@@ -544,7 +544,9 @@ export async function runBookCli(rest, { cwd = process.cwd() } = {}) {
       const limit = num(flag(more, "--limit"));
       const beta = num(flag(more, "--beta"));
       if ((limit !== undefined && !(limit > 0)) || (beta !== undefined && !(beta >= 0))) return bad("--limit must be > 0 and --beta >= 0");
-      return done(await writeBookArgs({ cwd, runId, limit: limit ?? DEFAULT_LIMIT, beta }));
+      const model = flag(more, "--model");
+      if (model !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._\[\]-]{0,63}$/.test(model)) return bad("--model must be a model alias or id");
+      return done(await writeBookArgs({ cwd, runId, limit: limit ?? DEFAULT_LIMIT, beta, models: seatModelsFor(model) }));
     }
     case "record": {
       const resultFile = flag(more, "--result");

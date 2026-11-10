@@ -74,7 +74,7 @@ Everything lives in `.muster/runs/<runId>/` and is committed on the work branch,
 | `book-result-<n>.json` | the main thread | A pass's returned JSON, input to `muster book record` |
 | **STATE.md** | `muster book` | `## Log` lines, one per init, pass, amend and close |
 
-Commands: `muster book init <runId> --outline <file>`, `args <runId> [--limit N] [--beta N]`, `record <runId> --result <file>`, `amend <runId> <C-id> <new fact>`, `close <runId> <D-id> <resolution>`, `status <runId>`.
+Commands: `muster book init <runId> --outline <file>`, `args <runId> [--limit N] [--beta N] [--model M]`, `record <runId> --result <file>`, `amend <runId> <C-id> <new fact>`, `close <runId> <D-id> <resolution>`, `status <runId>`.
 
 ## Canon and debts
 

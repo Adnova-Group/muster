@@ -194,8 +194,10 @@ test("muster book CLI: init, args, record, amend, close and status on a real run
     assert.match(await readFile(join(dir, "CANON.md"), "utf8"), /\*\*C-001\*\* Mara is 34/);
     assert.match(await readFile(join(dir, "LEDGER.md"), "utf8"), /\| ch04 \| Salt \| planned \| 0 \| ch02, ch03 \| 0 \|/);
 
-    r = await cli("args", "salt-road", "--limit", "2");
+    r = await cli("args", "salt-road", "--limit", "2", "--model", "haiku");
     assert.equal(r.code, 0);
+    assert.deepEqual(JSON.parse(await readFile(join(dir, "book-args.json"), "utf8")).models.continuity, { model: "haiku" });
+    assert.equal((await cli("args", "salt-road", "--model", "$(rm -rf)")).code, 2);
     assert.deepEqual(r.report.drafting, ["ch01", "ch02"]);
     const args = JSON.parse(await readFile(join(dir, "book-args.json"), "utf8"));
     assert.equal(args.mode, "pass");

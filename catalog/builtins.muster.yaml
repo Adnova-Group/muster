@@ -429,9 +429,10 @@
   provenance: { license: MIT, upstream: [addyosmani/agent-skills] }
 
 # ----- Complementary skills (2026-11-10): merge-tracked vendored builtins for research/data,
-# SRE, writing and stack work (vendor/manifest.yaml sources kdense-skills, knowledge-work-skills,
-# mattpocock-skills, simple-english, supabase-agent-skills, samber-golang, and the items added to
-# wshobson, superpowers and marketingskills). Listed here for the same reason as the UX family.
+# SRE, writing and stack work (vendor/manifest.yaml sources kdense-skills, simple-english,
+# supabase-agent-skills and samber-golang, plus the items added to knowledge-work-plugins,
+# mattpocock-skills, wshobson, superpowers and marketingskills). Listed here for the same reason
+# as the UX family.
 # Every entry ranks below its role's default provider so none displaces it: research stays with
 # muster-research (40) and the rank-50 agents, author with muster-author, prompt-quality with
 # muster-prompt-smith, implement/test-author/security-review/performance with the rank-50 wsh and

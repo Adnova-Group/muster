@@ -169,3 +169,30 @@ test("doctor run-state: reports a leftover fence marker and legacy pre-revival f
   assert.match(check.detail, /\.muster\/manifest\.json/);
   assert.match(check.detail, /STATE-archive-1\.md/);
 });
+
+// Preflight writes preflight.json before plan/go's "refuse a dirty tree" check. In a project that
+// does not ignore .muster/, that file alone made `git status --porcelain` non-empty and the branch
+// step refused muster's own file. The run record itself (CONTEXT.md, PLAN.md...) still shows.
+test("preflight leaves a clean tree clean in a repo that does not ignore .muster/", async () => {
+  const root = await trackedMkdtemp(join(tmpdir(), "muster-preflight-clean-"));
+  const git = (...args) => spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd: root, encoding: "utf8" });
+  assert.equal(git("init", "-q").status, 0);
+  await writeFile(join(root, "index.js"), "export const x = 1;\n");
+  git("add", "index.js");
+  assert.equal(git("commit", "-q", "-m", "init").status, 0);
+  const r = cli(root, ["preflight", "add", "a", "greet", "function", "--json", "--run", "r1"]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(existsSync(join(root, ".muster/runs/r1/preflight.json")));
+  assert.equal(git("status", "--porcelain").stdout, "", "preflight must not dirty the tree");
+  // build-result.json is machine-local too; the run record is not hidden.
+  await writeFile(join(root, ".muster/runs/r1/build-result.json"), "{}\n");
+  assert.equal(git("status", "--porcelain").stdout, "");
+  await writeFile(join(root, ".muster/runs/r1/PLAN.md"), PLAN);
+  assert.match(git("status", "--porcelain", "-uall").stdout, /\.muster\/runs\/r1\/PLAN\.md/);
+  // A user's own runs/.gitignore is never overwritten, and it is not a run.
+  await writeFile(join(root, ".muster/runs/.gitignore"), "mine\n");
+  assert.equal(cli(root, ["preflight", "x", "--json", "--run", "r2"]).status, 0);
+  assert.equal(await readFile(join(root, ".muster/runs/.gitignore"), "utf8"), "mine\n");
+  assert.equal(JSON.parse(cli(root, ["next"]).stdout).runId, "r2");
+  assert.match((await runStateCheck(root)).detail, /2 run directories/);
+});

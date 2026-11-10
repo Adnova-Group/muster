@@ -10,6 +10,7 @@ import { homedir } from "node:os";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { exists, readJson, readdirSafe } from "./fs-util.js";
+import { isRunId } from "./run-dir.js";
 import { coworkConfigDirs, readAccountPluginList } from "./harness.js";
 
 // All event names Claude Code recognises as valid hook event keys.
@@ -212,7 +213,7 @@ export async function runStateCheck(cwd) {
   const entries = await readdirSafe(dir);
   const legacy = entries.filter(f => LEGACY_RUN_STATE.includes(f) || /^STATE-archive-.*\.md$/.test(f));
   if (legacy.length) notes.push(`legacy pre-revival run state, safe to delete: ${legacy.map(f => `.muster/${f}`).join(", ")}`);
-  const runs = (await readdirSafe(join(dir, "runs"))).length;
+  const runs = (await readdirSafe(join(dir, "runs"))).filter(isRunId).length;
   return { name: "run-state", ok: true, detail: notes.length ? notes.join("; ") : `${runs} run director${runs === 1 ? "y" : "ies"}, no stale markers` };
 }
 

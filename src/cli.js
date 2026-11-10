@@ -57,6 +57,7 @@ import { readAgentPluginInventory } from "./agent-plugins.js";
 import { assessOutcome } from "./interview.js";
 import { parseDomainArgs, formatError, requireArg, flagValue } from "./cli-args.js";
 import { dirFromImportMeta, readdirSafe } from "./fs-util.js";
+import { isRunId } from "./run-dir.js";
 import { matchProviders, matchSkills, suggestSkillsForStack, signalsFromTask } from "./match.js";
 import { prioritize } from "./prioritize.js";
 import { parseIssueRef, resolveIssue } from "./issue.js";
@@ -660,7 +661,7 @@ async function handleCoreCommandPart1(cmd, rest) {
     // Bare `muster next` routes to the newest stage-2 run (run ids sort by date prefix);
     // `next <manifest.json>` keeps the manifest flow the Cowork MCP and frozen Codex lane use.
     if (!rest.length) {
-      const runs = (await readdirSafe(join(process.cwd(), ".muster", "runs"))).sort();
+      const runs = (await readdirSafe(join(process.cwd(), ".muster", "runs"))).filter(isRunId).sort();
       if (!runs.length) fail("next: no .muster/runs/<id>/ here; pass --run <id> or a manifest file");
       out(await nextForRun({ cwd: process.cwd(), runId: runs[runs.length - 1] }));
       return true;

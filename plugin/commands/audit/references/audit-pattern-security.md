@@ -17,6 +17,11 @@ upstream:
     path: null
     license: Apache-2.0
     relation: inspired-by
+  - repo: trailofbits/skills
+    ref: e4dd0bb5b15535f7c5a0834187dffba6ac37e4ff
+    path: null
+    license: CC-BY-SA-4.0
+    relation: inspired-by
   - kind: standard
     title: OWASP Top 10:2021 A08, Software and Data Integrity Failures
     author: OWASP Foundation
@@ -77,6 +82,12 @@ Hunt-list for the **security** audit dimension (`buildAuditManifest`, `src/audit
 - `openai-security-threat-model`: when the audit asks where the risk sits rather than for line
   findings (a new service, a trust-boundary change, an unaudited repository); rank its abuse paths
   first, then hunt the top ones with the lists above.
+- `tob-supply-chain-risk-auditor`: when npm, PyPI or Go manifests and lockfiles are in scope; cite
+  its script-measured figures as they are and keep its unassessable rows as the limit of any
+  clean verdict.
+- `tob-fp-check`: before a P0 or P1 security finding enters the ledger, take it to a true- or
+  false-positive verdict and drop the false ones.
+- The `tob-*` builtins are separately licensed (CC BY-SA 4.0); cite them by id, never copy them.
 
 ## Repo-specific conventions to enforce
 

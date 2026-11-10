@@ -1539,6 +1539,58 @@ sources:
       - { from: skills/.curated/security-threat-model/references/prompt-template.md, to: plugin/builtins/openai-security-threat-model/references/prompt-template.md, mode: verbatim, baseBlob: b6affb0d2f873ffe398f7a8df00095dc0ff01f59 }
       - { from: skills/.curated/security-threat-model/references/security-controls-and-assets.md, to: plugin/builtins/openai-security-threat-model/references/security-controls-and-assets.md, mode: verbatim, baseBlob: 63d1455aeacfc97eaca4e371040dbadfbd791635 }
 
+  - id: trailofbits-skills
+    kind: github
+    repo: trailofbits/skills
+    # Added 2026-11-10. Pinned to upstream HEAD (2026-11-06); the repository publishes no tags, so
+    # tag is null. License basis: top-level LICENSE is CC BY-SA 4.0 (GitHub: CC-BY-SA-4.0; README:
+    # "Made by Trail of Bits"); none of the three plugins carries a license file of its own.
+    # ShareAlike: every tob-* file stays CC-BY-SA-4.0 (frontmatter license, catalog provenance) and
+    # ships verbatim and separate. Changed files carry a license header line naming the license,
+    # the upstream path and the changes, which are frontmatter (allowed-tools/effort dropped),
+    # paths ({baseDir} spelled as the builtin directory or a relative link) and the prompt-lint
+    # directive where rules fired. Muster files never blend their text; they cite tob-* by id
+    # (audit-pattern-security, audit-pattern-coverage).
+    # Vendored: supply-chain-risk-auditor (SKILL.md, scripts collect/model/render/sources.py,
+    # pyproject.toml, uv.lock), fp-check (SKILL.md, six references, its three analysis agents as
+    # unmodified files under agents/ inside the builtin, not as plugin agents, so they cost no
+    # always-on description budget) and property-based-testing (SKILL.md, five references).
+    # Not vendored: the scripts' test_*.py, evals/ and evals-extra/ trees, fp-check's Stop and
+    # SubagentStop prompt hooks (muster ships no always-on hooks), the plugin READMEs,
+    # agents/openai.yaml and the Trail of Bits mark SVG (an icon only those yaml files use).
+    ref: e4dd0bb5b15535f7c5a0834187dffba6ac37e4ff
+    tag: null
+    license: CC-BY-SA-4.0
+    copyright: "Copyright Trail of Bits (https://www.trailofbits.com/)"
+    relation: vendored
+    items:
+      - { from: LICENSE, mode: watch, baseBlob: 3b7b82d0da2db857eda1a798dbd908ea136f07b5 }
+      - { id: audit-pattern-security, kind: audit-pattern, from: null, relation: inspired-by }
+      - { id: audit-pattern-coverage, kind: audit-pattern, from: null, relation: inspired-by }
+      - { id: tob-supply-chain-risk-auditor, kind: builtin, from: plugins/supply-chain-risk-auditor/skills/supply-chain-risk-auditor/SKILL.md, to: plugin/builtins/tob-supply-chain-risk-auditor/SKILL.md, mode: adapted, relation: adapted, baseBlob: 83affaaf2841182c5eb610338256f7f540b270aa }
+      - { id: tob-fp-check, kind: builtin, from: plugins/fp-check/skills/fp-check/SKILL.md, to: plugin/builtins/tob-fp-check/SKILL.md, mode: adapted, relation: adapted, baseBlob: b7e7278cbae101f948f39890e5dcc088248d789d }
+      - { id: tob-property-based-testing, kind: builtin, from: plugins/property-based-testing/skills/property-based-testing/SKILL.md, to: plugin/builtins/tob-property-based-testing/SKILL.md, mode: adapted, relation: adapted, baseBlob: 1cc39d8d8cba5955bf9c8d7c9a2aef348722a55e }
+      - { from: plugins/supply-chain-risk-auditor/skills/supply-chain-risk-auditor/scripts/collect.py, to: plugin/builtins/tob-supply-chain-risk-auditor/scripts/collect.py, mode: verbatim, baseBlob: d3238e3fdfb700c6e239f6f41d359be2bad4fca8 }
+      - { from: plugins/supply-chain-risk-auditor/skills/supply-chain-risk-auditor/scripts/model.py, to: plugin/builtins/tob-supply-chain-risk-auditor/scripts/model.py, mode: verbatim, baseBlob: 81407c29544a2a84ca19a286f01c25d76ab927e9 }
+      - { from: plugins/supply-chain-risk-auditor/skills/supply-chain-risk-auditor/scripts/render.py, to: plugin/builtins/tob-supply-chain-risk-auditor/scripts/render.py, mode: verbatim, baseBlob: b4aa9ca5f40ea76bc7b7f56cf6cb59a77d0487af }
+      - { from: plugins/supply-chain-risk-auditor/skills/supply-chain-risk-auditor/scripts/sources.py, to: plugin/builtins/tob-supply-chain-risk-auditor/scripts/sources.py, mode: verbatim, baseBlob: 0d65664fa3bc18f1fad72e01704eed0d9e4b32c5 }
+      - { from: plugins/supply-chain-risk-auditor/skills/supply-chain-risk-auditor/scripts/pyproject.toml, to: plugin/builtins/tob-supply-chain-risk-auditor/scripts/pyproject.toml, mode: verbatim, baseBlob: e435affcc1cc64171dcd449fa61fd6afb588785e }
+      - { from: plugins/supply-chain-risk-auditor/skills/supply-chain-risk-auditor/scripts/uv.lock, to: plugin/builtins/tob-supply-chain-risk-auditor/scripts/uv.lock, mode: verbatim, baseBlob: 2fb44882a94a99013d613493e38bb372dfbbdd84 }
+      - { from: plugins/fp-check/skills/fp-check/references/bug-class-verification.md, to: plugin/builtins/tob-fp-check/references/bug-class-verification.md, mode: verbatim, baseBlob: 3eb666d646b4c6071b82012d4911ba0650665078 }
+      - { from: plugins/fp-check/skills/fp-check/references/deep-verification.md, to: plugin/builtins/tob-fp-check/references/deep-verification.md, mode: adapted, baseBlob: 1b2499d03627b0d8a025f115f2137292766abdf7 }
+      - { from: plugins/fp-check/skills/fp-check/references/evidence-templates.md, to: plugin/builtins/tob-fp-check/references/evidence-templates.md, mode: verbatim, baseBlob: c0227e56238eb856d9d4efc6d2bde6c85ebd3339 }
+      - { from: plugins/fp-check/skills/fp-check/references/false-positive-patterns.md, to: plugin/builtins/tob-fp-check/references/false-positive-patterns.md, mode: verbatim, baseBlob: 7ad448441b882e1f801f31550f9528f7ff7d9310 }
+      - { from: plugins/fp-check/skills/fp-check/references/gate-reviews.md, to: plugin/builtins/tob-fp-check/references/gate-reviews.md, mode: verbatim, baseBlob: b9dd2f4eaf118ca5206ef94ecf12c6b826d4fded }
+      - { from: plugins/fp-check/skills/fp-check/references/standard-verification.md, to: plugin/builtins/tob-fp-check/references/standard-verification.md, mode: adapted, baseBlob: c9e5b901ad4b3008950c31f24806f7bacdbf6cfe }
+      - { from: plugins/fp-check/agents/data-flow-analyzer.md, to: plugin/builtins/tob-fp-check/agents/data-flow-analyzer.md, mode: verbatim, baseBlob: 750d280f353036717918dfddd00abc9cd1e30e88 }
+      - { from: plugins/fp-check/agents/exploitability-verifier.md, to: plugin/builtins/tob-fp-check/agents/exploitability-verifier.md, mode: verbatim, baseBlob: e08550fbfdbd0bb9c707e7797a10937cfebc74db }
+      - { from: plugins/fp-check/agents/poc-builder.md, to: plugin/builtins/tob-fp-check/agents/poc-builder.md, mode: verbatim, baseBlob: 1f62da7af046a548f7d4a5070904bced3be3b6a6 }
+      - { from: plugins/property-based-testing/skills/property-based-testing/references/generating.md, to: plugin/builtins/tob-property-based-testing/references/generating.md, mode: verbatim, baseBlob: 0133ccd27580a6f68d662807832de67cb1d91514 }
+      - { from: plugins/property-based-testing/skills/property-based-testing/references/interpreting-failures.md, to: plugin/builtins/tob-property-based-testing/references/interpreting-failures.md, mode: verbatim, baseBlob: 10aeac48d239da352206b8c49f72ee776e5ca5be }
+      - { from: plugins/property-based-testing/skills/property-based-testing/references/libraries.md, to: plugin/builtins/tob-property-based-testing/references/libraries.md, mode: verbatim, baseBlob: 6b9964a46c014f5ecee78cd356fb0bdc4cbcd830 }
+      - { from: plugins/property-based-testing/skills/property-based-testing/references/refactoring.md, to: plugin/builtins/tob-property-based-testing/references/refactoring.md, mode: verbatim, baseBlob: d4be7fb1fd4f00e53fde109254dd6dc937248011 }
+      - { from: plugins/property-based-testing/skills/property-based-testing/references/reviewing.md, to: plugin/builtins/tob-property-based-testing/references/reviewing.md, mode: verbatim, baseBlob: a2ca783a7dabaece9e383f0ace972bb4fe2f7881 }
+
   # ===== Attribution-only sources (fetch: false) =====================================
   # Never fetched or regenerated by `muster vendor`; recorded so every item based on an
   # external repository names it. Hand-maintained items stay hand-maintained.

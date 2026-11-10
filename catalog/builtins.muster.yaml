@@ -290,3 +290,24 @@
   keywords: [threat, threat-model, stride, abuse-paths, trust-boundaries, appsec]
   description: "Repository-grounded AppSec threat model: trust boundaries, assets, attacker capabilities, ranked abuse paths and mitigations, written as Markdown."
   provenance: { license: Apache-2.0, upstream: [openai/skills] }
+- id: tob-supply-chain-risk-auditor
+  kind: builtin
+  roles: [security-review]
+  rank: 43
+  keywords: [supply-chain, dependencies, dependency, npm, pypi, advisories, lockfile]
+  description: "Script-measured dependency supply-chain audit for npm, PyPI and Go: advisories, abandoned upstreams, publisher concentration and install scripts."
+  provenance: { license: CC-BY-SA-4.0, upstream: [trailofbits/skills] }
+- id: tob-fp-check
+  kind: builtin
+  roles: [security-review]
+  rank: 42
+  keywords: [false-positive, triage, exploitable, verify, finding, poc]
+  description: "Verify suspected security findings to a TRUE or FALSE POSITIVE verdict with data-flow, exploitability and PoC evidence; not for hunting bugs."
+  provenance: { license: CC-BY-SA-4.0, upstream: [trailofbits/skills] }
+- id: tob-property-based-testing
+  kind: builtin
+  roles: [test-author]
+  rank: 44
+  keywords: [property-based, properties, hypothesis, fast-check, proptest, fuzz, invariants]
+  description: "Write, review and triage property-based tests (Hypothesis, fast-check, proptest, Echidna): roundtrip, invariant and oracle properties."
+  provenance: { license: CC-BY-SA-4.0, upstream: [trailofbits/skills] }

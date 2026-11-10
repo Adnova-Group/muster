@@ -44,6 +44,8 @@ Per-item detail (upstream path, ref, relation) is in each item's `upstream:` fie
   Copyright 2025 Functional Software, Inc. dba Sentry
   skills/security-review: reference material derived from the OWASP Cheat Sheet Series (https://cheatsheetseries.owasp.org/), CC BY-SA 4.0
 - openai/skills @ 49f948faa9258a0c61caceaf225e179651397431 (Apache-2.0)
+- trailofbits/skills @ e4dd0bb5b15535f7c5a0834187dffba6ac37e4ff (CC-BY-SA-4.0)
+  Copyright Trail of Bits (https://www.trailofbits.com/)
 - blader/humanizer @ 1b48564898e999219882660237fde01bf4843a0f (MIT)
   Copyright (c) 2025 Siqi Chen
 - rudra496/StealthHumanizer @ 1aacbda6e2f66afbdcb6714a85347307068373e9 (MIT)

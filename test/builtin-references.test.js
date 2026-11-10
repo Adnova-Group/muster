@@ -53,6 +53,7 @@ const PROJECT_FILES = {
   "uupm-slides": { "assets/design-tokens.json": tokens },
   "uupm-ui-styling": { "assets/design-tokens.json": tokens },
   // Complementary skills: files in the repository under review or the project being designed.
+  "tob-supply-chain-risk-auditor": { "report.md": "the report its render.py writes into an output directory outside the audited repository" },
   "sentry-gha-security-review": Object.fromEntries(["CLAUDE.md", "AGENTS.md"].map(f => [f, "an agent-instruction file in the reviewed repository that its workflows load (a prompt-injection surface)"]))
 };
 const projectFile = (id, target) => Object.hasOwn(PROJECT_ROOT_FILES, target) || Object.hasOwn(PROJECT_FILES[id] || {}, target);

@@ -111,8 +111,7 @@ const support = (id, skills, { agents = [], uupm = null, mobbin = false } = {}) 
   skills: Object.freeze(skills), agents: Object.freeze(agents), uupm, mobbin,
 });
 export const DESIGN_SUPPORT = Object.freeze({
-  craft: support("craft", [UUPM_SKILL, "uupm-ui-styling", "typeui", "anthropic-frontend-design",
-    "taste-design-taste-frontend", "taste-redesign-existing-projects", "taste-stitch-design-taste", "hallmark",
+  craft: support("craft", [UUPM_SKILL, "uupm-ui-styling", "typeui", "anthropic-frontend-design", "taste-stitch-design-taste", "hallmark",
     "elaya-landing-page-design", "elaya-figma-designer", "jk-build-design", "addy-frontend-ui-engineering",
     "emil-pick-ui-library", "impeccable-operate"], { uupm: "query", mobbin: true }),
   init: support("init", [UUPM_SKILL, "uupm-brand", "intent-intent", "impeccable-document"], { uupm: "query" }),
@@ -126,8 +125,8 @@ export const DESIGN_SUPPORT = Object.freeze({
     "emil-find-animation-opportunities", "emil-animation-vocabulary", "emil-animate-expo", ...GSAP], { uupm: "query" }),
   audit: support("audit", [UUPM_SKILL, "intent-evaluate", "intent-include", "jk-better-accessibility",
     "addy-browser-testing-with-devtools"], { agents: ["intent-vigil"], uupm: "checklist" }),
-  bolder: support("bolder", [UUPM_SKILL, "anthropic-frontend-design", "taste-design-taste-frontend",
-    "taste-high-end-visual-design", "taste-industrial-brutalist-ui", "taste-redesign-existing-projects", "hallmark"],
+  bolder: support("bolder", [UUPM_SKILL, "anthropic-frontend-design",
+    "taste-high-end-visual-design", "taste-industrial-brutalist-ui", "hallmark"],
     { uupm: "query", mobbin: true }),
   clarify: support("clarify", ["intent-articulate", "uupm-brand", "pfd", "jk-better-writing"], { agents: ["intent-wren"] }),
   colorize: support("colorize", [UUPM_SKILL, "jk-better-colors"], { uupm: "query" }),

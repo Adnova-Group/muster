@@ -94,7 +94,7 @@ When sources disagree: project DESIGN.md > accessibility/WCAG > Impeccable workf
 
 | Workflow | Primary | Skills | Agents | uupm | Mobbin |
 |---|---|---|---|---|---|
-| craft | impeccable-core, impeccable-craft-floor | uupm-ui-ux-pro-max, uupm-ui-styling, typeui, anthropic-frontend-design, taste-design-taste-frontend, taste-redesign-existing-projects, taste-stitch-design-taste, hallmark, elaya-landing-page-design, elaya-figma-designer, jk-build-design, addy-frontend-ui-engineering, emil-pick-ui-library, impeccable-operate | | query | yes |
+| craft | impeccable-core, impeccable-craft-floor | uupm-ui-ux-pro-max, uupm-ui-styling, typeui, anthropic-frontend-design, taste-stitch-design-taste, hallmark, elaya-landing-page-design, elaya-figma-designer, jk-build-design, addy-frontend-ui-engineering, emil-pick-ui-library, impeccable-operate | | query | yes |
 | init | impeccable-core | uupm-ui-ux-pro-max, uupm-brand, intent-intent, impeccable-document | | query | |
 | document | impeccable-core, impeccable-document | uupm-design-system | | | |
 | extract | impeccable-core, impeccable-extract, impeccable-craft-floor | uupm-design-system | | | |
@@ -103,7 +103,7 @@ When sources disagree: project DESIGN.md > accessibility/WCAG > Impeccable workf
 | adapt | impeccable-core, impeccable-adapt, impeccable-craft-floor | intent-transpose, uupm-ui-ux-pro-max, emil-mobile-native, jk-better-layout | | lookup | |
 | animate | impeccable-core, impeccable-animate, impeccable-craft-floor | uupm-ui-ux-pro-max, emil-animate, emil-choreograph, emil-apple-design, emil-find-animation-opportunities, emil-animation-vocabulary, emil-animate-expo, gsap-core, gsap-timeline, gsap-scrolltrigger, gsap-plugins, gsap-react, gsap-frameworks, gsap-utils | | query | |
 | audit | impeccable-core, impeccable-audit | uupm-ui-ux-pro-max, intent-evaluate, intent-include, jk-better-accessibility, addy-browser-testing-with-devtools | intent-vigil | checklist | |
-| bolder | impeccable-core, impeccable-bolder, impeccable-craft-floor | uupm-ui-ux-pro-max, anthropic-frontend-design, taste-design-taste-frontend, taste-high-end-visual-design, taste-industrial-brutalist-ui, taste-redesign-existing-projects, hallmark | | query | yes |
+| bolder | impeccable-core, impeccable-bolder, impeccable-craft-floor | uupm-ui-ux-pro-max, anthropic-frontend-design, taste-high-end-visual-design, taste-industrial-brutalist-ui, hallmark | | query | yes |
 | clarify | impeccable-core, impeccable-clarify, impeccable-craft-floor | intent-articulate, uupm-brand, pfd, jk-better-writing | intent-wren | | |
 | colorize | impeccable-core, impeccable-colorize, impeccable-craft-floor | uupm-ui-ux-pro-max, jk-better-colors | | query | |
 | critique | impeccable-core, impeccable-critique | uupm-ui-ux-pro-max, intent-evaluate, pfd, jk-better-interface, jk-interface-review, emil-review-animations | intent-vigil | checklist | |

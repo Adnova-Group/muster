@@ -32,12 +32,16 @@ const NOT_A_FILE = {
 const PROJECT_ROOT_FILES = {
   "DESIGN.md": "the project's canonical design context, owned by /muster:design (impeccable)",
   "README.md": "a README the skill writes into the user's project or handoff package",
-  "CLAUDE.md": "the project's Claude Code instructions file, read from the user's project"
+  "CLAUDE.md": "the project's Claude Code instructions file, read from the user's project",
+  "AGENTS.md": "the project's agent instructions file, read from the user's project"
 };
 // Per builtin: project paths it reads or writes, and example names for deliverables it writes.
 const deliverable = "example name of the deliverable the skill writes into the user's working directory";
 const tokens = "the project's design-token file (upstream ships no assets/ directory; the scripts read and write it at the project root)";
 const PROJECT_FILES = {
+  "jk-better-interface": { "CONTRIBUTING.md": "the project's contributing guide, read from the user's project", "CODING_STANDARDS.md": "the project's coding standards, read from the user's project if present" },
+  "emil-improve-animations": { "NNN-short-slug.md": deliverable },
+  "hallmark": { "design.md": "Hallmark's portable system file; muster redirects it to a DESIGN.md proposal (see the adaptation note in the SKILL.md)" },
   "intent-articulate": { "copy-larkspur-refills.md": deliverable },
   "intent-evaluate": { "evaluation-larkspur-refills.md": deliverable },
   "intent-fortify": { "states-larkspur-refills.md": deliverable },

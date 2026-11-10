@@ -55,6 +55,14 @@ check a deterministic guard already owns.
   current true value, not just the discrepancy's existence. When re-deriving a count or a cited
   fact is genuinely infeasible in scope, say so rather than asserting an unverified number.
 
+## Plain-language check for procedural docs
+
+For runbooks, install and upgrade procedures, error-message catalogs and READMEs aimed at readers
+outside the field, load the `simple-english` builtin in its CHECK mode: open its
+`references/rule-catalog.md` first and cite each violation by that file's rule number, with the
+offending text and a compliant rewrite. Flag only passages a reader acts on (steps, warnings,
+error text); conceptual and marketing prose is outside its scope, as the skill itself says.
+
 ## Known false positives to rule out
 
 - A `docs/decisions/*.md` record's own explicitly-dated, self-labeled historical baseline (e.g.

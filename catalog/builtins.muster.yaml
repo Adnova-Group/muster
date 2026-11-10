@@ -506,3 +506,10 @@
   keywords: [copyediting, proofread, proofreading, tighten, refresh, sweeps]
   description: "Edit existing copy without rewriting it: seven focused sweeps, point edits for single lines, AI-tell removal and a content-refresh checklist."
   provenance: { license: MIT, upstream: [coreyhaines31/marketingskills] }
+- id: simple-english
+  kind: builtin
+  roles: [author]
+  rank: 40
+  keywords: [plain, plainenglish, ste, simplified, controlled, jargon, readability]
+  description: "Plain, ASD-STE100-style controlled English for docs, runbooks, procedures, error messages and release notes, with a Strict mode and a rule-catalog CHECK mode."
+  provenance: { license: MIT, upstream: [AminBlg/SimpleEnglish] }

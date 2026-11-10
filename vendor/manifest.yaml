@@ -1167,6 +1167,34 @@ sources:
       - { from: skills/literature-review/scripts/generate_pdf.py, to: plugin/builtins/kdense-literature-review/scripts/generate_pdf.py, mode: adapted, baseBlob: dea8d556e808c006c911131ee761b2bd1ae8ecc0 }
       - { from: skills/literature-review/scripts/search_databases.py, to: plugin/builtins/kdense-literature-review/scripts/search_databases.py, mode: adapted, baseBlob: d14e3202055844ea47a4d19b8b5ceeb4321dceab }
       - { from: skills/literature-review/scripts/verify_citations.py, to: plugin/builtins/kdense-literature-review/scripts/verify_citations.py, mode: verbatim, baseBlob: 39fb278f7896e275784f7ea23ba395b1929863e5 }
+  - id: simple-english
+    kind: github
+    repo: AminBlg/SimpleEnglish
+    # Added 2026-11-10 (owner-approved complements). Merge-tracked (every item has a `mode`), with
+    # byte-exact base copies in vendor/upstream/simple-english/; `muster vendor update simple-english`
+    # 3-way merges them. Pinned to upstream HEAD on 2026-11-10, 2 commits past release v2.1.1.
+    # Carried: skills/simple-english (SKILL.md and its four references: the ASD-STE100 Issue 9 rule
+    # catalog paraphrase, strict vocabulary, word swaps, use cases). Not carried: the activation
+    # hooks (src/hooks, .codex-plugin/hooks.json: muster ships no always-on hooks), the
+    # output-styles/simple-english.md output style and prompts/system-prompt.md (always-on register
+    # changes; muster loads the skill on demand instead), the tools/ste-dictionary build scripts, and
+    # tests and examples.
+    # Kept muster divergence: the SKILL.md frontmatter swap (name kept, one-line description instead
+    # of the multi-line trigger list, muster_builtin, SPDX license, generated upstream:;
+    # compatibility and metadata dropped), a prompt-lint-disable comment after the H1 and the
+    # packaging-only header on each reference.
+    # Wired into the documentation audit pattern and the runbook pipeline.
+    ref: a6fcb4fde098b33617cc1578d151ebf58774b883
+    tag: v2.1.1-2-ga6fcb4f
+    license: MIT
+    copyright: "Copyright (c) 2026 AminBlg"
+    relation: vendored
+    items:
+      - { id: simple-english, kind: builtin, from: skills/simple-english/SKILL.md, to: plugin/builtins/simple-english/SKILL.md, mode: adapted, baseBlob: 18968a8a2c631b577327fde0271940335c6a375c }
+      - { from: skills/simple-english/references/rule-catalog.md, to: plugin/builtins/simple-english/references/rule-catalog.md, mode: adapted, baseBlob: 23fd3b823e529b2e2c3f134dd51bf6e2056c88d3 }
+      - { from: skills/simple-english/references/strict-vocabulary.md, to: plugin/builtins/simple-english/references/strict-vocabulary.md, mode: adapted, baseBlob: 2233a6da3b35c3e6845722496644e6d555b66b7f }
+      - { from: skills/simple-english/references/use-cases.md, to: plugin/builtins/simple-english/references/use-cases.md, mode: adapted, baseBlob: 10b2862740a57f3b091a8c7ff7e5399d548dea18 }
+      - { from: skills/simple-english/references/word-swaps.md, to: plugin/builtins/simple-english/references/word-swaps.md, mode: adapted, baseBlob: 5747f6cb58c029c52b09620f2212acd3ae843336 }
   - id: gsd
     kind: github
     repo: open-gsd/gsd-core

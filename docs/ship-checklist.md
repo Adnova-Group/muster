@@ -59,7 +59,15 @@ with the release receipt.
    zero vulnerabilities.
 8. **Package inspection**: run `npm pack --dry-run --json`, inspect the reported file list,
    identity, version, size, and entry count, and confirm no secrets, local state, or machine paths
-   are included. The dry run must not leave a tarball behind.
+   are included. The dry run must not leave a tarball behind. Maintainer-only data stays out:
+   no `vendor/upstream/` base copies or `vendor/reports/`, only the four runtime scripts
+   (`build-codex`, `check-codex`, `cowork-probe`, `chatgpt-work-native-probe`), and no `test/`,
+   `eval/`, `docs/` or `website/`, and no `__pycache__/` or `.pyc` bytecode (a test run leaves
+   it beside uupm's `search.py`, and `.gitignore` does not filter `files`). `test/package-contents.test.js` enforces this and an unpacked
+   ceiling of 17,000,000 bytes (15.6 MB and 1,195 files at revival stage 4, down from 21.3 MB
+   and 1,778). Compare the entry count and unpacked size with the previous release and explain
+   any jump. A packaged install's `muster doctor` reports `vendor-sync` as skipped ("base copies
+   not shipped in the package"); `muster vendor check/report/update` need a source checkout.
 9. **Documentation website**: from `website/`, run `npm run docs:build`; then run the repository's
    website/docs tests so navigation, links, anchors, public support claims, release pins, and brand
    assets are checked together.

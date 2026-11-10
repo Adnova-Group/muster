@@ -1,6 +1,6 @@
 ---
 name: backend-development-test-automator
-description: "Test suites: unit, integration and E2E, with TDD/BDD support."
+description: "Test suites: unit, integration, E2E; TDD/BDD."
 model: sonnet
 effort: medium
 maxTurns: 25

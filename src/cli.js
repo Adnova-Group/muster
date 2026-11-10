@@ -30,7 +30,7 @@ import { readProfile } from "./profile.js";
 import { buildSignals } from "./signals.js";
 import { validateVendorManifest, runVendor } from "./vendor.js";
 import { runProvenance } from "./provenance.js";
-import { checkVendorSync, runVendorReport, runVendorUpdate } from "./vendor-sync.js";
+import { BASE_COPIES_ABSENT, baseCopiesPresent, checkVendorSync, runVendorReport, runVendorUpdate } from "./vendor-sync.js";
 import { parse as parseYaml } from "yaml";
 import { scaffoldProject } from "./setup.js";
 import {
@@ -155,7 +155,7 @@ const USAGE = [
   // harness-native dispatch packets (codex lane)
   "codex-audit-provider --role <role> --task-id <id> --callable-apis <v1,v2> --callable-agent-ids <id,...> [--api-override <v1|v2>] [--message <text>|--message-file <f>]|codex-spawn-packet --task-id <id> --agent-type <id> [--message <text>|--message-file <f>] [--version v1|v2] [--fork-turns <none|N>]|codex-wait-packet [--version v1|v2] [--targets a,b] [--timeout-ms N]|",
   // memory + vendor + init lifecycle
-  "memory read|write ...|vendor [update <source> --to <tag> [--dry-run]|report <source> --to <tag> [--stdout]|check]|provenance [--write]|init [dir]|init transition [dir] --to <handoff|attempted|completed>|init normalize [dir] --approve CLAUDE.md|init acknowledge [dir] --reason unavailable|init finalize [dir]|init pm-link [dir] [--approve pm-link]|setup [dir]|design <init|status|resolve|detect|ignores|provider|gate|workflows|run> ...|",
+  "memory read|write ...|vendor [update <source> --to <tag|commit> [--dry-run]|report <source> --to <tag|commit> [--stdout]|check|outdated [--offline]]|provenance [--write]|init [dir]|init transition [dir] --to <handoff|attempted|completed>|init normalize [dir] --approve CLAUDE.md|init acknowledge [dir] --reason unavailable|init finalize [dir]|init pm-link [dir] [--approve pm-link]|setup [dir]|design <init|status|resolve|detect|ignores|provider|gate|workflows|run> ...|",
   // planning + routing artifacts
   "plan-checklist <file>|domain <outcome>|pipeline <domain|id|--list>|route <outcome>|score <file>|",
   // skill discovery: browse builtins, registry search, per-project enable/add, pins, usage
@@ -1015,19 +1015,37 @@ async function handleCoreCommandPart3(cmd, rest) {
     const v = validateVendorManifest(manifest);
     if (!v.ok) { process.stderr.write(`muster: ${v.errors.join("\n")}\n`); process.exit(2); }
     const repoRoot = dirFromImportMeta(import.meta.url, "../");
+    // Pin vs upstream for every merge-tracked source (src/upstream-watch.js). Needs only the
+    // manifest, so it runs from the package too; --offline lists the pins without the network.
+    if (rest[0] === "outdated") {
+      const { checkUpstreams, listPins } = await import("./upstream-watch.js");
+      if (rest.includes("--offline")) { out({ offline: true, sources: listPins(manifest) }); return true; }
+      const res = await checkUpstreams({ manifest, token: process.env.GITHUB_TOKEN || process.env.GH_TOKEN });
+      const sources = res.sources.map(({ id, repo, renamedTo, pin, upstream, status, tracked, changed, note }) => ({
+        id, repo, ...(renamedTo ? { renamedTo } : {}), pin: pin.tag ?? pin.ref, upstream: upstream?.ref ?? null, status,
+        tracked, changed: changed.map(c => `${c.from} (${c.change})`), ...(note ? { note } : {})
+      }));
+      const hint = res.rateLimit && !(process.env.GITHUB_TOKEN || process.env.GH_TOKEN) ? "; set GITHUB_TOKEN for 5,000 requests/hour" : "";
+      out({ requests: res.requests, ...(res.rateLimit ? { rateLimit: `${res.rateLimit.resetAt ? `resets ${res.rateLimit.resetAt}` : "reached"}${hint}` } : {}), outdated: sources.filter(s => s.status === "changed").length, sources });
+      return true;
+    }
     // Merge-tracked sources (src/vendor-sync.js): never the regenerate path below.
     if (["update", "report", "check"].includes(rest[0])) {
       const sub = rest[0];
+      // The npm package and the bundled plugin runtime ship no vendor/upstream/ base copies,
+      // and a report or update writes into the tree it runs from: maintainer work.
+      if (!(await baseCopiesPresent(repoRoot)))
+        fail(`vendor ${sub} needs a source checkout: ${BASE_COPIES_ABSENT} (vendor/upstream/ is absent). Clone https://github.com/Adnova-Group/muster and run it there; \`muster vendor outdated\` works from the package.`);
       if (sub === "check") {
         const res = await checkVendorSync({ root: repoRoot, manifest });
         out(res);
         if (!res.ok) process.exitCode = 1;
         return true;
       }
-      const usage = `vendor ${sub} <source> --to <tag>${sub === "update" ? " [--dry-run]" : " [--stdout]"}`;
+      const usage = `vendor ${sub} <source> --to <tag|commit>${sub === "update" ? " [--dry-run]" : " [--stdout]"}`;
       const sourceId = rest[1] && !rest[1].startsWith("-") ? rest[1] : null;
       const toTag = flagValue(rest, "--to");
-      if (!sourceId || !toTag) fail(`${usage}: missing ${sourceId ? "--to <tag>" : "<source>"}`);
+      if (!sourceId || !toTag) fail(`${usage}: missing ${sourceId ? "--to <tag|commit>" : "<source>"}`);
       if (sub === "report") {
         const res = await runVendorReport({ root: repoRoot, manifest, sourceId, toTag, write: !rest.includes("--stdout") });
         if (rest.includes("--stdout")) process.stdout.write(res.text);

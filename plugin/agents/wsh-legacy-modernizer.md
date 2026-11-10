@@ -1,6 +1,6 @@
 ---
 name: framework-migration-legacy-modernizer
-description: Legacy refactoring, framework migrations and gradual modernization.
+description: Legacy refactors and framework migrations.
 model: opus
 effort: medium
 maxTurns: 25

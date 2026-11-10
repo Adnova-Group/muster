@@ -1,6 +1,6 @@
 ---
 name: customer-support
-description: "Customer support experience: ticketing, support content and CX."
+description: "Customer support: ticketing, help content, CX."
 model: sonnet
 effort: medium
 maxTurns: 25

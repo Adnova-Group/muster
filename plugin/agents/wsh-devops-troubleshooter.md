@@ -1,6 +1,6 @@
 ---
 name: cicd-automation-devops-troubleshooter
-description: Incident response and debugging with logs, traces and Kubernetes.
+description: "Incident response: logs, traces, Kubernetes."
 model: opus
 effort: medium
 maxTurns: 25

@@ -1,4 +1,4 @@
-import { checkVendorSync } from "./vendor-sync.js";
+import { BASE_COPIES_ABSENT, baseCopiesPresent, checkVendorSync } from "./vendor-sync.js";
 import { loadCatalog } from "./catalog.js";
 import { loadPipelines } from "./pipeline.js";
 import { knownDomains } from "./domain.js";
@@ -468,6 +468,9 @@ export async function runDoctor({ root, home, exec, cwd } = {}) {
     try { manifest = parseYaml(await readFile(join(base, "vendor/manifest.yaml"), "utf8")); } catch { /* reported by vendor-note-staleness below */ }
     if (!manifest || !Array.isArray(manifest.sources)) {
       checks.push({ name: "vendor-sync", ok: true, detail: "no readable vendor/manifest.yaml — skip" });
+    } else if (!(await baseCopiesPresent(base))) {
+      // A packaged install (npm, or the bundled plugin runtime): maintainer data, not a fault.
+      checks.push({ name: "vendor-sync", ok: true, detail: `${BASE_COPIES_ABSENT} (vendor/upstream/ is absent) — skip; run from a source checkout` });
     } else {
       const res = await checkVendorSync({ root: base, manifest });
       const behind = res.behind.length ? `; ${res.behind.join("; ")}` : "";

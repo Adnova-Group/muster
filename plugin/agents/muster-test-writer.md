@@ -1,6 +1,6 @@
 ---
 name: muster-test-writer
-description: "TDD red: writes a task's failing tests, never the code."
+description: "Run workflow: writes a task's failing tests."
 tools: Read, Write, Edit, Bash, Grep, Glob
 model: sonnet
 effort: medium

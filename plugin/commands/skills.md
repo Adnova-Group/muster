@@ -1,6 +1,6 @@
 ---
 name: skills
-description: "Browse, search, enable and pin muster's bundled skills. Usage: /muster:skills <verb>"
+description: "Browse, enable and pin bundled skills. Usage: /muster:skills <verb>"
 argument-hint: "list [domain] | show <id> | search <query> | enable <id> | disable <id> | add <publisher>/<skill> | pin <id> [--role <role>] | unpin <id> | usage"
 upstream: []
 ---

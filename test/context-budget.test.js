@@ -24,7 +24,12 @@ const ORCHESTRATOR_BUDGET = 18 * KB;
 // PM domain stages C-D (2026-11-10): +124 for /muster:pm's description, -83 and -73 for the
 // retired prd-pipeline and roadmap-prioritization skills (the latter now the muster-roadmap
 // builtin, read by path), net -32.
-const DESCRIPTION_BUDGET = 4_582;
+// Revival stage 4 (2026-11-10): every description trimmed, 4,566 -> 3,375 bytes measured. Workflow-only
+// agents (book-*, planner, plan-checker, verifier, test-writer, integration-checker, team-debugger)
+// are dispatched by agentType and say so in a few words; commands keep their Usage strings
+// verbatim. Budget = measured + 5% headroom. `muster match` reads catalog descriptions and ranks
+// identically before and after.
+const DESCRIPTION_BUDGET = 3_544;
 
 function frontmatter(text) {
   const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);

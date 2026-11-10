@@ -1,6 +1,6 @@
 ---
 name: prompt-engineer
-description: Prompt engineering for LLM features, agents and system prompts.
+description: Prompt engineering for LLM features and agents.
 model: opus
 effort: medium
 maxTurns: 25

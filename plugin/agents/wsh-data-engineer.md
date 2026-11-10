@@ -1,6 +1,6 @@
 ---
 name: data-engineer
-description: Data pipelines, warehouses and streaming (Spark, dbt, Airflow).
+description: Data pipelines, warehouses and streaming.
 model: opus
 effort: medium
 maxTurns: 25

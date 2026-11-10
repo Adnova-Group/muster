@@ -1,6 +1,6 @@
 ---
 name: book-continuity-checker
-description: "Read-only check of one chapter against the book canon."
+description: "Book workflow: chapter vs canon check."
 tools: Read, Bash, Grep, Glob
 model: sonnet
 effort: medium

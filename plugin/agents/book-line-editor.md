@@ -1,6 +1,6 @@
 ---
 name: book-line-editor
-description: "Minimal in-place line edit of one chapter; canon stays fixed."
+description: "Book workflow: line edit of one chapter."
 tools: Read, Edit, Bash, Grep, Glob
 model: sonnet
 effort: medium

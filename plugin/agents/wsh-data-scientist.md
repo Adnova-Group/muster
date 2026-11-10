@@ -1,6 +1,6 @@
 ---
 name: data-scientist
-description: Analytics, statistical modeling and machine-learning analysis.
+description: Analytics, statistics and ML analysis.
 model: sonnet
 effort: medium
 maxTurns: 25

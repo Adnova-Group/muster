@@ -1,6 +1,6 @@
 ---
 name: ml-engineer
-description: "Production ML systems: model serving, feature pipelines and monitoring."
+description: "Production ML: model serving, features, monitoring."
 model: opus
 effort: medium
 maxTurns: 25

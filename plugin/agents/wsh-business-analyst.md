@@ -1,6 +1,6 @@
 ---
 name: business-analyst
-description: "Business analysis: KPI frameworks, dashboards and data-driven recommendations."
+description: "Business analysis: KPIs, dashboards, recommendations."
 model: sonnet
 effort: medium
 maxTurns: 25

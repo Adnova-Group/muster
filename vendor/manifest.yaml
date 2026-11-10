@@ -1848,13 +1848,16 @@ sources:
     # paths point at ${CLAUDE_PLUGIN_ROOT}/builtins/intent-present/references/). Not vendored:
     # the Cursor/Copilot ports, hooks/, docs/ site, tests/ and build scripts.
     # Security adaptation (stage 3 pre-PR review, 2026-11-10; base copy kept, noted in its header):
-    # present/references/build_deck.py makes python-pptx create the chart's embedded workbook with
-    # XlsxWriter's strings_to_formulas and strings_to_urls off (python-pptx writes categories and
-    # series names with write(), which by default stores "=..." as a live formula and turns
-    # http(s)/ftp/mailto/internal/external strings into hyperlinks or external references), so every
-    # label stays a literal string; test/vendored-script-hardening.test.js pins it, end to end when
-    # python-pptx is installed. The only other vendored CSV/XLSX/chart writer, kdense
-    # generate_report_scaffold.py, writes constant header rows only.
+    # present/references/build_deck.py keeps chart labels literal in the embedded workbook, in depth:
+    # python-pptx writes categories and series names with XlsxWriter's write(), which stores "=..."
+    # as a live formula, "{=...}" as an array formula even with strings_to_formulas off, and turns
+    # http(s)/ftp/mailto/internal/external strings into hyperlinks or external references. The
+    # adapted script wraps pptx.chart.xlsx.Workbook (strings_to_formulas and strings_to_urls off,
+    # every string cell written with write_string()) and _validate rejects labels starting with
+    # = {= + - @, a tab or CR, a URL scheme or mailto:/internal:/external:.
+    # test/vendored-script-hardening.test.js pins all three, end to end when python-pptx is
+    # installed. The only other vendored CSV/XLSX/chart writer, kdense generate_report_scaffold.py,
+    # writes constant header rows only.
     ref: 1806110106a472bc588d7a8a2b7e3d39aee4a4b8
     tag: v1.7.4
     license: CC0-1.0

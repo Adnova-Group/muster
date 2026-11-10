@@ -109,9 +109,17 @@ const planPath = `.muster/runs/${cfg.runId}/PLAN.md`
 const result = (verdict, revisions, issues, escalated, extra) => ({ runId: cfg.runId, planPath, verdict, revisions, issues, escalated, ...extra })
 
 const planOpts = (r) => ({ label: `plan r${r}`, phase: 'Plan', schema: PLAN_RESULT, agentType: 'muster:muster-planner', ...seat(cfg, 'planner') })
+// gsd revision-loop: the planner reports REVISION_CONFLICT when a checker issue contradicts a
+// locked decision. That is the user's call, not a planner error.
+const plannerFailure = (p, revisions, issues) => /^REVISION_CONFLICT\b/.test(String(p.summary || ''))
+  ? result('ISSUES', revisions, issues, 'conflict', { conflict: p.summary })
+  : result('ERROR', revisions, issues, 'planner', { error: p.error || p.summary })
 let plan = await call(planBrief(cfg, planPath, null, 0), planOpts(0))
-if (plan.status !== 'done') return result('ERROR', 0, [], 'planner', { error: plan.error || plan.summary })
+if (plan.status !== 'done') return plannerFailure(plan, 0, [])
 
+// gsd's checker reports ISSUES on any issue, info included; only blockers and warnings bind a
+// revision or count toward the stall rule.
+const binding = (issues) => issues.filter((i) => /^(blocker|warning)$/i.test(String(i.severity || '')))
 let revisions = 0
 let lastCount = Infinity
 for (;;) {
@@ -120,14 +128,15 @@ for (;;) {
   })
   if (check.status === 'error') return result('ERROR', revisions, [], 'checker', { error: check.error })
   const issues = Array.isArray(check.issues) ? check.issues : []
-  if (check.verdict === 'PASS') return result('PASS', revisions, issues, null)
+  const open = binding(issues)
+  if (check.verdict === 'PASS' || !open.length) return result('PASS', revisions, issues, null)
   if (revisions >= REVISION_CAP) return result('ISSUES', revisions, issues, 'cap')
-  if (issues.length >= lastCount) {
-    log(`issue count stalled at ${issues.length}; escalating`)
+  if (open.length >= lastCount) {
+    log(`blocking issue count stalled at ${open.length}; escalating`)
     return result('ISSUES', revisions, issues, 'stall')
   }
-  lastCount = issues.length
+  lastCount = open.length
   revisions++
-  plan = await call(planBrief(cfg, planPath, issues, revisions), planOpts(revisions))
-  if (plan.status !== 'done') return result('ERROR', revisions, issues, 'planner', { error: plan.error || plan.summary })
+  plan = await call(planBrief(cfg, planPath, open, revisions), planOpts(revisions))
+  if (plan.status !== 'done') return plannerFailure(plan, revisions, issues)
 }

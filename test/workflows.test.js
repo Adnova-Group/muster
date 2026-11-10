@@ -251,6 +251,43 @@ test("plan: escalates at the revision cap of 3", async () => {
   assert.equal(calls.filter((c) => c.opts.label.startsWith("check")).length, 4);
 });
 
+test("plan: info-only checker issues pass without a revision (gsd: only blockers and warnings bind)", async () => {
+  const infoOnly = { verdict: "ISSUES", issues: [{ dimension: "style", severity: "info", summary: "consider a shorter task name" }] };
+  const { result, calls } = await run("plan.js", { runId: "p6", outcome: "x" }, (label) => (label.startsWith("plan") ? planned : infoOnly));
+  assert.equal(result.verdict, "PASS");
+  assert.equal(result.revisions, 0);
+  assert.equal(result.escalated, null);
+  assert.equal(result.issues.length, 1, "info issues are still reported");
+  assert.equal(calls.filter((c) => c.opts.label.startsWith("plan")).length, 1, "no revision was requested");
+});
+
+test("plan: the stall rule counts blockers and warnings, not info", async () => {
+  const mixed = (blockers, infos) => ({ verdict: "ISSUES", issues: [
+    ...Array.from({ length: blockers }, (_, i) => ({ dimension: "verify", severity: "blocker", summary: `b${i}` })),
+    ...Array.from({ length: infos }, (_, i) => ({ dimension: "style", severity: "info", summary: `i${i}` })),
+  ] });
+  const rounds = [mixed(2, 0), mixed(1, 5)];
+  const { result } = await run("plan.js", { runId: "p7", outcome: "x" }, (label) => {
+    if (label.startsWith("plan")) return planned;
+    return rounds.shift() || { verdict: "PASS", issues: [] };
+  });
+  assert.equal(result.verdict, "PASS", "a falling blocker count is progress even when info issues grow");
+});
+
+test("plan: a planner REVISION_CONFLICT escalates to the user instead of reading as a generic error", async () => {
+  let n = 0;
+  const { result } = await run("plan.js", { runId: "p8", outcome: "x" }, (label) => {
+    if (label.startsWith("plan")) {
+      n++;
+      return n === 1 ? planned : { status: "blocked", planPath: ".muster/runs/p8/PLAN.md", taskCount: 0, summary: "REVISION_CONFLICT: issue 0 contradicts locked decision D-02" };
+    }
+    return checkIssues(1);
+  });
+  assert.equal(result.verdict, "ISSUES");
+  assert.equal(result.escalated, "conflict");
+  assert.match(result.conflict, /D-02/);
+});
+
 test("plan: a checker schema failure becomes verdict ERROR, not a crash", async () => {
   const { result } = await run("plan.js", { runId: "p5", outcome: "x" }, (label) => {
     if (label.startsWith("plan")) return planned;

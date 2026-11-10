@@ -108,7 +108,10 @@ re-runs `testsRun` before merging, through `muster merge-wave`.
 4. **Agent types** are `muster:muster-<name>`. Fixers reuse `muster-executor` with a fix brief.
    `agentHint` goes into the brief as a domain lens, not as the agent type.
 5. **plan.js** returns `{runId, planPath, verdict: PASS|ISSUES|ERROR, revisions, issues, escalated:
-   null|cap|stall|planner|checker}`. The planner returns `{status, planPath, taskCount, summary}`.
+   null|cap|stall|planner|checker|conflict, conflict?}`. Only blocker and warning issues bind a
+   revision or count toward the stall rule, so info-only results PASS. A planner summary starting
+   `REVISION_CONFLICT` escalates as `conflict` for the user. The planner returns
+   `{status, planPath, taskCount, summary}`.
    The checker runs `muster plan-lint` itself; there is no separate lint stage.
 6. **build.js** runs waves sequentially. A failed wave blocks later waves, and verification is then
    recorded as ABSTAIN. Wave N>1 executors first merge the earlier waves' reviewed commits. The

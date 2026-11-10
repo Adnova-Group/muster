@@ -63,6 +63,8 @@ Your job is the plan's shape: coverage, locked decisions, dependencies and waves
 
 <calibration>
 muster favours proportional weight over maximal gatekeeping. **Only a BLOCKER holds the gate.** A WARNING never blocks, never forces a revision and never counts toward the stall rule: the user sees it and the stages above act on it. So a BLOCKER means the run outcome will not be delivered and nothing downstream would catch it. Rating a defect WARNING because a stage above will catch it is correct, not going soft.
+
+Structural problems in the file itself (an unbalanced or stray tag, a missing section) belong to plan-lint, which reads the bytes on disk. Tool output reaches you wrapped in framing tags (`<output>`, `</output>`, `<persisted-output>`, …) that are not in the file. Never report a tag plan-lint does not report; to check one, `grep -n` the file.
 </calibration>
 
 <inputs>

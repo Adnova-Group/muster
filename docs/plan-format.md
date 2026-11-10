@@ -234,7 +234,7 @@ any task's work lands.
 
 | Dimension | Blocker | Warning |
 |---|---|---|
-| `plan_structure` | missing/invalid frontmatter, missing required field, truncated file, unclosed fence or `<task>`, no tasks | unknown task type |
+| `plan_structure` | missing/invalid frontmatter, missing required field, truncated file, unclosed fence or `<task>`, no tasks | unknown task type, a closing tag with no opener anywhere in the plan (a stray `</output>`) |
 | `task_completeness` | missing id/name/action/verify/files, empty `<files>`, duplicate id, checkpoint fields, checkpoints with `autonomous` not false, a `skills` id that is malformed or not a builtin | missing `<done>`, malformed `agent_hint`, an `agent_hint` that is not a catalog agent or cannot execute (read-only, workflow seat), a task with no `skills` attribute when a preflight skill candidate scored ≥ 4 and matches the task's name and action |
 | `nyquist_compliance` | `<verify>` with no `<automated>`; command with missing, blank or placeholder `<fails_when>` | orphan `<fails_when>`, MISSING sentinel |
 | `verify_command_paths` | `cd`/`--prefix` target missing, or missing its manifest | dynamic path, target outside root, unreadable manifest, missing npm script |

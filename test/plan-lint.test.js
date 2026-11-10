@@ -34,6 +34,7 @@ import {
   probeAlreadyPassing,
   tokenizeSimpleCommand,
   computeDependencyLevels,
+  strayClosingTags,
   DIMENSIONS,
 } from "../src/plan-lint.js";
 import { specialistCatalog } from "../src/specialists.js";
@@ -570,6 +571,28 @@ describe("checkpoint and task structure (gsd verify.test.cjs)", () => {
   test("a task without a type attribute gets the non-checkpoint rules (regression guard)", () => {
     const untyped = '<task id="01" wave="1">\n  <name>n</name>\n  <resume-signal>r</resume-signal>\n</task>';
     assert.ok(blockers(lint([untyped], true)).some(i => i.summary.includes("<action>")));
+  });
+});
+
+describe("stray closing tags (live e2e 2026-11-10)", () => {
+  const lint = (text) => lintPlan(text, { projectRoot: fixtureRoot("stray") }).issues.filter(i => /closes nothing/.test(i.summary));
+
+  test("a bare </output> after </success_criteria> warns with its line; a clean plan does not", () => {
+    const clean = planDoc({ tasks: [autoTask("01", 1)] }) + "<success_criteria>\n- x\n</success_criteria>\n";
+    assert.deepEqual(lint(clean), []);
+    const found = lint(clean + "</output>\n");
+    assert.equal(found.length, 1);
+    assert.equal(found[0].dimension, DIMENSIONS.PLAN_STRUCTURE);
+    assert.equal(found[0].severity, "warning", "cosmetic: shown, never holds the gate");
+    assert.match(found[0].summary, /^line \d+: <\/output> closes nothing/);
+    const line = Number(found[0].summary.match(/^line (\d+)/)[1]);
+    assert.equal((clean + "</output>\n").split("\n")[line - 1], "</output>", "the reported line is the stray tag's line in the file");
+  });
+
+  test("tags named in inline code or fenced blocks, and balanced tags with attributes, are not strays", () => {
+    assert.deepEqual(strayClosingTags("Close each block with `</verify>`.\n<task id=\"01\">\n</task>\n<br/>"), []);
+    assert.deepEqual(lint(planDoc({ tasks: [autoTask("01", 1)] }) + "```xml\n</output>\n```\n"), []);
+    assert.deepEqual(strayClosingTags("a\n</output>\n</Output>"), [{ tag: "output", line: 2 }]);
   });
 });
 

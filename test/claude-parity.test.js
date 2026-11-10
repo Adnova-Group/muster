@@ -40,7 +40,7 @@ test("Claude orchestration surface remains byte-identical outside release metada
     hash.update(await readFile(join(root, path)));
     hash.update("\0");
   }
-  assert.equal(paths.length, 137); // 0.7.0 retired the run/autopilot/sprint command files; 2026-11-09 removed five always-on hook files; stage 1 removed references/kimi-dispatch.md; stage 2 adds plugin/workflows (plan, build, backlog, schemas) and gsd-derived agents (planner, plan-checker, verifier, executor replacing builder); stage 2b deletes the backlog/runner verbs and router-era skills (see the 2026-11-09e re-pin below).
+  assert.equal(paths.length, 911); // 0.7.0 retired the run/autopilot/sprint command files; 2026-11-09 removed five always-on hook files; stage 1 removed references/kimi-dispatch.md; stage 2 adds plugin/workflows (plan, build, backlog, schemas) and gsd-derived agents (planner, plan-checker, verifier, executor replacing builder); stage 2b deletes the backlog/runner verbs and router-era skills (see the 2026-11-09e re-pin below). Revival stage 3 (2026-11-10): vendored skill library and new workflows, agents and commands.
   // Previous 159-file surface +1: audit-pattern-batch2's new
   // plugin/skills/audit-pattern-documentation/SKILL.md (the 10th pattern skill, approved via the
   // second improver batch, composed onto readability + design-ux). The batch also appended 19
@@ -1530,5 +1530,20 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // .claude/worktrees/), resolved from the worktree's .git file without spawning git, and the
   // orchestrator says so; plugin/runtime/muster.sh no longer falls back to a global or project
   // muster (possibly an older release) and pins npx to the plugin's own version. Deliberate.
-  assert.equal(hash.digest("hex"), "288eaf68e8f369d0984be382f6d4cd6524110d5678c93c0366fe963bca74c1af");
+  // Re-pin 2026-11-10 (revival stage 3, 137 -> 911 files). One re-pin for the whole stage:
+  // - every builtin refreshed from its upstream and merge-tracked: superpowers v7.0.2, wshobson
+  //   9c61ab2 (plus its references/ files), impeccable skill-v4.8.2 vendored as the main UX skill;
+  // - new vendored families, each with provenance: UX (uupm, intent, typeui, pfd, anthropic,
+  //   taste classics, addy, emil, hallmark, gsap, elaya, jk), evaluation, security and review
+  //   (evals, sentry, openai, tob, prt agents), engineering (mp, splab), research, SRE, writing
+  //   and stack (kdense, kwp, wsh siblings, mkt, simple-english, sp-writing-skills, supabase, go),
+  //   books (sepia, cws), PM (muster-pm, muster-roadmap);
+  // - workflows make-plan (renamed from plan: it collided with /muster:plan), build, backlog,
+  //   team, debug, pipeline and book; commands skills, pm and write-book; plan-backlog,
+  //   go-backlog, runner, prd-pipeline and roadmap-prioritization retired;
+  // - specialist and skill routing, CLI prefix in agent briefs, spec traceability, exec-form
+  //   fail-open hooks, the bundled runtime, and security fixes in vendored scripts.
+  // Plan: docs/strategy/2026-11-revival-review.md, stage-2-contracts.md amendments 9-19.
+  // Deliberate, not drift.
+  assert.equal(hash.digest("hex"), "b4097f402a4e5fd0c8fa7e89d636caebff0e617826e8d14d657f88c17d14f8dd");
 });

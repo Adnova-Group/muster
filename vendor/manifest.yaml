@@ -1131,7 +1131,13 @@ sources:
     kind: github
     repo: hermes-labs-ai/lintlang
     # No recorded pin: default-branch HEAD on 2026-06-18 (the structural prompt linter).
-    ref: dd17238643817f3d7fd3ece69e6fdbafe8676a98
+    # Re-pinned 2026-11-10: dd172386 -> 645f5787, the v0.8.3 tag (main 5e5fefb differs only in
+    # docs and tests; src/ is identical). Re-implemented from H2 in src/lintlang/patterns.py:
+    # LINT-LOOP-004 (an unbounded retry/loop instruction with no numeric budget; negated and
+    # code-sample forms exempt; condition-bounded "loop until" deliberately not flagged) and
+    # LINT-STOP-002 accepting an explicit numeric budget. Skipped: the H4.5 dangling-path check
+    # (needs the filesystem), the H1 tool-description detector, preflight/SARIF/autofix tooling.
+    ref: 645f57879ff5dbe3bbff37e9696834fb00371194
     license: Apache-2.0
     copyright: "Copyright 2026 Hermes Labs"
     relation: mechanism-port
@@ -1141,7 +1147,11 @@ sources:
   - id: promptfoo
     kind: github
     repo: promptfoo/promptfoo
-    ref: 3901d3949df32c087465bce39626c460d8590034
+    # Re-pinned 2026-11-10: 3901d394 (0.121.18) -> 8569e72e (0.125.1). Took the idea of repeat
+    # stability (0.125.0, #11416): `prompt eval` groups runs by `case` and reports pass rate, a 95%
+    # Wilson interval and unstable cases; own code. Skipped reference-based assertions
+    # (ROUGE/BLEU/RAG/trace), red-team, provider and UI changes.
+    ref: 8569e72ed6cf7737082a6042be8d925e40f9739d
     license: MIT
     copyright: "Copyright (c) Promptfoo 2025"
     relation: inspired-by
@@ -1153,7 +1163,7 @@ sources:
     repo: shobrook/promptimal
     # Owner confirmed with gh on 2026-11-09 (muster only ever wrote "promptimal").
     # No recorded pin: the upstream has had no commits since 2025-01-05, so this HEAD
-    # is the only version that could have been read on 2026-06-18.
+    # is the only version that could have been read on 2026-06-18. Still HEAD on 2026-11-10.
     ref: e03cbc1db19c7ec6c310605a9819e35c2baed023
     license: MIT
     copyright: "Copyright (c) 2024 Jonathan Shobrook"
@@ -1165,8 +1175,12 @@ sources:
     kind: github
     repo: gepa-ai/gepa
     # b7dd4d90 (2026-06-23) credits it in-file: feed lint/eval failure reasons back into
-    # the next variation round. Ref: default-branch HEAD on 2026-06-23.
-    ref: 92dadfffbe98c8ecf508179a1cab09c1bb85cd32
+    # the next variation round. Re-pinned 2026-11-10: 92dadfff -> ce5b0d6e (main; the ideas
+    # below post-date v0.1.4): drop variations identical to an existing candidate before
+    # evaluation (061676a, e60faaf) in proposeVariations, and as SKILL.md guidance one
+    # reflection feeding several parallel proposals per round (8b0ce6c, bb1c947) and rejecting
+    # empty or cut-off proposals (d771eb2, d7918ba). Checkpoint/resume/cache work: not taken.
+    ref: ce5b0d6e3d6af6c6dbec6de2c54536bbb961d309
     license: MIT
     copyright: "Copyright © 2025 Lakshya A Agrawal"
     relation: inspired-by

@@ -120,3 +120,22 @@ test("wrapXml handles ${var} and is idempotent on already-tagged content", () =>
   const combined = vs.find(v => v.id === "all-improvements") || wrap;
   assert.ok(!/<value>\s*<value>/.test(combined.prompt), "no nested double-wrap");
 });
+
+test("LINT-LOOP-004 gets an add-loop-budget variation that clears the rule", async () => {
+  const { lintPrompt } = await import("../src/prompt-lint.js");
+  const vs = proposeVariations("You are a deploy bot. Run the deploy and keep trying until it succeeds. Return JSON.");
+  const v = vs.find(x => x.technique === "add-loop-budget");
+  assert.ok(v, "expected an add-loop-budget variation");
+  assert.equal(v.addresses, "LINT-LOOP-004");
+  assert.ok(!lintPrompt(v.prompt).findings.some(f => f.id === "LINT-LOOP-004"));
+});
+
+test("proposeVariations drops a variation identical to the baseline (duplicate-candidate skip)", () => {
+  // `<doc` already appears (no closing tag, so ANTH-XML-001 still fires) and wrapXml
+  // treats the var as tagged: the wrap-xml transform is a no-op and must not be scored.
+  const p = "You are a bot. See <doc id=1> and {{doc}}. Return JSON.";
+  const vs = proposeVariations(p);
+  assert.ok(!vs.some(v => v.technique === "wrap-xml"), "no-op wrap-xml variation dropped");
+  const texts = vs.map(v => v.prompt);
+  assert.equal(new Set(texts).size, texts.length, "every proposed prompt is distinct");
+});

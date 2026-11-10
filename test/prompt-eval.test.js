@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   interpolate, codeGrade, buildGraderPrompt, parseGraderResponse, runEval, gradeCollected,
-  summarize,
+  summarize, wilsonInterval, repeatStability,
 } from "../src/prompt-eval.js";
 
 test("gradeCollected scores pre-collected outputs offline", () => {
@@ -172,4 +172,50 @@ test("summarize: empty results array produces accuracy=0 and averageScore=0 (not
   assert.equal(r.averageScore, 0, "averageScore should be 0, not NaN, for empty results");
   assert.ok(!Number.isNaN(r.accuracy), "accuracy must not be NaN");
   assert.ok(!Number.isNaN(r.averageScore), "averageScore must not be NaN");
+});
+
+// --- repeat stability (promptfoo 0.125 idea, muster's own implementation) ---
+
+test("gradeCollected reports repeat stability when a case is run more than once", () => {
+  const res = gradeCollected({
+    dataset: [
+      { case: "a", output: '{"x":1}', format: "json" },
+      { case: "a", output: "nope", format: "json" },
+      { case: "a", output: '{"x":2}', format: "json" },
+      { case: "b", output: '{"y":1}', format: "json" },
+      { case: "b", output: '{"y":2}', format: "json" },
+      { output: '{"z":1}', format: "json" },
+    ],
+  });
+  assert.equal(res.stability.totalGroups, 2);
+  assert.equal(res.stability.unstableGroups, 1);
+  const a = res.stability.groups.find(g => g.case === "a");
+  assert.equal(a.runs, 3);
+  assert.equal(a.passed, 2);
+  assert.equal(a.unstable, true);
+  assert.ok(a.interval.lower < a.passRate && a.passRate < a.interval.upper);
+  assert.equal(res.stability.groups.find(g => g.case === "b").unstable, false);
+});
+
+test("a suite with no repeated case carries no stability key", () => {
+  const res = gradeCollected({ dataset: [{ case: "a", output: "{}", format: "json" }, { output: "{}", format: "json" }] });
+  assert.equal(res.stability, undefined);
+  assert.equal(repeatStability([]), null);
+});
+
+test("gradeCollected keeps only a string or finite-number case key", () => {
+  const res = gradeCollected({ dataset: [{ case: { evil: 1 }, output: "{}", format: "json" }, { case: { evil: 1 }, output: "{}", format: "json" }] });
+  assert.equal(res.results[0].case, undefined);
+  assert.equal(res.stability, undefined);
+});
+
+test("wilsonInterval stays inside [0,1] and is null on bad input", () => {
+  const all = wilsonInterval(5, 5);
+  assert.equal(all.upper, 1);
+  assert.ok(all.lower > 0.5 && all.lower < 1);
+  const none = wilsonInterval(0, 5);
+  assert.equal(none.lower, 0);
+  assert.ok(none.upper < 0.5);
+  assert.equal(wilsonInterval(1, 0), null);
+  assert.equal(wilsonInterval(6, 5), null);
 });

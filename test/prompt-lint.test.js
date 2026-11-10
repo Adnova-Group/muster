@@ -404,3 +404,40 @@ test("CTX-RULE-001 flags imperative-rule stacking and passes judgment-led prose"
   const ok = lintPrompt(judgment, { genre: "system", file: "plugin/skills/x/SKILL.md" });
   assert.ok(!ok.findings.some(f => f.id === "CTX-RULE-001"), "judgment-led prose passes");
 });
+
+// lintlang H2 (v0.8.3): unbounded retry/loop instructions and explicit numeric budgets.
+const loopIds = (text, ctx = {}) => lintPrompt(text, ctx).findings.map(f => f.id);
+
+test("LINT-LOOP-004 flags a failure-driven retry with no budget", () => {
+  for (const p of [
+    "You are a deploy bot. Run the deploy script and keep trying until it succeeds.",
+    "You are a fixer. If the build fails, retry until it passes.",
+    "You are an agent. Don't stop until every test is green.",
+    "You are a crawler. Continue indefinitely, fetching new pages.",
+    "You are a solver. Try again as many times as needed.",
+  ]) assert.ok(loopIds(p).includes("LINT-LOOP-004"), p);
+});
+
+test("LINT-LOOP-004 passes once a numeric budget caps the loop", () => {
+  for (const p of [
+    "You are a fixer. If the build fails, retry until it passes, at most 3 attempts, then report.",
+    "You are a deploy bot. Keep trying until it succeeds; stop after five tries.",
+    "You are an agent. Retry until green with a retry limit you log in STATE.",
+    "You are a crawler. Continue indefinitely but use max_iterations from the config.",
+  ]) assert.ok(!loopIds(p).includes("LINT-LOOP-004"), p);
+});
+
+test("LINT-LOOP-004 ignores condition-bounded loops, prohibitions and code samples", () => {
+  for (const p of [
+    "You are a coordinator. Repeat the reconcile, dispatch, wait loop until every member has settled.",
+    "You are a fixer. Never retry until the user has approved the change.",
+    "You are a helper. Do not continue indefinitely; hand back after the first answer.",
+    "You are a reviewer. The snippet below is broken:\n\n```js\nwhile (true) retry(); // keep trying until it works\n```\n\nExplain the bug.",
+  ]) assert.ok(!loopIds(p).includes("LINT-LOOP-004"), p);
+});
+
+test("LINT-STOP-002 accepts an explicit numeric budget as the stop condition", () => {
+  const ctx = { isAgent: true, hasTools: true };
+  assert.ok(!loopIds("You are an autonomous agent. Use the search tool, at most 5 tool calls.", ctx).includes("LINT-STOP-002"));
+  assert.ok(loopIds("You are an autonomous agent. Use the search tool; there is no limit.", ctx).includes("LINT-STOP-002"));
+});

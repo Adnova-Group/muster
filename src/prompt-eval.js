@@ -129,13 +129,55 @@ async function gradeOne({ testCase, output, callModel, rubric }) {
 // / runEval) already reject empty datasets before reaching this point.
 export function summarize(results, passThreshold) {
   const passing = results.filter(r => r.passing).length;
-  return {
+  const report = {
     results,
     total: results.length,
     accuracy: results.length > 0 ? passing / results.length : 0,
     averageScore: results.length > 0 ? results.reduce((s, r) => s + r.score, 0) / results.length : 0,
     passThreshold,
   };
+  const stability = repeatStability(results);
+  if (stability) report.stability = stability;
+  return report;
+}
+
+// 95% Wilson score interval for a pass proportion (z = 1.96). Better behaved than the
+// normal approximation at the small run counts a prompt eval repeats (3-10), and never
+// leaves [0, 1].
+export function wilsonInterval(passed, runs, z = 1.959963984540054) {
+  if (!(runs > 0) || passed < 0 || passed > runs) return null;
+  const p = passed / runs;
+  const z2 = z * z;
+  const denom = 1 + z2 / runs;
+  const centre = (p + z2 / (2 * runs)) / denom;
+  const margin = (z / denom) * Math.sqrt((p * (1 - p)) / runs + z2 / (4 * runs * runs));
+  return { lower: Math.max(0, centre - margin), upper: Math.min(1, centre + margin) };
+}
+
+// Repeat stability (the idea promptfoo 0.125 added to its eval summary): when the same
+// case is run several times, a single accuracy figure hides a prompt that passes only
+// some of the time. Results that share a `case` key are repeated runs of one case; a case
+// whose runs disagree on pass/fail is `unstable`. Returns null when nothing was repeated,
+// so a suite without repeats reports exactly what it did before.
+export function repeatStability(results) {
+  const groups = new Map();
+  for (const r of results) {
+    const key = r.case ?? r.testCase?.case;
+    if (key === undefined || key === null) continue;
+    const id = String(key);
+    if (!groups.has(id)) groups.set(id, { case: id, runs: 0, passed: 0 });
+    const g = groups.get(id);
+    g.runs += 1;
+    if (r.passing) g.passed += 1;
+  }
+  const repeated = [...groups.values()].filter(g => g.runs >= 2).map(g => ({
+    ...g,
+    passRate: g.passed / g.runs,
+    interval: wilsonInterval(g.passed, g.runs),
+    unstable: g.passed > 0 && g.passed < g.runs,
+  }));
+  if (repeated.length === 0) return null;
+  return { totalGroups: repeated.length, unstableGroups: repeated.filter(g => g.unstable).length, groups: repeated };
 }
 
 // Grade a suite whose model outputs (and optional grader responses) were already
@@ -146,12 +188,17 @@ export function gradeCollected({ dataset, passThreshold = 7 }) {
     throw new Error("gradeCollected: dataset must be a non-empty array");
   const results = dataset.map((entry) => {
     const { output, format, graderResponse } = entry;
+    // `case` groups repeated runs of one test case for the stability report; only a string
+    // or finite number is kept (never an object a hostile suite could smuggle through).
+    const kase = typeof entry.case === "string" || (typeof entry.case === "number" && Number.isFinite(entry.case)) ? entry.case : undefined;
     const code = codeGrade(output, format);
     const model = graderResponse != null ? parseGraderResponse(String(graderResponse)).score : null;
     const score = combineScores(code, model);
     // Pull only the known fields (not a blind ...entry spread) so a hostile suite file
     // cannot leak keys like __proto__ into the result objects.
-    return { output, format, graderResponse, codeScore: code, modelScore: model, score, passing: score >= passThreshold };
+    const row = { output, format, graderResponse, codeScore: code, modelScore: model, score, passing: score >= passThreshold };
+    if (kase !== undefined) row.case = kase;
+    return row;
   });
   return summarize(results, passThreshold);
 }

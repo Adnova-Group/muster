@@ -5,12 +5,12 @@ muster_builtin: true
 license: Apache-2.0
 upstream:
   - repo: hermes-labs-ai/lintlang
-    ref: dd17238643817f3d7fd3ece69e6fdbafe8676a98
+    ref: 645f57879ff5dbe3bbff37e9696834fb00371194
     path: src/lintlang/patterns.py
     license: Apache-2.0
     relation: mechanism-port
   - repo: promptfoo/promptfoo
-    ref: 3901d3949df32c087465bce39626c460d8590034
+    ref: 8569e72ed6cf7737082a6042be8d925e40f9739d
     path: null
     license: MIT
     relation: inspired-by
@@ -20,7 +20,7 @@ upstream:
     license: MIT
     relation: inspired-by
   - repo: gepa-ai/gepa
-    ref: 92dadfffbe98c8ecf508179a1cab09c1bb85cd32
+    ref: ce5b0d6e3d6af6c6dbec6de2c54536bbb961d309
     path: null
     license: MIT
     relation: inspired-by
@@ -91,7 +91,12 @@ agent-only rules (imperative tool framing, stop conditions) apply.
 
 **lintlang H1–H7 coverage:** all seven are now linted, but three need richer input than a bare prompt:
 - H1 (tool-description ambiguity) → `LINT-TOOL-001`; H2 (stop/termination) → `LINT-STOP-002`; H5
-  (implicit-instruction / negative framing) → `ANTH-POS-001`. These run on any prompt.
+  (implicit-instruction / negative framing) → `ANTH-POS-001`. These run on any prompt. An explicit
+  numeric budget ("at most 5 tool calls", `max_retries`) counts as a stop condition.
+- H2's unbounded-loop check → `LINT-LOOP-004`, on any prompt: a failure-driven retry ("keep trying until
+  it works", "retry until"), "don't stop until", or "continue indefinitely" with no number capping it.
+  A loop that names its exit ("until every member has settled"), a prohibition ("never retry forever")
+  and code samples are exempt. The fix is a number: "retry at most 3 times, then report".
 - H3 (schema↔intent) → `LINT-SCHEMA-003`, **only when you pass the real tool schemas**: `prompt lint
   --tool-schema <file>` (a bare `--tools` flag is not enough — there's nothing to check against).
 - H7 (multi-turn role confusion) → `prompt lint --chat <messages.json>` (`lintChat`): system-not-first,
@@ -118,7 +123,7 @@ output (a non-empty array of valid tool calls). These are **validity** checks; c
 (tool-sequence, tool-args-match, step-count, goal-success) need expected values + a recorded run — reach
 for promptfoo there.
 3. Write the collected results to a suite file: `{ "dataset": [{ "output", "format"?,
-   "graderResponse"? }], "passThreshold": 7 }` and let the CLI grade deterministically:
+   "graderResponse"?, "case"? }], "passThreshold": 7 }` and let the CLI grade deterministically:
 
 ```
 npx -y @adnova-group/muster prompt eval <suite.json>
@@ -126,6 +131,11 @@ npx -y @adnova-group/muster prompt eval <suite.json>
 
 It combines code grade (correctness/validity) with the model grade, reports per-case
 `score`/`passing`, `accuracy`, and `averageScore`. Grade in cost order: code ≫ model ≫ human.
+
+**Repeat flaky cases.** At temperature > 0 one run per case hides a prompt that passes only some of
+the time. Run each case 3–5 times and give every run of a case the same `case` key: the report then
+adds `stability` (per case: runs, passed, pass rate with a 95% Wilson interval, `unstable` when the
+runs disagree). Treat an unstable case as a failing one when you choose the winner.
 
 ## 3. Optimize (evaluator-optimizer loop) — when lint or eval is below bar
 
@@ -142,6 +152,10 @@ npx -y @adnova-group/muster prompt variations <file|-> [--agent] [--tools]
    prior round's concrete lint findings (rule id + fix) and eval failure reasons (which cases failed and
    why) into the next variation prompt, so each candidate targets a named defect rather than a generic
    rewrite. The optimize loop converges faster when the proposer can read why the last attempt lost.
+   Write that reflection once per round and draw several variations from it in parallel, not one
+   reflection per variation. Before scoring, drop any proposal that is empty, cut off mid-sentence,
+   or identical to the baseline or to another candidate: it spends an eval and cannot win on merit
+   (`prompt variations` already drops identical ones).
 
 2. Evaluate the baseline and each variation (re-lint and/or re-eval). Build a candidates
    file `{ "candidates": [{ "id", "prompt", "total", "passing" }] }` and select the winner.
@@ -151,8 +165,9 @@ npx -y @adnova-group/muster prompt variations <file|-> [--agent] [--tools]
 npx -y @adnova-group/muster prompt optimize <candidates.json>
 ```
 
-It returns `{ winner, winnerPrompt, regression, escalate, ranking }` via the tournament
-floor. **Regression guard:** if `regression` is true (the winning variation scores below the
+It returns `{ winner, winnerPrompt, regression, escalate, ranking }`, ranked by the same
+pass-floor gate as `muster pick <candidates.json>` (`pickWinner` in `src/tournament.js`: the
+highest-scoring candidate that passes wins). **Regression guard:** if `regression` is true (the winning variation scores below the
 pinned baseline), keep the baseline and report it. If `escalate` is true (nothing passes the
 gate), surface that — do not ship a prompt that fails the floor.
 

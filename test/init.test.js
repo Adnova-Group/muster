@@ -563,7 +563,10 @@ test("repository fingerprints reject a path-set addition during hashing", async 
     await sleep(20);
     await writeFile(join(dir, "inserted.txt"), "late\n");
   })();
-  await assert.rejects(() => learnProjectProfile(dir), /repository changed while fingerprinting/);
+  // The insertion races the 128 MiB hash, so it can land during the directory walk ("repository
+  // directory changed") or during hashing ("repository changed while fingerprinting"). Both are the
+  // fail-closed outcome this test pins.
+  await assert.rejects(() => learnProjectProfile(dir), /repository (directory changed|changed while fingerprinting)/);
   await writer;
 });
 

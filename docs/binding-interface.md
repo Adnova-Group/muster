@@ -258,7 +258,7 @@ stale:
 AskUserQuestion    files=7  mentions=17
 dispatch (Agent/Task tool)  files=2  mentions=8
 hook (PreToolUse/SessionStart/UserPromptSubmit)  files=2  mentions=3
-worktree   files=8  mentions=54
+worktree   files=8  mentions=55
 ```
 
 Counts refreshed for revival stage 2b (2026-11-09): plan.md, go.md and the orchestrator were

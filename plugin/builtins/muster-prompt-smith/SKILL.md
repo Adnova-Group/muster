@@ -206,3 +206,7 @@ needs restructuring. Load `mp-writing-for-agents` for that rewrite:
 - prune no-ops, duplicated meaning and restated environment facts.
 
 Re-lint the rewrite with step 1 and compare totals against the original before shipping it.
+When the document is a skill or another process document an agent must obey under pressure,
+also run `sp-writing-skills`: record the baseline failure with the document absent, write it,
+and pressure-test it with subagents until the loopholes close. Lint shows the document is
+well-formed; the pressure test shows it changes behaviour.

@@ -56,7 +56,9 @@ Read the source for exact regexes/thresholds; do not paraphrase them here where 
 
 A finding whose fix is a structural rewrite of an agent-facing document (pointer wording, what to
 disclose into a separate file, negation-heavy instructions, no-op sentences) names
-`mp-writing-for-agents` as the method in its fix column, not a paraphrase of it.
+`mp-writing-for-agents` as the method in its fix column, not a paraphrase of it. A finding on a
+skill or process document that agents skip under pressure (no baseline test, rules without a
+rationalization table) names `sp-writing-skills` and its subagent pressure test as the fix.
 
 ## Known false positives to rule out
 

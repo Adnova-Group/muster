@@ -126,6 +126,13 @@ sources:
     #     capability, owner-only session files, loopback-only + SSH tunnel for remote use instead
     #     of --host 0.0.0.0, the native-Windows Git Bash note); test/brainstorm-server-security.test.js
     #     pins it. Upstream's own changes to these files merge around it.
+    # 2026-11-10 complements: writing-skills added as sp-writing-skills at this pin with its seven
+    # references, graphviz-conventions.dot and render-graphs.js (byte-identical, still adapted items with base copies like every superpowers item). Same
+    # conventions: role and output-format lines plus an ANTH-POS-001 disable for the bulletproofing
+    # prohibitions it teaches, and the REFERENCE_DIRECTIVE header on each reference. Its two links
+    # to ../using-superpowers/references/{codex,gemini}-tools.md (a skill muster does not carry)
+    # point at the pinned upstream files instead. Catalog entry in catalog/builtins.muster.yaml;
+    # wired into muster-prompt-smith and the prompt-quality audit pattern; Claude-plugin only.
     # Accepted as upstream (not adapted): `superpowers:<skill>` cross-references
     # (writing-plans, test-driven-development, verification-before-completion) name the
     # upstream plugin's skills, matching the Codex lane's "prefer the enabled superpowers
@@ -157,6 +164,16 @@ sources:
       - { from: skills/systematic-debugging/find-polluter.sh, to: plugin/builtins/sp-debug/find-polluter.sh, mode: adapted, baseBlob: 985f5d08ccf8a3f2d40739cfcaf4413bb24bf1cb }
       - { id: sp-verify, kind: builtin, from: skills/verification-before-completion/SKILL.md, to: plugin/builtins/sp-verify/SKILL.md, mode: adapted, baseBlob: 7d45333cc4a49c57a80df6c1fe2fa777a207afbc, roles: [test-author] }
       - { id: sp-parallel, kind: builtin, from: skills/dispatching-parallel-agents/SKILL.md, to: plugin/builtins/sp-parallel/SKILL.md, mode: adapted, relation: adapted, baseBlob: 3fa091b348bbe0a18eaa0e17e9092c97f7005cbe, roles: [plan] }
+      - { id: sp-writing-skills, kind: builtin, from: skills/writing-skills/SKILL.md, to: plugin/builtins/sp-writing-skills/SKILL.md, mode: adapted, relation: adapted, baseBlob: 09d76b79dd4080fe4dcc9bfb3c54d05dbff8a563 }
+      - { from: skills/writing-skills/references/CLAUDE_MD_TESTING.md, to: plugin/builtins/sp-writing-skills/references/CLAUDE_MD_TESTING.md, mode: adapted, baseBlob: 47881fc85bd6c01b32b84d52ed9a0c73c8d6a089 }
+      - { from: skills/writing-skills/references/anthropic-best-practices.md, to: plugin/builtins/sp-writing-skills/references/anthropic-best-practices.md, mode: adapted, baseBlob: 15ea9eae223d9081b602618849791c07a7758f3d }
+      - { from: skills/writing-skills/references/bulletproofing.md, to: plugin/builtins/sp-writing-skills/references/bulletproofing.md, mode: adapted, baseBlob: 38e26fb39d6e7f21ad82f82d98800c1317ff741e }
+      - { from: skills/writing-skills/references/discovery.md, to: plugin/builtins/sp-writing-skills/references/discovery.md, mode: adapted, baseBlob: fc3009d178f1de3f85de3b5625fa131c7f0bf616 }
+      - { from: skills/writing-skills/references/flowcharts.md, to: plugin/builtins/sp-writing-skills/references/flowcharts.md, mode: adapted, baseBlob: 63f9bfae675585652e7c0052392c170e2f00c0a1 }
+      - { from: skills/writing-skills/references/graphviz-conventions.dot, to: plugin/builtins/sp-writing-skills/references/graphviz-conventions.dot, mode: adapted, baseBlob: 3509e2f028cacaa8118cbc8c80025efb089ec28e }
+      - { from: skills/writing-skills/references/persuasion-principles.md, to: plugin/builtins/sp-writing-skills/references/persuasion-principles.md, mode: adapted, baseBlob: 9756416a59600b70ecca4044e0919ee7d4a37b21 }
+      - { from: skills/writing-skills/references/testing-skills-with-subagents.md, to: plugin/builtins/sp-writing-skills/references/testing-skills-with-subagents.md, mode: adapted, baseBlob: e5bf682cb4099b220d3a2fa65d170f3b9e62af21 }
+      - { from: skills/writing-skills/render-graphs.js, to: plugin/builtins/sp-writing-skills/render-graphs.js, mode: adapted, baseBlob: 59e74b54e8538ff0a358d05c770479b3eb8484aa }
   - id: wshobson
     kind: github
     repo: wshobson/agents

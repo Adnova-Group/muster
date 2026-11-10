@@ -19,6 +19,7 @@ const builtinsRoot = join(pluginRoot, "builtins");
 // Names that are not files of the builtin (the skill tells the user to create them).
 const NOT_A_FILE = {
   "wsh-architecture-decision-records": ["template.md", "NNNN-title-with-dashes.md"], // ADR naming in the user's repo
+  "sp-writing-skills": ["scripts/tool.sh", "scripts/tool.js"], // example script names in the skill the user writes
   // Former upstream file names, named only to say their content now lives inline in this file.
   "impeccable-adapt": ["responsive-design.md"],
   "impeccable-critique": ["cognitive-load.md", "heuristics-scoring.md", "personas.md"]

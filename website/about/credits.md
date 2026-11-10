@@ -36,7 +36,7 @@ Every non-vendored source, generated from the manifest. Each row lists the items
 | Source | License | Basis for | Relation |
 | --- | --- | --- | --- |
 | [pbakaus/impeccable](https://github.com/pbakaus/impeccable) @ `035c8f319edd` | Apache-2.0 | 26 vendored builtins and agents | inspired-by, adapted |
-| [obra/superpowers](https://github.com/obra/superpowers) @ `22f0b463e7a5` | MIT | 21 vendored builtins and agents | adapted, vendored |
+| [obra/superpowers](https://github.com/obra/superpowers) @ `22f0b463e7a5` | MIT | 31 vendored builtins and agents | adapted, vendored |
 | [wshobson/agents](https://github.com/wshobson/agents) @ `9c61ab243def` | MIT | 98 vendored builtins and agents | adapted, vendored |
 | [anthropics/skills](https://github.com/anthropics/skills) @ `2c5958ecac7c` | Apache-2.0 | 4 vendored builtins and agents | adapted, vendored |
 | [Leonxlnx/taste-skill-classics](https://github.com/Leonxlnx/taste-skill-classics) @ `5e08c9383dc4` | MIT | 4 vendored builtins and agents | vendored |

@@ -429,7 +429,8 @@ const superpowers = manifest.sources.find(s => s.id === "superpowers");
 const SP_SKILLS = {
   "sp-brainstorm": "brainstorming", "sp-tdd": "test-driven-development", "sp-review": "requesting-code-review",
   "sp-review-recv": "receiving-code-review", "sp-debug": "systematic-debugging",
-  "sp-verify": "verification-before-completion", "sp-parallel": "dispatching-parallel-agents"
+  "sp-verify": "verification-before-completion", "sp-parallel": "dispatching-parallel-agents",
+  "sp-writing-skills": "writing-skills"
 };
 
 test("superpowers is merge-tracked at v7.0.2: one builtin per skill plus its supporting files, all with base copies", async () => {

@@ -520,3 +520,10 @@
   keywords: [agentsmd, claudemd, skill, pointer, disclosure, pruning]
   description: "Write documents agents consume (skills, AGENTS.md, CLAUDE.md): context pointers, information hierarchy, completion criteria, leading words and pruning."
   provenance: { license: MIT, upstream: [mattpocock/skills] }
+- id: sp-writing-skills
+  kind: builtin
+  roles: [prompt-quality]
+  rank: 44
+  keywords: [skills, skillmd, pressure, baseline, bulletproofing, rationalization]
+  description: "Use when creating new skills, editing existing skills, or verifying skills work before deployment"
+  provenance: { license: MIT, upstream: [obra/superpowers] }

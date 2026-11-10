@@ -256,10 +256,10 @@ both numbers on every test run from the live prose tree, so this table cannot si
 stale:
 
 ```
-AskUserQuestion    files=9  mentions=21
+AskUserQuestion    files=10  mentions=22
 dispatch (Agent/Task tool)  files=2  mentions=8
 hook (PreToolUse/SessionStart/UserPromptSubmit)  files=2  mentions=3
-worktree   files=10 mentions=66
+worktree   files=10 mentions=65
 ```
 
 The worktree row was refreshed on 2026-11-10 for the dev-team seats: `muster-test-writer` and
@@ -275,6 +275,8 @@ clarifying questions before the outline).
 
 Refreshed for revival stage 3 (2026-11-10): plan.md and go.md gained the content-route and
 skill-edit questions, and the build briefs and orchestrator describe the worktree base.
+Refreshed for PM stage B (2026-11-10): the orchestrator's spec-run rules add the clarification
+round's AskUserQuestion, and the verifier's anti-pattern scope line was shortened.
 
 Every one of those mentions is accounted for above: AskUserQuestion under Ask; Agent/Task tool
 and `subagent_type` under Dispatch; hook/PreToolUse/SessionStart/UserPromptSubmit under

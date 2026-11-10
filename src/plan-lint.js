@@ -29,6 +29,10 @@ import path from "node:path";
 import { parse as parseYaml } from "yaml";
 import { specialistCatalog } from "./specialists.js";
 import { matchSkills } from "./match.js";
+// spec_traceability (docs/plan-format.md "Planning from a spec"). spec-plan imports spec-lint,
+// which imports this module: the cycle is safe because no module in it reads another's
+// bindings while loading.
+import { lintSpecTraceability } from "./spec-plan.js";
 
 export const SEVERITY = Object.freeze({ BLOCKER: "blocker", WARNING: "warning", INFO: "info" });
 
@@ -42,6 +46,7 @@ export const DIMENSIONS = Object.freeze({
   TRACER: "tracer_first",
   REVERSIBILITY: "reversibility",
   THREAT_MODEL: "threat_model",
+  SPEC_TRACEABILITY: "spec_traceability",
 });
 
 export const REQUIRED_FRONTMATTER = Object.freeze(["run", "type", "autonomous", "must_haves"]);
@@ -202,6 +207,7 @@ export function parsePlan(rawText) {
       skills: splitList(tagAttribute(openTag, "skills")),
       skillsDeclared: /(?:^|\s)skills\s*=\s*["']/i.test(openTag),
       tdd: tagAttribute(openTag, "tdd"),
+      covers: splitList(tagAttribute(openTag, "covers")),
       name: collapseWhitespace(elementBody(block, "name")),
       hasName: /<name[\s>]/i.test(block),
       files: splitFileList(elementBody(block, "files")),
@@ -222,6 +228,8 @@ export function parsePlan(rawText) {
         .filter(Boolean),
       reversibility,
       verifyBody: elementBody(block, "verify"),
+      // `<automated proves="REF-01.2 INV-01">`: the spec IDs a verify command proves.
+      proves: [...block.matchAll(/<automated(\s[^>]{0,200})?>/gi)].flatMap(m => splitList(tagAttribute(m[1] ?? "", "proves"))),
     };
   });
 
@@ -1038,6 +1046,12 @@ export function lintPlan(rawText, options = {}) {
   for (const id of extractThreatRegisterIds(plan.text)) seenThreats.set(id, (seenThreats.get(id) ?? 0) + 1);
   for (const [id, count] of seenThreats) {
     if (count > 1) add(DIMENSIONS.THREAT_MODEL, SEVERITY.BLOCKER, "Threat IDs are unique in the register", `threat ID ${id} names ${count} register rows`);
+  }
+
+  // spec_traceability: checked only when the plan names its spec (`spec:` in frontmatter), so a
+  // spec-less plan lints exactly as before.
+  if (frontmatter && Object.hasOwn(frontmatter, "spec")) {
+    for (const i of lintSpecTraceability(plan, { projectRoot })) issues.push(i);
   }
 
   return { verdict: issues.length === 0 ? "PASS" : "ISSUES", issues };

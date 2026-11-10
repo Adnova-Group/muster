@@ -21,6 +21,7 @@ import { writeContainedFile } from "./fs-safe.js";
 import { assertRunId, ensureRunDir, slugRunId } from "./run-dir.js";
 import { readPins } from "./skill-pins.js";
 import { suggestFromCachedRegistry, userCacheDir } from "./skill-registry.js";
+import { describeSpec, detectSpecRef } from "./spec-plan.js";
 
 // A builtin candidate at or above this score is a strong match (plan-lint's HIGH_SKILL_SCORE);
 // below it, preflight may suggest registry skills from the cached catalog.
@@ -160,7 +161,17 @@ export async function runPreflight({ outcome, cwd, home, catalogDir, runId, mode
   const registrySuggestions = skillCandidates.some((m) => m.score >= STRONG_SKILL_SCORE)
     ? []
     : await suggestFromCachedRegistry(outcome, { cacheDir: userCacheDir(env, home) });
-  const routing = routeOutcome(outcome, await loadPipelines(PIPELINES_DIR), project);
+  // A SPEC.md named in the outcome (or a backlog item's `{spec: path#REF-02}`) replaces the
+  // interview: spec-lint runs here, a ready spec plans straight away, and a spec that is not
+  // ready gets one question round on its blocking open questions (`spec.openQuestions`).
+  // Building a spec is code work, never a content pipeline.
+  const specRef = detectSpecRef(outcome);
+  const spec = specRef ? describeSpec({ cwd, ref: specRef }) : null;
+  const routing = spec
+    ? { route: "code", domain: "software", pipeline: null }
+    : routeOutcome(outcome, await loadPipelines(PIPELINES_DIR), project);
+  // A spec is one change: its `.md` path must not read as a backlog file ref (scope rule 1).
+  if (spec && scope.scope !== "item") Object.assign(scope, { scope: "item", signals: [...(scope.signals || []), `the outcome names a spec (${spec.path}), one change`] });
   const memory = rankMemory(await readMemory(join(cwd, ".muster", "memory"), ""), outcome);
   const baseRef = await worktreeBaseRef(cwd, home);
   const warnings = preflightWarnings({ env, baseRef, hasRemote: !!project.vcs?.hasRemote });
@@ -170,7 +181,7 @@ export async function runPreflight({ outcome, cwd, home, catalogDir, runId, mode
   const detailPath = join(dir, "preflight.json");
   const detail = {
     runId: id, outcome, createdAt: now.toISOString(), scope, assess, fastPath, project, models,
-    candidates, skills, skillCandidates, pins, registrySuggestions, ...routing, worktreeBaseRef: baseRef, warnings, matches, memory, detected,
+    candidates, skills, skillCandidates, pins, registrySuggestions, ...routing, ...(spec ? { spec } : {}), worktreeBaseRef: baseRef, warnings, matches, memory, detected,
     roles: capabilities.roles,
     installedSkills: capabilities.skills.map((s) => s.id),
   };
@@ -179,14 +190,16 @@ export async function runPreflight({ outcome, cwd, home, catalogDir, runId, mode
   return {
     runId: id,
     scope: scope.scope,
-    clear: assess.clear,
-    unclear: assess.clear ? [] : assess.signals,
+    // With a spec, readiness decides: ready skips the interview, not ready asks spec.openQuestions.
+    clear: spec ? spec.ready : assess.clear,
+    unclear: spec || assess.clear ? [] : assess.signals,
     fastPath: fastPath.eligible,
     project: {
       languages: project.languages, frameworks: project.frameworks, testRunner: project.testRunner,
       branch: project.vcs?.branch ?? null, dirty: project.vcs?.dirty ?? null,
     },
     ...routing,
+    ...(spec ? { spec } : {}),
     models,
     candidates,
     skills,

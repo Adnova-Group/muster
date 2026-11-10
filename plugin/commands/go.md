@@ -5,10 +5,8 @@ argument-hint: "<outcome | backlog ref>"
 upstream: []
 ---
 
-<!-- Design: native core (docs/strategy/stage-2-contracts.md). Main-session turns before the
-first executor: preflight 1, branch 1, muster:plan 1, build-args+commit 1, muster:build 1 = 5
-(+1 when the interview runs), versus ~14+2N in the pre-revival prose flow. Fan-out, review
-loops and verification run inside the Workflow scripts; the main thread only gates. -->
+<!-- Design: docs/strategy/stage-2-contracts.md. Turns before the first executor: preflight,
+branch, muster:plan, build-args+commit, muster:build = 5 (+1 interview); the main thread gates. -->
 
 You are muster's hands-off runner. Drive `<outcome>` to a verified, merged-or-PR'd branch and
 stop only for an unclear outcome, an escalation, or the merge decision.
@@ -35,15 +33,17 @@ Never re-plan an approved run.
    - `scope: "backlog"` -> the **Backlog** section below.
    - `route: "pipeline"` -> the **Content** section. `route: "ask"`: one AskUserQuestion
      (**Write the <pipeline>** / **Code change**); unattended, treat it as code.
+   - `spec` set (a SPEC.md in the outcome): the orchestrator's **Spec runs** replace the
+     interview (steps 2-3) and add `M spec-trace <runId>` after step 7.
 2. **Branch + context (1 call).** When `clear` is false and a human is present, first ask up to 4
    questions in ONE AskUserQuestion built from `unclear` (scope, success criteria, constraints),
    then record the answers as numbered decisions `D-01..` in `.muster/runs/<runId>/CONTEXT.md`.
    Unattended: write the gaps as assumptions instead. Then in one Bash call: refuse a dirty tree,
-   `git switch -c muster/<runId>`, write CONTEXT.md if any, write `<runId>` to `.muster/run-active`
+   `git switch -c muster/<runId>`, write CONTEXT.md if any (spec: `M spec-context`), write `<runId>` to `.muster/run-active`
    and `send sign submit publish purchase delete-remote` (one per line) to
    `.muster/forbidden-actions`. Both are gitignored; the action fence reads them.
-3. **Plan.** `Workflow({name:"muster:plan", args:{runId, outcome, contextPath, candidates, skills, pins, skillRoot, models}})`
-   (`contextPath` only when CONTEXT.md exists). On `verdict: PASS` print one line per task,
+3. **Plan.** `Workflow({name:"muster:plan", args:{runId, outcome, contextPath, specPath, candidates, skills, pins, skillRoot, models}})`
+   (`contextPath` only when CONTEXT.md exists; `specPath` for a spec). On `verdict: PASS` print one line per task,
    `<taskId> · <agent_hint or muster-executor> · <skills or ->`; continue. On `ISSUES` with
    `escalated` set (`cap`, `stall`, `conflict`) or `ERROR`: show the issues and stop for the user;
    an escalation, never fixed inline.
@@ -107,7 +107,7 @@ given file) and take the unticked items in file order, at most 5 per run unless 
 - Keep a long attended run alive with `/goal finish /muster:go --run <runId> to the merge
   decision`; `/muster:go --run <runId>` resumes from disk after any stop.
 - `claude -p` stops background workflows 10 minutes after its last turn unless
-  `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0` is set (else resume with `--run`); add
-  `--permission-prompts none` and the orchestrator's `Workflow(muster:*)` rules.
-- A Routine or cloud scheduled task running `/muster:go --run <runId>` (or one outcome) is the
-  unattended form: same flow, no questions, ends in a PR.
+  `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0`; add `--permission-prompts none` and the
+  orchestrator's `Workflow(muster:*)` rules.
+- A Routine or cloud task running `/muster:go --run <runId>` is the unattended form: no
+  questions, ends in a PR.

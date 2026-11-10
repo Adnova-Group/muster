@@ -548,6 +548,19 @@ function checkDelta(doc, fm, projectRoot, add, at) {
   }
 }
 
+/**
+ * Readiness, the gate `/muster:plan` and plan-lint's spec_traceability apply: the status is
+ * `ready` or later AND spec-lint reports no blocker (which already covers markers and open
+ * questions that block build). Returns { status, ready, blockers, result }. Never throws.
+ */
+export function specReadiness(rawText, options = {}) {
+  const result = lintSpec(rawText, options);
+  const fm = parseDocument(rawText).frontmatter;
+  const status = fm && typeof fm.status === "string" ? fm.status.trim() : null;
+  const blockers = result.issues.filter(i => i.severity === SEVERITY.BLOCKER);
+  return { status, ready: status !== null && READY_STATUSES.includes(status) && blockers.length === 0, blockers, result };
+}
+
 // ─── INTENT ───────────────────────────────────────────────────────────────────
 
 /**

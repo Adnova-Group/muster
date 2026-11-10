@@ -15,10 +15,15 @@ async function readOrNull(path) {
 }
 
 // Task ids in PLAN.md. The planner's exact format is owned by muster-planner, so accept
-// the common shapes: `<task id="T1">`, `taskId: T1`, and frontmatter `- id: T1`.
+// the common shapes: `<task id="T1">`, `taskId: T1`, and frontmatter `- id: T1`. A plan with
+// `<task>` elements (docs/plan-format.md) names its tasks only there: its frontmatter `- id:`
+// lines are must_haves prohibitions (P-01...), which never get a SUMMARY. Counting them held a
+// fully merged live run at "planned" and pointed `next` back at the build (e2e 2026-11-10).
 export function planTaskIds(plan) {
   const ids = new Set();
-  for (const re of [/<task\b[^>]*\bid="([^"]+)"/g, /^\s*-?\s*taskId:\s*["']?([A-Za-z0-9._-]+)/gm, /^\s*-\s+id:\s*["']?([A-Za-z0-9._-]+)/gm]) {
+  for (const m of plan.matchAll(/<task\b[^>]*\bid="([^"]+)"/g)) ids.add(m[1]);
+  if (ids.size) return [...ids];
+  for (const re of [/^\s*-?\s*taskId:\s*["']?([A-Za-z0-9._-]+)/gm, /^\s*-\s+id:\s*["']?([A-Za-z0-9._-]+)/gm]) {
     for (const m of plan.matchAll(re)) ids.add(m[1]);
   }
   return [...ids];

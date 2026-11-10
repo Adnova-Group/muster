@@ -181,8 +181,15 @@ if (plan.status !== 'done') return plannerFailure(plan, 0, [])
 // gsd's checker reports ISSUES on any issue, info included; only blockers and warnings bind a
 // revision or count toward the stall rule.
 const binding = (issues) => issues.filter((i) => /^(blocker|warning)$/i.test(String(i.severity || '')))
+// A stall is the planner failing to resolve what it was asked to fix: the count did not fall
+// AND an open issue repeats a dimension from the last round. Same-size issues in new
+// dimensions mean the old ones were fixed and the checker found new ones: progress, bounded by
+// REVISION_CAP (live e2e 2026-11-10: a fixed test-count warning followed by an unrelated new
+// warning escalated a sound spec run after one revision).
+const dims = (issues) => new Set(issues.map((i) => String(i.dimension || '').toLowerCase()))
 let revisions = 0
 let lastCount = Infinity
+let lastDims = new Set()
 for (;;) {
   const check = await call(checkBrief(cfg, planPath), {
     label: `check r${revisions}`, phase: 'Check', schema: CHECK_RESULT, agentType: 'muster:muster-plan-checker', ...seat(cfg, 'checker'),
@@ -192,11 +199,12 @@ for (;;) {
   const open = binding(issues)
   if (check.verdict === 'PASS' || !open.length) return result('PASS', revisions, issues, null)
   if (revisions >= REVISION_CAP) return result('ISSUES', revisions, issues, 'cap')
-  if (open.length >= lastCount) {
+  if (open.length >= lastCount && [...dims(open)].some((d) => lastDims.has(d))) {
     log(`blocking issue count stalled at ${open.length}; escalating`)
     return result('ISSUES', revisions, issues, 'stall')
   }
   lastCount = open.length
+  lastDims = dims(open)
   revisions++
   plan = await call(planBrief(cfg, planPath, open, revisions), planOpts(revisions))
   if (plan.status !== 'done') return plannerFailure(plan, revisions, issues)

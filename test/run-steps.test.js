@@ -282,7 +282,9 @@ test("next --run derives the position from the run files", async () => {
 });
 
 test("next --run helpers parse the common PLAN.md and VERIFICATION.md shapes", () => {
-  assert.deepEqual(planTaskIds('---\ntasks:\n  - id: T1\n  - id: "T2"\n---\n<task id="T3">\ntaskId: T4\n'), ["T3", "T4", "T1", "T2"]);
+  assert.deepEqual(planTaskIds('---\ntasks:\n  - id: T1\n  - id: "T2"\n---\ntaskId: T4\n'), ["T4", "T1", "T2"]);
+  // <task> elements are authoritative: must_haves prohibitions (- id: P-01) are not tasks.
+  assert.deepEqual(planTaskIds('---\nmust_haves:\n  prohibitions:\n    - id: P-01\n      criterion: x\n---\n<task id="01" wave="1">\n<task id="02" wave="2">\n'), ["01", "02"]);
   assert.equal(verificationVerdict("## Result\nverdict: abstain"), "ABSTAIN");
   assert.equal(verificationVerdict("nothing here"), null);
 });

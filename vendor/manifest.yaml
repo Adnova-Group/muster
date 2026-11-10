@@ -1558,6 +1558,13 @@ sources:
     # Not vendored: the scripts' test_*.py, evals/ and evals-extra/ trees, fp-check's Stop and
     # SubagentStop prompt hooks (muster ships no always-on hooks), the plugin READMEs,
     # agents/openai.yaml and the Trail of Bits mark SVG (an icon only those yaml files use).
+    # Security hardening (2026-11-10, after a security review flagged two MEDIUM issues), noted
+    # in each file's license header: scripts/collect.py and scripts/render.py are adapted, not
+    # verbatim (base copies kept). collect.py _git_commit refuses a symlinked .git or .git/HEAD
+    # (O_NOFOLLOW reads), requires .git to resolve inside the project root and emits only a
+    # 40-64 character hex object id; render.py _safe_text entity-escapes & < >, backslash-escapes
+    # backslash, backtick, |, [, *, _ and ~, and caps third-party text at 200 characters.
+    # test/tob-supply-chain-hardening.test.js pins both (skipped without python3 >= 3.11).
     ref: e4dd0bb5b15535f7c5a0834187dffba6ac37e4ff
     tag: null
     license: CC-BY-SA-4.0
@@ -1570,9 +1577,9 @@ sources:
       - { id: tob-supply-chain-risk-auditor, kind: builtin, from: plugins/supply-chain-risk-auditor/skills/supply-chain-risk-auditor/SKILL.md, to: plugin/builtins/tob-supply-chain-risk-auditor/SKILL.md, mode: adapted, relation: adapted, baseBlob: 83affaaf2841182c5eb610338256f7f540b270aa }
       - { id: tob-fp-check, kind: builtin, from: plugins/fp-check/skills/fp-check/SKILL.md, to: plugin/builtins/tob-fp-check/SKILL.md, mode: adapted, relation: adapted, baseBlob: b7e7278cbae101f948f39890e5dcc088248d789d }
       - { id: tob-property-based-testing, kind: builtin, from: plugins/property-based-testing/skills/property-based-testing/SKILL.md, to: plugin/builtins/tob-property-based-testing/SKILL.md, mode: adapted, relation: adapted, baseBlob: 1cc39d8d8cba5955bf9c8d7c9a2aef348722a55e }
-      - { from: plugins/supply-chain-risk-auditor/skills/supply-chain-risk-auditor/scripts/collect.py, to: plugin/builtins/tob-supply-chain-risk-auditor/scripts/collect.py, mode: verbatim, baseBlob: d3238e3fdfb700c6e239f6f41d359be2bad4fca8 }
+      - { from: plugins/supply-chain-risk-auditor/skills/supply-chain-risk-auditor/scripts/collect.py, to: plugin/builtins/tob-supply-chain-risk-auditor/scripts/collect.py, mode: adapted, baseBlob: d3238e3fdfb700c6e239f6f41d359be2bad4fca8 }
       - { from: plugins/supply-chain-risk-auditor/skills/supply-chain-risk-auditor/scripts/model.py, to: plugin/builtins/tob-supply-chain-risk-auditor/scripts/model.py, mode: verbatim, baseBlob: 81407c29544a2a84ca19a286f01c25d76ab927e9 }
-      - { from: plugins/supply-chain-risk-auditor/skills/supply-chain-risk-auditor/scripts/render.py, to: plugin/builtins/tob-supply-chain-risk-auditor/scripts/render.py, mode: verbatim, baseBlob: b4aa9ca5f40ea76bc7b7f56cf6cb59a77d0487af }
+      - { from: plugins/supply-chain-risk-auditor/skills/supply-chain-risk-auditor/scripts/render.py, to: plugin/builtins/tob-supply-chain-risk-auditor/scripts/render.py, mode: adapted, baseBlob: b4aa9ca5f40ea76bc7b7f56cf6cb59a77d0487af }
       - { from: plugins/supply-chain-risk-auditor/skills/supply-chain-risk-auditor/scripts/sources.py, to: plugin/builtins/tob-supply-chain-risk-auditor/scripts/sources.py, mode: verbatim, baseBlob: 0d65664fa3bc18f1fad72e01704eed0d9e4b32c5 }
       - { from: plugins/supply-chain-risk-auditor/skills/supply-chain-risk-auditor/scripts/pyproject.toml, to: plugin/builtins/tob-supply-chain-risk-auditor/scripts/pyproject.toml, mode: verbatim, baseBlob: e435affcc1cc64171dcd449fa61fd6afb588785e }
       - { from: plugins/supply-chain-risk-auditor/skills/supply-chain-risk-auditor/scripts/uv.lock, to: plugin/builtins/tob-supply-chain-risk-auditor/scripts/uv.lock, mode: verbatim, baseBlob: 2fb44882a94a99013d613493e38bb372dfbbdd84 }

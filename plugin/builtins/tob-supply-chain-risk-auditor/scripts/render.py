@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# License: CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Adapted from trailofbits/skills @ e4dd0bb5b15535f7c5a0834187dffba6ac37e4ff plugins/supply-chain-risk-auditor/skills/supply-chain-risk-auditor/scripts/render.py, made by Trail of Bits. Changes made by Muster: security hardening of _safe_text (& < > become HTML entities; backslash, backtick, |, [, *, _ and ~ are backslash-escaped; values are cut to SAFE_TEXT_LIMIT = 200 characters with an ellipsis), finding details escaped one by one, the flagged-advisory verdict escaped inside its bold markers, and this header.
 # /// script
 # requires-python = ">=3.11"
 # ///
@@ -127,8 +128,24 @@ def _safe_text(value: object) -> str:
     process backslash escapes in a code span, so escaping there writes the backslashes
     out literally and corrupts the value a reader copies. Inside backticks *in a table
     cell*, use `_safe_code_cell` — pipes still end the cell there.
+
+    Muster hardening: the value is also cut to SAFE_TEXT_LIMIT characters (with an
+    ellipsis) so publisher free text cannot flood the report, `&`, `<` and `>` become HTML
+    entities so no raw HTML reaches a renderer, and backslash, backtick and the emphasis
+    characters are backslash-escaped so hostile text cannot open a code span or emphasis.
     """
-    return _collapse(value).replace("|", "\\|").replace("[", "\\[")
+    text = _collapse(value)
+    if len(text) > SAFE_TEXT_LIMIT:
+        text = text[: SAFE_TEXT_LIMIT - 1].rstrip() + "…"
+    text = text.replace("\\", "\\\\")
+    text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    for char in "|[`*_~":
+        text = text.replace(char, "\\" + char)
+    return text
+
+
+# Upper bound on one third-party value in report prose (Muster hardening).
+SAFE_TEXT_LIMIT = 200
 
 
 def _safe_code(value: object) -> str:
@@ -240,7 +257,7 @@ def _volume(dep: dict) -> str:
 def _finding_rows(hits: list[tuple[dict, list]]) -> list[str]:
     rows = ["| Dependency | Version | Weekly downloads | Findings |", "|---|---|---|---|"]
     for dep, flags in sorted(hits, key=lambda x: (-len(x[1]), x[0]["name"])):
-        detail = _safe_text("; ".join(s["detail"] for _, s in flags))
+        detail = "; ".join(_safe_text(s["detail"]) for _, s in flags)
         rows.append(
             f"| `{_safe_code_cell(dep['name'])}` | {_safe_text(_version_label(dep))} | {_volume(dep)} | {detail} |"
         )
@@ -467,13 +484,13 @@ def production_section(artifact: dict) -> list[str]:
         advisories = _signal(dep, "advisories")
         verdict = {
             State.CLEAN.value: "none known",
-            State.FLAGGED.value: f"**{advisories['detail']}**",
-        }.get(advisories["state"], f"not established — {advisories['detail']}")
+            State.FLAGGED.value: f"**{_safe_text(advisories['detail'])}**",
+        }.get(advisories["state"], f"not established — {_safe_text(advisories['detail'])}")
         others = [
             LABELS.get(c, c) for c in dep["flagged"] if c != "advisories" and c not in UPSTREAM_ONLY
         ]
         out.append(
-            f"| `{_safe_code_cell(dep['name'])}` | {_safe_text(_version_label(dep))} | {_safe_text(verdict)} "
+            f"| `{_safe_code_cell(dep['name'])}` | {_safe_text(_version_label(dep))} | {verdict} "
             f"| {_safe_text(', '.join(others) or '—')} |"
         )
     out.append("")

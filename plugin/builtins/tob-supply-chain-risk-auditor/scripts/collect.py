@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# License: CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Adapted from trailofbits/skills @ e4dd0bb5b15535f7c5a0834187dffba6ac37e4ff plugins/supply-chain-risk-auditor/skills/supply-chain-risk-auditor/scripts/collect.py, made by Trail of Bits. Changes made by Muster: security hardening of _git_commit (a symlinked .git or .git/HEAD is refused and HEAD and the ref are opened with O_NOFOLLOW, .git must resolve inside the project root, only a 40-64 character hex object id is emitted), the os import it needs, and this header.
 # /// script
 # requires-python = ">=3.11"
 # ///
@@ -23,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 import tempfile
@@ -1328,22 +1330,38 @@ def _git_commit(project: Path) -> str | None:
     """
     git_dir = project / ".git"
     head = git_dir / "HEAD"
-    if not head.exists():
-        return None
     # The target's .git contents are untrusted input: a crafted HEAD can point outside
     # .git (`ref: ../../etc/passwd`) or hold bytes that are not UTF-8. Both degrade to
     # None rather than leaking file content into the report or aborting the run —
     # UnicodeDecodeError is a ValueError, which the original OSError guard missed.
+    # Muster hardening: a symlinked .git or .git/HEAD is refused (and HEAD and the ref are
+    # opened with O_NOFOLLOW), .git must resolve inside the project root, and only a full
+    # hex object id is ever emitted, so no other file content can reach the report.
     try:
-        content = head.read_text(encoding="utf-8").strip()
+        if git_dir.is_symlink() or head.is_symlink() or not head.exists():
+            return None
+        root = project.resolve()
+        resolved_git = git_dir.resolve()
+        if not resolved_git.is_relative_to(root):
+            return None
+        content = _read_nofollow(head)
         if content.startswith("ref: "):
             ref = (git_dir / content.removeprefix("ref: ")).resolve()
-            if not ref.is_relative_to(git_dir.resolve()):
+            if not ref.is_relative_to(resolved_git) or not ref.is_relative_to(root):
                 return None
-            content = ref.read_text(encoding="utf-8").strip() if ref.exists() else ""
-        return content[:12] or None
+            content = _read_nofollow(ref) if ref.exists() else ""
+        if not re.fullmatch(r"[0-9a-f]{40,64}", content):
+            return None
+        return content[:12]
     except (OSError, ValueError):
         return None
+
+
+def _read_nofollow(path: Path) -> str:
+    """Read a small text file without following a symlink at its final component."""
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    with os.fdopen(fd, "rb") as handle:
+        return handle.read(4096).decode("utf-8").strip()
 
 
 def scan_metadata(project: Path) -> dict:

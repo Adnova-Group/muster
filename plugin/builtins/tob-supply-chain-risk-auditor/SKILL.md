@@ -10,7 +10,7 @@ upstream:
     license: CC-BY-SA-4.0
     relation: adapted
 ---
-<!-- License: CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). This file is adapted from trailofbits/skills @ e4dd0bb5b15535f7c5a0834187dffba6ac37e4ff plugins/supply-chain-risk-auditor/skills/supply-chain-risk-auditor/SKILL.md, made by Trail of Bits. Changes made by Muster: frontmatter (one-line description, muster_builtin, license, upstream provenance; allowed-tools dropped), paths ({baseDir} is spelled as this builtin's directory, ${CLAUDE_PLUGIN_ROOT}/builtins/tob-supply-chain-risk-auditor), this header, and a prompt-lint directive. The scripts/ files are unmodified upstream copies (their tests are not carried). -->
+<!-- License: CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). This file is adapted from trailofbits/skills @ e4dd0bb5b15535f7c5a0834187dffba6ac37e4ff plugins/supply-chain-risk-auditor/skills/supply-chain-risk-auditor/SKILL.md, made by Trail of Bits. Changes made by Muster: frontmatter (one-line description, muster_builtin, license, upstream provenance; allowed-tools dropped), paths ({baseDir} is spelled as this builtin's directory, ${CLAUDE_PLUGIN_ROOT}/builtins/tob-supply-chain-risk-auditor), this header, and a prompt-lint directive. The scripts/ files are upstream copies (their tests are not carried); collect.py and render.py carry Muster security hardening, stated in their own license headers. -->
 
 # Supply Chain Risk Auditor
 

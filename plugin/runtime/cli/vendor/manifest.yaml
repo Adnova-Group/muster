@@ -67,6 +67,7 @@ sources:
     relation: adapted
     items:
       - { id: design, kind: command, from: null, relation: inspired-by }
+      - { id: design, kind: codex-frozen-command, from: null, relation: inspired-by }
       - { id: audit-pattern-design-ux, kind: audit-pattern, from: null, relation: inspired-by }
       - { id: impeccable-core, kind: builtin, from: plugin/skills/impeccable/SKILL.md, to: plugin/builtins/impeccable-core/SKILL.md, mode: adapted, baseBlob: 083a800e6e58b4a3899b8ef1181550a70bf7c739 }
       - { id: impeccable-adapt, kind: builtin, from: plugin/skills/impeccable/reference/adapt.md, to: plugin/builtins/impeccable-adapt/SKILL.md, mode: adapted, baseBlob: cabc0fde53348f032a2fc6e26d526e90fa6c2ed2 }

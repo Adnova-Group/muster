@@ -10,7 +10,7 @@ upstream:
     license: CC-BY-SA-4.0
     relation: adapted
 ---
-<!-- License: CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). This file is adapted from trailofbits/skills @ e4dd0bb5b15535f7c5a0834187dffba6ac37e4ff plugins/supply-chain-risk-auditor/skills/supply-chain-risk-auditor/SKILL.md, made by Trail of Bits. Changes made by Muster: frontmatter (one-line description, muster_builtin, license, upstream provenance; allowed-tools dropped), paths ({baseDir} is spelled as this builtin's directory, ${CLAUDE_PLUGIN_ROOT}/builtins/tob-supply-chain-risk-auditor), this header, and a prompt-lint directive. The scripts/ files are upstream copies (their tests are not carried); collect.py and render.py carry Muster security hardening, stated in their own license headers. -->
+<!-- License: CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). This file is adapted from trailofbits/skills @ e4dd0bb5b15535f7c5a0834187dffba6ac37e4ff plugins/supply-chain-risk-auditor/skills/supply-chain-risk-auditor/SKILL.md, made by Trail of Bits. Changes made by Muster: frontmatter (one-line description, muster_builtin, license, upstream provenance; allowed-tools dropped), paths ({baseDir} is spelled as this builtin's directory, ${CLAUDE_PLUGIN_ROOT}/builtins/tob-supply-chain-risk-auditor), this header, a prompt-lint directive, and (security review, 2026-11-10) `--no-config --python "$(command -v python3)"` on both `uv run` commands so the audited checkout cannot choose the interpreter. The scripts/ files are upstream copies (their tests are not carried); collect.py and render.py carry Muster security hardening, stated in their own license headers. -->
 
 # Supply Chain Risk Auditor
 
@@ -52,9 +52,13 @@ The scripts enforce two rules worth knowing before you read their output:
    asked otherwise:
 
    ```sh
-   uv run ${CLAUDE_PLUGIN_ROOT}/builtins/tob-supply-chain-risk-auditor/scripts/collect.py <project-dir> --json <out-dir>/findings.json
-   uv run ${CLAUDE_PLUGIN_ROOT}/builtins/tob-supply-chain-risk-auditor/scripts/render.py <out-dir>/findings.json --out <out-dir>/report.md
+   uv run --no-config --python "$(command -v python3)" ${CLAUDE_PLUGIN_ROOT}/builtins/tob-supply-chain-risk-auditor/scripts/collect.py <project-dir> --json <out-dir>/findings.json
+   uv run --no-config --python "$(command -v python3)" ${CLAUDE_PLUGIN_ROOT}/builtins/tob-supply-chain-risk-auditor/scripts/render.py <out-dir>/findings.json --out <out-dir>/report.md
    ```
+
+   Keep `--no-config` and the absolute `--python`: without them uv takes its interpreter and
+   settings from the working directory, so an audited checkout's `.python-version`, `.venv`,
+   `uv.toml` or `[tool.uv]` could choose (or download) the Python that runs.
 
    Expect a few minutes for ~50 dependencies — several HTTP requests per dependency,
    more with many Go modules, and slower without authenticated `gh`. If `collect.py`

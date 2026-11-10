@@ -158,8 +158,10 @@ review is in [references/example_workflow.md](references/example_workflow.md).
 
 ### Python tooling
 ```bash
-uv run --isolated --with requests==2.34.2 python scripts/verify_citations.py review.md
+uv run --isolated --no-config --python "$(command -v python3)" --with requests==2.34.2 python scripts/verify_citations.py review.md
 ```
+
+`--no-config` and an absolute `--python` keep uv from taking its interpreter or settings from the working directory: a checkout's `.python-version`, `.venv` or `uv.toml` would otherwise choose the Python that runs.
 
 ### Required System Tools
 ```bash

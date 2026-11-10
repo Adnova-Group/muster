@@ -32,10 +32,40 @@ print(json.dumps({"cmd": g.build_command(Path("/r/review.md"), Path("/r/review.p
   assert.ok(i > 0, "an explicit input format is passed");
   assert.equal(out.cmd[i + 1], "markdown-raw_tex-raw_attribute");
   assert.equal(out.cmd[out.cmd.indexOf("--resource-path") + 1], "/r", "resources resolve from the source directory only");
-  assert.deepEqual(out.env, { PATH: "/bin", openin_any: "p", openout_any: "p" });
+  assert.deepEqual(out.env, { PATH: "/bin", openin_any: "p", openout_any: "p", shell_escape: "f" });
   const source = await readFile(join(scripts, "generate_pdf.py"), "utf8");
-  assert.match(source, /subprocess\.run\(cmd, [^)]*env=tex_env\(\)\)/, "pandoc (and the TeX engine it spawns) gets the paranoid environment");
+  assert.match(source, /subprocess\.run\(cmd, [^)]*env=tex_env\(\), cwd=workdir\)/, "pandoc (and the TeX engine it spawns) gets the paranoid environment and an empty working directory");
   assert.doesNotMatch(source, /Path\.cwd\(\)/, "the working directory is not a resource path");
+});
+
+// Paranoid TeX file access still resolves relative names, and Pandoc passes math through
+// verbatim, so $\input{notes/keys.txt}$ would read a file under the working directory. pandoc
+// therefore runs from a fresh empty directory, never the caller's (often the checkout).
+test("generate_pdf runs pandoc from a fresh empty directory, not the caller's or the source's", { skip: python ? false : "python3 not installed" }, async () => {
+  const dir = await mkdtemp(join(tmpdir(), "muster-kdense-cwd-"));
+  try {
+    await writeFile(join(dir, "review.md"), "# Review\n\nMath $\\input{notes/keys.txt}$.\n");
+    const out = JSON.parse((await py(`import json, os, subprocess, generate_pdf as g
+from pathlib import Path
+seen = {}
+def fake_run(cmd, **kw):
+    seen["cwd"] = kw.get("cwd"); seen["entries"] = os.listdir(kw["cwd"]) if kw.get("cwd") else None
+    seen["shell_escape"] = kw["env"].get("shell_escape")
+    Path(cmd[cmd.index("-o") + 1]).write_bytes(b"%PDF-1.5\\n")
+    return subprocess.CompletedProcess(cmd, 0, "", "")
+g.subprocess.run = fake_run
+src = Path(${JSON.stringify(join(dir, "review.md"))})
+ok = g.run_pandoc(g.build_command(src, src.with_suffix(".pdf")), src.with_suffix(".pdf"), None, None, False, False, None, src)
+seen["ok"] = ok; seen["exists_after"] = os.path.exists(seen["cwd"]); seen["caller"] = os.getcwd()
+print(json.dumps(seen))`, dir)).trim().split("\n").pop());
+    assert.equal(out.ok, true);
+    assert.ok(out.cwd, "pandoc must get an explicit working directory");
+    assert.notEqual(out.cwd, out.caller, "not the caller's working directory");
+    assert.notEqual(out.cwd, dir, "not the review's directory");
+    assert.deepEqual(out.entries, [], "the working directory is empty");
+    assert.equal(out.exists_after, false, "and removed afterwards");
+    assert.equal(out.shell_escape, "f");
+  } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
 test("search_databases writes fetched text as escaped, single-line data", { skip: python ? false : "python3 not installed" }, async () => {

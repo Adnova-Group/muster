@@ -13,7 +13,7 @@ upstream:
 
 # Sepia — de-AI writing
 
-<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-POS-001, ANTH-FMT-001: vendored upstream skill body (Nanako0129/sepia), kept as upstream wrote it so `muster vendor update` can 3-way merge it; muster loads it by path for book runs, which supply the role and output format. -->
+<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-POS-001, ANTH-FMT-001, GUARD-IDK-001: vendored upstream skill body (Nanako0129/sepia), kept as upstream wrote it so `muster vendor update` can 3-way merge it; muster loads it by path for book runs, which supply the role and output format. -->
 
 This skill combines measured findings with marked editorial heuristics. In fiction, StoryScope's narrative-only classifier reached 93.2% macro-F1, while its Core Only 30-feature XGBoost held-out classifier reached 84.8% macro-F1 (AUPRC .828); the manual rubric is neither classifier. In professional prose the same structure-level result has been replicated once on company blog posts, where 187 structural features alone reached 98.0 macro-F1 on held-out companies (`SLOPSHAPE-2026`, a preprint with LLM-scored features and a pre-ChatGPT human corpus). The professional path combines measured studies with editorial heuristics, and its prescriptions are Sepia inferences unless a source explicitly tested the intervention; that replication tested detection, not any fix. Route first, then operate. Sepia writes for expert human readers and is tuned to pass no automated AI-text detector.
 

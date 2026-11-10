@@ -113,6 +113,20 @@ export function isWholeFileVerbatim(item, items) {
     items.filter(i => i.mode !== "watch" && i.to === item.to).length === 1;
 }
 
+// Map of every whole-file verbatim item's muster path -> its recorded baseBlob, across all
+// sources of a parsed vendor/manifest.yaml. These files are byte-exact upstream copies (the
+// vendor-sync check fails when one drifts from baseBlob), so they cannot carry muster edits
+// such as a prompt-lint-disable directive; `muster prompt scan` exempts them while their
+// bytes still match.
+export function wholeFileVerbatimBlobs(manifest) {
+  const blobs = new Map();
+  for (const source of manifest?.sources || []) {
+    const items = (source.items || []).filter(isSyncItem);
+    for (const item of items) if (isWholeFileVerbatim(item, items)) blobs.set(item.to, item.baseBlob);
+  }
+  return blobs;
+}
+
 export function isMergeable(item, items) {
   if (item.mode !== "adapted") return false;
   const ext = p => (p.match(/\.[^./]+$/) || [""])[0];

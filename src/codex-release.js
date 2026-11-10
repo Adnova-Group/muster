@@ -4,7 +4,7 @@ import {
   readFileSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync
 } from "node:fs";
 import { join, parse, relative, resolve, sep } from "node:path";
-import { withCodexFileLock } from "./codex-lock.js";
+import { processAlive, withCodexFileLock } from "./codex-lock.js";
 import { CODEX_MODEL_POLICY, codexProfileForConfig } from "./codex.js";
 import { isContainedLexical, readNoFollowRegularSync, sha256 } from "./fs-safe.js";
 import { normalizeTier } from "./model.js";
@@ -615,6 +615,20 @@ function assertStagedPublishContract(stagedPlugin, packageVersion) {
   }
 }
 
+const RETIRED_PLUGIN_PREFIX = ".muster-retired-plugin-";
+const LEGACY_RETIRED_RE = /^\.muster-retired-(\d+)-/;
+
+// A retired-plugin directory left by a crashed publish. Current publishes name
+// theirs `.muster-retired-plugin-*`; older ones used `.muster-retired-<pid>-*`,
+// the same shape codex-lock.js gives its live per-attempt staging directories,
+// so a legacy-named directory counts only when its pid is gone (a live pid,
+// this process included, may be a lock contender mid-retire).
+export function isPublishOrphan(name) {
+  if (name.startsWith(RETIRED_PLUGIN_PREFIX)) return true;
+  const legacy = LEGACY_RETIRED_RE.exec(name);
+  return Boolean(legacy) && Number(legacy[1]) !== process.pid && !processAlive(Number(legacy[1]));
+}
+
 export async function publishCodexPlugin({ pluginsRoot, stagedPlugin, packageVersion, marketplaceTemplate, copyStagedPlugin = copyStagedPluginTree, writePointer = atomicWritePointer, acquireLock = withCodexFileLock }) {
   if (typeof packageVersion !== "string" || !packageVersion.trim()) throw new Error("Codex plugin package version is required");
   ordinary(stagedPlugin, "directory", "staged Codex plugin");
@@ -645,18 +659,24 @@ export async function publishCodexPlugin({ pluginsRoot, stagedPlugin, packageVer
   assertPluginsRootCanonical(pluginsRoot, canonicalPluginsRoot, "lock acquisition");
   return acquireLock(join(pluginsRoot, ".build.lock"), async () => {
     // A publish that crashed between retiring the previous plugin and either
-    // completing or restoring leaves an orphaned `.muster-retired-*`
-    // sibling behind. No other process can be mid-retire right now (this
-    // publish just took the lock), so any such leftover is stale crash
-    // debris from a prior run: sweep it before doing anything else. The sweep
-    // is a mutation (rmSync) through pluginsRoot, so re-assert canonical
+    // completing or restoring leaves an orphaned retired-plugin sibling
+    // behind. No other publish can be mid-retire right now (this publish just
+    // took the lock), so a `.muster-retired-plugin-*` leftover is stale crash
+    // debris: sweep it before doing anything else. Lock contenders are NOT
+    // excluded by the lock, though: codex-lock.js stages and quarantines every
+    // acquisition attempt in a private `.muster-retired-<pid>-<uuid>` directory
+    // in this same directory, so an older publish's identically named orphan
+    // is swept only when the pid in its name is no longer alive. Sweeping a
+    // live contender's directory once deleted its acquisition stage mid-retire
+    // and left the stage file behind (the full-suite codex-release hang). The
+    // sweep is a mutation (rmSync) through pluginsRoot, so re-assert canonical
     // resolution first -- a swapped ancestor must not redirect the delete.
     assertPluginsRootCanonical(pluginsRoot, canonicalPluginsRoot, "orphan sweep");
     for (const name of readdirSync(pluginsRoot)) {
-      if (name.startsWith(".muster-retired-")) rmSync(join(pluginsRoot, name), { recursive: true, force: true });
+      if (isPublishOrphan(name)) rmSync(join(pluginsRoot, name), { recursive: true, force: true });
     }
     const pluginPath = join(pluginsRoot, "plugin");
-    const retired = join(pluginsRoot, `.muster-retired-${process.pid}-${randomUUID()}`);
+    const retired = join(pluginsRoot, `${RETIRED_PLUGIN_PREFIX}${process.pid}-${randomUUID()}`);
     let hadPrevious = false;
     // Whether a previous plugin exists (ENOENT-swallowed) is decided
     // separately from the canonical re-check, so a swapped-ancestor rejection

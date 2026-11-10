@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Adapted by Muster from obra/superpowers-lab @ 51111f74f24058117752d9aa917cb19859f8ec86 (MIT): security hardening of the category split (see the comment above the loop; no tab/line splitting or arithmetic on model output, sanitized file names).
+# Adapted by Muster from obra/superpowers-lab @ 51111f74f24058117752d9aa917cb19859f8ec86 (MIT): security hardening of the category split (see the comment above the loop; no tab/line splitting or arithmetic on model output, sanitized file names, no write through a symlinked output file).
 # ABOUTME: Prepares category-specific function lists for duplicate detection
 # Takes categorized output and splits into per-category files for Opus analysis
 
@@ -65,6 +65,7 @@ jq -j '
     safe="${category//[^A-Za-z0-9._-]/-}"
     if [[ -z "$safe" || "$safe" == .* ]]; then safe="category-${safe}"; fi
     outfile="$OUTPUT_DIR/${safe}.json"
+    if [[ -L "$outfile" ]]; then echo "Error: refusing to write through a symlink: $outfile" >&2; exit 1; fi
     jq --arg cat "$category" '[.[] | select((.category | tostring) == $cat)]' "$CATEGORIZED" > "$outfile"
     count="$(jq 'length' "$outfile")"
     [[ "$count" =~ ^[0-9]+$ ]] || count="?"

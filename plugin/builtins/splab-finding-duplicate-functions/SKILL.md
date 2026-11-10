@@ -13,7 +13,7 @@ upstream:
 
 # Finding Duplicate-Intent Functions
 
-> **In muster.** The `scripts/` paths below are this builtin's directory, `${CLAUDE_PLUGIN_ROOT}/builtins/splab-finding-duplicate-functions/scripts/`; run them from the project root with that prefix, and write catalog.json, categories/, duplicates/ and the report outside the plugin. extract-functions.sh needs ripgrep (`rg`) and the scripts need `jq`; the haiku and opus phases map to muster's scout and prime tiers. prepare-category-analysis.sh is hardened by muster: it never splits or evaluates model-written category text, and sanitizes category names before they become file names.
+> **In muster.** The `scripts/` paths below are this builtin's directory, `${CLAUDE_PLUGIN_ROOT}/builtins/splab-finding-duplicate-functions/scripts/`; run them from the project root with that prefix, and write catalog.json, categories/, duplicates/ and the report into a fresh directory outside both the plugin and the checkout (`mktemp -d`), never at fixed names inside a repository you did not write, where a planted symlink could redirect them; the scripts refuse a symlinked output path. extract-functions.sh needs ripgrep (`rg`) and the scripts need `jq`; the haiku and opus phases map to muster's scout and prime tiers. prepare-category-analysis.sh is hardened by muster: it never splits or evaluates model-written category text, and sanitizes category names before they become file names; generate-report.sh escapes model-written text before it reaches the Markdown report.
 
 ## Overview
 

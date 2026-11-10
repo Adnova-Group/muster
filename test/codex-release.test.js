@@ -2,14 +2,16 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { cpSync, lstatSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import net from "node:net";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import {
   assertRegularTree,
   copyStagedPluginTree,
   generateCodexProfiles,
+  isPublishOrphan,
   profileToml,
   publishCodexPlugin,
   readRegularNoFollow,
@@ -904,11 +906,46 @@ test("copyStagedPluginTree hard-fails (not a silent skip) when the source tree c
 test("publishCodexPlugin sweeps an orphaned .muster-retired-* directory left by a prior crashed publish", async t => {
   const root = await tempRoot(t);
   await mkdir(join(root, ".agents", "plugins"), { recursive: true });
-  const orphan = join(root, ".agents", "plugins", ".muster-retired-99999-orphan");
+  const orphan = join(root, ".agents", "plugins", ".muster-retired-plugin-99999-orphan");
   await mkdir(orphan, { recursive: true });
   await writeFile(join(orphan, "leftover.txt"), "crash debris\n");
+  // An older publish named its retired plugin `.muster-retired-<pid>-<uuid>`: swept once that pid is gone.
+  const exited = spawnSync(process.execPath, ["-e", ""]);
+  const legacy = join(root, ".agents", "plugins", `.muster-retired-${exited.pid}-legacy`);
+  await mkdir(legacy, { recursive: true });
+  await writeFile(join(legacy, "leftover.txt"), "older crash debris\n");
   await publish(root, "sweep", { stagedPlugin: await stagedPlugin(root, "sweep") });
   assert.deepEqual((await readdir(join(root, ".agents", "plugins"))).filter(name => name.startsWith(".muster-retired-")), []);
+});
+
+// Full-suite hang root cause: codex-lock.js stages each acquisition attempt in a private
+// `.muster-retired-<pid>-<uuid>` directory next to the lock, i.e. inside pluginsRoot, and lock
+// contenders are not excluded by the lock. The holder's orphan sweep deleted a contender's
+// directory mid-retire, the contender's stage file survived, and its next attempt spun forever.
+test("publishCodexPlugin's orphan sweep never deletes a live lock contender's private staging directory", async t => {
+  const root = await tempRoot(t);
+  const pluginsDir = join(root, ".agents", "plugins");
+  await mkdir(pluginsDir, { recursive: true });
+  const contender = join(pluginsDir, `.muster-retired-${process.pid}-${randomUUID()}`);
+  await mkdir(contender, { mode: 0o700 });
+  await writeFile(join(contender, "lock"), "{}\n");
+  await publish(root, "sweep", { stagedPlugin: await stagedPlugin(root, "sweep") });
+  assert.equal(await readFile(join(contender, "lock"), "utf8"), "{}\n", "a live process's staging directory must survive the sweep");
+  assert.equal(isPublishOrphan(basename(contender)), false);
+  assert.equal(isPublishOrphan(".muster-retired-plugin-1-x"), true);
+});
+
+test("concurrent publishes stay bounded across repeated rounds (no leftover acquisition stage, no stall)", async t => {
+  const root = await tempRoot(t);
+  for (let round = 0; round < 15; round++) {
+    const pluginsRoot = join(root, `r${round}`, ".agents", "plugins");
+    await Promise.all(["a", "b", "c"].map(async marker => publishCodexPlugin({
+      pluginsRoot, packageVersion: "0.5.0", marketplaceTemplate,
+      stagedPlugin: await stagedPlugin(join(root, `r${round}`), `race-${marker}`),
+    })));
+    const leftovers = (await readdir(pluginsRoot)).filter(name => name.startsWith(".build.lock") || name.startsWith(".muster-retired-"));
+    assert.deepEqual(leftovers, [], `round ${round} left lock artifacts behind`);
+  }
 });
 
 test("resolveCodexPlugin absorbs a brief concurrent-publish ENOENT window with a bounded retry", async t => {

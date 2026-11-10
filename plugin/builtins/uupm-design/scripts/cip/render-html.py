@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# Adapted by Muster from nextlevelbuilder/ui-ux-pro-max-skill @ 4f2dbb67e64969a9a30ab00742f2d55d66ddec2b (MIT): every interpolated value is HTML-escaped, symlinked or non-regular images are skipped, the default output name is slugged and a symlinked output path is refused (security hardening).
 """
 CIP HTML Presentation Renderer
 
@@ -8,8 +9,10 @@ with detailed descriptions, concepts, and brand guidelines.
 """
 
 import argparse
+import html
 import json
 import os
+import re
 import sys
 import base64
 from pathlib import Path
@@ -129,8 +132,9 @@ def generate_html(brand_name, industry, images_dir, output_path=None, style=None
         print(f"Error: Directory not found: {images_dir}")
         return None
 
-    # Get all PNG images
-    images = sorted(images_dir.glob("*.png"))
+    # Get all PNG images. Muster hardening: the directory may come from an untrusted checkout;
+    # a symlinked "image" (a.png -> ~/.ssh/id_rsa) would be base64-embedded into the page.
+    images = sorted(p for p in images_dir.glob("*.png") if p.is_file() and not p.is_symlink())
     if not images:
         print(f"Error: No PNG images found in {images_dir}")
         return None
@@ -140,13 +144,18 @@ def generate_html(brand_name, industry, images_dir, output_path=None, style=None
     style_info = brief.get("style", {})
     industry_info = brief.get("industry", {})
 
+    # Muster hardening: brand, industry, CSV fields and file-derived titles are interpolated
+    # into HTML; escape all of them (a file named 'x" onerror="..." .png' ran script).
+    esc = lambda value: html.escape(str(value), quote=True)
+    page_brand = esc(brand_name)
+
     # Build HTML
     html_parts = [f'''<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{brand_name} - Corporate Identity Program</title>
+    <title>{page_brand} - Corporate Identity Program</title>
     <style>
         * {{
             margin: 0;
@@ -309,20 +318,20 @@ def generate_html(brand_name, industry, images_dir, output_path=None, style=None
 </head>
 <body>
     <section class="hero">
-        <h1>{brand_name}</h1>
+        <h1>{page_brand}</h1>
         <p class="subtitle">Corporate Identity Program</p>
         <div class="meta">
             <div class="meta-item">
                 <div class="meta-label">Industry</div>
-                <div class="meta-value">{industry_info.get("Industry", industry.title())}</div>
+                <div class="meta-value">{esc(industry_info.get("Industry", industry.title()))}</div>
             </div>
             <div class="meta-item">
                 <div class="meta-label">Style</div>
-                <div class="meta-value">{style_info.get("Style Name", "Corporate")}</div>
+                <div class="meta-value">{esc(style_info.get("Style Name", "Corporate"))}</div>
             </div>
             <div class="meta-item">
                 <div class="meta-label">Mood</div>
-                <div class="meta-value">{style_info.get("Mood", "Professional")}</div>
+                <div class="meta-value">{esc(style_info.get("Mood", "Professional"))}</div>
             </div>
             <div class="meta-item">
                 <div class="meta-label">Deliverables</div>
@@ -352,13 +361,13 @@ def generate_html(brand_name, industry, images_dir, output_path=None, style=None
         html_parts.append(f'''
         <div class="deliverable">
             <div class="deliverable-image">
-                <img src="{img_src}" alt="{info['title']}" loading="lazy">
+                <img src="{esc(img_src)}" alt="{esc(info['title'])}" loading="lazy">
             </div>
             <div class="deliverable-content">
-                <h3 class="deliverable-title">{info['title']}</h3>
-                <p class="deliverable-concept">{info['concept']}</p>
-                <p class="deliverable-purpose">{info['purpose']}</p>
-                <span class="deliverable-specs">{info['specs']}</span>
+                <h3 class="deliverable-title">{esc(info['title'])}</h3>
+                <p class="deliverable-concept">{esc(info['concept'])}</p>
+                <p class="deliverable-purpose">{esc(info['purpose'])}</p>
+                <span class="deliverable-specs">{esc(info['specs'])}</span>
             </div>
         </div>
 ''')
@@ -368,7 +377,7 @@ def generate_html(brand_name, industry, images_dir, output_path=None, style=None
     </section>
 
     <footer class="footer">
-        <p><strong>{brand_name}</strong> Corporate Identity Program</p>
+        <p><strong>{page_brand}</strong> Corporate Identity Program</p>
         <p>Generated on {datetime.now().strftime("%B %d, %Y")}</p>
         <p style="margin-top: 1rem; font-size: 0.8rem;">Powered by CIP Design Skill</p>
     </footer>
@@ -379,8 +388,12 @@ def generate_html(brand_name, industry, images_dir, output_path=None, style=None
     html_content = "".join(html_parts)
 
     # Save HTML
-    output_path = output_path or images_dir / f"{brand_name.lower().replace(' ', '-')}-cip-presentation.html"
+    slug = re.sub(r"[^a-z0-9_-]+", "-", brand_name.lower()).strip("-") or "brand"
+    output_path = output_path or images_dir / f"{slug}-cip-presentation.html"
     output_path = Path(output_path)
+    if output_path.is_symlink():
+        print(f"Error: refusing to write through a symlink: {output_path}")
+        return None
 
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(html_content)

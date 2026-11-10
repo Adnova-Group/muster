@@ -83,3 +83,46 @@ test("render._safe_text escapes HTML, pipes and backticks and truncates publishe
   const visible = py("import render\nprint(len(render._safe_text('y' * 1000)))");
   assert.equal(Number(visible), 200, "free text is bounded to SAFE_TEXT_LIMIT characters");
 });
+
+// Security review 2026-11-10: every manifest read followed symlinks, so a checkout shipping
+// `requirements-ci.txt -> ~/.netrc` put lines of that file into the report ("skipped an
+// unparseable requirement: ...") and sent name-shaped lines to PyPI/OSV as package names.
+test("collect refuses a symlinked manifest instead of reading a file outside the project", { skip }, () => {
+  const base = mkdtempSync(join(tmpdir(), "muster-tob-manifest-"));
+  try {
+    const outside = join(base, "outside");
+    mkdirSync(outside);
+    writeFileSync(join(outside, "netrc"), "machine api.example oauth_token: gho_SECRET123\nSECRETPKG\n");
+    const project = join(base, "project");
+    mkdirSync(project);
+    writeFileSync(join(project, "requirements.txt"), "requests==2.32.0\n");
+    symlinkSync(join(outside, "netrc"), join(project, "requirements-ci.txt"));
+    const run = spawnSync("python3", ["-I", "-B", "-c", `import sys; sys.path.insert(0, ${JSON.stringify(scripts)})
+from pathlib import Path
+import collect
+print(collect._pypi_specs(Path(sys.argv[1])))`, project], { encoding: "utf8", env: { PATH: process.env.PATH, PYTHONDONTWRITEBYTECODE: "1" } });
+    assert.notEqual(run.status, 0, "a symlinked manifest must stop the collection");
+    assert.match(run.stderr, /symlink/);
+    assert.doesNotMatch(run.stdout + run.stderr, /SECRET/, "no line of the outside file is read");
+
+    rmSync(join(project, "requirements-ci.txt"));
+    const ok = py("from pathlib import Path\nimport collect\nprint(collect._pypi_specs(Path(sys.argv[1]))[0])", [project]);
+    assert.match(ok, /requests/, "a regular manifest is still read");
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("collect's pip-audit cross-check never writes an unvalidated lockfile version into its requirements file", { skip }, () => {
+  const out = py(`import collect, sources
+from model import Dependency
+seen = {}
+def fake(path):
+    seen["text"] = path.read_text()
+    return []
+sources.pip_audit_vulnerable = fake
+deps = [Dependency("PyPI", "requests", "2.32.0", "lockfile"), Dependency("PyPI", "evil", "1.0\\n-r /etc/passwd", "lockfile")]
+collect._cross_check_pip_audit(deps, {})
+print(repr(seen.get("text")))`);
+  assert.equal(out, "'requests==2.32.0\\n'");
+});

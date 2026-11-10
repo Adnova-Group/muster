@@ -1345,12 +1345,19 @@ test("runCodexWave rejects executable project config and bounds members, duratio
   const aggregateTimed = await waveFixture(t);
   const firstSlow = member("first-slow", aggregateTimed.worktreeA);
   const secondSlow = member("second-slow", aggregateTimed.worktreeB);
-  firstSlow.prompt = JSON.stringify({ value: "first-slow", delayMs: 200 });
-  secondSlow.prompt = JSON.stringify({ value: "second-slow", delayMs: 200 });
+  // The aggregate deadline (workerTimeoutMs from the start of runCodexWave) also funds repository
+  // admission and the four Codex support probes, and each probe is killed at the remaining budget.
+  // A 300 ms deadline left those probes 43-140 ms under full-suite load, so a probe timeout
+  // ("Codex version probe exited 1: process exceeded 43ms timeout") surfaced instead of the wave
+  // deadline. The budget is now generous for admission and probes, while the two serial members
+  // still cannot both finish inside it (each fits on its own: 2 s < 3 s < 4 s), so the only way
+  // this wave can end is the aggregate deadline, whichever member it lands in.
+  firstSlow.prompt = JSON.stringify({ value: "first-slow", delayMs: 2_000 });
+  secondSlow.prompt = JSON.stringify({ value: "second-slow", delayMs: 2_000 });
   await assert.rejects(runCodexWave({
     members: [firstSlow, secondSlow], codexCommand: aggregateTimed.codex,
     repositoryRoot: aggregateTimed.repo, baseSha: aggregateTimed.baseSha,
-    workerTimeoutMs: 300, availableThreadLimit: 1,
+    workerTimeoutMs: 3_000, availableThreadLimit: 1,
   }), /wave exceeded .*deadline/i);
 
   const aggregateNoisy = await waveFixture(t);

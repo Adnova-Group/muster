@@ -37,7 +37,7 @@ export const isCodexFrozenOutBuiltin = name => isUxFamilyBuiltin(name) || isComp
 // inventory/build validation; model adapters only translate tiers to models.
 export const CODEX_COUNTS = Object.freeze({
   agents: 27,
-  // Revival stage 2b: the 10 audit-pattern skills moved to plugin/commands/audit/references/
+  // Revival stage 2b: the 10 audit-pattern skills moved out of plugin/skills/ (now plugin/references/audit/)
   // (read by path, not listed per session); router/review-gate/tournament feed Codex from
   // codex/frozen/skills/; coordination, domain-router, sp-plan, sp-subagents and the gsd-*
   // builtins were deleted (the muster-gsd-* Codex fallbacks stay in codex/fallback-skills).

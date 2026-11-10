@@ -131,7 +131,7 @@ test("design-system output is a DESIGN.md proposal, never a write over DESIGN.md
 });
 
 test("the design-ux audit pattern applies impeccable and uupm by reference, deduplicated, with the precedence", async () => {
-  const text = await readFile(join(root, "plugin/commands/audit/references/audit-pattern-design-ux.md"), "utf8");
+  const text = await readFile(join(root, "plugin/references/audit/audit-pattern-design-ux.md"), "utf8");
   assert.match(text, /impeccable's critique dimensions/);
   assert.match(text, /builtins\/uupm-ui-ux-pro-max\/SKILL\.md/);
   assert.match(text, /references\/pro-rules\.md/);

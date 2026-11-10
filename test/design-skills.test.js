@@ -31,7 +31,7 @@ import {
 
 const ROOT = new URL("..", import.meta.url).pathname;
 const COMMAND = readFileSync(join(ROOT, "plugin/commands/design.md"), "utf8");
-const REFERENCE_PATH = "plugin/commands/design/references/supporting-skills.md";
+const REFERENCE_PATH = "plugin/references/design/supporting-skills.md";
 const REFERENCE = readFileSync(join(ROOT, REFERENCE_PATH), "utf8");
 const DESIGN_SRC = readFileSync(join(ROOT, "src/design.js"), "utf8");
 const PRECEDENCE_LINE = `When sources disagree: ${DESIGN_PRECEDENCE.join(" > ")}.`;
@@ -130,7 +130,7 @@ test("the reference table matches DESIGN_SUPPORT row for row", () => {
 
 test("design.md states the precedence exactly once and points at the reference file", () => {
   assert.equal(COMMAND.split(PRECEDENCE_LINE).length - 1, 1);
-  assert.match(COMMAND, /commands\/design\/references\/supporting-skills\.md/);
+  assert.match(COMMAND, /references\/design\/supporting-skills\.md/);
   assert.ok(REFERENCE.includes(PRECEDENCE_LINE));
   assert.doesNotMatch(COMMAND + REFERENCE + DESIGN_SRC, /\buis-|ui-skills/);
 });

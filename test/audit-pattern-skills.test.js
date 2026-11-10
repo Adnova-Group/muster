@@ -5,9 +5,10 @@
 // (architecture, tech-debt, coverage, simplification, readability, security, UX/design,
 // prompt quality, dead-code/duplication, documentation) resolves to a real, on-disk hunt-list
 // pattern file, and buildAuditManifest's generated plan composes it onto the dimension's persona.
-// Revival stage 2b moved the files from plugin/skills/ to plugin/commands/audit/references/
-// (read by path, so they cost nothing per session) and the binding from a `skills` array to
-// the hunt-list paths named in each audit task's own text.
+// Revival stage 2b moved the files out of plugin/skills/ (read by path, so they cost nothing per
+// session) and the binding from a `skills` array to the hunt-list paths named in each audit
+// task's own text. They now live in plugin/references/audit/: under plugin/commands/ Claude Code
+// registered each one as a slash command.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile, readdir } from "node:fs/promises";
@@ -45,7 +46,7 @@ function frontmatter(text) {
 
 // ── (a) every pillar has a resolvable pattern skill: 0 persona-only ────────────────────────
 
-const REF_DIR = "plugin/commands/audit/references";
+const REF_DIR = "plugin/references/audit";
 
 test("every one of the 10 named pillars resolves to an on-disk hunt list with matching frontmatter name", async () => {
   for (const [pillar, skillId] of Object.entries(NAMED_PILLARS)) {

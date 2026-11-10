@@ -570,8 +570,10 @@ sources:
         roles: [author]
         as: agent
         description: "Customer support experience: ticketing, support content and CX."
-      # references/ split (upstream 13703c9): file items mapping each upstream reference onto the
-      # file shipped beside its builtin: upstream text plus a leading prompt-lint directive.
+      # references/: file items mapping each upstream reference a builtin points at onto the file
+      # shipped beside it (the four 13703c9 splits, then every other references/*.md a SKILL.md or
+      # a shipped reference links). Upstream text, plus a leading prompt-lint directive where the
+      # repo prompt scan would read the file as a standalone prompt.
       - { from: plugins/developer-essentials/skills/code-review-excellence/references/review-patterns.md, to: plugin/builtins/wsh-code-review-excellence/references/review-patterns.md, mode: adapted, baseBlob: 29fecc5581fd84045120c50e9be31780ea17a6b3 }
       - { from: plugins/developer-essentials/skills/code-review-excellence/references/review-techniques.md, to: plugin/builtins/wsh-code-review-excellence/references/review-techniques.md, mode: adapted, baseBlob: 67932abf9c28d092b640924676e4e67ea77a349a }
       - { from: plugins/developer-essentials/skills/debugging-strategies/references/tools-and-techniques.md, to: plugin/builtins/wsh-debugging-strategies/references/tools-and-techniques.md, mode: adapted, baseBlob: 602ca4b64b8a51868ab382e3b33ec02249484a29 }
@@ -581,6 +583,33 @@ sources:
       - { from: plugins/signed-audit-trails/skills/signed-audit-trails-recipe/references/ci-cd.md, to: plugin/builtins/wsh-signed-audit-trails-recipe/references/ci-cd.md, mode: adapted, baseBlob: 14120325b61d9d08e8f29d0d11fbdebe85af18b1 }
       - { from: plugins/signed-audit-trails/skills/signed-audit-trails-recipe/references/hook-wiring.md, to: plugin/builtins/wsh-signed-audit-trails-recipe/references/hook-wiring.md, mode: adapted, baseBlob: 2dc4534a8b9c811fcd9f886479c2f38e10e476ec }
       - { from: plugins/signed-audit-trails/skills/signed-audit-trails-recipe/references/receipt-format.md, to: plugin/builtins/wsh-signed-audit-trails-recipe/references/receipt-format.md, mode: adapted, baseBlob: ac8b02d938f1227f3f82a581e8c94f3088fc98ac }
+      - { from: plugins/backend-development/skills/api-design-principles/references/details.md, to: plugin/builtins/wsh-api-design-principles/references/details.md, mode: adapted, baseBlob: ba9a03432c900d1349ea87e846304e014c1e7533 }
+      - { from: plugins/backend-development/skills/architecture-patterns/references/advanced-patterns.md, to: plugin/builtins/wsh-architecture-patterns/references/advanced-patterns.md, mode: adapted, baseBlob: 158b062807afbc0bd1778655ba412f24121d7872 }
+      - { from: plugins/backend-development/skills/architecture-patterns/references/details.md, to: plugin/builtins/wsh-architecture-patterns/references/details.md, mode: adapted, baseBlob: 7b98690c602ac710938c4f99f6c5fc612b3911ad }
+      - { from: plugins/python-development/skills/async-python-patterns/references/details.md, to: plugin/builtins/wsh-async-python-patterns/references/details.md, mode: adapted, baseBlob: 18de19d2e2457a4d310a64c945fe881baf2a5a01 }
+      - { from: plugins/security-scanning/skills/attack-tree-construction/references/details.md, to: plugin/builtins/wsh-attack-tree-construction/references/details.md, mode: adapted, baseBlob: c1ae2a1693379767c479203aa953e670397381ec }
+      - { from: plugins/ui-design/skills/design-system-patterns/references/details.md, to: plugin/builtins/wsh-design-system-patterns/references/details.md, mode: adapted, baseBlob: eb3387bd25c3e18d20a89e1d8fca3f12aca413a2 }
+      - { from: plugins/developer-essentials/skills/e2e-testing-patterns/references/details.md, to: plugin/builtins/wsh-e2e-testing-patterns/references/details.md, mode: adapted, baseBlob: fb21ce335b76ebb307c3a2302df35403d282f6be }
+      - { from: plugins/systems-programming/skills/go-concurrency-patterns/references/details.md, to: plugin/builtins/wsh-go-concurrency-patterns/references/details.md, mode: adapted, baseBlob: 98a38dc1c402de88eeff7f5953e67bd9f84a9f87 }
+      - { from: plugins/javascript-typescript/skills/javascript-testing-patterns/references/advanced-testing-patterns.md, to: plugin/builtins/wsh-javascript-testing-patterns/references/advanced-testing-patterns.md, mode: adapted, baseBlob: b3df847319e08dab0177bfcf07d6459e22ca3ba0 }
+      - { from: plugins/backend-development/skills/microservices-patterns/references/details.md, to: plugin/builtins/wsh-microservices-patterns/references/details.md, mode: adapted, baseBlob: f799d27c0f16277c2423f7aaa74cc8feb9e5ca85 }
+      - { from: plugins/frontend-mobile-development/skills/nextjs-app-router-patterns/references/details.md, to: plugin/builtins/wsh-nextjs-app-router-patterns/references/details.md, mode: adapted, baseBlob: 4136d954d592092dbde400de13daabb1f04ef865 }
+      - { from: plugins/javascript-typescript/skills/nodejs-backend-patterns/references/advanced-patterns.md, to: plugin/builtins/wsh-nodejs-backend-patterns/references/advanced-patterns.md, mode: adapted, baseBlob: 28ecb9bc9ef9f93dea2971facdb2844f5a96e30a }
+      - { from: plugins/javascript-typescript/skills/nodejs-backend-patterns/references/details.md, to: plugin/builtins/wsh-nodejs-backend-patterns/references/details.md, mode: adapted, baseBlob: a7123f42348d649e46ae6ecbc6bff9e85b54b9fd }
+      - { from: plugins/documentation-generation/skills/openapi-spec-generation/references/code-first-and-tooling.md, to: plugin/builtins/wsh-openapi-spec-generation/references/code-first-and-tooling.md, mode: adapted, baseBlob: fc3bb67545b50e6b461492c439c5ab2d3bfae85d }
+      - { from: plugins/documentation-generation/skills/openapi-spec-generation/references/details.md, to: plugin/builtins/wsh-openapi-spec-generation/references/details.md, mode: adapted, baseBlob: 65270f3b008b92f7284ce82617cd0713b8b8a3a2 }
+      - { from: plugins/python-development/skills/python-design-patterns/references/details.md, to: plugin/builtins/wsh-python-design-patterns/references/details.md, mode: adapted, baseBlob: 707d9c42f09bbf2b1347562218a8a04de4a6f67d }
+      - { from: plugins/python-development/skills/python-testing-patterns/references/advanced-patterns.md, to: plugin/builtins/wsh-python-testing-patterns/references/advanced-patterns.md, mode: adapted, baseBlob: da186a91e60c44339a28ddb3b6ce478b7d23af64 }
+      - { from: plugins/python-development/skills/python-testing-patterns/references/details.md, to: plugin/builtins/wsh-python-testing-patterns/references/details.md, mode: adapted, baseBlob: bf296f1634742776817e8cfbb5800927b72855d2 }
+      - { from: plugins/framework-migration/skills/react-modernization/references/details.md, to: plugin/builtins/wsh-react-modernization/references/details.md, mode: adapted, baseBlob: 7ec464f6702dcba4d0f7ba9d1cf94b075ab7f852 }
+      - { from: plugins/frontend-mobile-development/skills/react-state-management/references/details.md, to: plugin/builtins/wsh-react-state-management/references/details.md, mode: adapted, baseBlob: 7871a0cbb6e2ebf17d81ef1325b0e3e22c9608cc }
+      - { from: plugins/ui-design/skills/responsive-design/references/details.md, to: plugin/builtins/wsh-responsive-design/references/details.md, mode: adapted, baseBlob: 6846aa955394c74a1e0816cdd7e8382575fb213d }
+      - { from: plugins/security-scanning/skills/stride-analysis-patterns/references/details.md, to: plugin/builtins/wsh-stride-analysis-patterns/references/details.md, mode: adapted, baseBlob: 14dad1d62f5a72efb83d68f71372090766c7cbf9 }
+      - { from: plugins/frontend-mobile-development/skills/tailwind-design-system/references/advanced-patterns.md, to: plugin/builtins/wsh-tailwind-design-system/references/advanced-patterns.md, mode: adapted, baseBlob: 6b42078427da489c6cc5fce0f7caa3c7a0553e0d }
+      - { from: plugins/frontend-mobile-development/skills/tailwind-design-system/references/details.md, to: plugin/builtins/wsh-tailwind-design-system/references/details.md, mode: adapted, baseBlob: a5dbeed732b46b8e2d1ae1dc6ac32b8ba20c076f }
+      - { from: plugins/security-scanning/skills/threat-mitigation-mapping/references/details.md, to: plugin/builtins/wsh-threat-mitigation-mapping/references/details.md, mode: adapted, baseBlob: c7bac62dd0c2c1eb88f91c7e47ae3e3145dfaa4e }
+      - { from: plugins/javascript-typescript/skills/typescript-advanced-types/references/details.md, to: plugin/builtins/wsh-typescript-advanced-types/references/details.md, mode: adapted, baseBlob: 6b1b9a15c1103c8ebbebba1a3cb696ab7ad9dab9 }
+      - { from: plugins/accessibility-compliance/skills/wcag-audit-patterns/references/details.md, to: plugin/builtins/wsh-wcag-audit-patterns/references/details.md, mode: adapted, baseBlob: 297f388b62a7006cc6687b4147d34e17bda399d7 }
   - id: gsd
     kind: github
     repo: open-gsd/gsd-core

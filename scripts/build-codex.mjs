@@ -111,7 +111,7 @@ function translatePluginPaths(text) {
 // init/design/capture froze at revival stage 3, when their Claude copies moved to runtime/muster.sh.
 const FROZEN_CODEX_COMMANDS = ["plan.md", "go.md", "audit.md", "diagnose.md", "init.md", "design.md", "capture.md"];
 // Post-freeze Claude-only commands: the frozen Codex lane never ships them.
-const CLAUDE_ONLY_COMMANDS = ["skills.md"];
+const CLAUDE_ONLY_COMMANDS = ["skills.md", "pm.md"];
 const FROZEN_CODEX_SKILLS = ["orchestrator", "router", "review-gate", "tournament"];
 const RUN_MARKER_FILES = ["go.md", "diagnose.md", "audit.md", "plan.md"];
 const STALE_MARKER_FILES = ["go.md", "diagnose.md", "audit.md", "plan.md"];

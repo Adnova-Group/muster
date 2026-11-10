@@ -72,6 +72,8 @@ const EXPECTED_ARGUMENT_HINTS = {
   // Each fragment is a row of skills.md's verb table (the description keeps only `<verb>`
   // because descriptions are always-on context).
   skills: "list [domain] | show <id> | search <query> | enable <id> | disable <id> | add <publisher>/<skill> | pin <id> [--role <role>] | unpin <id> | usage",
+  // Each fragment is one of pm.md's verb headings (the description keeps only `<verb>`).
+  pm: "intent <idea> | spec <intent | idea> | check <file> | tickets <SPEC.md[#REF-NN]> | audit <SPEC.md> | run [pipeline] [outcome]",
 };
 
 test("every plugin/commands/*.md file carries argument-hint, matching the Usage string already in its description", async () => {
@@ -102,8 +104,10 @@ test("every plugin/commands/*.md file carries argument-hint, matching the Usage 
 
 // ── disable-model-invocation: judged per-command, documented in the PR body ────────────────
 
-test("disable-model-invocation applies only to audit.md and runner.md (side-effectful verbs judged unsafe for implicit routing)", async () => {
-  const disabled = new Set(["audit", "runner"]);
+// pm.md joins them (docs/strategy/2026-11-pm-domain-design.md): it writes intents, specs and backlog
+// items, and its description stays out of the model's context until the user types /muster:pm.
+test("disable-model-invocation applies only to audit.md, runner.md and pm.md (side-effectful verbs judged unsafe for implicit routing)", async () => {
+  const disabled = new Set(["audit", "runner", "pm"]);
   const names = (await readdir(new URL("plugin/commands", root)))
     .filter((f) => f.endsWith(".md"))
     .map((f) => f.replace(/\.md$/, ""));

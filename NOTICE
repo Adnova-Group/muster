@@ -104,6 +104,8 @@ Per-item detail (upstream path, ref, relation) is in each item's `upstream:` fie
 - Wirasm/prp @ 435292597e7b04f64f8f275da9d2c985c4251281 (MIT)
   Copyright (c) 2025-2026 Rasmus Widing
 - product-on-purpose/pm-skills @ 9b920db418c5bf641edea9afb4915a286e1d42ea (Apache-2.0)
+- phuryn/product-engineering @ 061014ffe954b4dca1f108de614ce25e4607161e (MIT)
+  Copyright (c) 2026 Pawel Huryn
 - anthropics/knowledge-work-plugins @ e605d8ddbfb688da57dfaaceebd93f12a64ef1d3 (Apache-2.0)
 - joelparkerhenderson/objectives-and-key-results @ f7269521672a63f25fbf01cd4deb652ee181f45c (NONE)
 - architecture-decision-record/architecture-decision-record @ a36c53f49517fc55ceadd459d3e59770c9074416 (CC-BY-NC-SA-4.0)
@@ -191,15 +193,6 @@ from them and carries none of their text; they are credited, not reproduced.
   https://www.humanizingwork.com/the-humanizing-work-guide-to-splitting-user-stories/
 - User Story Mapping, Jeff Patton (book)
   https://www.jpattonassociates.com/user-story-mapping/
-- User Stories Applied (As a / I want / So that), Mike Cohn (book)
-- INVEST in Good Stories, and SMART Tasks, Bill Wake (article)
-  https://xp123.com/invest-in-good-stories-and-smart-tasks/
-- Essential XP: Card, Conversation, Confirmation, Ron Jeffries (article)
-  https://ronjeffries.com/xprog/articles/expcardconversationconfirmation/
-- Gherkin reference (Given / When / Then), Cucumber (article)
-  https://cucumber.io/docs/gherkin/reference/
-- Designing features using job stories, Alan Klement (Intercom) (article)
-  https://www.intercom.com/blog/using-job-stories-design-features-ui-ux/
 - Working Backwards (PR/FAQ), Colin Bryar and Bill Carr (book)
   https://workingbackwards.com/
 - Semantic Versioning 2.0.0, Tom Preston-Werner (standard)

@@ -96,10 +96,11 @@ than parsing free text.
 mechanism in this audit (see the Grep audit table below): the backlog-scope confirm and the
 approval stop in `plugin/commands/plan.md`, the unclear-outcome questions and the merge decision
 in `plugin/commands/go.md`, the merge-decision prompt in `plugin/commands/audit.md`, capture's
-write gate in `plugin/commands/capture.md`, the interview skill's one-question-at-a-time loop in
-`plugin/skills/interview/SKILL.md`, the escalation stops in `plugin/skills/orchestrator/SKILL.md`,
-roadmap-prioritization's optional-push offers in
-`plugin/skills/roadmap-prioritization/SKILL.md`, and the greenfield skill's "ask, don't invent"
+write gate in `plugin/commands/capture.md`, the interview skill's question rounds (up to 4
+questions per call, each with a recommended answer) in `plugin/skills/interview/SKILL.md`, the
+PM command's question rounds and approval stops in `plugin/commands/pm.md`, the escalation stops
+in `plugin/skills/orchestrator/SKILL.md`, the roadmap's optional-push offers in
+`plugin/builtins/muster-roadmap/SKILL.md`, and the greenfield skill's "ask, don't invent"
 rule in `plugin/skills/greenfield/SKILL.md`. Workflow agents cannot ask the user, so every one of
 these stops sits between workflow calls in the main thread.
 
@@ -255,7 +256,7 @@ both numbers on every test run from the live prose tree, so this table cannot si
 stale:
 
 ```
-AskUserQuestion    files=7  mentions=19
+AskUserQuestion    files=8  mentions=20
 dispatch (Agent/Task tool)  files=2  mentions=8
 hook (PreToolUse/SessionStart/UserPromptSubmit)  files=2  mentions=3
 worktree   files=10 mentions=66

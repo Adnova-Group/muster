@@ -6,6 +6,11 @@ Read this when a model output is part of the feature: it classifies, drafts, dec
 calls tools. The SPEC's `## AI behavior and evals` table is where that behavior becomes
 checkable. Without it, the verifier has nothing to hold a model to except "it looked fine".
 
+Skip the section for a deterministic feature. A property a deterministic check can decide (a
+required field is present, a count matches, a value is in range) does not need an EV row just
+because a model produced the output: write it as an ordinary acceptance criterion with
+`verify: test`. EV rows are for behavior that varies run to run.
+
 ## What an EV row is
 
 One row per behavior the model must get right. Each row fixes four things before anyone runs it:
@@ -54,8 +59,13 @@ unless they truly do not apply. spec-lint warns when the refusal or injection ro
 | Refusal | declines requests outside policy, with the stated reason | N/N refuse on an out-of-policy set |
 | Abstention | says it does not know, or asks, when the input does not support an answer | N/N abstain on unanswerable cases |
 | Injection | treats instructions inside user content as data, not commands | N/N not followed |
-| Access | never reveals or acts on data the caller may not see | N/N no leak across accounts |
+| Access | never reveals or acts on data the caller may not see; when the output is shown to people other than the one whose access produced it, it never reaches an audience with less access than its source | N/N no leak across accounts |
 | Over-refusal | still helps on legitimate requests that resemble refused ones | ≥ M/N helped |
+
+The injection row covers any content that neither the product's instructions nor the user told
+the model to obey: documents, web pages, tickets, email, tool results. Refusal and abstention get
+their own rows because a model has no dependable default for either: what the feature does when
+it should not answer is a requirement, not an implementation detail.
 
 ## Writing the case set
 
@@ -67,6 +77,36 @@ unless they truly do not apply. spec-lint warns when the refusal or injection ro
   action), and the reason, so a reviewer can disagree with a label.
 - Version the case set with the code. A case set that changes silently makes the pass rule
   meaningless.
+- Size it by risk, not by saturation. Name the slices first (every EV row, every refusal and
+  abstention case, the input classes where a failure costs the most), set a floor per slice, then
+  count. "Add cases until the verdict stops moving" stops before the rare, harmful slices show up.
+  A floor is a coverage commitment (that failure mode was looked for on purpose across N cases),
+  not a measurement and not a bound on how often the feature fails.
+- Say how many times each case runs at production settings and whether it must pass on every run.
+  A case that passes once and fails once has not shown that it holds.
+- Keep some cases out of tuning and check the pass rules on them; report each slice on its own. An
+  aggregate that passes while one slice fails is a failing eval.
+
+## After launch: appending EV rows
+
+Error analysis (reading a sample of real traces, naming the failure patterns, counting them) is
+how the evals you did not know about get found. Each pattern worth guarding becomes a new row,
+appended below the existing ones:
+
+```markdown
+| **EV-04** | [post-launch 2026-12-01] Ask for the order id instead of guessing when the message names none | 25 cases drawn from the 2026-11 error-analysis sample | 25/25 ask | evals/refunds/missing-order.jsonl |
+```
+
+- The row gets the next free EV number; IDs are never reused or renumbered.
+- The Behavior cell starts with `[post-launch YYYY-MM-DD]`, the date of the analysis, and the case
+  set says where the cases came from.
+- The pass rule is a number fixed before the row's first run, like any other row.
+- Existing rows are never edited: a pass rule that turned out too loose stays, and a stricter row
+  is appended beside it. Retire a row by noting it under `## Clarifications`, not by deleting it.
+- Append rows to a `shipped` spec freely; the next run plans them like any other EV ID.
+
+`muster spec-lint` accepts these rows: it checks the tag's date and warns when a post-launch row
+carries a lower EV number than a launch row (an appended row always gets a new, higher ID).
 
 ## How it reaches the verifier
 
@@ -79,3 +119,11 @@ Inspired by Anthropic's "Define success criteria and build evaluations" and "Dem
 for AI agents", OpenAI's "Evaluation best practices", and Hamel Husain's "Your AI Product Needs
 Evals" and "AI Evals: Everything You Need to Know" (with Shreya Shankar). No text is carried from
 them; vendor/manifest.yaml records each as an inspired-by work.
+
+<!-- The deterministic-feature note, the injection/access/refusal wording, and the sizing, runs-per-
+case and held-out bullets are adapted from product-on-purpose/pm-skills (Apache-2.0) at 9b920db
+(v2.35.0-3-g9b920db): skills/deliver-prd/SKILL.md step 5 and references/TEMPLATE.md "AI Behavior
+and Evaluation". Modified by muster: condensed, and mapped onto EV rows and verify types.
+vendor/manifest.yaml tracks both files (pm-skills-product-on-purpose); NOTICE carries the
+attribution (upstream ships no NOTICE file). -->
+

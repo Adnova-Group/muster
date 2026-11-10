@@ -19,7 +19,10 @@ const ORCHESTRATOR_BUDGET = 18 * KB;
 // +102 at revival stage 3 for exactly the three prt-* pr-review-toolkit agent descriptions
 // (41 + 33 + 28 bytes), kept minimal because they are always-on.
 // +84: /muster:skills (skill discovery follow-up, 2026-11-10) adds exactly its description's bytes.
-const DESCRIPTION_BUDGET = 4_186;
+// PM domain stages C-D (2026-11-10): +124 for /muster:pm's description, -83 and -73 for the
+// retired prd-pipeline and roadmap-prioritization skills (the latter now the muster-roadmap
+// builtin, read by path), net -32.
+const DESCRIPTION_BUDGET = 4_154;
 
 function frontmatter(text) {
   const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);

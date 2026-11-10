@@ -160,6 +160,14 @@ instruction seeds.
    `README.md`, `docs/design/.gitkeep`, and `docs/plan/.gitkeep`; it never seeds
    an instruction file. Brownfield finalization creates none of those files.
 
+6. **Optional PM docs pointer (attended only).** After a finalized receipt, when
+   `AGENTS.md` exists, run `M init pm-link "<target>"`. A `preview` result shows
+   the one line it would append (a pointer to `docs/intent/` and `docs/specs/`);
+   offer it with AskUserQuestion: **Add the line** / **Skip**. Only on an explicit
+   "Add", run `M init pm-link "<target>" --approve pm-link`, which appends that
+   line and changes nothing else. `present` means it is already there; `absent`
+   means there is no `AGENTS.md`, so skip. Unattended runs never offer or write it.
+
 ## Completion guard
 
 Report `completed` only when the CLI's complete receipt says

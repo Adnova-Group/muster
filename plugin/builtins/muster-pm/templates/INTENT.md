@@ -31,7 +31,13 @@ an unsourced claim is tagged [ASSUMPTION] and appears under Bets and assumptions
 | Guardrail | <what must not regress> | <value> | no worse than <value> | <window> | <tool, query> |
 
 <!-- Exactly one Primary. At least one Guardrail. No pure activity goals ("ship X", "send N
-emails"). Never invent a baseline: write "not yet measured". -->
+emails"). Never invent a baseline: write "not yet measured".
+Build the Primary as Goal -> Signal -> Metric: the outcome, the observable behavior that shows
+progress toward it ("time on site" is not a signal of success: it can mean users are lost), then
+the formula, data source, frequency and threshold. A Guardrail is the counter-metric the Primary
+could trade away; pair a business metric with a user one (conversion -> post-purchase
+satisfaction, retention -> ease of cancelling). A metric a dark pattern would improve measures
+the wrong thing. (Adapted from ghaida/intent's measure skill, CC0-1.0.) -->
 
 ## Non-goals
 - **NG-01** <out of scope> — because <reason>.

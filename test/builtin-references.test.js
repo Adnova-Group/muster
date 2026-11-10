@@ -21,6 +21,40 @@ const NOT_A_FILE = {
   "wsh-architecture-decision-records": ["template.md", "NNNN-title-with-dashes.md"] // ADR naming in the user's repo
 };
 
+// Files that live in the USER's project, never in the plugin: a builtin names them because it
+// reads them from, or writes them into, the working directory. Each entry carries its reason.
+// Like KNOWN_DANGLING, a listed entry that starts resolving inside the plugin fails, and a
+// per-skill entry the skill no longer points at fails, so neither list can mask a real miss.
+// Project-root files any builtin may name:
+const PROJECT_ROOT_FILES = {
+  "DESIGN.md": "the project's canonical design context, owned by /muster:design (impeccable)",
+  "README.md": "a README the skill writes into the user's project or handoff package"
+};
+// Per builtin: project paths it reads or writes, and example names for deliverables it writes.
+const deliverable = "example name of the deliverable the skill writes into the user's working directory";
+const tokens = "the project's design-token file (upstream ships no assets/ directory; the scripts read and write it at the project root)";
+const PROJECT_FILES = {
+  "intent-articulate": { "copy-larkspur-refills.md": deliverable },
+  "intent-evaluate": { "evaluation-larkspur-refills.md": deliverable },
+  "intent-fortify": { "states-larkspur-refills.md": deliverable },
+  "intent-include": { "accessibility-larkspur-refills.md": deliverable },
+  "intent-intent": { "brief-larkspur-refills.md": deliverable, "decisions.md": "the project's decision log the skill keeps beside its deliverables" },
+  "intent-investigate": { "research-plan-larkspur-refills.md": deliverable, "findings-larkspur-refills.md": deliverable },
+  "intent-localize": { "localization-larkspur-de.md": deliverable },
+  "intent-measure": { "metrics-larkspur-refills.md": deliverable },
+  "intent-strategize": { "brief-larkspur-refills.md": deliverable },
+  "intent-transpose": { "adaptation-larkspur-mobile.md": deliverable },
+  // "Thinking Style Variants (Future)": named as planned upstream variants; no such files exist in
+  // ghaida/intent at the pin (18061101), so there is nothing to vendor.
+  "intent-philosopher": Object.fromEntries(["inward.md", "connective.md", "empathic.md", "architectural.md"].map(f => [f, "a planned upstream variant, absent at the pin"])),
+  "uupm-brand": { "assets/design-tokens.json": tokens, "assets/design-tokens.css": tokens, "assets/design-tokens": `${tokens} (the assets/design-tokens.* glob)` },
+  "uupm-design": { "assets/design-tokens.json": tokens },
+  "uupm-design-system": { "assets/design-tokens.json": tokens, "assets/design-tokens.css": tokens, "assets/css/slide-animations.css": "the project's slide animation stylesheet, listed as a project source of truth" },
+  "uupm-slides": { "assets/design-tokens.json": tokens },
+  "uupm-ui-styling": { "assets/design-tokens.json": tokens }
+};
+const projectFile = (id, target) => Object.hasOwn(PROJECT_ROOT_FILES, target) || Object.hasOwn(PROJECT_FILES[id] || {}, target);
+
 // Dangling pointers owned by other tracks (2026-11-10). Each entry must still dangle: delete it
 // when the file ships or the pointer is fixed, so the list only shrinks.
 // Empty since the superpowers v7.0.2 refresh shipped every sp-* supporting file. Add an entry only
@@ -60,6 +94,7 @@ const builtins = (await readdir(builtinsRoot, { withFileTypes: true })).filter(e
 test("every relative file a builtin SKILL.md points at ships in the plugin", async () => {
   const missing = [];
   const stillDangling = [];
+  const unusedProjectFiles = new Set(Object.entries(PROJECT_FILES).flatMap(([id, files]) => Object.keys(files).map(f => `${id}: ${f}`)));
   for (const id of builtins) {
     const skillPath = join(builtinsRoot, id, "SKILL.md");
     if (!(await present(skillPath))) continue;
@@ -68,12 +103,14 @@ test("every relative file a builtin SKILL.md points at ships in the plugin", asy
       const abs = resolve(builtinsRoot, id, target);
       const inside = !relative(pluginRoot, abs).startsWith("..") && !relative(pluginRoot, abs).split(sep).includes("..");
       const ok = inside && (await present(abs));
+      if (projectFile(id, target)) { unusedProjectFiles.delete(`${id}: ${target}`); if (ok) stillDangling.push(`${id}: ${target} (listed as a project file)`); continue; }
       if ((KNOWN_DANGLING[id] || []).includes(target)) { if (ok) stillDangling.push(`${id}: ${target}`); continue; }
       if (!ok) missing.push(`plugin/builtins/${id}/SKILL.md -> ${target}`);
     }
   }
   assert.deepEqual(missing, [], `SKILL.md points at files the plugin does not ship:\n${missing.join("\n")}`);
-  assert.deepEqual(stillDangling, [], `these KNOWN_DANGLING entries now resolve; delete them from the list:\n${stillDangling.join("\n")}`);
+  assert.deepEqual(stillDangling, [], `these KNOWN_DANGLING / project-file entries now resolve; delete them from the list:\n${stillDangling.join("\n")}`);
+  assert.deepEqual([...unusedProjectFiles], [], "these PROJECT_FILES entries are no longer pointed at; delete them");
 });
 
 test("every relative file a wsh-* reference links ships beside it", async () => {

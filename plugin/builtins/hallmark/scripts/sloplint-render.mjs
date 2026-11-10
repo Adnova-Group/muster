@@ -1,5 +1,9 @@
 #!/usr/bin/env node
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+// Adapted by Muster from nutlope/hallmark @ 407fa689f4a276f2fd389208d271d0fef08f5058 (MIT): screenshots, .gitignore and compare.html are never written through a symlink planted in .hallmark (security hardening).
+import { existsSync, lstatSync, mkdirSync, writeFileSync } from 'node:fs';
+// Muster hardening: .hallmark sits in the project being checked, which may be untrusted; no
+// write here follows a symlink planted at .hallmark, its shots/ directory or the file itself.
+const isLink = (p) => { try { return lstatSync(p).isSymbolicLink(); } catch { return false; } };
 import { join, dirname, basename, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -80,10 +84,12 @@ async function pixelBehind(page, probe) {
 async function shoot(page, file, tag, fullPage) {
   try {
     const dir = isUrl(file) ? join(process.cwd(), '.hallmark', SHOT_DIR) : join(dirname(file), '.hallmark', SHOT_DIR);
+    if (isLink(dirname(dir)) || isLink(dir)) return;
     mkdirSync(dir, { recursive: true });
     const ignore = join(dirname(dir), '.gitignore');
-    if (!existsSync(ignore)) writeFileSync(ignore, 'shots/\nbefore/\nbefore.json\nbefore.txt\ncompare.html\n');
+    if (!existsSync(ignore) && !isLink(ignore)) writeFileSync(ignore, 'shots/\nbefore/\nbefore.json\nbefore.txt\ncompare.html\n');
     const out = join(dir, `${slugOf(file)}-${tag}.png`);
+    if (isLink(out)) return;
     await page.screenshot({ path: out, fullPage });
     SHOTS.push(out);
   } catch {}
@@ -320,6 +326,7 @@ ${body}
 </body>
 </html>
 `;
+    if (isLink(dir) || isLink(join(dir, 'compare.html'))) continue;
     writeFileSync(join(dir, 'compare.html'), html);
     made.push(join(dir, 'compare.html'));
   }

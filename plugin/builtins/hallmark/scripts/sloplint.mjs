@@ -1,7 +1,8 @@
 #!/usr/bin/env node
+// Adapted by Muster from nutlope/hallmark @ 407fa689f4a276f2fd389208d271d0fef08f5058 (MIT): writes into .hallmark refuse a planted symlink, and an aria-labelledby value is regex-escaped before it builds a pattern (security hardening).
 /* sloplint: Hallmark's mechanical gate checker. Zero dependencies, Node 18+. Gate ids and tiers: references/gates.md. */
 import { createHash } from 'node:crypto';
-import { readFileSync, readdirSync, statSync, realpathSync, existsSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync, lstatSync, realpathSync, existsSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, extname, dirname, basename, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -2334,7 +2335,9 @@ function check54Unheaded(ctx) {
       if (!labelledBy) continue;
       const body = innerOf(doc, i);
       if (!body || /<h[1-6][\s>]/i.test(body.inner)) continue;
-      const idRe = new RegExp(`<([a-z][\\w-]*)\\b[^>]*\\sid\\s*=\\s*["']${labelledBy.split(/\s+/)[0]}["'][^>]*>`, 'i');
+      // Muster hardening: the id comes from the page; escape it so it cannot inject a pattern (ReDoS).
+      const labelId = labelledBy.split(/\s+/)[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const idRe = new RegExp(`<([a-z][\\w-]*)\\b[^>]*\\sid\\s*=\\s*["']${labelId}["'][^>]*>`, 'i');
       const m = idRe.exec(body.inner);
       if (!m || /^h[1-6]$/i.test(m[1])) continue;
       report(54, 'WARN', doc.file, doc.lineOf(body.endPos - body.inner.length + m.index),
@@ -4171,6 +4174,16 @@ if (opts.render) {
 }
 
 const SNAP = join(process.cwd(), '.hallmark', 'before.json');
+// Muster hardening: .hallmark sits in the project being linted, which may be an untrusted
+// checkout. before.txt carries page text, so a symlink planted at .hallmark or at the file
+// could land it in a shell rc file; every write here refuses a symlink at either.
+const isLink = (p) => { try { return lstatSync(p).isSymbolicLink(); } catch { return false; } };
+function writeOwn(path, data) {
+  if (isLink(dirname(path))) { console.error(`sloplint: refusing to write through a symlink: ${dirname(path)}`); process.exit(2); }
+  mkdirSync(dirname(path), { recursive: true });
+  if (isLink(path)) { console.error(`sloplint: refusing to write through a symlink: ${path}`); process.exit(2); }
+  writeFileSync(path, data);
+}
 const squash = (t) => t.replace(/\s+/g, ' ').trim();
 const escRe = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 function wiringOf(src) {
@@ -4370,8 +4383,7 @@ if (notes) tally.push(`${notes} NOTE`);
 let beforeLine = null;
 if (opts.before) {
   const inv = takeInventory();
-  mkdirSync(dirname(SNAP), { recursive: true });
-  writeFileSync(SNAP, JSON.stringify({ v: 1, at: new Date().toISOString(), scope: opts.scope, summary: { fails, reflex, warns }, ...inv }, null, 1) + '\n');
+  writeOwn(SNAP, JSON.stringify({ v: 1, at: new Date().toISOString(), scope: opts.scope, summary: { fails, reflex, warns }, ...inv }, null, 1) + '\n');
   beforeLine = `before: recorded ${new Set([...inv.wiring.links, ...Object.values(inv.pages).flatMap((p) => p.links)]).size} links, ${new Set([...inv.wiring.fields, ...Object.values(inv.pages).flatMap((p) => p.fields)]).size} fields, ${inv.wiring.handlers.length} handlers, ${inv.wiring.hooks.length} test hooks, ${new Set(Object.values(inv.scripts).flatMap((h) => h.hooked)).size} script hooks${Object.keys(inv.pages).length ? ` and ${Object.keys(inv.pages).length} rendered page(s)` : ''} in ${rel(SNAP)}; --kept checks a redesign against it`;
 }
 const keptNote = keptLine ? `kept: ${keptLine.parts.join(', ') || 'nothing recorded'}${keptLine.was ? `; before ${keptLine.was.fails} FAIL, ${keptLine.was.reflex} REFLEX, now ${fails} FAIL, ${reflex} REFLEX` : ''}` : null;
@@ -4397,10 +4409,9 @@ if (opts.json) {
     for (const f of unique) { const k = `${f.grade} ${f.gate}`; if (!by.has(k)) by.set(k, []); by.get(k).push(f); }
     for (const [k, list] of by) console.log(`  ${k}${list.length > 1 ? ` x${list.length}` : ''} ${list.slice(0, 2).map((f) => `${f.file}:${f.line} ${trunc(f.evidence, 64)}`).join('; ')} | fix: ${list[0].fix}`);
     const every = join(dirname(SNAP), 'before.txt');
-    mkdirSync(dirname(SNAP), { recursive: true });
     const ignore = join(dirname(SNAP), '.gitignore');
-    if (!existsSync(ignore)) writeFileSync(ignore, 'shots/\nbefore/\nbefore.json\nbefore.txt\ncompare.html\n');
-    writeFileSync(every, unique.map((f) => `${f.grade} ${f.gate} ${f.file}:${f.line} ${f.evidence} | fix: ${f.fix}`).join('\n') + '\n');
+    if (!existsSync(ignore)) writeOwn(ignore, 'shots/\nbefore/\nbefore.json\nbefore.txt\ncompare.html\n');
+    writeOwn(every, unique.map((f) => `${f.grade} ${f.gate} ${f.file}:${f.line} ${f.evidence} | fix: ${f.fix}`).join('\n') + '\n');
     console.log(`sloplint: ${tally.join(', ')} across ${scopeNote}, grouped by gate; every line is in ${rel(every)}.`);
   } else {
     const byFile = new Map();

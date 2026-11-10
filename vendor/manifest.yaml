@@ -871,6 +871,12 @@ sources:
     # theme.mjs point at the pinned raw URLs instead), upstream's tests and fixtures, refcheck.mjs,
     # install.mjs, and install-hook.mjs + lint-hook.mjs (a PostToolUse hook installer: muster ships no
     # always-on hooks; flow.md says so). relation: adapted.
+    # Security hardening (stage 3 pre-PR review, 2026-11-10; noted in each script header):
+    # scripts/sloplint.mjs and scripts/sloplint-render.mjs never write .hallmark/before.json,
+    # before.txt (page text), .gitignore, screenshots or compare.html through a symlink planted at
+    # .hallmark, shots/ or the file, and sloplint.mjs regex-escapes an aria-labelledby value before
+    # building a pattern from it (page-controlled ReDoS). test/hallmark-sloplint-hardening.test.js
+    # pins both and kill-checks the base copy.
     ref: 407fa689f4a276f2fd389208d271d0fef08f5058
     tag: null
     license: MIT

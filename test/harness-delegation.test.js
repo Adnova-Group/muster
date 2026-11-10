@@ -29,7 +29,7 @@ test("plan.md rides ExitPlanMode at the approval stop and keeps the AskUserQuest
 test("plan and go ride the native Workflow tool and name the prose fallback for surfaces without it", async () => {
   for (const f of ["plugin/commands/plan.md", "plugin/commands/go.md"]) {
     const text = await read(f);
-    assert.match(text, /Workflow\(\{name:"muster:plan"/, `${f} must call the muster:plan workflow`);
+    assert.match(text, /Workflow\(\{name:"muster:make-plan"/, `${f} must call the muster:make-plan workflow`);
     assert.match(text, /prose fallback/, `${f} must name the orchestrator's prose fallback`);
   }
   const go = await read("plugin/commands/go.md");

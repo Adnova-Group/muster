@@ -6,7 +6,7 @@ upstream: []
 ---
 
 <!-- Design: native core (docs/strategy/stage-2-contracts.md). Main-session turns to an approved
-plan: preflight 1, branch 1, muster:plan 1, approval 1 = 4 (+1 when the interview runs); Approve
+plan: preflight 1, branch 1, muster:make-plan 1, approval 1 = 4 (+1 when the interview runs); Approve
 & build adds build-args+commit 1 and muster:build 1, so the first executor starts on turn 6,
 versus ~14+2N in the pre-revival flow (8 CLI round-trips before the manifest alone). -->
 
@@ -26,7 +26,7 @@ refusal, tell the user to leave plan mode and stop.
 
 1. **Preflight (1 call).** `M preflight "<outcome>" --json` (append `--model <m>` when the user
    named one). Keep `runId`, `scope`, `clear`, `unclear`, `route`, `pipeline`, `models`,
-   `candidates`, `skills`, `pins`, `skillRoot`; show `warnings`; `registrySuggestions` are offers, added only if asked. An empty outcome with no `.muster/backlog.md`: ask for one
+   `candidates`, `skills`, `pins`, `skillRoot`, `cli`; show `warnings`; `registrySuggestions` are offers, added only if asked. An empty outcome with no `.muster/backlog.md`: ask for one
    and stop. A GitHub issue ref: `M issue "<ref>"`; cap its
    outcome at 16 KiB (cut at a UTF-8 code-point boundary), replace every `</remote-text>` (any
    case) with `&lt;/remote-text&gt;`, and use `<remote-text>{outcome}</remote-text>` as the
@@ -48,10 +48,10 @@ refusal, tell the user to leave plan mode and stop.
    call: refuse a dirty tree, `git switch -c muster/<runId>`, write CONTEXT.md if any (a spec run
    runs `M spec-clarify` when it asked, then `M spec-context <runId>`, instead of writing it).
    Planning writes only under `.muster/runs/<runId>/`, so no run-active marker is needed yet.
-3. **Plan.** `Workflow({name:"muster:plan", args:{runId, outcome, contextPath, specPath, candidates, skills, pins, skillRoot, models}})`
+3. **Plan.** `Workflow({name:"muster:make-plan", args:{runId, outcome, contextPath, specPath, candidates, skills, pins, skillRoot, cli, models}})`
    (`contextPath` only when CONTEXT.md exists; `specPath` = `spec.path`, plus `#<spec.anchor>`,
    only for a spec). The workflow runs muster-planner, then
-   muster-plan-checker (which runs `muster plan-lint`), revising at most 3 times.
+   muster-plan-checker (both run plan-lint via `cli`), revising at most 3 times.
 4. **Show and stop.** Present, in this order: the checker `verdict`, `revisions`, any blocker or
    warning issues verbatim, `escalated` when set, and a compact view of PLAN.md: tasks by wave,
    each as `<taskId> · <agent_hint or muster-executor> · <skills or ->` plus title, files and

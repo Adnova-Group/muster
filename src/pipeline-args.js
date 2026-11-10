@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { loadPipelines, resolvePipeline } from "./pipeline.js";
 import { runDir } from "./run-dir.js";
 import { writeContainedFile } from "./fs-safe.js";
-import { specialistCatalog, PLUGIN_ROOT } from "./specialists.js";
+import { musterCli, specialistCatalog, PLUGIN_ROOT } from "./specialists.js";
 
 // A phase's own `skills:` (builtin ids) bind on top of its role. They resolve through the
 // catalog first, then by path: kit builtins such as muster-pm carry no catalog role.
@@ -62,6 +62,7 @@ export function pipelineArgsFrom(pipeline, { runId, outcome, contextPath = null,
     pipeline: { id: pipeline.id, title: pipeline.title || pipeline.id, gate: pipeline.gate },
     phases, artifactPath,
     ...(models ? { models } : {}),
+    cli: musterCli(),
   };
   return { args, problems };
 }

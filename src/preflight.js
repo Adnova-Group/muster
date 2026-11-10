@@ -14,7 +14,7 @@ import { resolveCapabilities } from "./capabilities.js";
 import { readMemory } from "./memory.js";
 import { matchProviders, matchSkills } from "./match.js";
 import { claudeProfileForConfig } from "./claude.js";
-import { PLUGIN_ROOT, specialistCatalog } from "./specialists.js";
+import { PLUGIN_ROOT, musterCli, specialistCatalog } from "./specialists.js";
 import { classifyDomain } from "./domain.js";
 import { loadPipelines, pickPipeline, routePipeline } from "./pipeline.js";
 import { writeContainedFile } from "./fs-safe.js";
@@ -205,6 +205,7 @@ export async function runPreflight({ outcome, cwd, home, catalogDir, runId, mode
     skills,
     ...(pins.length ? { pins } : {}),
     skillRoot: join(PLUGIN_ROOT, "builtins"),
+    cli: musterCli(),
     ...(registrySuggestions.length ? { registrySuggestions } : {}),
     ...(warnings.length ? { warnings } : {}),
     memory: memory.slice(0, 3).map((m) => m.slug),

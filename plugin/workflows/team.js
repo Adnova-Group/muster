@@ -1,7 +1,7 @@
 export const meta = {
   name: 'team',
   description: 'Build an approved muster plan with a dev team: test-first split, specialist review seats, wave integration check, scoped fix loop',
-  whenToUse: 'Instead of muster:build when the plan has tdd tasks, waves of 2+ tasks or risky diffs. Same args and result as muster:build plus args.topology; the main thread then runs `muster merge-wave`.',
+  whenToUse: 'Instead of muster:build when the plan has tdd tasks, waves of 2+ tasks or risky diffs. Same args and result as muster:build plus args.topology; the main thread then runs merge-wave.',
   phases: [
     { title: 'Red', detail: 'muster-test-writer commits the failing tests of each tdd task' },
     { title: 'Build', detail: 'one builder per task in its own worktree (muster-executor or the planned specialist); tdd tasks go green in the red worktree' },
@@ -148,12 +148,17 @@ const syncRef = (cfg) => (typeof cfg.branch === 'string' && /^[A-Za-z0-9._\/-]{1
 
 const boundSkills = (t) => list(t.skills).filter((k) => k && typeof k.id === 'string' && typeof k.path === 'string')
 
-function skillLines(t) {
+// Bound builtins may run the muster CLI (spec-lint, prioritize, pick). `muster` is not on PATH in
+// a user's project, so the brief carries the absolute prefix build-args copies from preflight.
+const cliPrefix = (cfg) => (typeof cfg.cli === 'string' && /^[^\r\n]{1,1024}$/.test(cfg.cli.trim()) ? cfg.cli.trim() : 'sh "$CLAUDE_PLUGIN_ROOT/runtime/muster.sh"')
+
+function skillLines(t, cfg) {
   const skills = boundSkills(t)
   if (!skills.length) return []
   return [
     'REQUIRED SKILLS: before any other work, Read each file below in full and follow it for this task:',
     ...skills.map((k) => `- ${k.id}: ${k.path}`),
+    `Run muster CLI commands as: ${cliPrefix(cfg)} <verb> ... (the bare muster command is not on PATH).`,
     'Return skillsApplied with one {id, how, quote} per skill: how = one line on how this task applied it; quote = one line copied verbatim from the file, proving you read it. A skill that turns out not to apply still gets read; say why in how.',
   ]
 }
@@ -183,7 +188,7 @@ function execBrief(cfg, t, prior) {
     `Your task is defined in .muster/runs/${cfg.runId}/PLAN.md; that file is the source of truth.`,
     t.agentHint && !specialist ? `Domain lens for this task: ${t.agentHint}.` : '',
     ...(specialist ? contractLines(tag) : []),
-    ...skillLines(t),
+    ...skillLines(t, cfg),
     `Files in scope: ${list(t.files).join(', ') || '(see PLAN.md)'}`,
     `Verify commands: ${list(t.verify).join(' ; ') || '(see PLAN.md)'}`,
     'You are in a fresh, isolated git worktree. This brief may be replayed after a crash, so:',
@@ -359,7 +364,7 @@ function greenBrief(cfg, t, red) {
     `Your task is defined in .muster/runs/${cfg.runId}/PLAN.md; that file is the source of truth.`,
     t.agentHint && !specialist ? `Domain lens for this task: ${t.agentHint}.` : '',
     ...(specialist ? contractLines(tag) : []),
-    ...skillLines(t),
+    ...skillLines(t, cfg),
     `Work in the test writer's worktree ${red.worktree}: prefix every shell command with cd ${red.worktree} && . Do not create a new worktree or branch.`,
     `Failing tests are committed at the red commit ${red.commit} (${list(red.testFiles).join(', ') || 'see git show --stat'}). They are the spec: make them pass. Never edit, delete, skip or loosen them; if one is wrong, return "blocked" naming it.`,
     `Files in scope: ${list(t.files).join(', ') || '(see PLAN.md)'}`,

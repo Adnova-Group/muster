@@ -43,7 +43,7 @@ action fence reads, and `.claude/worktrees/`.
 
 ## Workflow scripts (plugin/workflows/)
 
-- `plan.js`: args `{runId, outcome, contextPath, candidates}`. Runs planner → plan-checker, looping
+- `make-plan.js` (`plan.js` until amendment 19): args `{runId, outcome, contextPath, candidates, cli}`. Runs planner → plan-checker, looping
   at most 3 revisions and escalating when the issue count stops falling. Returns
   `{runId, planPath, verdict, revisions, issues[]}`.
 - `build.js`: args `{runId, waves:[[{taskId, title, agentHint, files, verify}]], base}`. Runs each
@@ -58,7 +58,7 @@ Every `agent()` call:
 - sets `model` / `effort` from args (the tier map is computed by the CLI);
 - has an idempotent builder brief: check git state before acting.
 
-The main thread calls the workflows as `Workflow({name:"muster:plan"|"muster:build"|"muster:backlog", args:{…}})`. It resumes with `{name, resumeFromRunId}`, never with `scriptPath`.
+The main thread calls the workflows as `Workflow({name:"muster:make-plan"|"muster:build"|"muster:backlog", args:{…}})` (amendment 19). It resumes with `{name, resumeFromRunId}`, never with `scriptPath`.
 
 ## Result schemas (JSON Schema, in plugin/workflows/schemas.js)
 
@@ -231,3 +231,33 @@ branches with `branch -d` only.
     `requirements:`, `ac:` on must-haves, `covers` on tasks and `proves` on `<automated>`;
     plan-lint's `spec_traceability` dimension applies only when `spec:` is set. Change-set and
     diff gates exclude `.muster/`.
+
+## Amendments from the release smoke (2026-11-10: invocation on Claude Code 2.1.319)
+
+19. **Workflow names never equal a command or skill name.** A plugin workflow runs as
+    `muster:<meta.name>` (docs: "a script whose `meta.name` is `release-audit` runs as
+    `/acme-tools:release-audit`"), the namespace commands and skills use. With
+    `plugin/workflows/plan.js` named `plan`, both the typed `/muster:plan <outcome>` and
+    `Skill("muster:plan")` launched the Workflow directly with the raw text as args, and the
+    command body (preflight, branch, interview, approval stop) never ran. The planning workflow
+    is now `make-plan` (`plugin/workflows/make-plan.js`, `Workflow({name:"muster:make-plan"})`,
+    allow rule `Workflow(muster:make-plan)`): a verb phrase, so it cannot be mistaken for the
+    `/muster:plan` command, and it reads as what the script does in an allow list next to
+    `Workflow(muster:build)`. The other workflows (`build`, `backlog`, `team`, `debug`,
+    `pipeline`, `book`) collide with no command (`audit`, `capture`, `design`, `diagnose`, `go`,
+    `init`, `plan`, `pm`, `skills`, `write-book`) or skill (`advisor`, `greenfield`, `improve`,
+    `interview`, `orchestrator`). `test/plugin-invocation.test.js` fails on any future clash.
+20. **The CLI prefix travels in the brief.** `muster` is not on PATH in a user's project and
+    `CLAUDE_PLUGIN_ROOT` may be unset in an agent's shell, so the planner's and checker's bare
+    `muster plan-lint` failed with "command not found". `muster preflight` returns `cli`, the
+    exact absolute prefix for this install (`sh "<plugin root>/runtime/muster.sh"`, derived from
+    the plugin root like `skillRoot`; `src/specialists.js` `musterCli`). The main thread passes it
+    to `muster:make-plan`; `build-args` and `pipeline-args` copy it into their args as `cli`.
+    Every brief whose agent may run the CLI says "Run muster CLI commands as: <cli> <verb> ...":
+    the planner and checker (which runs `<cli> plan-lint <planPath>` first), executor and green
+    briefs with bound skills (build, backlog, team), and every pipeline phase. Agents and the
+    `muster-*` and `book-run` builtins write CLI calls as `<cli> <verb>`; book agents never call
+    the CLI, so book args carry no `cli`. Without a `cli` arg a workflow falls back to
+    `sh "$CLAUDE_PLUGIN_ROOT/runtime/muster.sh"` and logs it. `test/plugin-invocation.test.js`
+    fails on a bare `` `muster <verb>` `` or "run muster <verb>" in a plugin agent, workflow
+    script or one of those builtins.

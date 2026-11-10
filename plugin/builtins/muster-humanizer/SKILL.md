@@ -132,7 +132,7 @@ When the text is UI copy (labels, buttons, empty states, errors, onboarding) or 
 Mix short sentences with long ones by varying the sentences, not by chopping them into fragments. Prefer concrete nouns and verbs to abstractions and active voice to passive, use the direct verb over a verb phrase ("decided", not "made a decision"; "can", not "has the ability to"), and cut hedges and promotional filler.
 
 ## Measure it (deterministic gate)
-`npx -y @adnova-group/muster humanize-score <file|->` returns a 0–100 AI-tell score (no LLM) with a
+`<cli> humanize-score <file|->` (`<cli>`: the muster CLI prefix your brief or command gives; in CI, `npx -y @adnova-group/muster`) returns a 0–100 AI-tell score (no LLM) with a
 penalty per category. Code, URLs, blockquotes and double-quoted spans are masked before scoring, so
 quoting a tell as an example does not count against the text. Run it on the rewrite to confirm the
 tells are gone, and gate human-facing artifacts on it in CI (default pass ≥ 85). It is the objective

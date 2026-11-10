@@ -89,7 +89,7 @@ describe("pipeline renames, retirements and aliases", () => {
       assert.doesNotMatch(await read(`pipelines/${f}`), /review-gate/, f);
     }
     const roadmap = await read("plugin/builtins/muster-roadmap/SKILL.md");
-    assert.match(roadmap, /muster prioritize <file>\s+--model rice/);
+    assert.match(roadmap, /`<cli> prioritize <file>\s+--model rice`/);
     assert.match(roadmap, /gh issue create/);
   });
 });

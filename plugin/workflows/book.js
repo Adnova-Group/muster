@@ -1,7 +1,7 @@
 export const meta = {
   name: 'book',
   description: 'One pass over a muster book run: outline it, or draft chapters in dependency waves, then continuity, developmental, line and beta-read passes',
-  whenToUse: 'From /muster:write-book. Pass {mode:"outline", runId, brief} or the exact contents of .muster/runs/<id>/book-args.json, then record the result with `muster book init` or `muster book record`.',
+  whenToUse: 'From /muster:write-book. Pass {mode:"outline", runId, brief} or the exact contents of .muster/runs/<id>/book-args.json, then record the result with the CLI verbs book init or book record.',
   phases: [
     { title: 'Outline', detail: 'book-writer outlines (variants in parallel); book-developmental-editor checks; at most 2 revisions' },
     { title: 'Draft', detail: 'one book-writer per chapter, in parallel within a dependency wave' },
@@ -525,5 +525,5 @@ const cfg = parseArgs(args)
 if (!cfg.runId && cfg.mode === 'outline' && cfg.brief) cfg.runId = `book-${slug(cfg.brief)}`
 if (!cfg.runId) return { status: 'error', error: 'book needs args {runId, mode:"outline", brief} or the contents of book-args.json' }
 if (cfg.mode === 'outline') return await runOutline(cfg)
-if (!Array.isArray(cfg.waves) || !cfg.canonPath) return { status: 'error', error: 'book pass needs the contents of .muster/runs/<id>/book-args.json (run `muster book args <id>`)' }
+if (!Array.isArray(cfg.waves) || !cfg.canonPath) return { status: 'error', error: 'book pass needs the contents of .muster/runs/<id>/book-args.json (the CLI verb book args <id> writes it)' }
 return await runPass(cfg)

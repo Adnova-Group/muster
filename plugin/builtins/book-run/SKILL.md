@@ -66,15 +66,15 @@ Everything lives in `.muster/runs/<runId>/` and is committed on the work branch,
 
 | File | Owner | What it is |
 |---|---|---|
-| `book.json` | `muster book` CLI | The ledger: outline, chapter states, canon facts, continuity debts, pass history |
+| `book.json` | the CLI's `book` verb | The ledger: outline, chapter states, canon facts, continuity debts, pass history |
 | **CANON.md** | rendered from book.json | The story bible every agent reads. Never hand-edited |
 | **LEDGER.md** | rendered from book.json | Chapter table, open debts, chapter summaries |
 | `chapters/<id>.md` | `book-writer`, `book-line-editor`, the author | The manuscript, one file per chapter |
-| `book-args.json` | `muster book args` | The exact args for the next workflow pass |
-| `book-result-<n>.json` | the main thread | A pass's returned JSON, input to `muster book record` |
-| **STATE.md** | `muster book` | `## Log` lines, one per init, pass, amend and close |
+| `book-args.json` | `book args` | The exact args for the next workflow pass |
+| `book-result-<n>.json` | the main thread | A pass's returned JSON, input to `book record` |
+| **STATE.md** | `book` | `## Log` lines, one per init, pass, amend and close |
 
-Commands: `muster book init <runId> --outline <file>`, `args <runId> [--limit N] [--beta N] [--model M]`, `record <runId> --result <file>`, `amend <runId> <C-id> <new fact>`, `close <runId> <D-id> <resolution>`, `status <runId>`.
+CLI verbs (the main thread runs them as `M book ...`; agents never do): `book init <runId> --outline <file>`, `args <runId> [--limit N] [--beta N] [--model M]`, `record <runId> --result <file>`, `amend <runId> <C-id> <new fact>`, `close <runId> <D-id> <resolution>`, `status <runId>`.
 
 ## Canon and debts
 
@@ -82,7 +82,7 @@ A **canon fact** is something the manuscript has committed to and later chapters
 
 A **continuity debt** is an open contradiction between a chapter and the canon. Debts are opened when:
 - the continuity checker finds an issue the writer did not fix within two rounds;
-- a canon fact is amended (`muster book amend`): every written chapter that relied on the old fact gets a debt against the new one;
+- a canon fact is amended (`book amend`): every written chapter that relied on the old fact gets a debt against the new one;
 - a line edit changed a canon-bearing passage.
 
 A chapter whose file changed since the last `record` is **stale**, and a drafted chapter whose continuity check abstained has no evidence either way: the next pass re-checks both before drafting anything new. Debts close only when a re-check that was shown the debt passes, or when the author closes one by hand with a reason ("intentional: Teo lies here"). A simulated beta read never marks a book ready.

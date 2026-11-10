@@ -6,7 +6,7 @@
 (v1.3.2-3-g4ae2317): skills/engineering/to-tickets/SKILL.md. Changes: no frontmatter; the source
 is a muster SPEC and every ticket cites the acceptance-criterion IDs it delivers; the
 /setup-matt-pocock-skills tracker step is replaced by muster's backlog (`.muster/backlog.md`,
-written only through `muster backlog-publish`), so the local-file and issue-tracker forms and
+written only through the CLI's `backlog-publish`), so the local-file and issue-tracker forms and
 their templates become one backlog-line form. vendor/manifest.yaml tracks the upstream file
 (mattpocock-skills). -->
 
@@ -16,7 +16,7 @@ Break a SPEC into a set of **tickets**: tracer-bullet vertical slices, each decl
 
 ### 1. Gather context
 
-Work from the SPEC the user passed (`docs/specs/<slug>/SPEC.md`, or `…/SPEC.md#REF-02` for one requirement). Read its full body: requirements and their acceptance criteria, invariants, EV rows, decisions and execution contract. Run `muster spec-lint` on it first; a spec with blockers is not ready to split, so report them and stop.
+Work from the SPEC the user passed (`docs/specs/<slug>/SPEC.md`, or `…/SPEC.md#REF-02` for one requirement). Read its full body: requirements and their acceptance criteria, invariants, EV rows, decisions and execution contract. Run `<cli> spec-lint` on it first (`<cli>`: the muster CLI prefix your command or brief gives, never a bare `muster`); a spec with blockers is not ready to split, so report them and stop.
 
 ### 2. Explore the codebase (optional)
 
@@ -70,9 +70,9 @@ Publish the approved tickets to `.muster/backlog.md` in dependency order (blocke
 
 - `{id}` is a short kebab label; `{deps}` lists the blocking tickets' ids, or `none` explicitly (an item without `{deps}` waits for every line above it).
 - `{spec}` points at the spec and the requirement the ticket serves; `/muster:plan` and `/muster:go` read it to plan from the spec.
-- The text names a measurable outcome (the acceptance criteria are), so `muster assess` reads it as clear.
+- The text names a measurable outcome (the acceptance criteria are), so the CLI's `assess` reads it as clear.
 - Skip a ticket whose text (annotations stripped) already exists in the backlog, checked or unchecked, and report the skip.
-- Write the file only with `muster backlog-publish .muster/backlog.md --expect <sha256|absent>`, the complete new file on stdin. On a changed-before-publication refusal, reread, redo the duplicate check and the append, and retry.
+- Write the file only with `<cli> backlog-publish .muster/backlog.md --expect <sha256|absent>`, the complete new file on stdin. On a changed-before-publication refusal, reread, redo the duplicate check and the append, and retry.
 
 Work the **frontier**: any ticket whose blockers are all done. For a purely linear chain that means top to bottom.
 

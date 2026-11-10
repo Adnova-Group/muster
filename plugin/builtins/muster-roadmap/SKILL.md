@@ -39,9 +39,9 @@ rather than guessing.
    confidence, full stop) and `effort` (person-months), each with a one-line rationale tied to the
    step-2 evidence.
 4. **Score deterministically**: write `{ "items": [{ "name", "reach", "impact", "confidence",
-   "effort" }], "model": "rice" }` to the file the phase names and run `muster prioritize <file>
-   --model rice` (`npx -y @adnova-group/muster prioritize <file> --model rice` when `muster` is not
-   on PATH). It returns the items ranked by `(reach × impact × confidence) / effort` with `score`
+   "effort" }], "model": "rice" }` to the file the phase names and run `<cli> prioritize <file>
+   --model rice`, where `<cli>` is the muster CLI prefix your brief gives (never a bare `muster`,
+   which is not on PATH). It returns the items ranked by `(reach × impact × confidence) / effort` with `score`
    and `rank`, and fails loud on non-finite or zero-effort input. **Code does the math; the model
    only supplies the factors.** Never hand-rank or edit the scores.
 5. **Render the roadmap**: Now / Next / Later from the ranking, each item stated as its outcome

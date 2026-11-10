@@ -143,12 +143,13 @@ test("team: tests that do not fail as expected block the task before any impleme
 
 test("team: a green specialist builder gets the executor contract and bound skills; a reported [TestEdit] reaches the reviewer", async () => {
   const t = task("A", { tdd: true, agentType: "muster:frontend-mobile-development-frontend-developer", agentHint: "wsh-frontend-developer", skills: [{ id: "x", path: "/p/x/SKILL.md" }] });
-  const { calls } = await run("team.js", { runId: "t3", waves: [[t]] }, (label, prompt) =>
+  const { calls } = await run("team.js", { runId: "t3", cli: 'sh "/p/runtime/muster.sh"', waves: [[t]] }, (label, prompt) =>
     label === "build A" ? exec("A", 1, { deviations: ["[TestEdit] test/A.test.js"], skillsApplied: [{ id: "x", how: "used" }] }) : happy(label, prompt));
   const g = calls.find((c) => c.opts.label === "build A");
   assert.equal(g.opts.agentType, "muster:frontend-mobile-development-frontend-developer");
   assert.match(g.prompt, /executor contract/);
   assert.match(g.prompt, /REQUIRED SKILLS/);
+  assert.ok(g.prompt.includes('Run muster CLI commands as: sh "/p/runtime/muster.sh" <verb>'), "bound skills run the CLI through the prefix");
   assert.match(calls.find((c) => c.opts.label === "review A r0").prompt, /reported editing red tests: \[TestEdit\] test\/A\.test\.js/);
 });
 

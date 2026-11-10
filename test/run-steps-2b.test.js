@@ -99,6 +99,7 @@ test("writeBuildArgs: writes build-args.json with preflight's seat models; refus
   const written = JSON.parse(await readFile(join(root, ".muster/runs/r1/build-args.json"), "utf8"));
   assert.deepEqual(written.models, { planner: { model: "haiku", effort: "high" } });
   assert.equal(written.base, "abc");
+  assert.match(written.cli, /^sh ".+\/runtime\/muster\.sh"$/, "build agents' bound skills run the CLI through this prefix");
 });
 
 test("build-args CLI exits 1 with problems and 0 with the report", async () => {

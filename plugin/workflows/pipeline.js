@@ -1,7 +1,7 @@
 export const meta = {
   name: 'pipeline',
   description: 'Run a muster content pipeline (blog post, PRD, runbook and more): skill-bound phase agents, adversarial review, floor-scored gate',
-  whenToUse: 'When `muster preflight` routes an outcome to a content pipeline. The main thread passes pipeline-args.json, then commits the artifact.',
+  whenToUse: 'When preflight routes an outcome to a content pipeline. The main thread passes pipeline-args.json, then commits the artifact.',
   phases: [
     { title: 'Draft', detail: 'one agent per pipeline phase, in order, each reading its bound skills' },
     { title: 'Gate', detail: 'adversarial review + rubric score; failing the floor or total revises, at most 2 rounds' },
@@ -106,6 +106,10 @@ function judge(gate, scored) {
   return { passing, total, floor: gate.floor, passTotal: gate.pass_total, missing, weakest: criteria.filter((c, i) => values[i] === low), scores: by }
 }
 
+// Phase skills may run the muster CLI (muster-roadmap's prioritize). `muster` is not on PATH in a
+// user's project, so the brief carries the absolute prefix pipeline-args copies from preflight.
+const cliPrefix = (cfg) => (typeof cfg.cli === 'string' && /^[^\r\n]{1,1024}$/.test(cfg.cli.trim()) ? cfg.cli.trim() : 'sh "$CLAUDE_PLUGIN_ROOT/runtime/muster.sh"')
+
 function common(cfg) {
   return [
     `Content run ${cfg.runId}: pipeline ${cfg.pipeline.id} (${cfg.pipeline.title}).`,
@@ -113,6 +117,7 @@ function common(cfg) {
     cfg.contextPath ? `Decisions (honour every D-NN): ${cfg.contextPath}` : 'No CONTEXT.md: where the outcome leaves something open, choose and record the assumption.',
     `The artifact lives at ${cfg.artifactPath}. Phase notes live under .muster/runs/${cfg.runId}/pipeline/.`,
     'Write only the artifact, your notes file and files the phase description names (e.g. docs/profiles/). Do not commit, push, publish or send anything.',
+    `Run muster CLI commands as: ${cliPrefix(cfg)} <verb> ... (the bare muster command is not on PATH).`,
   ]
 }
 
@@ -161,14 +166,14 @@ function scoreBrief(cfg, ph) {
     ...common(cfg),
     ...skillLines(ph).slice(0, -1),
     `Score ${cfg.artifactPath} 0-3 on each criterion: ${list(gate.criteria).join(', ')}. Cite evidence from the artifact for every score.`,
-    `Write the scores as JSON to .muster/runs/${cfg.runId}/score.json (not .muster/score.json). Do not run muster score: the workflow applies the floor (${gate.floor}) and pass total (${gate.pass_total}) to the scores you return.`,
+    `Write the scores as JSON to .muster/runs/${cfg.runId}/score.json (not .muster/score.json). Do not run the CLI's score verb: the workflow applies the floor (${gate.floor}) and pass total (${gate.pass_total}) to the scores you return.`,
     'Read only apart from score.json. Return scores as [{criterion, score, evidence}] using the criterion names exactly.',
   ].join('\n')
 }
 
 const cfg = parseArgs(args)
 if (!cfg.runId || !cfg.pipeline || !Array.isArray(cfg.phases) || !cfg.phases.length || !cfg.artifactPath) {
-  return { status: 'error', error: 'pipeline needs args {runId, outcome, pipeline:{id, title, gate}, phases:[{id, role, desc, skills}], artifactPath} (muster pipeline-args)' }
+  return { status: 'error', error: 'pipeline needs args {runId, outcome, pipeline:{id, title, gate}, phases:[{id, role, desc, skills}], artifactPath, cli} (the pipeline-args verb writes them)' }
 }
 const gate = cfg.pipeline.gate || { criteria: [], floor: 0, pass_total: 0 }
 const phases = cfg.phases

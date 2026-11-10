@@ -86,8 +86,9 @@ upstream:
 # muster-pm
 
 The files muster uses to write product intent and change specs that agents can execute and the
-verifier can check. The templates carry the format rules as comments and `muster spec-lint`
+verifier can check. The templates carry the format rules as comments and the CLI's `spec-lint`
 enforces them; this index says which file to open and when. Read only what the task needs.
+`<cli>` below is the muster CLI prefix your brief or command gives (`M` in a muster command); never run a bare `muster`, which is not on PATH in a user's project.
 
 ## The chain
 
@@ -109,7 +110,7 @@ stakeholders, not a third source of truth.
 | [references/ears.md](references/ears.md) | The five EARS patterns (event, state, unwanted, optional, ubiquitous), vendored verbatim from gotalab/cc-sdd | Phrasing an acceptance criterion, or when spec-lint flags an EARS tag |
 | [references/ai-evals.md](references/ai-evals.md) | How to write EV rows: binary pass rules fixed up front, a slot for evals found by error analysis, no similarity metrics, designed samples for rates, refusal / abstention / injection rows, and how post-launch rows are appended | A model output is part of the feature, spec-lint flags an EV row, or error analysis found a new failure pattern |
 | [references/red-team.md](references/red-team.md) | Red-team and pre-mortem: load-bearing claims, ranked kill-assumptions with the cheapest test, mapped onto A-NN / RK-NN / OQ-NN (adapted from phuryn/pm-skills) | A subagent stress-tests a spec, intent or PRD before it is called ready |
-| [references/tickets.md](references/tickets.md) | Spec to tracer-bullet backlog items that cite acceptance-criterion IDs, published with `muster backlog-publish` (adapted from mattpocock/skills to-tickets) | Splitting a ready spec into work |
+| [references/tickets.md](references/tickets.md) | Spec to tracer-bullet backlog items that cite acceptance-criterion IDs, published with the CLI's `backlog-publish` (adapted from mattpocock/skills to-tickets) | Splitting a ready spec into work |
 | [references/audit.md](references/audit.md) | Intended vs. implemented: compare a shipped spec and its intent with the code, both sides cited, findings for /muster:capture (adapted from phuryn/product-engineering) | Checking a shipped change for drift |
 
 `/muster:pm` runs these: `intent`, `spec` (lint plus a red-team subagent), `check`, `tickets`,
@@ -140,7 +141,7 @@ has no such file, so write criteria in the project's language and keep the EARS 
 5. Prefer an informed default recorded under `## Assumptions` to a question. At most 3 inline
    `[NEEDS CLARIFICATION: …]` markers; a spec is `ready` only with zero markers and no open
    question that blocks build.
-6. Run `muster spec-lint docs/specs/<slug>/SPEC.md` and fix every blocker. Warnings are judgment
+6. Run `<cli> spec-lint docs/specs/<slug>/SPEC.md` and fix every blocker. Warnings are judgment
    calls; fix them or leave them on purpose.
 
 ## Writing an intent
@@ -148,7 +149,7 @@ has no such file, so write criteria in the project's language and keep the EARS 
 Start from [templates/INTENT.md](templates/INTENT.md). Exactly one primary metric; at least one
 guardrail; never invent a baseline ("not yet measured" is a value). Every assumption gets a
 cheapest test and an observable kill criterion; name the most dangerous one. Lint it with
-`muster spec-lint docs/intent/INT-NNNN-<slug>.md` (auto-detected; `--intent` forces it).
+`<cli> spec-lint docs/intent/INT-NNNN-<slug>.md` (auto-detected; `--intent` forces it).
 
 ## Planning from a spec (stage B, not yet wired)
 

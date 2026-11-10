@@ -36,7 +36,7 @@ test("the roadmap pipeline loads, validates, and routes for prioritization outco
 // the roadmap pipeline's generate and prioritize phases bind by path.
 test("the roadmap builtin wires the deterministic scorer + graceful gh issues", async () => {
   const skill = await readFile(new URL("../plugin/builtins/muster-roadmap/SKILL.md", import.meta.url), "utf8");
-  assert.match(skill, /muster prioritize <file>/, "builtin must call the deterministic scorer");
+  assert.match(skill, /`<cli> prioritize <file>/, "builtin must call the deterministic scorer through the CLI prefix");
   assert.match(skill, /gh issue create|gh\b/, "builtin must offer GitHub issues");
   assert.match(skill, /AskUserQuestion/, "the main thread uses the selection UI for choices");
   const ps = await loadPipelines(PIPELINES);

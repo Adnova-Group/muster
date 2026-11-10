@@ -77,7 +77,7 @@ export async function nextForRun({ cwd, runId }) {
   } else if (!plan && !has("CONTEXT.md")) {
     [position, action, why] = ["new", "discuss: run the interview to write CONTEXT.md (or plan directly when preflight says the outcome is clear)", "no CONTEXT.md and no PLAN.md"];
   } else if (!plan) {
-    [position, action, why] = ["discussed", `plan: Workflow({name:"muster:plan", args:{runId:"${runId}", contextPath:"${rel}/CONTEXT.md", ...}})`, "CONTEXT.md exists, PLAN.md does not"];
+    [position, action, why] = ["discussed", `plan: Workflow({name:"muster:make-plan", args:{runId:"${runId}", contextPath:"${rel}/CONTEXT.md", ...}})`, "CONTEXT.md exists, PLAN.md does not"];
   } else if (built.some((t) => !merged.includes(t))) {
     [position, action, why] = ["built", `merge: muster merge-wave ${runId} --result ${rel}/build-result.json`, `build-result.json has unmerged tasks: ${built.filter((t) => !merged.includes(t)).join(", ")}`];
   } else if (planned.length ? planned.some((t) => !summarized.includes(t)) : !summarized.length) {
@@ -90,7 +90,7 @@ export async function nextForRun({ cwd, runId }) {
   } else if (verdict === "HUMAN_NEEDED") {
     [position, action, why] = ["human_needed", "done: present the merge decision with VERIFICATION.md's human-check items", "VERIFICATION.md status human_needed"];
   } else if (verdict === "GAPS") {
-    [position, action, why] = ["gaps", "replan: run muster:plan with the gaps from VERIFICATION.md as the outcome", "VERIFICATION.md verdict GAPS"];
+    [position, action, why] = ["gaps", "replan: run the muster:make-plan workflow with the gaps from VERIFICATION.md as the outcome", "VERIFICATION.md verdict GAPS"];
   } else {
     [position, action, why] = ["inconclusive", "ask the human: the verifier abstained", "VERIFICATION.md verdict ABSTAIN"];
   }

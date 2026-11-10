@@ -1,7 +1,7 @@
 export const meta = {
   name: 'backlog',
   description: 'Build several planned backlog items one after another through the muster build stages',
-  whenToUse: 'Backlog scope: every item already has an approved plan. Run `muster merge-wave` per item afterwards.',
+  whenToUse: 'Backlog scope: every item already has an approved plan. Run merge-wave per item afterwards.',
   phases: [
     { title: 'Build', detail: 'one builder per task (muster-executor or the planned specialist), each in its own worktree' },
     { title: 'Review', detail: 'muster-reviewer verdict; fixer in the same worktree, at most 2 rounds' },
@@ -144,12 +144,17 @@ const syncRef = (cfg) => (typeof cfg.branch === 'string' && /^[A-Za-z0-9._\/-]{1
 
 const boundSkills = (t) => list(t.skills).filter((k) => k && typeof k.id === 'string' && typeof k.path === 'string')
 
-function skillLines(t) {
+// Bound builtins may run the muster CLI (spec-lint, prioritize, pick). `muster` is not on PATH in
+// a user's project, so the brief carries the absolute prefix build-args copies from preflight.
+const cliPrefix = (cfg) => (typeof cfg.cli === 'string' && /^[^\r\n]{1,1024}$/.test(cfg.cli.trim()) ? cfg.cli.trim() : 'sh "$CLAUDE_PLUGIN_ROOT/runtime/muster.sh"')
+
+function skillLines(t, cfg) {
   const skills = boundSkills(t)
   if (!skills.length) return []
   return [
     'REQUIRED SKILLS: before any other work, Read each file below in full and follow it for this task:',
     ...skills.map((k) => `- ${k.id}: ${k.path}`),
+    `Run muster CLI commands as: ${cliPrefix(cfg)} <verb> ... (the bare muster command is not on PATH).`,
     'Return skillsApplied with one {id, how, quote} per skill: how = one line on how this task applied it; quote = one line copied verbatim from the file, proving you read it. A skill that turns out not to apply still gets read; say why in how.',
   ]
 }
@@ -179,7 +184,7 @@ function execBrief(cfg, t, prior) {
     `Your task is defined in .muster/runs/${cfg.runId}/PLAN.md; that file is the source of truth.`,
     t.agentHint && !specialist ? `Domain lens for this task: ${t.agentHint}.` : '',
     ...(specialist ? contractLines(tag) : []),
-    ...skillLines(t),
+    ...skillLines(t, cfg),
     `Files in scope: ${list(t.files).join(', ') || '(see PLAN.md)'}`,
     `Verify commands: ${list(t.verify).join(' ; ') || '(see PLAN.md)'}`,
     'You are in a fresh, isolated git worktree. This brief may be replayed after a crash, so:',

@@ -59,7 +59,7 @@ Produce a markdown findings report: each finding carries its cited rule id, seve
 
 The deterministic work lives in the CLI (`src/prompt-lint.js`, `src/prompt-eval.js`,
 `src/prompt-optimize.js`) — **prefer code over the model**. You provide the model calls
-the CLI cannot: collecting LLM responses and running the LLM-judge grader. Glass box: show
+the CLI cannot: collecting LLM responses and running the LLM-judge grader. `<cli>` below is the muster CLI prefix your brief or command gives (`M` in a muster command); never run a bare `muster`, which is not on PATH in a user's project. Glass box: show
 each finding with its cited rule id, and the per-version scores.
 
 ## 0. Scan a repo (audit prompt-quality dimension)
@@ -68,7 +68,7 @@ When dispatched as the `prompt-quality` audit dimension, find and lint every pro
 codebase in one deterministic pass:
 
 ```
-npx -y @adnova-group/muster prompt scan <dir>
+<cli> prompt scan <dir>
 ```
 
 It walks the repo (skipping vendored/build dirs), discovers candidate prompts (`.prompt`
@@ -84,7 +84,7 @@ with `prompt lint <file> --agent --tools` to apply the agent-specific rules.
 Run the linter on the prompt under review (a file, or pipe the assembled string):
 
 ```
-npx -y @adnova-group/muster prompt lint <file|-> [--agent] [--tools]
+<cli> prompt lint <file|-> [--agent] [--tools]
 ```
 
 It returns a scored rubric (dimensions: structure, examples, clarity, agentic, guardrails),
@@ -138,7 +138,7 @@ for promptfoo there.
    "graderResponse"?, "case"? }], "passThreshold": 7 }` and let the CLI grade deterministically:
 
 ```
-npx -y @adnova-group/muster prompt eval <suite.json>
+<cli> prompt eval <suite.json>
 ```
 
 It combines code grade (correctness/validity) with the model grade, reports per-case
@@ -154,7 +154,7 @@ runs disagree). Treat an unstable case as a failing one when you choose the winn
 1. Get deterministic, technique-driven variations (each closes a specific lint gap):
 
 ```
-npx -y @adnova-group/muster prompt variations <file|-> [--agent] [--tools]
+<cli> prompt variations <file|-> [--agent] [--tools]
 ```
 
    Pass `--agent --tools` for runtime agent prompts so the agent-specific transforms
@@ -174,11 +174,11 @@ npx -y @adnova-group/muster prompt variations <file|-> [--agent] [--tools]
    **Every candidate's `total` must come from the SAME scorer** — keep lint totals (0–15) and eval scores (0–10) on separate runs; mixing scales breaks the regression guard:
 
 ```
-npx -y @adnova-group/muster prompt optimize <candidates.json>
+<cli> prompt optimize <candidates.json>
 ```
 
 It returns `{ winner, winnerPrompt, regression, escalate, ranking }`, ranked by the same
-pass-floor gate as `muster pick <candidates.json>` (`pickWinner` in `src/tournament.js`: the
+pass-floor gate as the CLI's `pick` (`pickWinner` in `src/tournament.js`: the
 highest-scoring candidate that passes wins). **Regression guard:** if `regression` is true (the winning variation scores below the
 pinned baseline), keep the baseline and report it. If `escalate` is true (nothing passes the
 gate), surface that — do not ship a prompt that fails the floor.

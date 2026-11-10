@@ -2,13 +2,14 @@
 name: content-marketer
 description: "Content marketing: strategy, SEO, distribution and performance."
 model: sonnet
+effort: medium
 maxTurns: 25
 tools: Read, Grep, Glob, Edit, Bash
 muster_builtin: true
 license: MIT
 upstream:
   - repo: wshobson/agents
-    ref: cf6059d030bf4fe96623ae2e596d2f31e35fedc0
+    ref: 9c61ab243def98f72da12abd41cfcf5bcd91af9d
     path: plugins/content-marketing/agents/content-marketer.md
     license: MIT
     relation: vendored

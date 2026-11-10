@@ -5,7 +5,7 @@ muster_builtin: true
 license: MIT
 upstream:
   - repo: wshobson/agents
-    ref: cf6059d030bf4fe96623ae2e596d2f31e35fedc0
+    ref: 9c61ab243def98f72da12abd41cfcf5bcd91af9d
     path: plugins/security-scanning/skills/sast-configuration/SKILL.md
     license: MIT
     relation: vendored
@@ -136,13 +136,19 @@ codeql database create mydb --language=python
 ### New Project Setup
 
 ```bash
-./scripts/run-sast.sh --setup --language python --tools semgrep,sonarqube
+# Semgrep: install, then run an auto-config scan that exits non-zero on findings
+pip install semgrep
+semgrep --config=auto --error
+
+# SonarQube: start a community server for local evaluation, then analyze with sonar-scanner.
+# SONAR_ES_BOOTSTRAP_CHECKS_DISABLE skips the Elasticsearch host checks for a local try-out;
+# a real deployment needs vm.max_map_count>=524288 and fs.file-max>=131072 on the host instead.
+docker run -d --name sonarqube -e SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true -p 9000:9000 sonarqube:10.8-community
 ```
 
 ### Custom Rule Development
 
 ```yaml
-# See references/semgrep-rules.md for detailed examples
 rules:
   - id: hardcoded-jwt-secret
     pattern: jwt.encode($DATA, "...", ...)
@@ -182,6 +188,8 @@ semgrep --config p/pci-dss --json -o pci-scan-results.json
 
 ## Related Skills
 
+- [STRIDE Analysis Patterns](../wsh-stride-analysis-patterns/SKILL.md)
+- [Threat Mitigation Mapping](../wsh-threat-mitigation-mapping/SKILL.md)
 - [OWASP Top 10](https://owasp.org/www-project-top-ten/)
 - [Docker Security Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html)
 - [OWASP Component Analysis](https://owasp.org/www-community/Component_Analysis)

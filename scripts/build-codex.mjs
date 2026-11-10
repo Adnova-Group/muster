@@ -585,9 +585,9 @@ function codexSkill(source, id, contract) {
     body = body.replace(presentApprovalAnchor, "Render the complete enriched outcome and every success-criteria item inside the approval prompt itself; never refer to unstated criteria as ‘above’ or ‘previous’. Present both for approval via the **interactive user input** selection UI");
   }
   if (id === "wsh-sast-configuration") {
-    const semgrepRulesAnchor = "# See references/semgrep-rules.md for detailed examples";
-    if (!body.includes(semgrepRulesAnchor)) throw new Error("wsh-sast-configuration semgrep-rules anchor not found for Codex rewrite");
-    body = body.replace(semgrepRulesAnchor, "# Example custom rule; adapt it to the repository's threat model");
+    // Upstream fa128d5 (merged at wshobson 9c61ab2) dropped the unshipped references/semgrep-rules.md
+    // pointer this branch used to rewrite; fail loudly if a dangling pointer ever comes back.
+    if (/references\/semgrep-rules\.md|scripts\/run-sast\.sh/.test(body)) throw new Error("wsh-sast-configuration points at an unshipped SAST helper file again");
   }
   const binding = `\n\n## Codex harness binding\n\nRead \`${"${PLUGIN_ROOT}"}/runtime/codex-skill-adapter.md\` before following this workflow. Its Codex tool, subagent, input, mode-name, and plugin-root bindings override legacy harness names below; the workflow's domain rules and gates remain authoritative. Load any relative bundled asset named by this workflow through \`node ${"${PLUGIN_ROOT}"}/runtime/resolve-skill-provider.mjs builtin ${id} <relative-asset>\`; never read the internal tree directly. When a bundled asset must execute with sibling files, first run the same resolver with \`--path\`; it verifies the complete skill tree before returning its absolute root.\n`;
   return header + binding + body.replace(/^\r?\n*/, "\n");

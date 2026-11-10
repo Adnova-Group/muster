@@ -23,6 +23,8 @@ test("the npm package ships runtime files only and stays under its size ceiling"
   const paths = packed.files.map(f => f.path);
   assert.deepEqual(paths.filter(p => p.startsWith("vendor/")).sort(), ["vendor/impeccable.json", "vendor/manifest.yaml"], "no vendor/upstream/ base copies, no vendor/reports/");
   assert.deepEqual(paths.filter(p => p.startsWith("scripts/")).sort(), SHIPPED_SCRIPTS);
+  // Running the suite leaves uupm's search.py bytecode beside it; .gitignore does not apply to `files`.
+  assert.deepEqual(paths.filter(p => /(^|\/)__pycache__\/|\.pyc$/.test(p)), [], "no Python bytecode");
   for (const dir of ["test/", "test-support/", "eval/", "docs/", "website/", ".github/"])
     assert.ok(!paths.some(p => p.startsWith(dir)), `${dir} is maintainer-only`);
   for (const p of ["src/cli.js", "src/upstream-watch.js", "plugin/runtime/cli/bin/muster.mjs", "codex/frozen/agents/muster-runner.md", "codex/skill-assets", "vendor/manifest.yaml"])

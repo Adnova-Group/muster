@@ -51,7 +51,9 @@
     "SECURITY.md",
     "CHANGELOG.md",
     "LICENSE",
-    "NOTICE"
+    "NOTICE",
+    "!**/__pycache__",
+    "!**/*.pyc"
   ],
   "engines": {
     "node": ">=20"

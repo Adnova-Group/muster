@@ -24,3 +24,7 @@ wave-*/
 .codex/muster/.muster-managed.json
 .claude/worktrees/
 .serena/project.local.yml
+
+# Python bytecode from running vendored skill scripts (uupm search.py)
+__pycache__/
+*.pyc

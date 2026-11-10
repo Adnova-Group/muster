@@ -60,6 +60,7 @@ const NOW = () => new Date("2026-11-09T12:00:00Z");
 
 test("merge-wave: merges --no-ff in plan order, re-runs planned verify, removes worktrees and branches", async () => {
   const { root, base, result } = await repoWithTasks();
+  Object.assign(result.tasks[0], { agentType: "muster:backend-development-test-automator", skillsApplied: [{ id: "sp-tdd", how: "test first", quote: "q" }], skillsMissing: ["sp-debug"] });
   result.tasks.reverse(); // the build result's order is not trusted; the build args decide
   const report = await mergeWave({ cwd: root, runId: "r1", result, now: NOW });
   assert.equal(report.ok, true, JSON.stringify(report.problems));
@@ -72,7 +73,11 @@ test("merge-wave: merges --no-ff in plan order, re-runs planned verify, removes 
   assert.deepEqual(report.notes, []);
   const state = await readFile(join(root, ".muster/runs/r1/STATE.md"), "utf8");
   assert.match(state, /## Log\n- 2026-11-09T12:00:00.000Z merge-wave: merged A [0-9a-f]{10} as [0-9a-f]{10}; verify 1\/1 passed\n- .* merged B /);
-  assert.match(await readFile(join(root, ".muster/runs/r1/SUMMARY-A.md"), "utf8"), /Recorded by `muster merge-wave`[\s\S]*verify `grep -q A A.txt`: exit 0/);
+  const summaryA = await readFile(join(root, ".muster/runs/r1/SUMMARY-A.md"), "utf8");
+  assert.match(summaryA, /Recorded by `muster merge-wave`[\s\S]*verify `grep -q A A.txt`: exit 0/);
+  // Stage 3: the builder and the skill evidence reach the durable run record.
+  assert.match(summaryA, /- builder: muster:backend-development-test-automator\n- skill sp-tdd: test first\n- skills without evidence: sp-debug/);
+  assert.doesNotMatch(await readFile(join(root, ".muster/runs/r1/SUMMARY-B.md"), "utf8"), /builder:|skill/);
 });
 
 test("merge-wave: agent-reported testsRun and verify are never executed", async () => {

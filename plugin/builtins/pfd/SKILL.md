@@ -10,8 +10,8 @@ upstream:
     license: CC-BY-SA-4.0
     relation: adapted
 ---
-<!-- prompt-lint-disable ANTH-FMT-001, ANTH-POS-001, ANTH-ROLE-001, GUARD-IDK-001: vendored upstream text, adapted under merge tracking in vendor/manifest.yaml and kept as upstream wrote it so `muster vendor update` can 3-way merge it; muster loads it on demand and the loading command supplies the role and output format. -->
 <!-- License: CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). This file is adapted from skovalik/perception-first-design @ 1704ff61c18872a66d969e860c9b6e45a8f50f16 skills/pfd/SKILL.md, by Stefan Kovalik / Aurochs. Changes made by Muster: frontmatter (name, one-line description, muster_builtin, license, upstream provenance) and paths (repository-level framework/, corpus/ and scripts/ paths point at the pinned upstream repository, which Muster does not vendor; bare file names of shipped references are qualified with their references/ path; the insights log is written to the project's .muster/pfd/ instead of the read-only plugin directory). "Perception-First Design" is a trademark of Stefan Kovalik / Aurochs (Serial 99686343); the methodology is open, the name requires attribution. -->
+<!-- prompt-lint-disable ANTH-FMT-001, ANTH-POS-001, ANTH-ROLE-001, GUARD-IDK-001: vendored upstream text, adapted under merge tracking in vendor/manifest.yaml and kept as upstream wrote it so `muster vendor update` can 3-way merge it; muster loads it on demand and the loading command supplies the role and output format. -->
 
 # Perception-First Design (PFD): v0.7.0
 

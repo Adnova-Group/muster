@@ -59,6 +59,7 @@ Every non-vendored source, generated from the manifest. Each row lists the items
 | [anthropics/claude-plugins-official](https://github.com/anthropics/claude-plugins-official) @ `dceb15d50832` | Apache-2.0 | 4 vendored builtins and agents | vendored, adapted |
 | [mattpocock/skills](https://github.com/mattpocock/skills) @ `4ae2317ddb22` | MIT | 10 vendored builtins and agents | vendored, inspired-by, adapted |
 | [obra/superpowers-lab](https://github.com/obra/superpowers-lab) @ `51111f74f240` | MIT | 8 vendored builtins and agents | vendored, inspired-by, adapted |
+| [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills) @ `301b02b12bff` | MIT | 1 vendored builtins and agents | adapted |
 | [open-gsd/gsd-core](https://github.com/open-gsd/gsd-core) @ `1c352d1ea37b` | MIT | `muster-gsd-plan-phase`, `muster-gsd-execute-phase`, `muster-gsd-verify-work` | mechanism-port |
 | [wshobson/agents](https://github.com/wshobson/agents) @ `2de74ac1c8f6` | MIT | `wsh-signed-audit-trails-recipe` | mechanism-port |
 | [blader/humanizer](https://github.com/blader/humanizer) @ `1b48564898e9` | MIT | `muster-humanizer` | adapted |

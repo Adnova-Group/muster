@@ -339,3 +339,10 @@
   keywords: [duplicate, duplicates, duplication, dedupe, semantic, consolidate]
   description: "Find semantic duplicate functions (same intent, different names or code) by extracting a function catalog, clustering it by domain, then judging each cluster."
   provenance: { license: MIT, upstream: [obra/superpowers-lab] }
+- id: addy-source-driven-development
+  kind: builtin
+  roles: [docs-research, implement]
+  rank: 40
+  keywords: [docs, documentation, official, framework, citations, version, api]
+  description: "Ground framework-specific code in current official documentation: detect versions, fetch the docs, implement the documented pattern and cite each source."
+  provenance: { license: MIT, upstream: [addyosmani/agent-skills] }

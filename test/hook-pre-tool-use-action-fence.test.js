@@ -12,6 +12,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import os from "node:os";
+import { execFileSync } from "node:child_process";
 import { cleanDir, makeRunActive, spawnHook } from "./test-support/hook-helpers.js";
 import { classifyToolName, classifyBashCommand, classifyAction } from "../plugin/hooks/action-guard.js";
 import { trackedMkdtempSync as mkdtempSync } from "../test-support/helpers.js";
@@ -450,10 +451,49 @@ test("orchestrator SKILL.md: go writes both fence files before building and remo
   assert.match(text, /removes both at the merge decision or on any escalation exit/);
 });
 
-test("orchestrator SKILL.md: states that the fence reads markers from the tool call's cwd only", () => {
+test("orchestrator SKILL.md: states that the fence also guards linked worktrees of the run's repo", () => {
   const text = SKILL_MD.replace(/\s+/g, " ");
-  assert.match(text, /reads the markers from the tool call's cwd, so it guards the main checkout only/);
-  assert.match(text, /Workflow worktrees start without them/);
+  assert.match(text, /reads the markers from the tool call's checkout and, in a linked worktree, from the main checkout/);
+});
+
+// Workflow executors run in linked worktrees under .claude/worktrees/, which start without the
+// marker files. The fence must still find the run's markers in the main checkout, using only the
+// worktree's .git file (no git spawn on the hot path).
+function gitRepoWithWorktree() {
+  const root = mkdtempSync(path.join(os.tmpdir(), "muster-fence-repo-"));
+  const g = (...a) => execFileSync("git", a, { cwd: root, stdio: "pipe" });
+  g("init", "-q", "-b", "main");
+  g("-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "--allow-empty", "-m", "init");
+  const wt = path.join(root, ".claude", "worktrees", "wf_1-1");
+  g("worktree", "add", "-q", "-b", "worktree-wf_1-1", wt);
+  mkdirSync(path.join(wt, "src"), { recursive: true });
+  return { root, wt };
+}
+
+test("linked worktree of a live run: a forbidden publish is denied using the main checkout's markers", async () => {
+  const { root, wt } = gitRepoWithWorktree();
+  try {
+    makeRunActive(root);
+    writeForbidden(root, ["publish"]);
+    const result = await runRaw(bashPayload("git push origin main", path.join(wt, "src")));
+    assert.equal(result.code, 0);
+    const out = JSON.parse(result.stdout).hookSpecificOutput;
+    assert.equal(out.permissionDecision, "deny");
+  } finally {
+    cleanDir(root);
+  }
+});
+
+test("linked worktree with no live run in the main checkout: allowed", async () => {
+  const { root, wt } = gitRepoWithWorktree();
+  try {
+    const result = await runRaw(bashPayload("git push origin main", wt));
+    assert.equal(result.code, 0);
+    const out = result.stdout.trim() ? JSON.parse(result.stdout).hookSpecificOutput : null;
+    assert.notEqual(out?.permissionDecision, "deny");
+  } finally {
+    cleanDir(root);
+  }
 });
 
 test("separate worker cwd denies a forbidden publish using propagated markers", async () => {

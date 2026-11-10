@@ -34,9 +34,8 @@ whole run, including after compaction.
    `.muster/forbidden-actions` (`send sign submit publish purchase delete-remote`) before
    building and removes both at the merge decision or on any escalation exit. While both exist
    the single `hooks.json` action fence denies those external actions; without them it is a
-   no-op. The hook reads the markers from the tool call's cwd, so it guards the main checkout
-   only; Workflow worktrees start without them, and executors rely on their own push and
-   destructive-git bans. Nothing clears a stale marker automatically: overwrite one an
+   no-op. The hook reads the markers from the tool call's checkout and, in a linked worktree,
+   from the main checkout, so Workflow executors in `.claude/worktrees/` are fenced too. Nothing clears a stale marker automatically: overwrite one an
    interrupted run left, or delete it by hand to disarm the fence.
 5. **Escalation stops.** Stop and show the evidence, then offer Retry with more context /
    Re-scope / Abort, when any of these happen:

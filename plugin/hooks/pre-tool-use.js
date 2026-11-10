@@ -25,6 +25,35 @@ import { classifyAction } from "./action-guard.js";
 
 const EVENT = "PreToolUse";
 
+// Where a live run's markers are: the tool call's checkout, or, when that checkout is a linked
+// worktree (Workflow executors run in .claude/worktrees/*, which start without the markers), the
+// main checkout of the same repository. Resolved from the worktree's `.git` file and its
+// `commondir` with plain reads, so the hot path never spawns git. Throws when no live run is
+// found (the caller fails open).
+function hasRun(dir) {
+  try { statSync(path.join(dir, ".muster", "run-active")); return true; } catch { return false; }
+}
+function runRoot(cwd) {
+  if (hasRun(cwd)) return cwd;
+  for (let dir = path.resolve(cwd); ; dir = path.dirname(dir)) {
+    let dotgit;
+    try { dotgit = readFileSync(path.join(dir, ".git"), "utf8"); } catch (e) {
+      if (e && e.code === "EISDIR") break; // a main checkout: already checked via cwd ancestry below
+      if (path.dirname(dir) === dir) break;
+      continue;
+    }
+    const m = /^gitdir:\s*(.+)\s*$/m.exec(dotgit);
+    if (!m) break;
+    const gitdir = path.resolve(dir, m[1].trim());
+    let common = gitdir;
+    try { common = path.resolve(gitdir, readFileSync(path.join(gitdir, "commondir"), "utf8").trim()); } catch { /* not a worktree */ }
+    const main = path.dirname(common);
+    if (hasRun(main)) return main;
+    break;
+  }
+  throw new Error("no live run");
+}
+
 function allow() {
   emit({ hookSpecificOutput: { hookEventName: EVENT } });
   process.exit(0);
@@ -70,8 +99,8 @@ try {
     : process.cwd();
 
   try {
-    statSync(path.join(cwd, ".muster", "run-active"));
-    const forbiddenRaw = readFileSync(path.join(cwd, ".muster", "forbidden-actions"), "utf8");
+    const root = runRoot(cwd);
+    const forbiddenRaw = readFileSync(path.join(root, ".muster", "forbidden-actions"), "utf8");
     const forbidden = new Set(forbiddenRaw.split("\n").map((l) => l.trim()).filter(Boolean));
     const cls = classifyAction(payload);
     if (cls && forbidden.has(cls)) {

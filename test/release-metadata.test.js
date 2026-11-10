@@ -13,7 +13,6 @@ test("0.7.1 release metadata is synchronized across published manifests", async 
     "package-lock.json",
     "plugin.json",
     "plugin/.claude-plugin/plugin.json",
-    "cowork/manifest.json",
   ];
 
   for (const manifestPath of manifests) {

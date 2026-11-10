@@ -5,7 +5,7 @@
 // batch-plan approval through, before falling back to the universal AskUserQuestion prose gate?
 // This mirrors the DECLARED-signal shape already used elsewhere in this codebase for a
 // capability that cannot be auto-probed from a deterministic CLI/test process --
-// readInstalledCowork's `nativePluginRide` (src/harness.js) and the `--codex` capabilities flag
+// the `--native-plugin` declaration (src/harness.js declaredPluginRide) and the `--codex` capabilities flag
 // (src/cli.js) both take a caller-supplied signal rather than probing a live harness. The caller
 // (a command file's own runtime-detection step -- an in-session hook signal, MUSTER_RUNTIME, or
 // an explicit CLI flag; the `muster plan-surface <runtime>` verb in src/cli.js is the
@@ -38,18 +38,25 @@
 //     [docs/research/hermes.md §4]. Hermes's own docs name no blocking plan-approval mode
 //     (hermes.md's augmentation table: "Partial -- approve-first must be enforced by muster's
 //     own skill flow + clarify"), so the front-door block still rides Hermes's `clarify` tool.
-//   - cowork: the documented 5-step task loop has no exposed task-graph, plan object, or
-//     dependency ordering -- "the plan is prose in the agent's head"
-//     [docs/research/claude-cowork.md §2]. No native surface exists; the whole approve-first
-//     flow degrades to muster's own prose (AskUserQuestion has no Cowork equivalent either, so
-//     this is the sprint-protocol's existing in-chat human-ask degradation, not a new gap).
+//   - claude-desktop (the Desktop app's Code tab): it runs Claude Code, and its mode selector
+//     offers Plan ("Claude reads files and runs commands to explore, then proposes a plan
+//     without editing your source code"); the approved plan shows in the Plan pane, which
+//     accepts inline comments "in Plan mode or while Claude is asking you to approve the plan"
+//     [docs/research/claude-cowork.md §7, quoting code.claude.com/docs/en/desktop.md and the
+//     Desktop changelog v1.40609.0]. Same ExitPlanMode primitive as claude-code.
+//   - cowork (Chat and Cowork, merged as Unified Claude): the permission setting has only Auto
+//     and Manual, and no source documents a plan mode [docs/research/claude-cowork.md §7]. The
+//     approve-first flow stays muster's own prose, but the approval itself can ride
+//     AskUserQuestion: Cowork asks "questions with multiple choice responses" when it creates a
+//     scheduled task, and local Cowork transcripts on the owner's machine record
+//     AskUserQuestion calls (observed 2026-11-10; same section).
 //
-// A note on the `primitive` field: it names the native AUTHORING mechanism for the plan artifact
-// (if any) -- never the approval UI. Every harness's actual approve/adjust/cancel decision still
-// funnels through an AskUserQuestion-shaped surface (AskUserQuestion itself, or Hermes's `clarify`
-// tool) except Claude Code's own ExitPlanMode, which is uniquely both the artifact call AND the
-// approval gate in one native primitive. `primitive: null` (cowork, and the generic fallback's
-// `"AskUserQuestion"`) means no native AUTHORING mechanism exists, not that no approval flow does.
+// A note on the `primitive` field: it names the native mechanism the approval rides. For
+// claude-code and claude-desktop, ExitPlanMode is both the plan artifact call AND the approval
+// gate. For codex and hermes it names the plan AUTHORING mechanism, and the approve/adjust/cancel
+// decision still funnels through an AskUserQuestion-shaped surface (AskUserQuestion itself, or
+// Hermes's `clarify` tool). For cowork and the generic fallback it is "AskUserQuestion": no native
+// plan authoring exists, and the approval is the selection UI alone.
 //
 // This module makes NO harness calls, reads no environment, and touches no filesystem -- pure
 // selection logic over a caller-supplied string, exactly so it stays unit-testable without a
@@ -58,7 +65,7 @@
 const CC_CITE = "docs/research/claude-code-cli.md §6";
 const CODEX_CITE = "docs/research/codex-cli.md §1, §4.2, §5.2";
 const HERMES_CITE = "docs/research/hermes.md §4";
-const COWORK_CITE = "docs/research/claude-cowork.md §2";
+const COWORK_CITE = "docs/research/claude-cowork.md §7";
 
 const PLAN_SURFACES = {
   "claude-code": {
@@ -79,10 +86,16 @@ const PLAN_SURFACES = {
     detail: "author the rendered plan through the protected built-in `plan` skill's /plan flow, then encode the manifest's success criteria as a /goal completion contract (outcome/verification/constraints/boundaries/stop_when)",
     cite: HERMES_CITE
   },
+  "claude-desktop": {
+    surface: "native",
+    primitive: "ExitPlanMode",
+    detail: "the Code tab runs Claude Code: in Plan mode, call ExitPlanMode with the rendered plan; the plan opens in the Plan pane, where the user can comment before approving",
+    cite: COWORK_CITE
+  },
   cowork: {
     surface: "prose",
-    primitive: null,
-    detail: "no exposed plan-mode object or task-graph primitive exists -- degrade to muster's own prose approve-first flow",
+    primitive: "AskUserQuestion",
+    detail: "Chat and Cowork offer only Auto and Manual permission settings, with no plan mode -- render the plan in the conversation, then ask with AskUserQuestion (Approve & run / Adjust the plan / Cancel)",
     cite: COWORK_CITE
   }
 };
@@ -97,7 +110,7 @@ const FALLBACK = {
 // resolvePlanSurface(runtime) -> { runtime, surface, primitive, detail, cite }
 //
 // `runtime` is the caller-supplied, DECLARED harness identifier (never auto-probed here):
-// "claude-code" | "codex" | "hermes" | "cowork". Anything else -- undefined, empty,
+// "claude-code" | "claude-desktop" | "codex" | "hermes" | "cowork". Anything else -- undefined, empty,
 // unrecognized (e.g. a bare Agents SDK runner lane) -- resolves to the universal AskUserQuestion
 // prose fallback, never a thrown error: an unknown harness must always still get an approve-first
 // gate.

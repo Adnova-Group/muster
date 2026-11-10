@@ -15,7 +15,7 @@ with the release receipt.
    agrees with it.
 
    ```sh
-   node -e 'const fs=require("fs"); const target=process.env.TARGET_VERSION; const files=["package.json","package-lock.json","plugin.json","plugin/.claude-plugin/plugin.json","cowork/manifest.json"]; for (const file of files) { const value=JSON.parse(fs.readFileSync(file,"utf8")); if (value.version!==target) throw new Error(`${file}: ${value.version} != ${target}`); } if (JSON.parse(fs.readFileSync("package-lock.json","utf8")).packages[""].version!==target) throw new Error("package-lock root version does not match TARGET_VERSION");'
+   node -e 'const fs=require("fs"); const target=process.env.TARGET_VERSION; const files=["package.json","package-lock.json","plugin.json","plugin/.claude-plugin/plugin.json"]; for (const file of files) { const value=JSON.parse(fs.readFileSync(file,"utf8")); if (value.version!==target) throw new Error(`${file}: ${value.version} != ${target}`); } if (JSON.parse(fs.readFileSync("package-lock.json","utf8")).packages[""].version!==target) throw new Error("package-lock root version does not match TARGET_VERSION");'
    ```
 
 2. **Changelog gate**: `CHANGELOG.md` has a dated heading and comparison link for

@@ -13,7 +13,7 @@ Glass-box, multi-domain agentic orchestrator for Claude Code, Codex, and Cowork.
 
 Muster turns an outcome into finished work. It detects your project, discovers the capabilities you already have installed, picks the best tool for each piece of the job, and runs a crew of specialists toward your success criteria. Every decision is inspectable: which role resolved to which provider, on which model, and why.
 
-It runs on Claude Code, Codex, or Cowork with no separate model API, and it gets better as you install more tools. Runtime support differs: Claude Code and Codex expose the full native command surface, and Cowork's verified MCP lane has a seven-mode protocol subset. ChatGPT Work is a separate, conditional local/private MCP lane: configuration alone is not proof that the active Work host invoked Muster. The work is not limited to code. Product, business, content, and operations are first-class.
+It runs on Claude Code, Codex, or Cowork with no separate model API, and it gets better as you install more tools. Runtime support differs: Claude Code (including Desktop's Code tab) and Codex expose the full native command surface; Desktop's Chat and Cowork load the plugin from your claude.ai account, with an MCP-only fallback that has a seven-mode protocol subset. ChatGPT Work is a separate, conditional local/private MCP lane: configuration alone is not proof that the active Work host invoked Muster. The work is not limited to code. Product, business, content, and operations are first-class.
 
 ## Quickstart
 
@@ -35,6 +35,10 @@ Muster's glass-box output style ships inside the plugin but is not forced: pick 
 ```
 /muster:plan Add rate limiting to the public API with tests
 ```
+
+### Claude Desktop (Code tab, Chat, Cowork)
+
+Install the same plugin from Desktop: **Customize > Plugins > Add > Add marketplace**, enter `Adnova-Group/muster`, then install **muster**. The install belongs to your claude.ai account and syncs to Claude Code. The Code tab runs the full plugin. Cowork loads its skills, commands, agents and hooks; Chat loads its skills and commands. Desktop WSL sessions load no plugins, so use a local or SSH Code-tab session, or the CLI inside WSL. Without the plugin, the local MCP server in `cowork/` (the Cowork adapter over `mcp/server.mjs`) is the fallback; it does not run in Cowork's cloud sessions. `muster doctor --desktop` reports what Desktop sees, read-only. Details: [`cowork/README.md`](cowork/README.md).
 
 ### Codex CLI and Desktop
 

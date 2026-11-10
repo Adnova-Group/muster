@@ -45,8 +45,13 @@ surface does not (§8) [src: platforms]. [DOCUMENTED]
 
 ### 2.1 The shell
 
-The Claude Desktop app has three tabs — **Chat**, **Cowork** (Dispatch/agentic work),
+The Claude Desktop app had three tabs — **Chat**, **Cowork** (Dispatch/agentic work),
 **Code** — and the Code tab is the Claude Code surface [src: desktop]. [DOCUMENTED]
+Since the Unified Claude rollout (release notes 2026-09-16), Chat and Cowork are one
+conversation with no mode to choose, and "The model picker and the "Code" tab are where
+they were"; plugins reach Chat and Cowork from the claude.ai account, not from
+`~/.claude`. Chat and Cowork are covered in
+[`claude-cowork.md`](claude-cowork.md). [DOCUMENTED]
 Installers are a universal `.dmg` on macOS (MDM-distributable), MSIX on Windows, and
 apt/.deb on Linux (beta); device policy lives in the `com.anthropic.claudefordesktop`
 macOS preference domain and the `SOFTWARE\Policies\Claude` Windows registry key
@@ -137,7 +142,9 @@ Code sessions on your desktop machine (badge in the sidebar, push notification o
 finish or approval-needed, computer-use app approvals expiring after 30 minutes
 instead of session-lifetime) [src: desktop]. [DOCUMENTED] Desktop also sends OS
 notifications when a session finishes while unfocused and when CI completes on a
-monitored PR [src: desktop]. [DOCUMENTED]
+monitored PR [src: desktop]. [DOCUMENTED] Under Unified Claude, "Dispatch isn't
+available to new users. If you already use Dispatch, you can keep using it for now"
+(support.claude.com article 16761823, read 2026-11-10). [DOCUMENTED]
 
 ## 3. Web architecture (claude.ai/code)
 

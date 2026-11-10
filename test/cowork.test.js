@@ -137,22 +137,33 @@ test("contract pin: mcp-server.mjs's guidance.js imports all exist in guidance.j
   );
 });
 
-test("instructions carry a Cowork execution protocol with the sequential (no-fan-out) fallback", async () => {
+test("instructions defer to the plugin's /muster:* skills and carry the fallback protocol", async () => {
   const r = await rpc([INIT]);
   const instr = r[1].result.instructions;
-  // Cowork has no orchestrator skill, so the server must teach the loop itself.
+  // The plugin is the primary Desktop route; the tools are its deterministic backend.
+  assert.match(instr, /\/muster:plan/, "names the plugin skills to look for");
+  assert.match(instr, /If it does, use them[\s\S]{0,160}deterministic backend/, "skills first, tools as backend");
+  assert.doesNotMatch(instr, /No skills or slash commands/, "must not claim the host has no skills");
+  // Without the skills, the server still teaches the loop itself.
   assert.match(instr, /muster_detect/, "names the detect step");
   assert.match(instr, /muster_wave/, "names the wave step");
   assert.match(instr, /muster_manifest_validate/, "names the validate step");
-  assert.match(instr, /default[\s\S]{0,120}muster_next|muster_next[\s\S]{0,120}default/i, "defaults to the verified sequential driver");
-  assert.match(instr, /phase-?3[\s\S]{0,180}parallel/i, "requires phase-3 evidence before optional fan-out");
+  assert.match(instr, /muster_next[\s\S]{0,120}default/i, "keeps the sequential driver as the default without subagents");
+});
+
+test("instructions split the dispatch gate: parallel subagents documented, per-call model override probe-gated", async () => {
+  const r = await rpc([INIT]);
+  const instr = r[1].result.instructions;
+  assert.match(instr, /documents sub-agent coordination with parallel workstreams[\s\S]{0,120}parallel subagents/i);
+  assert.match(instr, /per-call model override[\s\S]{0,200}phase-3 probe receipt/i, "model override still needs phase-3 evidence");
+  assert.doesNotMatch(instr, /phase-?3[\s\S]{0,60}parallel subagents/i, "fan-out is no longer phase-3 gated");
   assert.doesNotMatch(instr, /parallel fan-out and per-call model override both work|confirmed to support parallel/i);
 });
 
 test("instructions cover the seven-mode MCP protocol subset and sequential fallback", async () => {
   const r = await rpc([INIT]);
   const instr = r[1].result.instructions;
-  assert.match(instr, /parallel/i, "documents the phase-3-gated optional fan-out");
+  assert.match(instr, /parallel/i, "documents the optional fan-out");
   assert.match(instr, /branch/i, "autopilot branches first");
   assert.match(instr, /commit/i, "commits per wave");
   assert.match(instr, /merge/i, "presents the merge decision");
@@ -217,14 +228,14 @@ test("Cowork sprint protocol consumes the emitted build/barrier/integration sche
   );
 });
 
-test("verb-rename: README.md enumeration uses plan/go/plan-backlog/go-backlog and cites /muster:go-backlog", async () => {
+test("verb-rename: README.md enumeration uses plan/go/plan-backlog/go-backlog and cites /muster:go on a backlog", async () => {
   const text = await read("cowork/README.md");
   const norm = text.replace(/\s+/g, " ");
   assert.match(norm, /seven-mode MCP protocol subset \(Plan, Go, Plan-backlog, Go-backlog, Diagnose, Audit, and Design\)/, "MCP protocol subset uses the new lexicon");
   assert.doesNotMatch(norm, /\(autopilot, audit, diagnose\)/, "no pre-rename enumeration");
   assert.match(norm, /the core loop plus the Plan\/Go\/Plan-backlog\/Go-backlog\/Diagnose\/Audit\/Design lifecycles/, "protocol-summary sentence uses the exact seven-mode subset");
   assert.doesNotMatch(norm, /autopilot\/audit\/diagnose\/run lifecycles/, "no pre-rename lifecycle slash-list");
-  assert.match(norm, /Claude Code plugin's `\/muster:go-backlog` lifecycle/, "sprint citation repoints to /muster:go-backlog");
+  assert.match(norm, /Claude Code plugin's backlog lifecycle \(`\/muster:go` on a backlog\)/, "sprint citation points at /muster:go on a backlog");
   assert.doesNotMatch(norm, /Claude Code plugin's `\/muster:sprint` lifecycle/, "no more citation of the pre-rename /muster:sprint verb");
   assert.match(norm, /the per-item go lifecycle/, "per-item lifecycle uses go, not autopilot");
   assert.doesNotMatch(norm, /the per-item autopilot lifecycle/, "no pre-rename per-item autopilot phrase");
@@ -241,13 +252,14 @@ test("verb-retirement: zero pre-rename verb-name citations remain in the 3 cowor
   }
 });
 
-test("tools/list exposes exactly the 31 brain verbs, matching the MCPB manifest", async () => {
-  const manifest = JSON.parse(await read("cowork/manifest.json"));
+test("tools/list exposes exactly the 30 brain verbs, matching the README tool table", async () => {
+  const readme = await read("cowork/README.md");
+  const table = readme.slice(readme.indexOf("| Tool | Does |"), readme.indexOf("The instructions carry muster's principles"));
+  const declared = [...new Set([...table.matchAll(/`(muster_[a-z_]+)`/g)].map((m) => m[1]))].sort();
   const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/list" }]);
   const served = r[2].result.tools.map((t) => t.name).sort();
-  const declared = manifest.tools.map((t) => t.name).sort();
   assert.equal(served.length, 30, "30 tools served");
-  assert.deepEqual(served, declared, "manifest tool list must match the server's actual tools (drift guard)");
+  assert.deepEqual(served, declared, "README tool table must match the server's actual tools (drift guard)");
   for (const t of r[2].result.tools) assert.ok(t.description && t.inputSchema, `${t.name} has description + inputSchema`);
 });
 
@@ -413,9 +425,8 @@ test("ChatGPT Work probe rejects wrong arguments before CLI dispatch and creates
   await assert.rejects(readFile(attestationPath, "utf8"), /ENOENT/);
 });
 
-test("Cowork distribution metadata and README document the exact MCP-only support contract", async () => {
+test("Desktop distribution README documents the plugin route first and the MCP-only fallback contract", async () => {
   const pkg = JSON.parse(await read("package.json"));
-  const manifest = JSON.parse(await read("cowork/manifest.json"));
   const text = await read("cowork/README.md");
   const [rootLicense, packedLicense, rootNotice, packedNotice] = await Promise.all([
     read("LICENSE"),
@@ -426,73 +437,39 @@ test("Cowork distribution metadata and README document the exact MCP-only suppor
   const norm = text.replace(/\s+/g, " ");
 
   assert.equal(pkg.license, "Apache-2.0");
-  assert.equal(manifest.license, pkg.license, "MCPB license must match the package license");
   assert.equal(packedLicense, rootLicense, "the packed cowork/ tree must carry the repository license");
   assert.equal(packedNotice, rootNotice, "the packed cowork/ tree must carry repository attributions");
-  assert.equal(manifest.tools.length, 30, "MCPB manifest declares the complete deterministic tool surface");
-  assert.match(manifest.long_description, /30 deterministic MCP tools/);
-  assert.match(manifest.long_description, /Plan, Go, Plan-backlog, Go-backlog, Diagnose, Audit, and Design/);
-  assert.equal(manifest.server.entry_point, "mcp-server.mjs", "MCPB entry point is relative to the packed cowork/ root");
-  assert.deepEqual(manifest.server.mcp_config.args, ["${__dirname}/mcp-server.mjs"]);
-  assert.match(manifest.long_description, /not self-contained/i);
-  assert.match(manifest.long_description, /Route A/i);
+  await assert.rejects(read("cowork/manifest.json"), /ENOENT/, "MCPB Route B is retired");
 
-  assert.match(norm, /ten canonical product modes/i);
+  // Plugin first, MCP-only second.
+  assert.ok(norm.indexOf("## Install the plugin (primary)") < norm.indexOf("## Fallback: the local MCP server"), "plugin route comes first");
+  assert.match(norm, /Customize > Plugins/);
+  assert.match(norm, /`Adnova-Group\/muster`/);
+  assert.match(norm, /Desktop WSL sessions load no plugins/);
+  assert.match(norm, /muster doctor --desktop/);
   assert.match(norm, /seven-mode MCP protocol subset \(Plan, Go, Plan-backlog, Go-backlog, Diagnose, Audit, and Design\)/);
-  assert.doesNotMatch(norm, /full orchestration lifecycle is available/i);
   for (const [mode, status] of [
     ["Plan", "MCP protocol"],
     ["Go", "MCP protocol"],
     ["Plan-backlog", "MCP protocol"],
-    ["Go-backlog", "MCP protocol"],
     ["Diagnose", "MCP protocol"],
     ["Audit", "MCP protocol"],
     ["Runner", "Not provided"],
     ["Capture", "Not provided"],
-    ["Init", "CLI-only"],
   ]) {
-    assert.match(norm, new RegExp(`\\| ${mode} \\| ${status.replace("-", "\\-")}`), `${mode} support status is explicit`);
+    assert.match(norm, new RegExp(`\\| ${mode} \\| [^|]+ \\| ${status}`), `${mode} fallback status is explicit`);
   }
 
   assert.match(norm, /`muster_sprint_protocol` is a protocol-content tool, not an MCP wrapper for a same-name CLI command/);
   assert.match(norm, /MCP-only route has no lifecycle-hook enforcement/i);
-  assert.match(norm, /native plugin ride remains conditional and unverified/i);
   assert.doesNotMatch(norm, /Dispatch is confirmed working|Dispatch is already confirmed on Cowork/i);
-  assert.match(norm, /phase-3 probe[\s\S]{0,180}no live phase-3 receipt/i);
-  assert.match(norm, /Phase 3[\s\S]{0,180}Require that receipt before enabling the parallel path/i);
-  assert.match(norm, /@anthropic-ai\/mcpb@2\.1\.2/);
-  const packageVersion = JSON.parse(await read("package.json")).version;
-  assert.match(norm, new RegExp(`@adnova-group/muster@${packageVersion.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
-  assert.match(norm, /Route B[\s\S]{0,220}not installable/i);
-  assert.match(norm, /archive is not self-contained/i);
-  assert.match(norm, /Do not install `muster\.mcpb`/i);
-});
-
-// MCPB validators may reject a ${user_config.X} substitution for a key that is
-// not declared in user_config -- pin that every substituted key IS declared,
-// and the apex/legacy-fable key shapes the server's precedence shim relies on
-// (enable_apex: no default, so "unset" stays distinguishable from an explicit
-// "false"; enable_fable: declared, marked deprecated/hidden in its prose --
-// the manifest schema has no dedicated deprecated/hidden field).
-test("manifest: every user_config substitution is declared; apex/legacy keys carry the shapes the shim relies on", async () => {
-  const manifest = JSON.parse(await read("cowork/manifest.json"));
-  const declared = new Set(Object.keys(manifest.user_config || {}));
-  for (const [envName, value] of Object.entries(manifest.server.mcp_config.env || {})) {
-    for (const m of String(value).matchAll(/\$\{user_config\.([A-Za-z0-9_]+)\}/g)) {
-      assert.ok(declared.has(m[1]), `${envName} substitutes undeclared user_config key "${m[1]}"`);
-    }
-  }
-  assert.ok(!("default" in manifest.user_config.enable_apex),
-    "enable_apex must declare no default -- a false-by-default boolean makes 'unset' indistinguishable from an explicit disable");
-  const fable = manifest.user_config.enable_fable;
-  assert.ok(fable, "the legacy enable_fable key must stay declared for its env substitution");
-  assert.equal(fable.type, "boolean");
-  assert.match(`${fable.title} ${fable.description}`, /deprecat/i, "enable_fable must be marked deprecated");
-  for (const key of ["lifecycle_receipt_public_key", "integration_approval_public_key"]) {
-    assert.ok(manifest.user_config[key], `${key} must be configurable for verifier-only reconciliation`);
-    assert.ok(!("default" in manifest.user_config[key]), `${key} must not ship a shared default`);
-  }
-  assert.ok(!("default" in manifest.user_config.run_id), "run_id must be adapter-provisioned per sprint");
+  // The split gate: fan-out documented, model override probe-gated.
+  assert.match(norm, /Parallel subagents are documented in Cowork/);
+  assert.match(norm, /per-call model override[\s\S]{0,200}phase-3 probe[\s\S]{0,180}no live phase-3 receipt/i);
+  assert.match(norm, /Phase 3 passing means the active Cowork build honored the per-call model override/);
+  assert.match(norm, /Route B \(MCPB\) is retired/);
+  assert.doesNotMatch(norm, /user_config field/, "no Route B settings column");
+  assert.match(norm, new RegExp(`@adnova-group/muster@${pkg.version.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
 });
 
 // ── codex-mcp-surface-gaps: deterministic ops the 2026-07-19 Codex dogfood ──
@@ -751,25 +728,35 @@ test("string verb: muster_route returns valid JSON with a domain", async () => {
   assert.ok("domain" in JSON.parse(res.content[0].text), "route output parses to an object with a domain");
 });
 
-// ── native-plugin-ride capability check ─────────────────────────────────────
-// Whether Cowork's own plugin loader (docs/research/claude-cowork.md section 3d)
-// actually accepts muster's plugin/ tree is unverified without a live Cowork
-// session; there is no on-disk/protocol signal this server can inspect to
-// auto-detect it, so it is a DECLARED capability check
-// (MUSTER_COWORK_NATIVE_PLUGIN, passed through this server's env-forwarding
-// runCli spawn -- same declare-not-discover shape as MUSTER_COWORK_CONNECTORS).
-// End-to-end through the actual MCP tool call, not just the direct CLI.
-test("tools/call: muster_capabilities respects MUSTER_COWORK_NATIVE_PLUGIN end to end (declared capability check, not a probe)", async () => {
-  const bareRun = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_capabilities", arguments: {} } }]);
-  const bare = JSON.parse(bareRun[2].result.content[0].text);
-  assert.equal(bare.roles.debug.chosen.id, "inline", "default (undeclared) Cowork resolution over MCP stays MCP-only");
+// ── plugin-ride capability check, end to end ─────────────────────────────────
+// muster_capabilities runs `capabilities --cowork`: a declaration
+// (MUSTER_COWORK_NATIVE_PLUGIN, forwarded through the server's env) wins, then the
+// Desktop account plugin list, then the documented plugin route. HOME points at a
+// fixture so a real Desktop install on the test machine cannot change the result
+// (on Linux the config dir is $HOME/.config/Claude).
+test("tools/call: muster_capabilities resolves the plugin route by default and honors MUSTER_COWORK_NATIVE_PLUGIN", async () => {
+  const home = mkdtempSync(path.join(tmpdir(), "muster-cowork-home-"));
+  const call = [INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_capabilities", arguments: {} } }];
+  const caps = async (env) => JSON.parse((await rpc(call, { env: { HOME: home, USERPROFILE: home, MUSTER_COWORK_NATIVE_PLUGIN: "", ...env } }))[2].result.content[0].text);
+  try {
+    const bare = await caps({});
+    assert.equal(bare.roles.debug.chosen.kind, "agent", "undeclared, with no readable plugin list, the plugin route resolves muster's builtin agent");
+    assert.deepEqual(bare.dispatch.pluginLoad, { state: "unknown", source: "default" });
+    assert.equal(bare.dispatch.parallelSubagents, "documented");
 
-  const nativeRun = await rpc(
-    [INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_capabilities", arguments: {} } }],
-    { env: { MUSTER_COWORK_NATIVE_PLUGIN: "1" } },
-  );
-  const native = JSON.parse(nativeRun[2].result.content[0].text);
-  assert.equal(native.roles.debug.chosen.id, "wsh-debugger", "declared native plugin ride resolves the builtin agent through the MCP server, same as the direct CLI");
+    const pluginLess = await caps({ MUSTER_COWORK_NATIVE_PLUGIN: "0" });
+    assert.equal(pluginLess.roles.debug.chosen.id, "inline", "a declared plugin-less install falls back to MCP servers or inline");
+
+    const list = path.join(home, ".config/Claude/plugin-list/org/acct");
+    mkdirSync(list, { recursive: true });
+    writeFileSync(path.join(list, "plugins.json"), JSON.stringify({ plugins: [{ id: "design@kw", name: "design", enabled: true }] }));
+    const absent = await caps({});
+    assert.equal(absent.roles.debug.chosen.id, "inline", "an account plugin list without muster selects the fallback");
+    assert.equal(absent.dispatch.pluginLoad.source, "account-plugin-list");
+
+    const declared = await caps({ MUSTER_COWORK_NATIVE_PLUGIN: "1" });
+    assert.deepEqual(declared.roles.debug.chosen, bare.roles.debug.chosen, "a declaration overrides the list");
+  } finally { rmSync(home, { recursive: true, force: true }); }
 });
 
 test("json verb: muster_wave computes dependency-ordered waves (diamond)", async () => {
@@ -1088,12 +1075,6 @@ test("unknown-method notification (no id) produces no reply and the server keeps
   ]);
   assert.deepEqual(Object.keys(r).sort(), ["1", "2"], "server must not emit a reply to the unknown-method notification");
   assert.deepEqual(r[2].result, {}, "server continues to handle requests normally after the notification");
-});
-
-test("cowork/manifest.json version tracks package.json", async () => {
-  const pkg = JSON.parse(await read("package.json"));
-  const manifest = JSON.parse(await read("cowork/manifest.json"));
-  assert.equal(manifest.version, pkg.version, "MCPB manifest version must match package.json");
 });
 
 // --- probe ---------------------------------------------------------------------

@@ -22,6 +22,7 @@ If the failure description is empty, ask for a symptom or failing output and sto
 3. **Root cause** (plan: `root-cause`, role `debug`) — dispatch the chosen `debug` provider (an installed
    wshobson/external debugger if present, else built-in systematic-debugging). Produce a HYPOTHESIS
    TABLE -> cheapest test first -> the root cause. Record it in STATE. A confirmed root cause is required before proceeding — symptom-patching is a failure mode.
+   When two or more causes stay plausible, run `Workflow({name:"muster:debug", args:{symptom, repro}})`: parallel read-only investigators, a cross-examination round, a deterministic verdict. `ROOT_CAUSE` gives the cause; `INCONCLUSIVE` escalates. Steps 4-5 may then run as a one-task `tdd="true"` plan through `muster:team` (independent test writer, then the fix).
 4. **Fix** (plan: `fix`, role `implement`) — apply the minimal fix targeting the root cause.
 5. **Regression** (plan: `regression`, role `test-author`) — add a test that fails before the fix and
    passes after. A fix without a regression test is not done.

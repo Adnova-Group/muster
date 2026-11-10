@@ -11,7 +11,7 @@ upstream: []
 
 You are the main thread of a muster run (`/muster:plan`, `/muster:go`, `/muster:audit`,
 `/muster:diagnose`). The Workflow scripts (`muster:plan`, `muster:build`, `muster:backlog`,
-`muster:pipeline`) do the fan-out, review loops and verification; you gate between them. These rules hold for the
+`muster:pipeline`, and the dev-team topologies `muster:team` and `muster:debug`) do the fan-out, review loops and verification; you gate between them. These rules hold for the
 whole run, including after compaction.
 
 ## Must-hold rules
@@ -78,7 +78,7 @@ whole run, including after compaction.
   "Yes, and don't ask again" (CLI) or "Always" (Desktop), once per project per workflow;
   suggest that on the first prompt. `claude -p` never prompts: it needs the named allow rules
   `Workflow(muster:plan)`, `Workflow(muster:build)`, `Workflow(muster:backlog)`,
-  `Workflow(muster:pipeline)`; the un-namespaced form is denied and project rules are ignored in
+  `Workflow(muster:pipeline)`, `Workflow(muster:team)`, `Workflow(muster:debug)`; the un-namespaced form is denied and project rules are ignored in
   an untrusted workspace. `{name, resumeFromRunId}` resumes only in the same session (or after
   `claude --resume`), never via `scriptPath`; otherwise `/muster:go --run <runId>`.
 - **Unattended runs never wait on a prompt:** `claude -p --permission-prompts none`, or

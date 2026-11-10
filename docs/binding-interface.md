@@ -258,10 +258,12 @@ stale:
 AskUserQuestion    files=7  mentions=19
 dispatch (Agent/Task tool)  files=2  mentions=8
 hook (PreToolUse/SessionStart/UserPromptSubmit)  files=2  mentions=3
-worktree   files=8  mentions=57
+worktree   files=10 mentions=66
 ```
 
-Counts refreshed for revival stage 2b (2026-11-09): plan.md, go.md and the orchestrator were
+The worktree row was refreshed on 2026-11-10 for the dev-team seats: `muster-test-writer` and
+`muster-integration-checker` work in an isolated and a scratch worktree, and the go and diagnose
+commands name `muster:team`. Counts refreshed for revival stage 2b (2026-11-09): plan.md, go.md and the orchestrator were
 rewritten around the Workflow scripts; plan-backlog, go-backlog, runner, the router,
 domain-router, review-gate, tournament and coordination skills, the muster-runner agent and the
 `TaskCompleted` gate were deleted, and the ten audit-pattern hunt lists moved out of

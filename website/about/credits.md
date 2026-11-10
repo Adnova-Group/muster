@@ -46,13 +46,13 @@ Every non-vendored source, generated from the manifest. Each row lists the items
 | [greensock/gsap-skills](https://github.com/greensock/gsap-skills) @ `aed9cfd32777` | MIT | 8 vendored builtins and agents | vendored |
 | [elayadesign/ai-design-skills](https://github.com/elayadesign/ai-design-skills) @ `456d9e0d3e2d` | MIT | 2 vendored builtins and agents | vendored |
 | [jakubkrehel/skills](https://github.com/jakubkrehel/skills) @ `72bdd6121cd5` | MIT | 46 vendored builtins and agents | vendored |
-| [open-gsd/gsd-core](https://github.com/open-gsd/gsd-core) @ `9385f4618b52` | MIT | 40 vendored builtins and agents | adapted, vendored |
+| [open-gsd/gsd-core](https://github.com/open-gsd/gsd-core) @ `9385f4618b52` | MIT | 42 vendored builtins and agents | adapted, vendored |
 | [nextlevelbuilder/ui-ux-pro-max-skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) @ `4f2dbb67e649` | MIT | 144 vendored builtins and agents | vendored, inspired-by, adapted |
 | [ghaida/intent](https://github.com/ghaida/intent) @ `1806110106a4` | CC0-1.0 | 42 vendored builtins and agents | vendored, inspired-by, adapted |
 | [bergside/typeui](https://github.com/bergside/typeui) @ `efc5f21dff38` | MIT | 4 vendored builtins and agents | adapted |
 | [skovalik/perception-first-design](https://github.com/skovalik/perception-first-design) @ `1704ff61c188` | CC-BY-SA-4.0 | 40 vendored builtins and agents | vendored, adapted |
 | [open-gsd/gsd-core](https://github.com/open-gsd/gsd-core) @ `1c352d1ea37b` | MIT | `muster-gsd-plan-phase`, `muster-gsd-execute-phase`, `muster-gsd-verify-work` | mechanism-port |
-| [wshobson/agents](https://github.com/wshobson/agents) @ `2de74ac1c8f6` | MIT | `wsh-signed-audit-trails-recipe` | mechanism-port |
+| [wshobson/agents](https://github.com/wshobson/agents) @ `2de74ac1c8f6` | MIT | `wsh-signed-audit-trails-recipe`, `wsh-code-reviewer` | mechanism-port, vendored |
 | [blader/humanizer](https://github.com/blader/humanizer) @ `b48c832f0f80` | MIT | `muster-humanizer` | adapted |
 | [rudra496/StealthHumanizer](https://github.com/rudra496/StealthHumanizer) @ `8b0e90874c61` | MIT | `muster-humanizer` | adapted |
 | [conorbronsdon/avoid-ai-writing](https://github.com/conorbronsdon/avoid-ai-writing) @ `30971f1c50c6` | MIT | `muster-humanizer` | adapted |
@@ -205,6 +205,10 @@ The stage-2 lifecycle agents are adapted from [gsd-core](https://github.com/open
 - **muster-executor**: implements one task in its own worktree (from gsd-executor, with the former builder's one-slice scope contract)
 - **muster-verifier**: goal-backward verification with honest abstain (from gsd-verifier)
 - **muster-reviewer**: adversarial review of one task's commits (from gsd-code-reviewer, with muster's verdict discipline)
+- **muster-test-writer**: writes a task's failing tests before anyone implements it (from gsd-nyquist-auditor)
+- **muster-integration-checker**: checks that a wave's parallel tasks wire together (from gsd-integration-checker)
+
+The `muster:debug` workflow's hypothesis investigator, **wsh-team-debugger**, is adapted from wshobson's agent-teams `team-debugger` (MIT).
 
 ## Additional inspiration (clean-room, mechanism-level)
 

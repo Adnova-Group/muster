@@ -295,10 +295,11 @@ export function generateNotice(manifest) {
   const byRepo = new Map();
   for (const source of manifest?.sources || []) {
     if (!source.repo) continue;
-    const row = byRepo.get(source.repo) || { license: source.license, refs: [], copyright: null, trademark: null, formerly: [], waived: false };
+    const row = byRepo.get(source.repo) || { license: source.license, refs: [], copyrights: [], trademark: null, formerly: [], waived: false };
     const refs = [source.ref, ...(source.items || []).map(i => i.ref)].filter(Boolean);
     for (const ref of refs) if (!row.refs.includes(ref)) row.refs.push(ref);
-    row.copyright ||= source.copyright || null;
+    // A repository pinned twice may name a different holder at each pin; every line travels.
+    if (source.copyright && !row.copyrights.includes(source.copyright)) row.copyrights.push(source.copyright);
     row.trademark ||= source.trademark || null;
     for (const f of source.formerly || []) if (!row.formerly.includes(f)) row.formerly.push(f);
     byRepo.set(source.repo, row);
@@ -309,7 +310,7 @@ export function generateNotice(manifest) {
   for (const [repo, row] of byRepo) {
     out += `\n- ${repo}${row.refs.length ? ` @ ${row.refs.join(", ")}` : ""} (${row.license})`;
     if (row.formerly.length) out += `\n  formerly: ${row.formerly.join(", ")}`;
-    if (row.copyright) out += `\n  ${row.copyright}`;
+    for (const line of row.copyrights) out += `\n  ${line}`;
     if (row.trademark) out += `\n  ${row.trademark}`;
   }
   const works = (manifest?.sources || []).filter(s => isWorkSource(s) && s.kind !== "unknown");

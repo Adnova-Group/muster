@@ -15,11 +15,21 @@ const startupCodexHome = process.env.CODEX_HOME;
 
 // The Codex lane is frozen: builtins added after the freeze (the merge-tracked UX family:
 // uupm-*, intent-*, typeui, pfd; impeccable-*; the complementary evaluation/security/engineering
-// skills: evals-*, sentry-*, openai-*, tob-*, mp-*, splab-*, addy-source-driven-development) are
-// Claude-plugin only and never copied into the Codex bundle's internal skills, so CODEX_COUNTS
-// below stays the frozen census. So does muster-pm (the PM artifact kit): the frozen lane gets no new features.
+// skills: evals-*, sentry-*, openai-*, tob-*, mp-*, splab-*, addy-source-driven-development; the
+// complementary research/data, SRE, writing and stack skills: kdense-*, kwp-*, go-*, simple-english,
+// supabase-postgres-best-practices and the ids below) are Claude-plugin only and never copied into
+// the Codex bundle's internal skills, so CODEX_COUNTS below stays the frozen census. So does
+// muster-pm (the PM artifact kit): the frozen lane gets no new features.
+// wsh-*, sp-* and mkt-* also name builtins that predate the freeze and ship in the Codex bundle,
+// so the complements added to those sources are listed by id.
+const COMPLEMENT_IDS = new Set([
+  "addy-source-driven-development", "simple-english", "supabase-postgres-best-practices",
+  "wsh-slo-implementation", "wsh-postmortem-writing", "wsh-incident-runbook-templates",
+  "wsh-security-requirement-extraction", "wsh-changelog-automation",
+  "mkt-copy-editing", "sp-writing-skills"
+]);
 export const isUxFamilyBuiltin = name => /^(uupm|intent)-/.test(name) || name === "typeui" || name === "pfd";
-export const isComplementBuiltin = name => /^(evals|sentry|openai|tob|mp|splab)-/.test(name) || name === "addy-source-driven-development";
+export const isComplementBuiltin = name => /^(evals|sentry|openai|tob|mp|splab|kdense|kwp|go)-/.test(name) || COMPLEMENT_IDS.has(name);
 export const isCodexFrozenOutBuiltin = name => isUxFamilyBuiltin(name) || isComplementBuiltin(name) || /^impeccable-/.test(name) || name === "muster-pm";
 
 // Expected contents of one generated Codex bundle. This census belongs with

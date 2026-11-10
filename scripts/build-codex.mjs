@@ -756,7 +756,7 @@ async function buildCodexPluginOnce({ root, outDir, nodeExecPath }) {
     }
     rmAndCopy(join(root, "plugin", "skills"), internalSkillDir);
     rmAndCopy(join(root, "plugin", "builtins"), internalSkillDir, { merge: true });
-    // Frozen Codex lane: post-freeze builtins (the UX family) stay Claude-plugin only.
+    // Frozen Codex lane: post-freeze builtins (the UX family and the 2026-11-10 complements) stay Claude-plugin only.
     for (const entry of readdirSync(join(root, "plugin", "builtins"), { withFileTypes: true }))
       if (entry.isDirectory() && isCodexFrozenOutBuiltin(entry.name)) rmSync(join(internalSkillDir, entry.name), { recursive: true, force: true });
     for (const entry of readdirSync(join(root, "codex", "skill-assets"), { withFileTypes: true })) {

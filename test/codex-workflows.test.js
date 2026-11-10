@@ -372,7 +372,7 @@ test("generated Codex muster-init delegates to the guarded authoritative workflo
 
 test("all ported skills declare and load the Codex harness binding", async () => {
   const native = (await readdir(join(repoRoot, "plugin", "skills"), { withFileTypes: true })).filter(entry => entry.isDirectory()).map(entry => entry.name);
-  // Post-freeze builtins (the merge-tracked UX family) are Claude-plugin only.
+  // Post-freeze builtins (the merge-tracked UX family and the 2026-11-10 complements) are Claude-plugin only.
   const builtins = (await readdir(join(repoRoot, "plugin", "builtins"), { withFileTypes: true })).filter(entry => entry.isDirectory() && !isCodexFrozenOutBuiltin(entry.name)).map(entry => entry.name);
   for (const name of new Set([...native, ...builtins])) {
     const id = codexFallbackSkillId(name);

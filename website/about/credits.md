@@ -36,8 +36,8 @@ Every non-vendored source, generated from the manifest. Each row lists the items
 | Source | License | Basis for | Relation |
 | --- | --- | --- | --- |
 | [pbakaus/impeccable](https://github.com/pbakaus/impeccable) @ `035c8f319edd` | Apache-2.0 | 26 vendored builtins and agents | inspired-by, adapted |
-| [obra/superpowers](https://github.com/obra/superpowers) @ `22f0b463e7a5` | MIT | 21 vendored builtins and agents | adapted, vendored |
-| [wshobson/agents](https://github.com/wshobson/agents) @ `9c61ab243def` | MIT | 88 vendored builtins and agents | adapted, vendored |
+| [obra/superpowers](https://github.com/obra/superpowers) @ `22f0b463e7a5` | MIT | 31 vendored builtins and agents | adapted, vendored |
+| [wshobson/agents](https://github.com/wshobson/agents) @ `9c61ab243def` | MIT | 98 vendored builtins and agents | adapted, vendored |
 | [anthropics/skills](https://github.com/anthropics/skills) @ `2c5958ecac7c` | Apache-2.0 | 4 vendored builtins and agents | adapted, vendored |
 | [Leonxlnx/taste-skill-classics](https://github.com/Leonxlnx/taste-skill-classics) @ `5e08c9383dc4` | MIT | 4 vendored builtins and agents | vendored |
 | [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills) @ `301b02b12bff` | MIT | 3 vendored builtins and agents | adapted, vendored |
@@ -47,6 +47,10 @@ Every non-vendored source, generated from the manifest. Each row lists the items
 | [elayadesign/ai-design-skills](https://github.com/elayadesign/ai-design-skills) @ `456d9e0d3e2d` | MIT | 2 vendored builtins and agents | vendored |
 | [jakubkrehel/skills](https://github.com/jakubkrehel/skills) @ `72bdd6121cd5` | MIT | 46 vendored builtins and agents | vendored |
 | [gotalab/cc-sdd](https://github.com/gotalab/cc-sdd) @ `e2a0c671aef3` | MIT | 2 vendored builtins and agents | vendored |
+| [K-Dense-AI/scientific-agent-skills](https://github.com/K-Dense-AI/scientific-agent-skills) @ `2d2065fb4520` | MIT | 36 vendored builtins and agents | vendored, adapted |
+| [AminBlg/SimpleEnglish](https://github.com/AminBlg/SimpleEnglish) @ `a6fcb4fde098` | MIT | 5 vendored builtins and agents | vendored |
+| [supabase/agent-skills](https://github.com/supabase/agent-skills) @ `c9be0e931b79` | MIT | 33 vendored builtins and agents | vendored |
+| [samber/cc-skills-golang](https://github.com/samber/cc-skills-golang) @ `d68d80aec298` | MIT | 28 vendored builtins and agents | vendored |
 | [open-gsd/gsd-core](https://github.com/open-gsd/gsd-core) @ `9385f4618b52` | MIT | 42 vendored builtins and agents | adapted, vendored |
 | [nextlevelbuilder/ui-ux-pro-max-skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) @ `4f2dbb67e649` | MIT | 144 vendored builtins and agents | vendored, inspired-by, adapted |
 | [ghaida/intent](https://github.com/ghaida/intent) @ `1806110106a4` | CC0-1.0 | 42 vendored builtins and agents | vendored, inspired-by, adapted |
@@ -58,7 +62,7 @@ Every non-vendored source, generated from the manifest. Each row lists the items
 | [openai/skills](https://github.com/openai/skills) @ `49f948faa925` | Apache-2.0 | 5 vendored builtins and agents | inspired-by, adapted, vendored |
 | [trailofbits/skills](https://github.com/trailofbits/skills) @ `e4dd0bb5b155` | CC-BY-SA-4.0 | 26 vendored builtins and agents | vendored, inspired-by, adapted |
 | [anthropics/claude-plugins-official](https://github.com/anthropics/claude-plugins-official) @ `dceb15d50832` | Apache-2.0 | 4 vendored builtins and agents | vendored, adapted |
-| [mattpocock/skills](https://github.com/mattpocock/skills) @ `4ae2317ddb22` | MIT | 10 vendored builtins and agents | vendored, inspired-by, adapted |
+| [mattpocock/skills](https://github.com/mattpocock/skills) @ `4ae2317ddb22` | MIT | 12 vendored builtins and agents | vendored, inspired-by, adapted |
 | [obra/superpowers-lab](https://github.com/obra/superpowers-lab) @ `51111f74f240` | MIT | 8 vendored builtins and agents | vendored, inspired-by, adapted |
 | [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills) @ `301b02b12bff` | MIT | 1 vendored builtins and agents | adapted |
 | [open-gsd/gsd-core](https://github.com/open-gsd/gsd-core) @ `1c352d1ea37b` | MIT | `muster-gsd-plan-phase`, `muster-gsd-execute-phase`, `muster-gsd-verify-work` | mechanism-port |
@@ -98,7 +102,7 @@ Every non-vendored source, generated from the manifest. Each row lists the items
 | [Wirasm/prp](https://github.com/Wirasm/prp) @ `435292597e7b` | MIT | `muster-pm` | inspired-by |
 | [product-on-purpose/pm-skills](https://github.com/product-on-purpose/pm-skills) @ `9b920db418c5` | Apache-2.0 | `muster-pm` | inspired-by |
 | [open-gsd/gsd-core](https://github.com/open-gsd/gsd-core) @ `9385f4618b52` | MIT | `muster-pm` | inspired-by |
-| [anthropics/knowledge-work-plugins](https://github.com/anthropics/knowledge-work-plugins) @ `e605d8ddbfb6` | Apache-2.0 | `prd` | inspired-by |
+| [anthropics/knowledge-work-plugins](https://github.com/anthropics/knowledge-work-plugins) @ `e605d8ddbfb6` | Apache-2.0 | 6 vendored builtins and agents | inspired-by, adapted |
 | [joelparkerhenderson/objectives-and-key-results](https://github.com/joelparkerhenderson/objectives-and-key-results) @ `f7269521672a` | NONE | `okrs` | inspired-by |
 | [architecture-decision-record/architecture-decision-record](https://github.com/architecture-decision-record/architecture-decision-record) @ `a36c53f49517` | CC-BY-NC-SA-4.0 | `ai-implementation-spec` | inspired-by |
 | [adr/madr](https://github.com/adr/madr) @ `ba75bb1b20d4` | MIT OR CC0-1.0 | `ai-implementation-spec` | inspired-by |
@@ -106,7 +110,7 @@ Every non-vendored source, generated from the manifest. Each row lists the items
 | [gcamilo/management-consulting](https://github.com/gcamilo/management-consulting) @ `dd2d099dc390` | MIT | `executive-summary` | inspired-by |
 | [reasoncommons/issuetrees](https://github.com/reasoncommons/issuetrees) @ `56ad78e0ce78` | NONE | `executive-summary` | inspired-by |
 | [cdeust/ai-prd-generator](https://github.com/cdeust/ai-prd-generator) @ `4189d41b102d` | LicenseRef-proprietary | `prd` | inspired-by |
-| [coreyhaines31/marketingskills](https://github.com/coreyhaines31/marketingskills) @ `8a3bde8083bd` | MIT | `competitive-battlecard`, `lead-magnet`, `case-study`, `newsletter` | inspired-by |
+| [coreyhaines31/marketingskills](https://github.com/coreyhaines31/marketingskills) @ `8a3bde8083bd` | MIT | 8 vendored builtins and agents | inspired-by |
 | [CosmoBlk/email-marketing-bible](https://github.com/CosmoBlk/email-marketing-bible) @ `962648c1b147` | MIT | `competitive-battlecard`, `lead-magnet`, `case-study`, `newsletter` | inspired-by |
 | [AgriciDaniel/claude-email](https://github.com/AgriciDaniel/claude-email) @ `182270a0bbcd` | MIT | `competitive-battlecard`, `lead-magnet`, `case-study`, `newsletter` | inspired-by |
 | [SkeltonThatcher/run-book-template](https://github.com/SkeltonThatcher/run-book-template) @ `7014714b6021` | NONE | `runbook` | inspired-by |

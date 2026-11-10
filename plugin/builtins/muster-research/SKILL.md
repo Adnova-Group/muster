@@ -55,6 +55,38 @@ Gather the evidence the phase needs, anchored to the outcome.
   every cited finding with its citation.
 - Return a short, cited evidence brief the author phase can build on; surface gaps to fill.
 
+## Ledger and coverage discipline
+Keep three running records while you research; the brief is written from them, not from memory.
+Facts pulled from ingested documents (the contract below) enter the same source ledger.
+
+1. **Source ledger**: one row per source with a stable id (`S-001`, `S-002`, ...): title, publisher,
+   URL, publication date and retrieval date, the original producer when you reached it through an
+   aggregator, and its scope (geography, period, unit, currency). An unknown date is recorded as
+   `not-stated`, never estimated. An aggregator and the source it republishes count as one source
+   for corroboration.
+2. **Claims ledger**: one row per claim the brief makes (`C-001`, ...): the exact claim, its type
+   (fact, estimate, calculation, forecast, opinion), the source ids behind it, and a confidence.
+   Split a compound sentence whose parts rest on different sources. A calculation cites its inputs.
+   A claim with no source id in this ledger stays out of the brief or ships as a labeled assumption.
+3. **Coverage log**: every search you ran: query, engine or database, date, hits returned, hits kept.
+   Close the log with what was deliberately left unsearched. The brief claims only the coverage the
+   log shows ("12 queries across 3 databases"), never completeness.
+
+Sizes and forecasts are scenarios: at least two (low/base/high is the usual set), each with its
+assumptions written down, built top-down and bottom-up from non-overlapping components and
+reconciled, with the gap between the two methods reported rather than averaged away.
+
+Load the vendored method that fits the question:
+- market, industry, competitor or TAM/SAM/SOM questions: `kdense-market-research-reports` (ledger
+  templates, the sizing and sensitivity calculators, and its release gate);
+- academic or systematic evidence: `kdense-literature-review` (search strategy, screening counts,
+  citation verification);
+- merging what several sources say into one answer: `kwp-knowledge-synthesis` (deduplicate across
+  sources, confidence from freshness and authority, conflicts kept visible rather than resolved
+  silently);
+- any figure, rate or calculation the brief hands on: `kwp-validate-data` before handoff
+  (denominators, period alignment, join inflation, the ready / caveats / revise verdict).
+
 ## Document-ingestion contract (source documents: PDFs, transcripts, long notes)
 When this phase ingests source documents, work in this order — synthesis never skips ahead of it:
 

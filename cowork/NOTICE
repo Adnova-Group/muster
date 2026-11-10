@@ -30,6 +30,14 @@ Per-item detail (upstream path, ref, relation) is in each item's `upstream:` fie
   Copyright (c) 2026 Jakub Krehel
 - gotalab/cc-sdd @ e2a0c671aef37a482404905b409ab5c27092b25b (MIT)
   Copyright (c) 2025 gotalab
+- K-Dense-AI/scientific-agent-skills @ 2d2065fb4520fa3f3f2bcf61cff26ec8b7eba4b5 (MIT)
+  Copyright (c) 2025 K-Dense Inc.
+- AminBlg/SimpleEnglish @ a6fcb4fde098b33617cc1578d151ebf58774b883 (MIT)
+  Copyright (c) 2026 AminBlg
+- supabase/agent-skills @ c9be0e931b7930f7d02126d04774d904c381e7d7 (MIT)
+  Copyright (c) 2026 Supabase
+- samber/cc-skills-golang @ d68d80aec298e1b74b37c2a472c002b5217248b3 (MIT)
+  Copyright (c) 2026 Samuel Berthe
 - open-gsd/gsd-core @ 9385f4618b52ef68ed8a5e8bdd93cfb25bd87765, 1c352d1ea37b010e99b8353905eb5def4f784100 (MIT)
   Copyright (c) 2026 Open GSD
 - nextlevelbuilder/ui-ux-pro-max-skill @ 4f2dbb67e64969a9a30ab00742f2d55d66ddec2b (MIT)

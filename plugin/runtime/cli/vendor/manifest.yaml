@@ -126,6 +126,13 @@ sources:
     #     capability, owner-only session files, loopback-only + SSH tunnel for remote use instead
     #     of --host 0.0.0.0, the native-Windows Git Bash note); test/brainstorm-server-security.test.js
     #     pins it. Upstream's own changes to these files merge around it.
+    # 2026-11-10 complements: writing-skills added as sp-writing-skills at this pin with its seven
+    # references, graphviz-conventions.dot and render-graphs.js (byte-identical, still adapted items with base copies like every superpowers item). Same
+    # conventions: role and output-format lines plus an ANTH-POS-001 disable for the bulletproofing
+    # prohibitions it teaches, and the REFERENCE_DIRECTIVE header on each reference. Its two links
+    # to ../using-superpowers/references/{codex,gemini}-tools.md (a skill muster does not carry)
+    # point at the pinned upstream files instead. Catalog entry in catalog/builtins.muster.yaml;
+    # wired into muster-prompt-smith and the prompt-quality audit pattern; Claude-plugin only.
     # Accepted as upstream (not adapted): `superpowers:<skill>` cross-references
     # (writing-plans, test-driven-development, verification-before-completion) name the
     # upstream plugin's skills, matching the Codex lane's "prefer the enabled superpowers
@@ -157,6 +164,16 @@ sources:
       - { from: skills/systematic-debugging/find-polluter.sh, to: plugin/builtins/sp-debug/find-polluter.sh, mode: adapted, baseBlob: 985f5d08ccf8a3f2d40739cfcaf4413bb24bf1cb }
       - { id: sp-verify, kind: builtin, from: skills/verification-before-completion/SKILL.md, to: plugin/builtins/sp-verify/SKILL.md, mode: adapted, baseBlob: 7d45333cc4a49c57a80df6c1fe2fa777a207afbc, roles: [test-author] }
       - { id: sp-parallel, kind: builtin, from: skills/dispatching-parallel-agents/SKILL.md, to: plugin/builtins/sp-parallel/SKILL.md, mode: adapted, relation: adapted, baseBlob: 3fa091b348bbe0a18eaa0e17e9092c97f7005cbe, roles: [plan] }
+      - { id: sp-writing-skills, kind: builtin, from: skills/writing-skills/SKILL.md, to: plugin/builtins/sp-writing-skills/SKILL.md, mode: adapted, relation: adapted, baseBlob: 09d76b79dd4080fe4dcc9bfb3c54d05dbff8a563 }
+      - { from: skills/writing-skills/references/CLAUDE_MD_TESTING.md, to: plugin/builtins/sp-writing-skills/references/CLAUDE_MD_TESTING.md, mode: adapted, baseBlob: 47881fc85bd6c01b32b84d52ed9a0c73c8d6a089 }
+      - { from: skills/writing-skills/references/anthropic-best-practices.md, to: plugin/builtins/sp-writing-skills/references/anthropic-best-practices.md, mode: adapted, baseBlob: 15ea9eae223d9081b602618849791c07a7758f3d }
+      - { from: skills/writing-skills/references/bulletproofing.md, to: plugin/builtins/sp-writing-skills/references/bulletproofing.md, mode: adapted, baseBlob: 38e26fb39d6e7f21ad82f82d98800c1317ff741e }
+      - { from: skills/writing-skills/references/discovery.md, to: plugin/builtins/sp-writing-skills/references/discovery.md, mode: adapted, baseBlob: fc3009d178f1de3f85de3b5625fa131c7f0bf616 }
+      - { from: skills/writing-skills/references/flowcharts.md, to: plugin/builtins/sp-writing-skills/references/flowcharts.md, mode: adapted, baseBlob: 63f9bfae675585652e7c0052392c170e2f00c0a1 }
+      - { from: skills/writing-skills/references/graphviz-conventions.dot, to: plugin/builtins/sp-writing-skills/references/graphviz-conventions.dot, mode: adapted, baseBlob: 3509e2f028cacaa8118cbc8c80025efb089ec28e }
+      - { from: skills/writing-skills/references/persuasion-principles.md, to: plugin/builtins/sp-writing-skills/references/persuasion-principles.md, mode: adapted, baseBlob: 9756416a59600b70ecca4044e0919ee7d4a37b21 }
+      - { from: skills/writing-skills/references/testing-skills-with-subagents.md, to: plugin/builtins/sp-writing-skills/references/testing-skills-with-subagents.md, mode: adapted, baseBlob: e5bf682cb4099b220d3a2fa65d170f3b9e62af21 }
+      - { from: skills/writing-skills/render-graphs.js, to: plugin/builtins/sp-writing-skills/render-graphs.js, mode: adapted, baseBlob: 59e74b54e8538ff0a358d05c770479b3eb8484aa }
   - id: wshobson
     kind: github
     repo: wshobson/agents
@@ -167,6 +184,13 @@ sources:
     # no release tags, so the source records `tag: null` and is pinned by commit SHA alone.
     # Re-pinned 2026-11-10: cf6059d (2026-06-05) -> 9c61ab2 (upstream HEAD, 2026-11-08). Model
     # bumps upstream (e.g. legacy-modernizer `model: fable`) are not taken: tier policy decides.
+    # 2026-11-10 complements: slo-implementation, postmortem-writing, incident-runbook-templates,
+    # security-requirement-extraction and changelog-automation added as wsh-<name> at this pin, with
+    # their references/details.md, under the same conventions (role and output-format lines after
+    # the H1, upstream "Don'ts" rephrased positively as "Cautions", the wsh reference header).
+    # postmortem-writing's details.md example links into an internal wiki become example.com URLs
+    # so they never read as files. Catalog entries live in catalog/builtins.muster.yaml (no roles
+    # here); wired into the runbook and release-notes pipelines. Claude-plugin only (Codex frozen).
     ref: 9c61ab243def98f72da12abd41cfcf5bcd91af9d
     tag: null
     license: MIT
@@ -418,6 +442,41 @@ sources:
         mode: adapted
         baseBlob: b1a2944bb8ce67b47914edd8e7b8e7e5214aa38f
         roles: [seo]
+      # sre and release (2026-11-10 complements)
+      - from: plugins/observability-monitoring/skills/slo-implementation/SKILL.md
+        id: wsh-slo-implementation
+        kind: builtin
+        to: plugin/builtins/wsh-slo-implementation/SKILL.md
+        mode: adapted
+        baseBlob: f740d0975b0b1004cb52e2e3293118f5fbd02dc0
+      - from: plugins/incident-response/skills/postmortem-writing/SKILL.md
+        id: wsh-postmortem-writing
+        kind: builtin
+        to: plugin/builtins/wsh-postmortem-writing/SKILL.md
+        mode: adapted
+        baseBlob: f68b37f973cbca925ce4503c656166968b7faf97
+        relation: adapted
+      - from: plugins/incident-response/skills/incident-runbook-templates/SKILL.md
+        id: wsh-incident-runbook-templates
+        kind: builtin
+        to: plugin/builtins/wsh-incident-runbook-templates/SKILL.md
+        mode: adapted
+        baseBlob: 70632a7d6383d19bc32198ed52c6bee9db41bb9c
+        relation: adapted
+      - from: plugins/security-scanning/skills/security-requirement-extraction/SKILL.md
+        id: wsh-security-requirement-extraction
+        kind: builtin
+        to: plugin/builtins/wsh-security-requirement-extraction/SKILL.md
+        mode: adapted
+        baseBlob: a56194330bf9f70cc78a24539d1ce6c5fea8845d
+        relation: adapted
+      - from: plugins/documentation-generation/skills/changelog-automation/SKILL.md
+        id: wsh-changelog-automation
+        kind: builtin
+        to: plugin/builtins/wsh-changelog-automation/SKILL.md
+        mode: adapted
+        baseBlob: babb783123990bd403157bfd1de271d2224be833
+        relation: adapted
       # === Curated wshobson AGENTS (kind: agent, not skills) ===
       # `as: agent` routes these to catalog/agents.generated.yaml + plugin/agents/<id>.md.
       # Mapped to muster roles, one agent per role gap. perf + seo already vendored above — not duplicated.
@@ -653,6 +712,11 @@ sources:
       - { from: plugins/security-scanning/skills/threat-mitigation-mapping/references/details.md, to: plugin/builtins/wsh-threat-mitigation-mapping/references/details.md, mode: adapted, baseBlob: c7bac62dd0c2c1eb88f91c7e47ae3e3145dfaa4e }
       - { from: plugins/javascript-typescript/skills/typescript-advanced-types/references/details.md, to: plugin/builtins/wsh-typescript-advanced-types/references/details.md, mode: adapted, baseBlob: 6b1b9a15c1103c8ebbebba1a3cb696ab7ad9dab9 }
       - { from: plugins/accessibility-compliance/skills/wcag-audit-patterns/references/details.md, to: plugin/builtins/wsh-wcag-audit-patterns/references/details.md, mode: adapted, baseBlob: 297f388b62a7006cc6687b4147d34e17bda399d7 }
+      - { from: plugins/observability-monitoring/skills/slo-implementation/references/details.md, to: plugin/builtins/wsh-slo-implementation/references/details.md, mode: adapted, baseBlob: 8a5b02b8e662cbb63e76b531945378347adce12a }
+      - { from: plugins/incident-response/skills/postmortem-writing/references/details.md, to: plugin/builtins/wsh-postmortem-writing/references/details.md, mode: adapted, baseBlob: be4e1508d12c7333e3a7e1216db7682028a3a277 }
+      - { from: plugins/incident-response/skills/incident-runbook-templates/references/details.md, to: plugin/builtins/wsh-incident-runbook-templates/references/details.md, mode: adapted, baseBlob: 9b107078b9f88ce7d0a2db46b3b244fe16b6796a }
+      - { from: plugins/security-scanning/skills/security-requirement-extraction/references/details.md, to: plugin/builtins/wsh-security-requirement-extraction/references/details.md, mode: adapted, baseBlob: 2adbdd8b830cda6c903c572e37329bc6c47b793d }
+      - { from: plugins/documentation-generation/skills/changelog-automation/references/details.md, to: plugin/builtins/wsh-changelog-automation/references/details.md, mode: adapted, baseBlob: 1c792a8082bf78a1c51e7a317d09b177ad99cd11 }
   # ---- ui-skills.com UX skills (2026-11-10) ----
   - id: anthropic-skills
     kind: github
@@ -1060,6 +1124,223 @@ sources:
     items:
       - { id: muster-pm, kind: builtin, from: tools/cc-sdd/templates/shared/settings/rules/ears-format.md, relation: vendored }
       - { from: tools/cc-sdd/templates/shared/settings/rules/ears-format.md, to: plugin/builtins/muster-pm/references/ears.md, mode: verbatim, baseBlob: 75d15be86bd6d0e7c68b7ff520918d94b33404c6 }
+  # ---- complementary skills: research/data, SRE, writing and stack (2026-11-10) ----
+  - id: kdense-skills
+    kind: github
+    repo: K-Dense-AI/scientific-agent-skills
+    # Added 2026-11-10 (owner-approved complements). Merge-tracked (every item has a `mode`): plain
+    # `muster vendor` never regenerates it, and `muster vendor update kdense-skills` 3-way merges each
+    # adapted file against its byte-exact base copy in vendor/upstream/kdense-skills/; verbatim items
+    # are whole-file copies checked by blob. Pinned to upstream HEAD on 2026-11-10, 7 commits past the
+    # latest release v2.72.0. K-Dense also mirrors these skills in K-Dense-AI/claude-scientific-writer;
+    # scientific-agent-skills is the canonical home (its skills/ tree, MIT LICENSE.md).
+    # Kept muster divergence: each SKILL.md swaps the upstream frontmatter for muster's (name kept,
+    # one-line description, muster_builtin, SPDX license, generated upstream:; allowed-tools,
+    # compatibility and metadata dropped) and adds a prompt-lint-disable comment after the H1; each
+    # supporting Markdown file gains the packaging-only prompt-lint header. Scripts, templates and
+    # data are verbatim, except the two security-adapted literature-review scripts noted below.
+    # market-research-reports: carried whole. Its scripts are offline standard-library tools (no
+    # network, LLM or image calls) and official_data_sources.md routes to public statistical APIs,
+    # so there is no vendor-API dependency to remove (SKILL.md relation: vendored).
+    # literature-review (relation: adapted): the vendor-API dependencies are removed. Parallel's paid
+    # parallel-cli (scoping search and URL extraction, PARALLEL_API_KEY) becomes the harness's own web
+    # search and fetch tools with the same query/date/hits logging, in SKILL.md, core_workflow.md,
+    # search_and_citation.md and example_workflow.md; the SKILL.md "Optional search CLI" install block
+    # is dropped. The OpenRouter schematic generator (scripts/generate_schematic.py and
+    # generate_schematic_ai.py, OPENROUTER_API_KEY, paid Gemini image calls) is not carried, and the
+    # SKILL.md figures paragraph now says to draw schematics from the extraction table deterministically.
+    # Security adaptation (2026-11-10 review, local file disclosure): reviews embed untrusted fetched
+    # text, so scripts/generate_pdf.py parses Markdown as markdown-raw_tex-raw_attribute, runs pandoc
+    # and xelatex with openin_any=p / openout_any=p (kpathsea paranoid file access) and resolves
+    # resources from the source directory only (Path.cwd() dropped); scripts/search_databases.py
+    # writes every fetched field as one escaped line (Markdown and TeX punctuation backslash-escaped,
+    # TeX specials escaped in BibTeX fields, the entry type reduced to letters). Both are adapted
+    # with base copies; test/kdense-pdf-safety.test.js pins it. market-research-reports'
+    # assets/FORMATTING_GUIDE.md (adapted for its header) runs its documented xelatex command under
+    # the same openin_any=p / openout_any=p; it is the only other pandoc/LaTeX invocation shipped. verify_citations.py (Crossref,
+    # public and keyless) is verbatim. Cross-references to upstream skills muster does not carry (parallel-web,
+    # citation-management, pubmed-database) are kept as upstream names.
+    # Wired into muster-research's ledger and coverage discipline, which names both by id.
+    ref: 2d2065fb4520fa3f3f2bcf61cff26ec8b7eba4b5
+    tag: v2.72.0-7-g2d2065f
+    license: MIT
+    copyright: "Copyright (c) 2025 K-Dense Inc."
+    relation: vendored
+    items:
+      - { id: kdense-market-research-reports, kind: builtin, from: skills/market-research-reports/SKILL.md, to: plugin/builtins/kdense-market-research-reports/SKILL.md, mode: adapted, baseBlob: b49b023b7a95b70d1c61e9cfa820d01ddb79ae83 }
+      - { from: skills/market-research-reports/references/data_analysis_patterns.md, to: plugin/builtins/kdense-market-research-reports/references/data_analysis_patterns.md, mode: adapted, baseBlob: 25403e3bf19a055ca2c466f581f48f515f74848c }
+      - { from: skills/market-research-reports/references/evidence_model.md, to: plugin/builtins/kdense-market-research-reports/references/evidence_model.md, mode: adapted, baseBlob: e4ca3bb75ae99adcbadc743b197a1562fe2962e0 }
+      - { from: skills/market-research-reports/references/methods_and_ethics.md, to: plugin/builtins/kdense-market-research-reports/references/methods_and_ethics.md, mode: adapted, baseBlob: 1c4e2b570101ddbaa0c1301011b60602b0673a7a }
+      - { from: skills/market-research-reports/references/official_data_sources.md, to: plugin/builtins/kdense-market-research-reports/references/official_data_sources.md, mode: adapted, baseBlob: af1d1195bac0c66cc69d01a6088542b4f23d0076 }
+      - { from: skills/market-research-reports/references/report_structure_guide.md, to: plugin/builtins/kdense-market-research-reports/references/report_structure_guide.md, mode: adapted, baseBlob: fc9465fbae36e116a02724217719c035ea818e8e }
+      - { from: skills/market-research-reports/references/sources.md, to: plugin/builtins/kdense-market-research-reports/references/sources.md, mode: adapted, baseBlob: 479a2130179483579b49623b3517eb247da2cd33 }
+      - { from: skills/market-research-reports/references/visual_generation_guide.md, to: plugin/builtins/kdense-market-research-reports/references/visual_generation_guide.md, mode: adapted, baseBlob: a10d294eadc398bc36d6593f9ab6621141da1630 }
+      - { from: skills/market-research-reports/assets/FORMATTING_GUIDE.md, to: plugin/builtins/kdense-market-research-reports/assets/FORMATTING_GUIDE.md, mode: adapted, baseBlob: 4b539e1d31a2392e62d2a0e20d9847ec376ff525 }
+      - { from: skills/market-research-reports/assets/claims_ledger_template.csv, to: plugin/builtins/kdense-market-research-reports/assets/claims_ledger_template.csv, mode: verbatim, baseBlob: 6773321504a8ad53e04193d38bf564a44495e301 }
+      - { from: skills/market-research-reports/assets/competitor_feature_matrix_template.csv, to: plugin/builtins/kdense-market-research-reports/assets/competitor_feature_matrix_template.csv, mode: verbatim, baseBlob: c77281705bbaff9dfd51b97df77639b5e812f0c6 }
+      - { from: skills/market-research-reports/assets/consistency_check_template.csv, to: plugin/builtins/kdense-market-research-reports/assets/consistency_check_template.csv, mode: verbatim, baseBlob: c9f6d8b3bba178394a0ea14afb6170c89d2ba6a5 }
+      - { from: skills/market-research-reports/assets/forecast_sensitivity_template.json, to: plugin/builtins/kdense-market-research-reports/assets/forecast_sensitivity_template.json, mode: verbatim, baseBlob: 7aa41e3a4059422527a93fcc05f124f34f1a9540 }
+      - { from: skills/market-research-reports/assets/market_report_template.tex, to: plugin/builtins/kdense-market-research-reports/assets/market_report_template.tex, mode: verbatim, baseBlob: 5bcd5548d383b3cb3462828b81d77d607839661e }
+      - { from: skills/market-research-reports/assets/market_research.sty, to: plugin/builtins/kdense-market-research-reports/assets/market_research.sty, mode: verbatim, baseBlob: 70cc46049303b58a89474735876d2ba49eb12471 }
+      - { from: skills/market-research-reports/assets/market_sizing_scenarios_template.json, to: plugin/builtins/kdense-market-research-reports/assets/market_sizing_scenarios_template.json, mode: verbatim, baseBlob: 713f2e1fc1c98d15eb3bb725540d25489cbb8429 }
+      - { from: skills/market-research-reports/assets/report_manifest_template.json, to: plugin/builtins/kdense-market-research-reports/assets/report_manifest_template.json, mode: verbatim, baseBlob: a931d8d5bdd120f4ec7c21606681cbb3acac2f0c }
+      - { from: skills/market-research-reports/assets/source_ledger_template.csv, to: plugin/builtins/kdense-market-research-reports/assets/source_ledger_template.csv, mode: verbatim, baseBlob: efe5d136953324df9490ded9e476c4e139a53240 }
+      - { from: skills/market-research-reports/scripts/_common.py, to: plugin/builtins/kdense-market-research-reports/scripts/_common.py, mode: verbatim, baseBlob: 3aeaa1570c3f92ffe2d8315e69f4d5691fe73206 }
+      - { from: skills/market-research-reports/scripts/audit_claim_citations.py, to: plugin/builtins/kdense-market-research-reports/scripts/audit_claim_citations.py, mode: verbatim, baseBlob: 57514a060132e331bc1ad881de2316f48dbf60f4 }
+      - { from: skills/market-research-reports/scripts/calculate_market_sizing.py, to: plugin/builtins/kdense-market-research-reports/scripts/calculate_market_sizing.py, mode: verbatim, baseBlob: 24d181eeea670f20f0767725b4c92ea8018a8aac }
+      - { from: skills/market-research-reports/scripts/check_unit_consistency.py, to: plugin/builtins/kdense-market-research-reports/scripts/check_unit_consistency.py, mode: verbatim, baseBlob: 4d50d9528c4f76c02b48b08c43f6a5bbdf2e5925 }
+      - { from: skills/market-research-reports/scripts/forecast_sensitivity.py, to: plugin/builtins/kdense-market-research-reports/scripts/forecast_sensitivity.py, mode: verbatim, baseBlob: 439891f4a63cf4c6fab0c405be07e584785be525 }
+      - { from: skills/market-research-reports/scripts/generate_report_scaffold.py, to: plugin/builtins/kdense-market-research-reports/scripts/generate_report_scaffold.py, mode: verbatim, baseBlob: 236c63a0b0cabc812c405f131f4d22ac476b9af6 }
+      - { from: skills/market-research-reports/scripts/validate_competitor_matrix.py, to: plugin/builtins/kdense-market-research-reports/scripts/validate_competitor_matrix.py, mode: verbatim, baseBlob: 22456557c4e1610d579674433b0a8f5e06a5b48c }
+      - { from: skills/market-research-reports/scripts/validate_evidence_ledger.py, to: plugin/builtins/kdense-market-research-reports/scripts/validate_evidence_ledger.py, mode: verbatim, baseBlob: d5c9d2ace96b2fcb4fcbd5c3eb6f52846e10d7f3 }
+      - { id: kdense-literature-review, kind: builtin, from: skills/literature-review/SKILL.md, to: plugin/builtins/kdense-literature-review/SKILL.md, mode: adapted, relation: adapted, baseBlob: 5178dce6419cee412155e7b9dd523d5b2ef703f5 }
+      - { from: skills/literature-review/references/citation_styles.md, to: plugin/builtins/kdense-literature-review/references/citation_styles.md, mode: adapted, baseBlob: a12c1f8a6dc1a93abfe3c7d74b198062176ce3cf }
+      - { from: skills/literature-review/references/core_workflow.md, to: plugin/builtins/kdense-literature-review/references/core_workflow.md, mode: adapted, baseBlob: 6a0bab11cd67d05dd683576f512b2045d85c826b }
+      - { from: skills/literature-review/references/database_strategies.md, to: plugin/builtins/kdense-literature-review/references/database_strategies.md, mode: adapted, baseBlob: ed342f27145805ad585ba260c75d60678b60ac20 }
+      - { from: skills/literature-review/references/example_workflow.md, to: plugin/builtins/kdense-literature-review/references/example_workflow.md, mode: adapted, baseBlob: 521308758c8847254edb1d62ad242e982f00dbe5 }
+      - { from: skills/literature-review/references/search_and_citation.md, to: plugin/builtins/kdense-literature-review/references/search_and_citation.md, mode: adapted, baseBlob: ed27ee9d24c9cef3381cc414834dda7d69a4a019 }
+      - { from: skills/literature-review/assets/review_template.md, to: plugin/builtins/kdense-literature-review/assets/review_template.md, mode: adapted, baseBlob: d4188470de723bc75d617b8aaf2fb47a0b65dce4 }
+      - { from: skills/literature-review/scripts/generate_pdf.py, to: plugin/builtins/kdense-literature-review/scripts/generate_pdf.py, mode: adapted, baseBlob: dea8d556e808c006c911131ee761b2bd1ae8ecc0 }
+      - { from: skills/literature-review/scripts/search_databases.py, to: plugin/builtins/kdense-literature-review/scripts/search_databases.py, mode: adapted, baseBlob: d14e3202055844ea47a4d19b8b5ceeb4321dceab }
+      - { from: skills/literature-review/scripts/verify_citations.py, to: plugin/builtins/kdense-literature-review/scripts/verify_citations.py, mode: verbatim, baseBlob: 39fb278f7896e275784f7ea23ba395b1929863e5 }
+  - id: simple-english
+    kind: github
+    repo: AminBlg/SimpleEnglish
+    # Added 2026-11-10 (owner-approved complements). Merge-tracked (every item has a `mode`), with
+    # byte-exact base copies in vendor/upstream/simple-english/; `muster vendor update simple-english`
+    # 3-way merges them. Pinned to upstream HEAD on 2026-11-10, 2 commits past release v2.1.1.
+    # Carried: skills/simple-english (SKILL.md and its four references: the ASD-STE100 Issue 9 rule
+    # catalog paraphrase, strict vocabulary, word swaps, use cases). Not carried: the activation
+    # hooks (src/hooks, .codex-plugin/hooks.json: muster ships no always-on hooks), the
+    # output-styles/simple-english.md output style and prompts/system-prompt.md (always-on register
+    # changes; muster loads the skill on demand instead), the tools/ste-dictionary build scripts, and
+    # tests and examples.
+    # Kept muster divergence: the SKILL.md frontmatter swap (name kept, one-line description instead
+    # of the multi-line trigger list, muster_builtin, SPDX license, generated upstream:;
+    # compatibility and metadata dropped), a prompt-lint-disable comment after the H1 and the
+    # packaging-only header on each reference.
+    # Wired into the documentation audit pattern and the runbook pipeline.
+    ref: a6fcb4fde098b33617cc1578d151ebf58774b883
+    tag: v2.1.1-2-ga6fcb4f
+    license: MIT
+    copyright: "Copyright (c) 2026 AminBlg"
+    relation: vendored
+    items:
+      - { id: simple-english, kind: builtin, from: skills/simple-english/SKILL.md, to: plugin/builtins/simple-english/SKILL.md, mode: adapted, baseBlob: 18968a8a2c631b577327fde0271940335c6a375c }
+      - { from: skills/simple-english/references/rule-catalog.md, to: plugin/builtins/simple-english/references/rule-catalog.md, mode: adapted, baseBlob: 23fd3b823e529b2e2c3f134dd51bf6e2056c88d3 }
+      - { from: skills/simple-english/references/strict-vocabulary.md, to: plugin/builtins/simple-english/references/strict-vocabulary.md, mode: adapted, baseBlob: 2233a6da3b35c3e6845722496644e6d555b66b7f }
+      - { from: skills/simple-english/references/use-cases.md, to: plugin/builtins/simple-english/references/use-cases.md, mode: adapted, baseBlob: 10b2862740a57f3b091a8c7ff7e5399d548dea18 }
+      - { from: skills/simple-english/references/word-swaps.md, to: plugin/builtins/simple-english/references/word-swaps.md, mode: adapted, baseBlob: 5747f6cb58c029c52b09620f2212acd3ae843336 }
+  - id: supabase-agent-skills
+    kind: github
+    repo: supabase/agent-skills
+    # Added 2026-11-10 (owner-approved complements). supabase/agent-skills is the official home of
+    # supabase-postgres-best-practices (no supabase-community copy exists). Merge-tracked (every
+    # item has a `mode`), with byte-exact base copies in vendor/upstream/supabase-agent-skills/;
+    # `muster vendor update supabase-agent-skills` 3-way merges them. Pinned to upstream HEAD on
+    # 2026-11-10, 1 commit past release v0.1.9.
+    # Carried: SKILL.md and every rule file under references/ plus _sections.md, which SKILL.md
+    # names. Not carried: references/_contributing.md and _template.md (rule-authoring scaffolding
+    # nothing links) and the skill's CHANGELOG.md.
+    # Kept muster divergence: the SKILL.md frontmatter swap (name kept, a one-line description
+    # instead of upstream's long trigger paragraph, muster_builtin, SPDX license, generated
+    # upstream:; metadata dropped), a prompt-lint-disable comment after the H1 and the
+    # packaging-only header on each reference.
+    # Catalog: implement and performance, complementing wsh-database-optimizer (the rank-50
+    # performance agent) rather than replacing it.
+    ref: c9be0e931b7930f7d02126d04774d904c381e7d7
+    tag: v0.1.9-1-gc9be0e9
+    license: MIT
+    copyright: "Copyright (c) 2026 Supabase"
+    relation: vendored
+    items:
+      - { id: supabase-postgres-best-practices, kind: builtin, from: skills/supabase-postgres-best-practices/SKILL.md, to: plugin/builtins/supabase-postgres-best-practices/SKILL.md, mode: adapted, baseBlob: 6400792389dfcc82c81953054e546bd72ebcd259 }
+      - { from: skills/supabase-postgres-best-practices/references/_sections.md, to: plugin/builtins/supabase-postgres-best-practices/references/_sections.md, mode: adapted, baseBlob: 8ba57c23e8119e411fcc8a230cda08e695792cac }
+      - { from: skills/supabase-postgres-best-practices/references/advanced-full-text-search.md, to: plugin/builtins/supabase-postgres-best-practices/references/advanced-full-text-search.md, mode: adapted, baseBlob: 582cbeaada9378a280ad61f57e06c10d258e3c43 }
+      - { from: skills/supabase-postgres-best-practices/references/advanced-jsonb-indexing.md, to: plugin/builtins/supabase-postgres-best-practices/references/advanced-jsonb-indexing.md, mode: adapted, baseBlob: e3d261ea117fd7b1ad9c4f0d45308407b898ed5a }
+      - { from: skills/supabase-postgres-best-practices/references/conn-idle-timeout.md, to: plugin/builtins/supabase-postgres-best-practices/references/conn-idle-timeout.md, mode: adapted, baseBlob: 40b9cc50dd12cf347ed189fac965673b533f3f99 }
+      - { from: skills/supabase-postgres-best-practices/references/conn-limits.md, to: plugin/builtins/supabase-postgres-best-practices/references/conn-limits.md, mode: adapted, baseBlob: cb3e400c0234e7e9196c1650423faad66375b70b }
+      - { from: skills/supabase-postgres-best-practices/references/conn-pooling.md, to: plugin/builtins/supabase-postgres-best-practices/references/conn-pooling.md, mode: adapted, baseBlob: e2ebd581d3c85bff0a077e8d9a2cb562d2513d03 }
+      - { from: skills/supabase-postgres-best-practices/references/conn-prepared-statements.md, to: plugin/builtins/supabase-postgres-best-practices/references/conn-prepared-statements.md, mode: adapted, baseBlob: 555547d834e35b5059152dfb2288eca5e9838ea0 }
+      - { from: skills/supabase-postgres-best-practices/references/data-batch-inserts.md, to: plugin/builtins/supabase-postgres-best-practices/references/data-batch-inserts.md, mode: adapted, baseBlob: 997947cb17bfed67f29eaa8da2a58de2306cc2c1 }
+      - { from: skills/supabase-postgres-best-practices/references/data-n-plus-one.md, to: plugin/builtins/supabase-postgres-best-practices/references/data-n-plus-one.md, mode: adapted, baseBlob: 2109186ff88b3ba1cc32789f81e2a00d345c6e3f }
+      - { from: skills/supabase-postgres-best-practices/references/data-pagination.md, to: plugin/builtins/supabase-postgres-best-practices/references/data-pagination.md, mode: adapted, baseBlob: 633d839323612e212a833dd96828cb31fdfb39f8 }
+      - { from: skills/supabase-postgres-best-practices/references/data-upsert.md, to: plugin/builtins/supabase-postgres-best-practices/references/data-upsert.md, mode: adapted, baseBlob: bc95e2305d955679446c70854cb2b56b183aa56d }
+      - { from: skills/supabase-postgres-best-practices/references/lock-advisory.md, to: plugin/builtins/supabase-postgres-best-practices/references/lock-advisory.md, mode: adapted, baseBlob: 572eaf0dcf518ac925c4cde41beb60b62852b79c }
+      - { from: skills/supabase-postgres-best-practices/references/lock-deadlock-prevention.md, to: plugin/builtins/supabase-postgres-best-practices/references/lock-deadlock-prevention.md, mode: adapted, baseBlob: 974da5edec32f79de0fcdc771d4ef759dc3e049d }
+      - { from: skills/supabase-postgres-best-practices/references/lock-short-transactions.md, to: plugin/builtins/supabase-postgres-best-practices/references/lock-short-transactions.md, mode: adapted, baseBlob: e6b8ef2633248a4aa4394628e48d8cb693e7e6ab }
+      - { from: skills/supabase-postgres-best-practices/references/lock-skip-locked.md, to: plugin/builtins/supabase-postgres-best-practices/references/lock-skip-locked.md, mode: adapted, baseBlob: 77bdbb97045010ce2fdbd90733e8f764be82881a }
+      - { from: skills/supabase-postgres-best-practices/references/monitor-explain-analyze.md, to: plugin/builtins/supabase-postgres-best-practices/references/monitor-explain-analyze.md, mode: adapted, baseBlob: 542978c3bafc510fa8d7a8864cff994ad40be4d7 }
+      - { from: skills/supabase-postgres-best-practices/references/monitor-pg-stat-statements.md, to: plugin/builtins/supabase-postgres-best-practices/references/monitor-pg-stat-statements.md, mode: adapted, baseBlob: d7e82f1aacd105d53789eb6188d11e8ea39e7310 }
+      - { from: skills/supabase-postgres-best-practices/references/monitor-vacuum-analyze.md, to: plugin/builtins/supabase-postgres-best-practices/references/monitor-vacuum-analyze.md, mode: adapted, baseBlob: e0e8ea0b7db8c1513a0d1605be477192bc21d91d }
+      - { from: skills/supabase-postgres-best-practices/references/query-composite-indexes.md, to: plugin/builtins/supabase-postgres-best-practices/references/query-composite-indexes.md, mode: adapted, baseBlob: fea64523fd5bb3696f943d486ccaf2aea75d27b8 }
+      - { from: skills/supabase-postgres-best-practices/references/query-covering-indexes.md, to: plugin/builtins/supabase-postgres-best-practices/references/query-covering-indexes.md, mode: adapted, baseBlob: 9d2a4947b94516dd975e1044d132bb007280f478 }
+      - { from: skills/supabase-postgres-best-practices/references/query-index-types.md, to: plugin/builtins/supabase-postgres-best-practices/references/query-index-types.md, mode: adapted, baseBlob: 93b32590f4bfe377869274f45414ae6e43d168fa }
+      - { from: skills/supabase-postgres-best-practices/references/query-missing-indexes.md, to: plugin/builtins/supabase-postgres-best-practices/references/query-missing-indexes.md, mode: adapted, baseBlob: e6daace7dd368c75cdf87dc61be4afd6ff66cbbe }
+      - { from: skills/supabase-postgres-best-practices/references/query-partial-indexes.md, to: plugin/builtins/supabase-postgres-best-practices/references/query-partial-indexes.md, mode: adapted, baseBlob: 3e61a3417b9cce3c8cee99b39b78b7ebf495dd1f }
+      - { from: skills/supabase-postgres-best-practices/references/schema-constraints.md, to: plugin/builtins/supabase-postgres-best-practices/references/schema-constraints.md, mode: adapted, baseBlob: 1d2ef8f9a968cd6fa882c7299134c30ace06373c }
+      - { from: skills/supabase-postgres-best-practices/references/schema-data-types.md, to: plugin/builtins/supabase-postgres-best-practices/references/schema-data-types.md, mode: adapted, baseBlob: f253a5819d05531371e04485ab84f552fbb32fbe }
+      - { from: skills/supabase-postgres-best-practices/references/schema-foreign-key-indexes.md, to: plugin/builtins/supabase-postgres-best-practices/references/schema-foreign-key-indexes.md, mode: adapted, baseBlob: 6c3d6ff622b8a9df358f6673f323292e682ce87c }
+      - { from: skills/supabase-postgres-best-practices/references/schema-lowercase-identifiers.md, to: plugin/builtins/supabase-postgres-best-practices/references/schema-lowercase-identifiers.md, mode: adapted, baseBlob: f0072940b159ff64e0c2d4fbb499133cb8f49a66 }
+      - { from: skills/supabase-postgres-best-practices/references/schema-partitioning.md, to: plugin/builtins/supabase-postgres-best-practices/references/schema-partitioning.md, mode: adapted, baseBlob: 13137a03275fa45001c870a40b0069204d44e005 }
+      - { from: skills/supabase-postgres-best-practices/references/schema-primary-keys.md, to: plugin/builtins/supabase-postgres-best-practices/references/schema-primary-keys.md, mode: adapted, baseBlob: fb0fbb166fac9ea38c127d807a263282acc2dc93 }
+      - { from: skills/supabase-postgres-best-practices/references/security-privileges.md, to: plugin/builtins/supabase-postgres-best-practices/references/security-privileges.md, mode: adapted, baseBlob: 448ec345fab6c5a0116c584d65638b86d758c558 }
+      - { from: skills/supabase-postgres-best-practices/references/security-rls-basics.md, to: plugin/builtins/supabase-postgres-best-practices/references/security-rls-basics.md, mode: adapted, baseBlob: c61e1a8503de113be0981759b82f5e37090f344c }
+      - { from: skills/supabase-postgres-best-practices/references/security-rls-performance.md, to: plugin/builtins/supabase-postgres-best-practices/references/security-rls-performance.md, mode: adapted, baseBlob: c3c7c416d57d9a46a9993f4e0c20f772fb64483d }
+  - id: samber-golang
+    kind: github
+    repo: samber/cc-skills-golang
+    # Added 2026-11-10 (owner-approved complements). Merge-tracked (every item has a `mode`), with
+    # byte-exact base copies in vendor/upstream/samber-golang/; `muster vendor update samber-golang`
+    # 3-way merges them. Pinned to upstream HEAD on 2026-11-10, 15 commits past release v2.0.0.
+    # Carried: golang-error-handling, golang-testing, golang-security and golang-safety as
+    # go-<name>, each with every file under its references/. Not carried: evals/evals.json and the
+    # other 42 skills of the repository.
+    # Kept muster divergence: each SKILL.md swaps the upstream frontmatter for muster's (name kept,
+    # one-line description, muster_builtin, SPDX license, generated upstream:; user-invocable,
+    # compatibility, metadata, allowed-tools and paths dropped) and adds a prompt-lint-disable
+    # comment at the top of the body (upstream opens with a Persona line, no H1 first); each
+    # reference gains the packaging-only header.
+    # Accepted as upstream (not adapted): `samber/cc-skills-golang@golang-<name>` cross-references
+    # name upstream skills. The four carried here resolve through their kept `name:`; the rest
+    # (samber-oops, samber-slog, concurrency, benchmark, stretchr-testify, ...) are not shipped, and
+    # wsh-go-concurrency-patterns covers concurrency in muster.
+    # Catalog: implement, test-author and security-review entries ranked below the rank-50 wsh/sp
+    # defaults, beside wsh-go-concurrency-patterns as complements.
+    ref: d68d80aec298e1b74b37c2a472c002b5217248b3
+    tag: v2.0.0-15-gd68d80a
+    license: MIT
+    copyright: "Copyright (c) 2026 Samuel Berthe"
+    relation: vendored
+    items:
+      - { id: go-error-handling, kind: builtin, from: skills/golang-error-handling/SKILL.md, to: plugin/builtins/go-error-handling/SKILL.md, mode: adapted, baseBlob: 8254778086dafcc0d86ec37b33a149b72b49116b }
+      - { from: skills/golang-error-handling/references/error-creation.md, to: plugin/builtins/go-error-handling/references/error-creation.md, mode: adapted, baseBlob: 3d871bec153354dd4cdd84513b4a101ca3fd1716 }
+      - { from: skills/golang-error-handling/references/error-handling.md, to: plugin/builtins/go-error-handling/references/error-handling.md, mode: adapted, baseBlob: df4744408c6b6cc040e84ea96e2a21f23996bb30 }
+      - { from: skills/golang-error-handling/references/error-wrapping.md, to: plugin/builtins/go-error-handling/references/error-wrapping.md, mode: adapted, baseBlob: 01405dc1473176e91e9a0cbe5a159074890ed3eb }
+      - { id: go-testing, kind: builtin, from: skills/golang-testing/SKILL.md, to: plugin/builtins/go-testing/SKILL.md, mode: adapted, baseBlob: 7c437a850b220e8ad04a2c975062889044cf6750 }
+      - { from: skills/golang-testing/references/benchmarks.md, to: plugin/builtins/go-testing/references/benchmarks.md, mode: adapted, baseBlob: 5fd29f065b6d7feca95dbde251f619e3c7514860 }
+      - { from: skills/golang-testing/references/coverage.md, to: plugin/builtins/go-testing/references/coverage.md, mode: adapted, baseBlob: 46618241a898c7424b3aa75447a1c198a9eb9a5e }
+      - { from: skills/golang-testing/references/examples.md, to: plugin/builtins/go-testing/references/examples.md, mode: adapted, baseBlob: 103889b49cabdb5484eb9c6630ac7c16349d1830 }
+      - { from: skills/golang-testing/references/helpers.md, to: plugin/builtins/go-testing/references/helpers.md, mode: adapted, baseBlob: 3c0487705d10105125e86259e8b21c2adb21a5c9 }
+      - { from: skills/golang-testing/references/http-testing.md, to: plugin/builtins/go-testing/references/http-testing.md, mode: adapted, baseBlob: a7ff122f34194a93e358e2db1b6eba31e8cb6e12 }
+      - { from: skills/golang-testing/references/integration-testing.md, to: plugin/builtins/go-testing/references/integration-testing.md, mode: adapted, baseBlob: a5d11413e313015a89b3a009f48f2afd8f88ee7e }
+      - { from: skills/golang-testing/references/mocking.md, to: plugin/builtins/go-testing/references/mocking.md, mode: adapted, baseBlob: 4c93e4668635d541a553af654caf7c6db15b8984 }
+      - { id: go-security, kind: builtin, from: skills/golang-security/SKILL.md, to: plugin/builtins/go-security/SKILL.md, mode: adapted, baseBlob: 88822a8bbd11ee80908a2301055ca633460c4f47 }
+      - { from: skills/golang-security/references/architecture.md, to: plugin/builtins/go-security/references/architecture.md, mode: adapted, baseBlob: b713636c5d91fde05abb72f634e08860ca165579 }
+      - { from: skills/golang-security/references/checklist.md, to: plugin/builtins/go-security/references/checklist.md, mode: adapted, baseBlob: e4767635c851c0ad1c0479fc71b23535ab54561c }
+      - { from: skills/golang-security/references/cookies.md, to: plugin/builtins/go-security/references/cookies.md, mode: adapted, baseBlob: 54c34abec20265bc15933f7582780973e46dca5b }
+      - { from: skills/golang-security/references/cryptography.md, to: plugin/builtins/go-security/references/cryptography.md, mode: adapted, baseBlob: 969f03efdc266033156d362223b3fc5e4ab59933 }
+      - { from: skills/golang-security/references/filesystem.md, to: plugin/builtins/go-security/references/filesystem.md, mode: adapted, baseBlob: 00e43845d18138c9936ff514135570bafe215705 }
+      - { from: skills/golang-security/references/injection.md, to: plugin/builtins/go-security/references/injection.md, mode: adapted, baseBlob: d935624a7c6b1298810fb9186b0d6f1d6aee78a8 }
+      - { from: skills/golang-security/references/logging.md, to: plugin/builtins/go-security/references/logging.md, mode: adapted, baseBlob: fd150476ee7c9bbee9d57385c08e0026e831179c }
+      - { from: skills/golang-security/references/memory-safety.md, to: plugin/builtins/go-security/references/memory-safety.md, mode: adapted, baseBlob: 84d602a3289663fc8e83a3c1f178b961f5b37143 }
+      - { from: skills/golang-security/references/network.md, to: plugin/builtins/go-security/references/network.md, mode: adapted, baseBlob: f42816b2af9d9f734d9ce6aed6864f5a2eb4f993 }
+      - { from: skills/golang-security/references/secrets.md, to: plugin/builtins/go-security/references/secrets.md, mode: adapted, baseBlob: c29eb2112f9fe7762467ecf638552c33d0e470a1 }
+      - { from: skills/golang-security/references/third-party.md, to: plugin/builtins/go-security/references/third-party.md, mode: adapted, baseBlob: c8052134e1d17f6f50d4a10ee84c28c90b151897 }
+      - { from: skills/golang-security/references/threat-modeling.md, to: plugin/builtins/go-security/references/threat-modeling.md, mode: adapted, baseBlob: 0ce7455e487e1cd89780d7f521a18dc57dec369d }
+      - { id: go-safety, kind: builtin, from: skills/golang-safety/SKILL.md, to: plugin/builtins/go-safety/SKILL.md, mode: adapted, baseBlob: cb90ba22aa41832a9e0fb05bb6f0167a5396a1d8 }
+      - { from: skills/golang-safety/references/nil-safety.md, to: plugin/builtins/go-safety/references/nil-safety.md, mode: adapted, baseBlob: 915ee2e4a05ed58d49d03d275b63d20b1216273b }
+      - { from: skills/golang-safety/references/slice-map-safety.md, to: plugin/builtins/go-safety/references/slice-map-safety.md, mode: adapted, baseBlob: 0b5793292995935410a77c00f78349fd90733f30 }
   - id: gsd
     kind: github
     repo: open-gsd/gsd-core
@@ -1710,6 +1991,11 @@ sources:
     # tool with <name>" to the builtin paths and the unvendored grilling skill to the pinned
     # upstream file. Not vendored: every other skill, agents/openai.yaml, docs/, scripts/.
     # Wiring: audit-pattern-architecture names all three by id.
+    # 2026-11-10 (complements part 2): skills/productivity/writing-for-agents added as
+    # mp-writing-for-agents with the SKILL-MECHANICS.md it links, adapted with base copies in
+    # vendor/upstream/mattpocock-skills/ (frontmatter swap, a prompt-lint-disable comment at the top
+    # of the body since upstream has no H1, the packaging-only header on SKILL-MECHANICS.md). Wired
+    # into muster-prompt-smith and the prompt-quality audit pattern.
     ref: 4ae2317ddb22b046e26455e4f9c9b3aaaf62212d
     tag: v1.3.2-3-g4ae2317
     license: MIT
@@ -1726,6 +2012,8 @@ sources:
       - { id: mp-domain-modeling, kind: builtin, from: skills/engineering/domain-modeling/SKILL.md, to: plugin/builtins/mp-domain-modeling/SKILL.md, mode: adapted, relation: adapted, baseBlob: a4438c6879c517d1a08e2b5fbca049b632688dfe }
       - { from: skills/engineering/domain-modeling/ADR-FORMAT.md, to: plugin/builtins/mp-domain-modeling/ADR-FORMAT.md, mode: verbatim, baseBlob: d7e61f30a9fd8ca70d9ee68f019c2a9ebf2d13f7 }
       - { from: skills/engineering/domain-modeling/GLOSSARY-FORMAT.md, to: plugin/builtins/mp-domain-modeling/GLOSSARY-FORMAT.md, mode: verbatim, baseBlob: 9c0b4c7a2e8507c23cbb5e0baa66d81699321cc6 }
+      - { id: mp-writing-for-agents, kind: builtin, from: skills/productivity/writing-for-agents/SKILL.md, to: plugin/builtins/mp-writing-for-agents/SKILL.md, mode: adapted, baseBlob: a37608daf6e835e767deecfb498facecaaba82ba }
+      - { from: skills/productivity/writing-for-agents/SKILL-MECHANICS.md, to: plugin/builtins/mp-writing-for-agents/SKILL-MECHANICS.md, mode: adapted, baseBlob: 9cdbdb22aadc438755392216e75ad9a14cc9832e }
 
   - id: superpowers-lab
     kind: github
@@ -2433,14 +2721,33 @@ sources:
     repo: anthropics/knowledge-work-plugins
     # Re-pinned 2026-11-10: ca461866 -> e605d8dd (main). product-management/skills/write-spec/
     # SKILL.md is byte-identical at both (blob 183cf053); nothing new to take.
+    # Merge-tracked since 2026-11-10 (owner-approved complements): enterprise-search's
+    # knowledge-synthesis and data's validate-data are vendored as kwp-<name> at this same pin
+    # (upstream HEAD that day; the repository publishes no release tags, so tag is null), with
+    # byte-exact base copies in vendor/upstream/knowledge-work-plugins/; `muster vendor update
+    # knowledge-work-plugins` 3-way merges them. prd stays an inspired-by pipeline item.
+    # Kept muster divergence: each SKILL.md swaps the upstream frontmatter for muster's (name kept,
+    # one-line description, muster_builtin, SPDX license, generated upstream:; user-invocable and
+    # argument-hint dropped) and adds a prompt-lint-disable comment after the H1.
+    # kwp-knowledge-synthesis adds one "In muster" note: the `~~chat`/`~~email` connector labels
+    # (defined in enterprise-search/CONNECTORS.md, not carried) name whichever tool fills that
+    # category, and a research run labels web pages and files by source type instead.
+    # kwp-validate-data carries data/CONNECTORS.md beside it and points its link there.
+    # Each skill's plugin LICENSE (the Apache License 2.0 text; the repository has no NOTICE file)
+    # is carried verbatim beside it. Wired into muster-research and the business-case research phase.
     ref: e605d8ddbfb688da57dfaaceebd93f12a64ef1d3
+    tag: null
     license: Apache-2.0
     relation: inspired-by
-    fetch: false
     items:
       # prd's draft structure (problem, goals / non-goals, MoSCoW requirements traced to
       # stories, leading and lagging metrics, open questions) follows write-spec.
       - { id: prd, kind: pipeline, from: product-management/skills/write-spec/SKILL.md }
+      - { id: kwp-knowledge-synthesis, kind: builtin, from: enterprise-search/skills/knowledge-synthesis/SKILL.md, to: plugin/builtins/kwp-knowledge-synthesis/SKILL.md, mode: adapted, relation: adapted, baseBlob: a5e816fb52c4d2055513eeaea446e79b81aa54f2 }
+      - { id: kwp-validate-data, kind: builtin, from: data/skills/validate-data/SKILL.md, to: plugin/builtins/kwp-validate-data/SKILL.md, mode: adapted, relation: adapted, baseBlob: 30a1bac41bf9679dc7d96b7ec59a116f03ec0575 }
+      - { from: data/CONNECTORS.md, to: plugin/builtins/kwp-validate-data/CONNECTORS.md, mode: adapted, baseBlob: bf6a50d81ff4b7065aeb0438cf5576f7ada07a9e }
+      - { from: enterprise-search/LICENSE, to: plugin/builtins/kwp-knowledge-synthesis/LICENSE, mode: verbatim, baseBlob: d645695673349e3947e8e5ae42332d0ac3164cd7 }
+      - { from: data/LICENSE, to: plugin/builtins/kwp-validate-data/LICENSE, mode: verbatim, baseBlob: d645695673349e3947e8e5ae42332d0ac3164cd7 }
   - id: okr-guide
     kind: github
     repo: joelparkerhenderson/objectives-and-key-results
@@ -2567,16 +2874,33 @@ sources:
     # interpretation) and skills/sales-enablement's "why we win needs evidence, else a
     # hypothesis" and "say where we lose"; lead-magnet gets skills/lead-magnets' buyer-stage
     # match and fewest-form-fields rule.
+    # Merge-tracked since 2026-11-10 (owner-approved complements): skills/copy-editing is vendored
+    # as mkt-copy-editing at this same pin (v2.14.9-5; copy-editing's files are byte-identical at
+    # the newer HEAD 9d6d7ce read that day, so the pin stays and the pipeline items keep theirs),
+    # with byte-exact base copies in vendor/upstream/marketingskills/; `muster vendor update
+    # marketingskills` 3-way merges them. The four pipelines stay inspired-by items. The shared
+    # &marketing-group anchor moved to email-marketing-bible so the vendored item is credited
+    # to this source alone.
+    # Kept muster divergence: the SKILL.md frontmatter swap (name kept, one-line description,
+    # muster_builtin, SPDX license, generated upstream:; metadata dropped), a prompt-lint-disable
+    # comment after the H1 and the packaging-only header on each reference. evals/evals.json is not
+    # carried. Its pointers to the copywriting skill and to the project's product-marketing
+    # context file name things muster does not ship (the latter lives in the user's repo).
+    # Wired into muster-author's edit pass.
     ref: 8a3bde8083bd121971f61cba4bdbe5fd8c0eee7d
+    tag: v2.14.9-5-g8a3bde8
     license: MIT
     copyright: "Copyright (c) 2025 Corey Haines"
     relation: inspired-by
-    fetch: false
-    items: &marketing-group
+    items:
       - { id: competitive-battlecard, kind: pipeline, from: null }
       - { id: lead-magnet, kind: pipeline, from: null }
       - { id: case-study, kind: pipeline, from: null }
       - { id: newsletter, kind: pipeline, from: null }
+      - { id: mkt-copy-editing, kind: builtin, from: skills/copy-editing/SKILL.md, to: plugin/builtins/mkt-copy-editing/SKILL.md, mode: adapted, baseBlob: 2065709be9c2571fc34ad79a0f453fb040d8c1c0 }
+      - { from: skills/copy-editing/references/checklist.md, to: plugin/builtins/mkt-copy-editing/references/checklist.md, mode: adapted, baseBlob: 1f33b2100a1d49db4858987e4b6bcbbd783d5b79 }
+      - { from: skills/copy-editing/references/content-refresh.md, to: plugin/builtins/mkt-copy-editing/references/content-refresh.md, mode: adapted, baseBlob: 5def44f806c36e66b1d69400c33ec63a4e0d024d }
+      - { from: skills/copy-editing/references/plain-english-alternatives.md, to: plugin/builtins/mkt-copy-editing/references/plain-english-alternatives.md, mode: adapted, baseBlob: 2fc323557dabdee6ee9f0a52e2a4c24f473fc775 }
   - id: email-marketing-bible
     kind: github
     repo: CosmoBlk/email-marketing-bible
@@ -2590,7 +2914,11 @@ sources:
     copyright: "Copyright (c) 2026 George Hartley"
     relation: inspired-by
     fetch: false
-    items: *marketing-group
+    items: &marketing-group
+      - { id: competitive-battlecard, kind: pipeline, from: null }
+      - { id: lead-magnet, kind: pipeline, from: null }
+      - { id: case-study, kind: pipeline, from: null }
+      - { id: newsletter, kind: pipeline, from: null }
   - id: claude-email
     kind: github
     repo: AgriciDaniel/claude-email

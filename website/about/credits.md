@@ -54,6 +54,7 @@ Every non-vendored source, generated from the manifest. Each row lists the items
 | [ai-evals-course/evals-skills](https://github.com/ai-evals-course/evals-skills) @ `80d5f7b0127c` | Apache-2.0 | 7 vendored builtins and agents | vendored, inspired-by, adapted |
 | [getsentry/skills](https://github.com/getsentry/skills) @ `e94f22214528` | Apache-2.0 | 12 vendored builtins and agents | vendored, inspired-by, adapted |
 | [getsentry/skills](https://github.com/getsentry/skills) @ `e94f22214528` | CC-BY-SA-4.0 | 23 vendored builtins and agents | inspired-by, adapted, vendored |
+| [openai/skills](https://github.com/openai/skills) @ `49f948faa925` | Apache-2.0 | 5 vendored builtins and agents | inspired-by, adapted, vendored |
 | [open-gsd/gsd-core](https://github.com/open-gsd/gsd-core) @ `1c352d1ea37b` | MIT | `muster-gsd-plan-phase`, `muster-gsd-execute-phase`, `muster-gsd-verify-work` | mechanism-port |
 | [wshobson/agents](https://github.com/wshobson/agents) @ `2de74ac1c8f6` | MIT | `wsh-signed-audit-trails-recipe` | mechanism-port |
 | [blader/humanizer](https://github.com/blader/humanizer) @ `1b48564898e9` | MIT | `muster-humanizer` | adapted |

@@ -12,6 +12,11 @@ upstream:
     path: null
     license: CC-BY-SA-4.0
     relation: inspired-by
+  - repo: openai/skills
+    ref: 49f948faa9258a0c61caceaf225e179651397431
+    path: null
+    license: Apache-2.0
+    relation: inspired-by
   - kind: standard
     title: OWASP Top 10:2021 A08, Software and Data Integrity Failures
     author: OWASP Foundation
@@ -69,6 +74,9 @@ Hunt-list for the **security** audit dimension (`buildAuditManifest`, `src/audit
   exploitable findings reach the ledger. Separately licensed (CC BY-SA 4.0); cite it, never copy it.
 - `sentry-gha-security-review`: whenever `.github/workflows/` or a composite action is in scope;
   report a workflow finding only with the concrete fork-PR or comment-triggered attack path it requires.
+- `openai-security-threat-model`: when the audit asks where the risk sits rather than for line
+  findings (a new service, a trust-boundary change, an unaudited repository); rank its abuse paths
+  first, then hunt the top ones with the lists above.
 
 ## Repo-specific conventions to enforce
 

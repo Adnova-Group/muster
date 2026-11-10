@@ -283,3 +283,10 @@
   keywords: [github-actions, gha, workflow, workflows, ci, pwn-request]
   description: "Exploitation-focused GitHub Actions workflow review: pwn requests, expression injection, credential escalation, unpinned actions and CI prompt injection."
   provenance: { license: Apache-2.0, upstream: [getsentry/skills] }
+- id: openai-security-threat-model
+  kind: builtin
+  roles: [security-review, architecture-review]
+  rank: 44
+  keywords: [threat, threat-model, stride, abuse-paths, trust-boundaries, appsec]
+  description: "Repository-grounded AppSec threat model: trust boundaries, assets, attacker capabilities, ranked abuse paths and mitigations, written as Markdown."
+  provenance: { license: Apache-2.0, upstream: [openai/skills] }

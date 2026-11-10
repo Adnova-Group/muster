@@ -39,6 +39,7 @@ Per-item detail (upstream path, ref, relation) is in each item's `upstream:` fie
 - skovalik/perception-first-design @ 1704ff61c18872a66d969e860c9b6e45a8f50f16 (CC-BY-SA-4.0)
   Copyright 2025-2026 Stefan Kovalik / Aurochs
   "Perception-First Design" is a trademark of Stefan Kovalik / Aurochs (Serial 99686343). The methodology is open; the name requires attribution.
+- ai-evals-course/evals-skills @ 80d5f7b0127c7572ed9e9339937adbfd7240ffeb (Apache-2.0)
 - blader/humanizer @ 1b48564898e999219882660237fde01bf4843a0f (MIT)
   Copyright (c) 2025 Siqi Chen
 - rudra496/StealthHumanizer @ 1aacbda6e2f66afbdcb6714a85347307068373e9 (MIT)

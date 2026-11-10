@@ -14,9 +14,13 @@ const INJECTED_CODEX_RUNNER = "muster:injected-codex-runner";
 const startupCodexHome = process.env.CODEX_HOME;
 
 // The Codex lane is frozen: builtins added after the freeze (the merge-tracked UX family:
-// uupm-*, intent-*, typeui, pfd) are Claude-plugin only and never copied into the
-// Codex bundle's internal skills, so CODEX_COUNTS below stays the frozen census.
-export const isCodexFrozenOutBuiltin = name => /^(uupm|intent)-/.test(name) || name === "typeui" || name === "pfd";
+// uupm-*, intent-*, typeui, pfd; the complementary evaluation/security/engineering skills:
+// evals-*, sentry-*, openai-*, tob-*, mp-*, splab-*, addy-source-driven-development) are
+// Claude-plugin only and never copied into the Codex bundle's internal skills, so
+// CODEX_COUNTS below stays the frozen census.
+export const isUxFamilyBuiltin = name => /^(uupm|intent)-/.test(name) || name === "typeui" || name === "pfd";
+export const isComplementBuiltin = name => /^(evals|sentry|openai|tob|mp|splab)-/.test(name) || name === "addy-source-driven-development";
+export const isCodexFrozenOutBuiltin = name => isUxFamilyBuiltin(name) || isComplementBuiltin(name);
 
 // Expected contents of one generated Codex bundle. This census belongs with
 // inventory/build validation; model adapters only translate tiers to models.

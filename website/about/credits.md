@@ -51,6 +51,7 @@ Every non-vendored source, generated from the manifest. Each row lists the items
 | [ghaida/intent](https://github.com/ghaida/intent) @ `1806110106a4` | CC0-1.0 | 42 vendored builtins and agents | vendored, inspired-by, adapted |
 | [bergside/typeui](https://github.com/bergside/typeui) @ `efc5f21dff38` | MIT | 4 vendored builtins and agents | adapted |
 | [skovalik/perception-first-design](https://github.com/skovalik/perception-first-design) @ `1704ff61c188` | CC-BY-SA-4.0 | 40 vendored builtins and agents | vendored, adapted |
+| [ai-evals-course/evals-skills](https://github.com/ai-evals-course/evals-skills) @ `80d5f7b0127c` | Apache-2.0 | 7 vendored builtins and agents | vendored, inspired-by, adapted |
 | [open-gsd/gsd-core](https://github.com/open-gsd/gsd-core) @ `1c352d1ea37b` | MIT | `muster-gsd-plan-phase`, `muster-gsd-execute-phase`, `muster-gsd-verify-work` | mechanism-port |
 | [wshobson/agents](https://github.com/wshobson/agents) @ `2de74ac1c8f6` | MIT | `wsh-signed-audit-trails-recipe` | mechanism-port |
 | [blader/humanizer](https://github.com/blader/humanizer) @ `1b48564898e9` | MIT | `muster-humanizer` | adapted |

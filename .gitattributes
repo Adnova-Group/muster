@@ -8,6 +8,17 @@ plugin/builtins/intent-*/** -text
 plugin/builtins/typeui/** -text
 plugin/builtins/pfd/** -text
 plugin/agents/intent-*.md -text
+# Merge-tracked complementary builtins and agents (vendor/manifest.yaml sources evals-skills,
+# sentry-skills, sentry-security-review, openai-skills, trailofbits-skills, pr-review-toolkit,
+# mattpocock-skills, superpowers-lab): same byte-exact rule for their whole-file verbatim items.
+plugin/builtins/evals-*/** -text
+plugin/builtins/sentry-*/** -text
+plugin/builtins/openai-*/** -text
+plugin/builtins/tob-*/** -text
+plugin/builtins/mp-*/** -text
+plugin/builtins/splab-*/** -text
+plugin/builtins/addy-source-driven-development/** -text
+plugin/agents/prt-*.md -text
 # Generated Claude plugin runtime (scripts/build-plugin-runtime.mjs): stored byte-exact so
 # `npm run check:plugin` can compare it with a fresh build. Never hand-merge it: rebuild it.
 plugin/runtime/cli/** -text -diff linguist-generated=true

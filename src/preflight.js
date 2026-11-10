@@ -40,6 +40,8 @@ export const SEATS = Object.freeze({
   verifier: { tier: "prime", effort: "judgment" },
 });
 
+export const RUN_DIR_GITIGNORE = "preflight.json\nbuild-result.json\n.gitignore\n";
+
 // Plugins whose presence changes what muster should delegate to or stay out of.
 const WATCHED_PLUGINS = ["superpowers", "feature-dev", "pr-review-toolkit", "code-review", "commit-commands", "ralph-loop"];
 
@@ -190,6 +192,12 @@ export async function runPreflight({ outcome, cwd, home, catalogDir, runId, mode
     installedSkills: capabilities.skills.map((s) => s.id),
   };
   await writeContainedFile(cwd, detailPath, JSON.stringify(detail, null, 2) + "\n");
+  // go/plan refuse a dirty tree right after preflight. In a repo that does not gitignore
+  // .muster/ (no `muster init`), preflight.json alone made the tree dirty and the run stalled
+  // on its own output (live e2e 2026-11-10). Ignore the two files a run never commits, and
+  // this file itself; `git add -f` in the commands still records the run.
+  const ignorePath = join(dir, ".gitignore");
+  if (!existsSync(ignorePath)) await writeContainedFile(cwd, ignorePath, RUN_DIR_GITIGNORE);
 
   return {
     runId: id,

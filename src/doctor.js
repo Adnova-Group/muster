@@ -1,4 +1,4 @@
-import { checkVendorSync } from "./vendor-sync.js";
+import { BASE_COPIES_ABSENT, baseCopiesPresent, checkVendorSync } from "./vendor-sync.js";
 import { loadCatalog } from "./catalog.js";
 import { loadPipelines } from "./pipeline.js";
 import { knownDomains } from "./domain.js";
@@ -10,6 +10,7 @@ import { homedir } from "node:os";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { exists, readJson, readdirSafe } from "./fs-util.js";
+import { isRunId } from "./run-dir.js";
 import { coworkConfigDirs, readAccountPluginList } from "./harness.js";
 
 // All event names Claude Code recognises as valid hook event keys.
@@ -212,7 +213,7 @@ export async function runStateCheck(cwd) {
   const entries = await readdirSafe(dir);
   const legacy = entries.filter(f => LEGACY_RUN_STATE.includes(f) || /^STATE-archive-.*\.md$/.test(f));
   if (legacy.length) notes.push(`legacy pre-revival run state, safe to delete: ${legacy.map(f => `.muster/${f}`).join(", ")}`);
-  const runs = (await readdirSafe(join(dir, "runs"))).length;
+  const runs = (await readdirSafe(join(dir, "runs"))).filter(isRunId).length;
   return { name: "run-state", ok: true, detail: notes.length ? notes.join("; ") : `${runs} run director${runs === 1 ? "y" : "ies"}, no stale markers` };
 }
 
@@ -468,6 +469,9 @@ export async function runDoctor({ root, home, exec, cwd } = {}) {
     try { manifest = parseYaml(await readFile(join(base, "vendor/manifest.yaml"), "utf8")); } catch { /* reported by vendor-note-staleness below */ }
     if (!manifest || !Array.isArray(manifest.sources)) {
       checks.push({ name: "vendor-sync", ok: true, detail: "no readable vendor/manifest.yaml — skip" });
+    } else if (!(await baseCopiesPresent(base))) {
+      // A packaged install (npm, or the bundled plugin runtime): maintainer data, not a fault.
+      checks.push({ name: "vendor-sync", ok: true, detail: `${BASE_COPIES_ABSENT} (vendor/upstream/ is absent) — skip; run from a source checkout` });
     } else {
       const res = await checkVendorSync({ root: base, manifest });
       const behind = res.behind.length ? `; ${res.behind.join("; ")}` : "";

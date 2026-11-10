@@ -137,6 +137,25 @@ Sources in `vendor/manifest.yaml` are SHA-pinned for supply-chain hygiene (the `
 - **Keep the CLI deterministic.** `src/` does not call a model. If a transform can be expressed in code, write the code. The model-facing reasoning lives in `plugin/`.
 - **Match the house style.** Terse, direct prose in docs and prompts. No marketing language. Look at neighboring files before adding a new one.
 
+### Plugin eval suite
+
+`npm test` checks muster's files. `npm run eval:plugin` checks the plugin as Claude Code
+actually loads it. It runs `eval/plugin/` through `claude plugin eval` (Claude Code 2.1.269 or
+later). Each case is a real `claude -p` session on haiku with `plugin/` loaded, graded from the
+transcript with free regex and tool graders. Run it:
+
+- before a release (`docs/ship-checklist.md`), and
+- after a Claude Code update, because a harness or model change can break a command without
+  any muster file changing. The stage-3 `/muster:plan` name collision was this kind of break.
+
+It costs about $0.15 for the suite (one run per case, `--max-cost-usd 3` by default) on your own
+credentials. It needs `bubblewrap` and `socat` on Linux, or WSL2 on Windows. CI does not run it,
+because every run needs a model credential. It is a manual gate.
+`npm test` only checks that the suite is valid (`test/plugin-eval-suite.test.js`). Cases,
+environment notes and the last recorded results are in `eval/plugin/README.md`. Arguments after
+`--` go to `claude plugin eval` as is, for example `npm run eval:plugin -- --tag fence` or
+`--runs 3` to check for flakiness.
+
 ## Pull request conventions
 
 - Keep PRs small and focused on one change.

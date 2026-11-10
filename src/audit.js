@@ -24,7 +24,7 @@ const DESIGN_DIMENSION = {
 
 // audit-pillar-pattern-library: every dimension's crew member composes with a versioned
 // hunt-list PATTERN file naming WHAT PATTERNS TO LOOK FOR, not just a persona -- one
-// plugin/commands/audit/references/audit-pattern-<pillar>.md per pillar (see docs/decisions/
+// plugin/references/audit/audit-pattern-<pillar>.md per pillar (see docs/decisions/
 // audit-pillar-pattern-library.md for the pillar x persona x pattern-source table). Revival
 // stage 2b moved them out of plugin/skills/ so they cost nothing per session: each audit task
 // names its hunt-list paths in its own text (PATTERN_PATHS below), and audit.md tells the
@@ -39,7 +39,7 @@ const DESIGN_DIMENSION = {
 // `audit-pattern-documentation` (docs/decisions/audit-pattern-batch2.md) -- also not a
 // dispatched dimension of its own. It composes into `readability` (unconditional home) and
 // `design-ux` (conditional, information-architecture half).
-export const PATTERN_DIR = "commands/audit/references";
+export const PATTERN_DIR = "references/audit";
 export const patternPath = (id) => `${PATTERN_DIR}/${id}.md`;
 export const PATTERN_SKILL = Object.freeze({
   architecture: [{

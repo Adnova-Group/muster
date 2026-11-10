@@ -1,6 +1,6 @@
 ---
 name: muster-executor
-description: Implements one PLAN.md task in its worktree with tagged atomic commits and a self-checked ExecResult.
+description: Implements one PLAN.md task in its worktree with atomic commits.
 tools: Read, Write, Edit, Bash, Grep, Glob
 model: sonnet
 effort: medium

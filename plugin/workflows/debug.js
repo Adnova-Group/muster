@@ -73,15 +73,43 @@ function seat(cfg, name) {
   return o
 }
 
-async function call(prompt, opts) {
+// Turn limits (findings F15; build.js's call() has the full note). An agent() result carries
+// no stop reason: a subagent stopped at its maxTurns throws (it never called StructuredOutput)
+// or returns a schema-valid partial result. Either is {status:'error', reason:'max_turns'},
+// never done or PASS, and is retried once: these agents work in place, so a rerun of the same
+// idempotent brief continues the work.
+const TURN_LIMIT_RE = /without calling StructuredOutput|max(imum)?[ _-]?turns|turn limit/i
+const filled = (v) => (Array.isArray(v) ? v.length > 0 : typeof v === 'string' ? v.trim() !== '' : v != null)
+const gapOf = (r, keys, claim) => {
+  const empty = keys.filter((k) => !filled(r[k]))
+  return empty.length ? `${claim} without ${empty.join(', ')}` : ''
+}
+const EVIDENCE = new Map([
+  [HYPOTHESES_RESULT, (r) => gapOf(r, ['hypotheses'], 'result')],
+  [HYPOTHESIS_RESULT, (r) => (r.status === 'CONFIRMED' || r.status === 'PLAUSIBLE' ? gapOf(r, ['evidence', 'causalChain'], r.status) : '')],
+])
+
+async function attempt(prompt, opts, gap) {
   try {
     const r = await agent(prompt, opts)
-    if (r && typeof r === 'object') return r
-    return { status: 'error', error: `${opts.label}: agent returned no result` }
+    if (!r || typeof r !== 'object') return { status: 'error', reason: 'no_result', error: `${opts.label}: agent returned no result` }
+    const why = gap ? gap(r) : ''
+    if (!why) return r
+    log(`${opts.label}: ${why}; read as a turn-limited partial result`)
+    return { status: 'error', reason: 'max_turns', error: `${opts.label}: ${why} (max_turns: partial result)` }
   } catch (e) {
-    log(`${opts.label} failed: ${(e && e.message) || e}`)
-    return { status: 'error', error: `${opts.label}: ${(e && e.message) || e}` }
+    const msg = (e && e.message) || String(e)
+    log(`${opts.label} failed: ${msg}`)
+    const turns = TURN_LIMIT_RE.test(msg)
+    return { status: 'error', reason: turns ? 'max_turns' : 'agent_error', error: `${opts.label}: ${msg}${turns ? ' (max_turns: raise the agent\'s maxTurns or split the work)' : ''}` }
   }
+}
+
+async function call(prompt, opts, gap = EVIDENCE.get(opts.schema)) {
+  const r = await attempt(prompt, opts, gap)
+  if (r.reason !== 'max_turns') return r
+  log(`${opts.label}: turn limit; retrying once`)
+  return attempt(prompt, { ...opts, label: `${opts.label} retry` }, gap)
 }
 
 const list = (xs) => (Array.isArray(xs) ? xs : xs ? [xs] : [])
@@ -165,7 +193,7 @@ log(`investigating ${hypotheses.length} hypotheses in parallel`)
 const first = await parallel(hypotheses.map((h) => () => call(investigateBrief(cfg, h), {
   label: `investigate ${h.id}`, phase: 'Investigate', schema: HYPOTHESIS_RESULT, agentType: INVESTIGATOR, ...seat(cfg, 'investigator'),
 })))
-const investigations = first.map((r, i) => (r && r.status !== 'error' ? { ...r, hypothesisId: hypotheses[i].id } : { hypothesisId: hypotheses[i].id, status: 'error', error: (r && r.error) || 'no result' }))
+const investigations = first.map((r, i) => (r && r.status !== 'error' ? { ...r, hypothesisId: hypotheses[i].id } : { hypothesisId: hypotheses[i].id, status: 'error', reason: (r && r.reason) || 'no_result', error: (r && r.error) || 'no result' }))
 
 // The cross-examination round: Claude Code's agent-teams guidance names the debate as the
 // mechanism that beats anchoring. Workflow agents cannot message, so each survivor gets one
@@ -179,7 +207,7 @@ if (survivors.length >= 2) {
   const out = await parallel(survivors.map((s) => () => call(challengeBrief(cfg, hypotheses.find((h) => h.id === s.hypothesisId), reports), {
     label: `challenge ${s.hypothesisId}`, phase: 'Challenge', schema: HYPOTHESIS_RESULT, agentType: INVESTIGATOR, ...seat(cfg, 'investigator'),
   })))
-  challenges = out.map((r, i) => (r && valid(r) ? { ...r, hypothesisId: survivors[i].hypothesisId } : { hypothesisId: survivors[i].hypothesisId, status: 'error', error: (r && r.error) || 'no result' }))
+  challenges = out.map((r, i) => (r && valid(r) ? { ...r, hypothesisId: survivors[i].hypothesisId } : { hypothesisId: survivors[i].hypothesisId, status: 'error', reason: (r && r.reason) || 'no_result', error: (r && r.error) || 'no result' }))
   // A valid challenge replaces the first-round verdict: the survivor stands only if it
   // withstood the attempt to disprove it. A failed challenge keeps the original report.
   for (const c of challenges) if (valid(c)) final[final.findIndex((r) => r.hypothesisId === c.hypothesisId)] = c

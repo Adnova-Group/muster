@@ -59,7 +59,15 @@ with the release receipt.
    zero vulnerabilities.
 8. **Package inspection**: run `npm pack --dry-run --json`, inspect the reported file list,
    identity, version, size, and entry count, and confirm no secrets, local state, or machine paths
-   are included. The dry run must not leave a tarball behind.
+   are included. The dry run must not leave a tarball behind. Maintainer-only data stays out:
+   no `vendor/upstream/` base copies or `vendor/reports/`, only the four runtime scripts
+   (`build-codex`, `check-codex`, `cowork-probe`, `chatgpt-work-native-probe`), and no `test/`,
+   `eval/`, `docs/` or `website/`, and no `__pycache__/` or `.pyc` bytecode (a test run leaves
+   it beside uupm's `search.py`, and `.gitignore` does not filter `files`). `test/package-contents.test.js` enforces this and an unpacked
+   ceiling of 17,000,000 bytes (15.6 MB and 1,195 files at revival stage 4, down from 21.3 MB
+   and 1,778). Compare the entry count and unpacked size with the previous release and explain
+   any jump. A packaged install's `muster doctor` reports `vendor-sync` as skipped ("base copies
+   not shipped in the package"); `muster vendor check/report/update` need a source checkout.
 9. **Documentation website**: from `website/`, run `npm run docs:build`; then run the repository's
    website/docs tests so navigation, links, anchors, public support claims, release pins, and brand
    assets are checked together.
@@ -67,6 +75,14 @@ with the release receipt.
    release commit.
 11. **Install/doctor smoke**: `muster install <harness> --dry-run` plus `muster doctor` is clean
    on at least the Claude Code harness.
+11a. **Plugin eval suite (manual gate)**: `npm run eval:plugin` exits 0 on the release commit,
+   with the Claude Code version you ship against. It loads `plugin/` in real `claude -p`
+   sessions through `claude plugin eval` and checks that `/muster:plan` runs the command, the
+   CLI prefix, `/muster:skills list`, `/muster:pm check`, content routing, the action fence and
+   zero idle hook output (`eval/plugin/README.md`). It needs your credentials and costs about
+   $0.15, so CI does not run it. Run it again after every Claude Code update, before the next
+   release. Record the Claude Code version, the summary line and the cost with the release
+   receipt.
 
 Context-health checks (Claude-5 context-engineering adoption, 2026-07-29):
 

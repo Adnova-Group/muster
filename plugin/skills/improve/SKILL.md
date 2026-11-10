@@ -1,6 +1,6 @@
 ---
 name: improve
-description: Read-only retrospective over a finished run; proposes user-gated edits to muster itself.
+description: Read-only retrospective of a finished run; proposes edits to muster.
 user-invocable: false
 context: fork
 upstream:
@@ -30,7 +30,7 @@ cost to the main session.
 4. When a surviving candidate came from an `/muster:audit` run and is itself a durable
    hunt-list pattern (a repeatable finding SHAPE future audits should look for, not a one-off
    fix), the concrete edit MAY be an append to the matching pillar's `## Appended patterns`
-   section in `plugin/skills/audit-pattern-<pillar>/SKILL.md` instead of a target skill/agent/
+   section in `plugin/references/audit/audit-pattern-<pillar>.md` instead of a target skill/agent/
    rule file -- still proposal-only, still user-gated like every other edit here. Propose the
    append in this one-line entry format:
    `- (YYYY-MM-DD, source: <run/receipt>) <pattern> — false-positive note: <...>`.

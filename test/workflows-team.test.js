@@ -386,3 +386,17 @@ test("the dev-team seats are never a task's builder", () => {
   assert.ok(WORKFLOW_SEATS.includes("muster-test-writer"));
   assert.equal(agents.get("wsh-team-debugger").agentType, "muster:wsh-team-debugger", "id and frontmatter name agree, so debug.js can name it");
 });
+
+test("team: the result leads with summary and verdict, keeps HUMAN_NEEDED items, and slims the red record", async () => {
+  const human = { verdict: "HUMAN_NEEDED", truths: [{ claim: "P-01 (judgment)", status: "UNCERTAIN", evidence: "grep -> none" }], gaps: [], human: ["P-01: confirm no new dependency (judgment)"] };
+  const args = { runId: "t9", base: "base123", digests: { plan: "p".repeat(64), args: "a".repeat(64) }, waves: [[task("A", { tdd: true }), task("B")]] };
+  const { result } = await run("team.js", args, (label, prompt) => (label.startsWith("verify") ? human : happy(label, prompt)));
+  assert.deepEqual(Object.keys(result).slice(0, 4), ["runId", "summary", "verification", "halted"]);
+  assert.equal(Object.keys(result).at(-1), "tasks");
+  assert.equal(result.verification.verdict, "HUMAN_NEEDED");
+  assert.deepEqual(result.verification.human, human.human);
+  assert.equal(result.argsDigest, args.digests.args);
+  assert.ok(result.topology && Array.isArray(result.integration));
+  const a = result.tasks.find((t) => t.taskId === "A");
+  assert.deepEqual(a.red, { status: "done", commit: red("A").commit, testFiles: ["test/A.test.js"], failingAsExpected: true });
+});

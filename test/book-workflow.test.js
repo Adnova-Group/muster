@@ -239,7 +239,7 @@ test("book outline: variants in parallel, the best-checked one is kept, blocking
 });
 
 test("book outline: revision cap, writer failure, and a plain-string brief", async () => {
-  const outline = { status: "done", title: "T", kind: "fiction", premise: "p", voice: { pov: "first", tense: "past" }, chapters: [], canon: [], summary: "" };
+  const outline = { status: "done", title: "T", kind: "fiction", premise: "p", voice: { pov: "first", tense: "past" }, chapters: [{ id: "ch01", title: "a", goal: "g", dependsOn: [] }], canon: [], summary: "" };
   const capped = await run({ runId: "b3", mode: "outline", brief: "x" }, (label) => (label.includes("check") ? { verdict: "ISSUES", score: 2, issues: [{ severity: "blocker", summary: "weak" }] } : outline));
   assert.equal(capped.result.status, "issues");
   assert.equal(capped.result.revisions, 2);

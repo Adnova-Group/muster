@@ -1,10 +1,11 @@
 ---
 name: book-beta-reader
-description: "Read-only simulated first-time reader of a manuscript."
+description: "Book workflow: simulated first reader."
 tools: Read, Bash, Grep, Glob
 model: sonnet
 effort: low
 maxTurns: 35
+omitClaudeMd: true
 upstream:
   - repo: haowjy/creative-writing-skills
     ref: 15003a6fd5a1ce92ff49a13187d648c426c03080

@@ -1,10 +1,11 @@
 ---
 name: muster-integration-checker
-description: "Checks a wave's parallel tasks wire together."
+description: "Run workflow: checks parallel tasks wire together."
 tools: Read, Bash, Grep, Glob
 model: sonnet
 effort: high
 maxTurns: 35
+omitClaudeMd: true
 upstream:
   - repo: open-gsd/gsd-core
     ref: 9385f4618b52ef68ed8a5e8bdd93cfb25bd87765

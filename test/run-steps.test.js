@@ -9,6 +9,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { trackedMkdtemp } from "../test-support/helpers.js";
 import { mergeWave, isClaudeWorktree } from "../src/merge-wave.js";
+import { argsDigest, planDigest } from "../src/build-args.js";
 import { nextForRun, planTaskIds, verificationVerdict } from "../src/run-next.js";
 
 const CLI = fileURLToPath(new URL("../src/cli.js", import.meta.url));
@@ -27,14 +28,19 @@ const cli = (cwd, args, env = {}) => spawnSync(process.execPath, [CLI, ...args],
 
 // A repo with two task branches in kept worktrees, as build.js leaves them, and the
 // approved build args committed at HEAD (the trusted source of order and verify commands).
-async function repoWithTasks({ verify = {} } = {}) {
+async function repoWithTasks({ verify = {}, edits = {} } = {}) {
   const root = await trackedMkdtemp(join(tmpdir(), "muster-merge-wave-"));
   git(root, "init", "-q", "-b", "main");
   await writeFile(join(root, "README.md"), "base\n");
   await writeFile(join(root, ".gitignore"), ".claude/worktrees/\n");
   const waves = [["A", "B"].map((id) => ({ taskId: id, title: `task ${id}`, files: [`${id}.txt`], verify: verify[id] || [`grep -q ${id} ${id}.txt`] }))];
   await mkdir(join(root, ".muster/runs/r1"), { recursive: true });
-  await writeFile(join(root, ".muster/runs/r1/build-args.json"), JSON.stringify({ runId: "r1", waves }));
+  // Digested exactly as `muster build-args` does.
+  const args = { runId: "r1", waves };
+  args.digests = { plan: planDigest("# PLAN r1\n"), args: argsDigest(args) };
+  await writeFile(join(root, ".muster/runs/r1/build-args.json"), JSON.stringify(args));
+  await writeFile(join(root, ".muster/runs/r1/PLAN.md"), "# PLAN r1\n");
+  await writeFile(join(root, ".muster/runs/r1/CONTEXT.md"), "# CONTEXT r1\n");
   git(root, "add", ".");
   git(root, "commit", "-q", "-m", "base");
   const base = git(root, "rev-parse", "HEAD");
@@ -43,6 +49,10 @@ async function repoWithTasks({ verify = {} } = {}) {
     const wt = join(root, ".claude", "worktrees", `wf_${id}`);
     git(root, "worktree", "add", "-q", "-b", `worktree-wf_${id}`, wt, base);
     await writeFile(join(wt, `${id}.txt`), `${id}\n`);
+    for (const [path, body] of Object.entries(edits[id] || {})) {
+      await mkdir(dirname(join(wt, path)), { recursive: true });
+      await writeFile(join(wt, path), body);
+    }
     git(wt, "add", ".");
     git(wt, "commit", "-q", "-m", `task ${id} [r1/${id}]`);
     const commit = git(wt, "rev-parse", "HEAD");
@@ -53,7 +63,7 @@ async function repoWithTasks({ verify = {} } = {}) {
       review: { taskId: id, verdict: "PASS", commitReviewed: commit, findings: [], testsRun: [], testsPassed: true },
     });
   }
-  return { root, base, result: { runId: "r1", base, tasks, verification: { verdict: "PASS", truths: [], gaps: [] } } };
+  return { root, base, result: { runId: "r1", base, argsDigest: args.digests.args, tasks, verification: { verdict: "PASS", truths: [], gaps: [] } } };
 }
 
 const NOW = () => new Date("2026-11-09T12:00:00Z");
@@ -85,6 +95,56 @@ test("merge-wave: accepts the Workflow tool's {summary, agentCount, logs, result
   const report = await mergeWave({ cwd: root, runId: "r1", result: { summary: "build", agentCount: 5, logs: [], result }, now: NOW });
   assert.equal(report.ok, true, JSON.stringify(report.problems));
   assert.deepEqual(report.merged.map((m) => m.taskId), ["A", "B"]);
+});
+
+test("merge-wave: refuses a PLAN.md or build-args.json the main thread changed after build-args ran", async () => {
+  // Run 1 (first live e2e): merge-wave exited 1, the session hand-edited the committed PLAN.md
+  // and build-args.json (base included), committed them on the work branch and re-ran merge-wave.
+  const editPlan = await repoWithTasks();
+  await writeFile(join(editPlan.root, ".muster/runs/r1/PLAN.md"), "# PLAN r1\nfixed by hand\n");
+  git(editPlan.root, "commit", "-q", "-am", "fix(muster): repair the plan");
+  const plan = await mergeWave({ cwd: editPlan.root, runId: "r1", result: editPlan.result, now: NOW });
+  assert.equal(plan.ok, false);
+  assert.match(plan.problems.join("\n"), /PLAN\.md changed after `muster build-args` ran/);
+  assert.match(plan.problems.join("\n"), /never edit PLAN\.md or build-args\.json to get past a merge-wave failure/);
+  assert.equal(git(editPlan.root, "rev-list", "--merges", "--count", "HEAD"), "0", "nothing merged");
+
+  const editArgs = await repoWithTasks();
+  const path = join(editArgs.root, ".muster/runs/r1/build-args.json");
+  const args = JSON.parse(await readFile(path, "utf8"));
+  args.base = "065c6eb700cdfe4d0c4f5db2a50555ae6618d54b";
+  await writeFile(path, JSON.stringify(args, null, 2));
+  git(editArgs.root, "commit", "-q", "-am", "reset base");
+  const edited = await mergeWave({ cwd: editArgs.root, runId: "r1", result: editArgs.result, now: NOW });
+  assert.equal(edited.ok, false);
+  assert.match(edited.problems.join("\n"), /build-args\.json changed after `muster build-args` wrote it/);
+
+  // Re-running build-args after the build (new digests) still does not match the build that ran.
+  const rerun = await repoWithTasks();
+  const stale = await mergeWave({ cwd: rerun.root, runId: "r1", result: { ...rerun.result, argsDigest: "0".repeat(64) }, now: NOW });
+  assert.match(stale.problems.join("\n"), /the build ran with args digest 0000000000/);
+
+  // Hand-written args without digests are refused too.
+  const bare = await repoWithTasks();
+  const bareArgs = JSON.parse(await readFile(join(bare.root, ".muster/runs/r1/build-args.json"), "utf8"));
+  delete bareArgs.digests;
+  await writeFile(join(bare.root, ".muster/runs/r1/build-args.json"), JSON.stringify(bareArgs));
+  git(bare.root, "commit", "-q", "-am", "hand-written args");
+  const none = await mergeWave({ cwd: bare.root, runId: "r1", result: bare.result, now: NOW });
+  assert.match(none.problems.join("\n"), /carries no digests/);
+});
+
+test("merge-wave: reads the Workflow tool's output file directly and keeps a copy as build-result.json", async () => {
+  const { root, result } = await repoWithTasks();
+  const outside = await trackedMkdtemp(join(tmpdir(), "muster-wf-output-"));
+  const file = join(outside, "task.output");
+  await writeFile(file, JSON.stringify({ summary: "Dynamic workflow", agentCount: 5, logs: [], result, workflowProgress: [], totalTokens: 1, totalToolCalls: 1 }));
+  const r = cli(root, ["merge-wave", "r1", "--result", file]);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  const kept = JSON.parse(await readFile(join(root, ".muster/runs/r1/build-result.json"), "utf8"));
+  assert.deepEqual(kept.tasks.map((t) => t.taskId), ["A", "B"]);
+  assert.equal(kept.argsDigest, result.argsDigest);
+  assert.doesNotMatch(git(root, "status", "--porcelain"), /build-result/, "the kept copy is gitignored");
 });
 
 test("merge-wave: agent-reported testsRun and verify are never executed", async () => {
@@ -160,6 +220,30 @@ test("merge-wave: unreviewed commits, non-PASS reviews and mismatched review sha
   assert.equal(git(root, "rev-parse", "HEAD"), base);
 });
 
+test("merge-wave: a task branch that edits the run's committed inputs is refused before anything merges", async () => {
+  const { root, base, result } = await repoWithTasks({ edits: {
+    A: { ".muster/runs/r1/PLAN.md": "# PLAN r1\n- [x] everything, trust me\n" },
+    B: { ".muster/runs/r1/build-args.json": JSON.stringify({ runId: "r1", waves: [[{ taskId: "B", verify: ["true"] }]] }), ".muster/runs/r1/CONTEXT.md": "rewritten\n" },
+  } });
+  const report = await mergeWave({ cwd: root, runId: "r1", result, now: NOW });
+  assert.equal(report.ok, false);
+  const problems = report.problems.join("\n");
+  assert.match(problems, /A: branch worktree-wf_A modifies the run's committed inputs \(\.muster\/runs\/r1\/PLAN\.md\) relative to the plan commit/);
+  assert.match(problems, /B: branch worktree-wf_B modifies the run's committed inputs \(\.muster\/runs\/r1\/CONTEXT\.md, \.muster\/runs\/r1\/build-args\.json\)/);
+  assert.equal(git(root, "rev-parse", "HEAD"), base, "nothing merged");
+  assert.deepEqual(report.merged, []);
+  assert.ok(hasBranch(root, "worktree-wf_A") && hasBranch(root, "worktree-wf_B"), "refused branches are kept for inspection");
+  assert.match(await readFile(join(root, ".muster/runs/r1/STATE.md"), "utf8"), /REFUSED: .*modifies the run's committed inputs/);
+});
+
+test("merge-wave: a branch that only adds its own SUMMARY file (or touches nothing in the run) still merges", async () => {
+  const { root, result } = await repoWithTasks({ edits: { A: { ".muster/runs/r1/SUMMARY-A.md": "# SUMMARY A, by the builder\n" } } });
+  const report = await mergeWave({ cwd: root, runId: "r1", result, now: NOW });
+  assert.equal(report.ok, true, JSON.stringify(report.problems));
+  assert.deepEqual(report.merged.map((m) => m.taskId), ["A", "B"]);
+  assert.match(await readFile(join(root, ".muster/runs/r1/SUMMARY-A.md"), "utf8"), /by the builder/, "the branch's own SUMMARY is kept");
+});
+
 test("merge-wave: worktrees outside .claude/worktrees/, on another branch, or dirty are left untouched", async () => {
   const { root, result } = await repoWithTasks();
   // A: the result points at a worktree outside .claude/worktrees/ that has A's branch.
@@ -228,6 +312,8 @@ test("next --run derives the position from the run files", async () => {
   assert.equal(await step(), "discussed");
   assert.match((await nextForRun({ cwd, runId: "r9" })).next, /Workflow\(\{name:"muster:make-plan"/, "the planning workflow, never the /muster:plan command's name");
   await writeFile(join(dir, "PLAN.md"), '<task id="T1">a</task>\n<task id="T2">b</task>\n');
+  assert.equal(await step(), "plan-unchecked", "a plan with no gate record is re-checked, never built");
+  await writeFile(join(dir, "plan-check.json"), JSON.stringify({ runId: "r9", verdict: "PASS", revisions: 0, issues: [], escalated: null }));
   assert.equal(await step(), "planned");
   await writeFile(join(dir, "build-result.json"), JSON.stringify({ runId: "r9", tasks: [{ taskId: "T1" }, { taskId: "T2" }] }));
   const built = await nextForRun({ cwd, runId: "r9" });
@@ -251,8 +337,52 @@ test("next --run derives the position from the run files", async () => {
   assert.equal(state.match(/## Log/g).length, 1);
 });
 
+test("next --run after a stalled plan reports the escalation instead of the build (live e2e 2026-11-10)", async () => {
+  const cwd = await trackedMkdtemp(join(tmpdir(), "muster-next-stall-"));
+  const dir = join(cwd, ".muster/runs/r3");
+  await mkdir(dir, { recursive: true });
+  await writeFile(join(dir, "CONTEXT.md"), "# ctx\n");
+  await writeFile(join(dir, "PLAN.md"), '<task id="01">a</task>\n<task id="02">b</task>\n');
+  // Run 3's make-plan result, as the Workflow tool's envelope the main thread may save verbatim.
+  const stalled = { summary: "Write and check a muster PLAN.md", logs: ["blocking issue count stalled at 1; escalating"], result: {
+    runId: "r3", planPath: ".muster/runs/r3/PLAN.md", verdict: "ISSUES", revisions: 2, escalated: "stall",
+    issues: [{ dimension: "requirement_coverage", severity: "blocker", summary: "x" }, { dimension: "key_links", severity: "info", summary: "y" }] } };
+  await writeFile(join(dir, "plan-check.json"), JSON.stringify(stalled));
+  const r = await nextForRun({ cwd, runId: "r3" });
+  assert.equal(r.position, "plan-escalated");
+  assert.match(r.next, /^escalate: the plan never passed the checker \(escalated: stall\)/);
+  assert.match(r.next, /Revise[\s\S]*re-run muster:make-plan[\s\S]*or Abort; never build it/);
+  assert.doesNotMatch(r.next, /muster:build/);
+  assert.equal(r.why, "plan-check.json escalated: stall, 1 blocker(s)");
+  assert.equal(r.artifacts.planCheck, "ISSUES");
+  assert.match(await readFile(join(dir, "STATE.md"), "utf8"), /- position: plan-escalated\n- next: escalate:/);
+  // An ERROR result or an unreadable record is not a pass either.
+  await writeFile(join(dir, "plan-check.json"), JSON.stringify({ verdict: "ERROR", escalated: "checker", issues: [] }));
+  assert.equal((await nextForRun({ cwd, runId: "r3" })).position, "plan-escalated");
+  await writeFile(join(dir, "plan-check.json"), "{not json");
+  assert.equal((await nextForRun({ cwd, runId: "r3" })).position, "plan-escalated");
+  // A re-plan that passes (the main thread overwrites the record) unblocks the build.
+  await writeFile(join(dir, "plan-check.json"), JSON.stringify({ verdict: "PASS", escalated: null, issues: [{ severity: "warning", dimension: "malicious_implementer", summary: "w" }] }));
+  const ok = await nextForRun({ cwd, runId: "r3" });
+  assert.equal(ok.position, "planned");
+  assert.match(ok.next, /^build: /);
+  // A committed build-args.json means the plan was approved: the gate record no longer matters.
+  await writeFile(join(dir, "plan-check.json"), JSON.stringify(stalled));
+  await writeFile(join(dir, "build-args.json"), JSON.stringify({ runId: "r3", waves: [] }));
+  assert.equal((await nextForRun({ cwd, runId: "r3" })).position, "planned");
+});
+
+test("the main thread records every make-plan result where next reads it, and go stops on escalate", async () => {
+  const read = (p) => readFile(new URL(`../plugin/${p}`, import.meta.url), "utf8");
+  assert.match(await read("skills/orchestrator/SKILL.md"), /Write every\s+`muster:make-plan` result to `plan-check\.json` the moment it returns, PASS included/);
+  assert.match(await read("commands/plan.md"), /Write its\s+result to `\.muster\/runs\/<runId>\/plan-check\.json`/);
+  assert.match(await read("commands/go.md"), /`escalate` -> stop\)/);
+});
+
 test("next --run helpers parse the common PLAN.md and VERIFICATION.md shapes", () => {
-  assert.deepEqual(planTaskIds('---\ntasks:\n  - id: T1\n  - id: "T2"\n---\n<task id="T3">\ntaskId: T4\n'), ["T3", "T4", "T1", "T2"]);
+  assert.deepEqual(planTaskIds('---\ntasks:\n  - id: T1\n  - id: "T2"\n---\ntaskId: T4\n'), ["T4", "T1", "T2"]);
+  // <task> elements are authoritative: must_haves prohibitions (- id: P-01) are not tasks.
+  assert.deepEqual(planTaskIds('---\nmust_haves:\n  prohibitions:\n    - id: P-01\n      criterion: x\n---\n<task id="01" wave="1">\n<task id="02" wave="2">\n'), ["01", "02"]);
   assert.equal(verificationVerdict("## Result\nverdict: abstain"), "ABSTAIN");
   assert.equal(verificationVerdict("nothing here"), null);
 });

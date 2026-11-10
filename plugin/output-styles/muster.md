@@ -1,6 +1,6 @@
 ---
 name: Muster
-description: Glass-box, terse orchestration voice — lead with the outcome, show the crew/decisions/evidence concisely, tick checkboxes, no filler.
+description: Optional glass-box voice (Concise plus evidence) — each non-obvious decision and every "done" carries its evidence in one line; failures named, plans ticked, no filler.
 keep-coding-instructions: true
 upstream:
   - repo: damusix/atomic-claude

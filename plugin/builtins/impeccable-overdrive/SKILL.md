@@ -5,7 +5,7 @@ muster_builtin: true
 license: Apache-2.0
 upstream:
   - repo: pbakaus/impeccable
-    ref: 035c8f319edd019936525a062fe99e83ca8d12c6
+    ref: b856e5010f2dd86bd97f9b2d5e38e33f3d5bd992
     path: plugin/skills/impeccable/reference/overdrive.md
     license: Apache-2.0
     relation: adapted
@@ -13,7 +13,7 @@ upstream:
 
 <!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001, ANTH-POS-001, GUARD-IDK-001, GUARD-CITE-002: pinned upstream Impeccable playbook, loaded by a muster design-workflow packet that supplies the role, output format and evidence rules; the upstream text stays unedited so `muster vendor update` can 3-way merge it. -->
 
-> **Muster adaptation.** Vendored from [pbakaus/impeccable](https://github.com/pbakaus/impeccable) `plugin/skills/impeccable/reference/overdrive.md` at `035c8f319edd019936525a062fe99e83ca8d12c6` (skill-v4.8.2), Apache-2.0, Copyright 2025 Paul Bakaus. The upstream text below is unchanged except that links to references muster vendors point at their `impeccable-*` builtins. In muster, run it through the design workflow (`muster design run <workflow>`; read `/impeccable <command>` as that). The DESIGN.md that `design run` resolves is the canonical context, and DESIGN.md is written only through muster's confirmed `design init --content-file` flow. Muster does not ship Impeccable's launcher binary, live browser or hooks: skip any step that runs them (`context`, `detect`, `critique-storage`, `live-server`, `concept-seed`, `surface-brief`, `build-phase`, `pin`, `hooks`, `doctor`) and continue as upstream's "launcher unavailable" path describes. Links to references muster does not vendor (init, new-work, live, generate, the native-platform references for iOS and Android, and the other engine references) name upstream files for context only.
+> **Muster adaptation.** Vendored from [pbakaus/impeccable](https://github.com/pbakaus/impeccable) `plugin/skills/impeccable/reference/overdrive.md` at `b856e5010f2dd86bd97f9b2d5e38e33f3d5bd992` (skill-v4.8.2), Apache-2.0, Copyright 2025 Paul Bakaus. The upstream text below is unchanged except that links to references muster vendors point at their `impeccable-*` builtins. In muster, run it through the design workflow (`muster design run <workflow>`; read `/impeccable <command>` as that). The DESIGN.md that `design run` resolves is the canonical context, and DESIGN.md is written only through muster's confirmed `design init --content-file` flow. Muster does not ship Impeccable's launcher binary, live browser or hooks: skip any step that runs them (`context`, `detect`, `critique-storage`, `live-server`, `concept-seed`, `surface-brief`, `build-phase`, `pin`, `hooks`, `doctor`) and continue as upstream's "launcher unavailable" path describes. Links to references muster does not vendor (init, new-work, live, generate, the native-platform references for iOS and Android, and the other engine references) name upstream files for context only.
 
 Start your response with:
 
@@ -74,7 +74,7 @@ Organized by what you're trying to achieve, not by technology name.
 
 ### Render beyond CSS
 - **WebGL** (all browsers): shader effects, post-processing, particle systems. Libraries: Three.js, OGL (lightweight), regl. Use for effects CSS can't express.
-- **WebGPU** (Chrome/Edge; Safari 26+; Firefox on Windows/macOS; flag only on Firefox Linux/Android): next-gen GPU compute, more powerful than WebGL. Always fall back to WebGL2.
+- **WebGPU** (Chrome/Edge; Safari 26+; Firefox on Windows/macOS; flag only on Firefox Linux/Android): next-gen GPU compute, more powerful than WebGL. Always fall back to WebGL2; gate it behind API detection plus a `navigator.gpu.requestAdapter()` null check, so a blocklisted or headless GPU still reaches the fallback.
 - **Canvas 2D / OffscreenCanvas**: custom rendering, pixel manipulation, or moving heavy rendering off the main thread entirely via Web Workers + OffscreenCanvas.
 - **SVG filter chains**: displacement maps, turbulence, morphology for organic distortion effects. CSS-animatable.
 
@@ -111,7 +111,7 @@ Every technique must degrade gracefully. The experience without the enhancement 
 ```
 
 ```javascript
-if ('gpu' in navigator) { /* WebGPU */ }
+if ('gpu' in navigator && await navigator.gpu.requestAdapter()) { /* WebGPU */ }
 else if (canvas.getContext('webgl2')) { /* WebGL2 fallback */ }
 /* CSS-only fallback must still look good */
 ```

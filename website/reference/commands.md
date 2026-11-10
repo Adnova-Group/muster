@@ -141,6 +141,8 @@ The rubric is genre-aware: pass `--system` for an agent/skill *instruction* prom
 | `init finalize [dir]` | Finalize after native completion or an acknowledged unavailable handoff. Emits the complete receipt envelope and is idempotent. |
 | `setup [dir]` | Legacy explicit scaffold command. It remains separate from Init and may seed its older Muster files. |
 | `vendor` | Generate built-in agents and skills from `vendor/manifest.yaml`. |
+| `vendor outdated [--offline]` | List every merge-tracked source's pin against upstream's newest release tag (or default-branch HEAD for an untagged source) and which tracked files changed, compared by blob SHA through the GitHub API. Set `GITHUB_TOKEN` for more than 60 requests an hour. `--offline` lists the pins only. Runs from the npm package. |
+| `vendor report <source> --to <tag\|commit>` / `vendor update <source> --to <tag\|commit> [--dry-run] [--resolved]` / `vendor check` | Maintainer verbs for merge-tracked sources: per-item upstream report, 3-way update, and the offline base-copy check. After resolving an update's conflict markers by hand, re-run it with `--resolved` to move the base copies and the pin. They need a source checkout, because the npm package does not ship the `vendor/upstream/` base copies. A commit target suits an untagged upstream. |
 | `provenance [--write]` | Check (default; exits 1 on drift) or rewrite every item's `upstream:` field, the catalog provenance summary, and NOTICE from `vendor/manifest.yaml`. Offline. |
 | `doctor` | Health-check the installation. |
 | `doctor --codex` | Health-check the Codex CLI, generated profiles, plugin runtime, lifecycle hooks, live inventory, advisory policy limitations, and a stale PATH-level `muster` shadowing this package's own bin. |

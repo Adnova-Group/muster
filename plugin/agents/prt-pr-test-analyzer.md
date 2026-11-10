@@ -1,6 +1,6 @@
 ---
 name: prt-pr-test-analyzer
-description: "PR test-coverage gap review."
+description: PR test-coverage gaps.
 model: sonnet
 effort: high
 maxTurns: 35

@@ -1,6 +1,6 @@
 ---
 name: interview
-description: Turns a thin outcome into approved decisions and testable success criteria, or splits it into backlog items.
+description: Turns a thin outcome into approved decisions and success criteria, or backlog items.
 user-invocable: false
 upstream:
   - repo: mattpocock/skills

@@ -9,7 +9,7 @@ import { join, sep } from "node:path";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { trackedMkdtemp } from "../test-support/helpers.js";
-import { buildArgsFromPlan, writeBuildArgs } from "../src/build-args.js";
+import { argsDigest, buildArgsFromPlan, planDigest, taskLines, workflowFor, writeBuildArgs } from "../src/build-args.js";
 import { nextForRun } from "../src/run-next.js";
 import { runStateCheck } from "../src/doctor.js";
 
@@ -34,7 +34,7 @@ must_haves: [greet works]
   <name>farewell</name>
   <files>farewell.js</files>
   <action>implement</action>
-  <verify><automated>node --test farewell.test.js</automated></verify>
+  <verify><automated>node --test farewell.test.js &gt; out.txt 2&gt;&amp;1 &amp;&amp; grep -q &quot;ok&quot; out.txt &lt; /dev/null; echo &amp;gt;</automated></verify>
   <done>x</done>
 </task>
 <task id="03" type="checkpoint:human-verify" wave="3"><name>look at it</name><what-built>x</what-built><how-to-verify>y</how-to-verify><resume-signal>ok</resume-signal></task>
@@ -55,6 +55,8 @@ test("buildArgsFromPlan: waves in order, decoded verify commands, agentHint kept
     agentType: "muster:backend-development-test-automator",
   });
   assert.deepEqual(humanNeeded, [{ taskId: "03", type: "checkpoint:human-verify", title: "look at it" }]);
+  // Redirects arrive XML-escaped too (live e2e 2026-11-10); &amp; decodes last, exactly once.
+  assert.deepEqual(args.waves[1][0].verify, ['node --test farewell.test.js > out.txt 2>&1 && grep -q "ok" out.txt < /dev/null; echo &gt;']);
 });
 
 test("buildArgsFromPlan: skills become absolute SKILL.md paths; unknown skills and non-dispatchable hints never reach build", () => {
@@ -110,6 +112,31 @@ test("build-args CLI exits 1 with problems and 0 with the report", async () => {
   const ok = cli(root, ["build-args", "r1", "--base", "abc"]);
   assert.equal(ok.status, 0, ok.stderr);
   assert.equal(JSON.parse(ok.stdout).path, ".muster/runs/r1/build-args.json");
+});
+
+test("build-args stdout carries the task lines, the workflow and the exact args, so the session never re-reads the file", async () => {
+  // Run 1 (first live e2e) spent three turns re-reading build-args.json: twice to print the
+  // task lines go.md asks for, once to pass the file verbatim to the build Workflow.
+  const root = await trackedMkdtemp(join(tmpdir(), "muster-build-args-stdout-"));
+  await mkdir(join(root, ".muster/runs/r1"), { recursive: true });
+  await writeFile(join(root, ".muster/runs/r1/PLAN.md"), PLAN);
+  const r = cli(root, ["build-args", "r1", "--base", "abc"]);
+  assert.equal(r.status, 0, r.stderr);
+  const report = JSON.parse(r.stdout);
+  assert.deepEqual(report.tasks, ["W1 01 · wsh-test-automator · -", "W2 02 · muster-executor · -"]);
+  assert.equal(report.workflow, "muster:build");
+  const file = JSON.parse(await readFile(join(root, ".muster/runs/r1/build-args.json"), "utf8"));
+  assert.deepEqual(report.args, file, "stdout args are the file's exact contents");
+  assert.equal(Object.keys(report).at(-1), "args", "the short fields print first");
+  // The digests merge-wave checks: PLAN.md as read, and the args without the digests key.
+  assert.equal(file.digests.plan, planDigest(PLAN));
+  assert.equal(file.digests.plan, planDigest(PLAN.replace(/\n/g, "\r\n")), "a CRLF checkout digests the same");
+  assert.equal(file.digests.args, argsDigest(file));
+  assert.notEqual(argsDigest({ ...file, base: "def" }), file.digests.args);
+  // A test-first task or a wave of 2+ tasks selects muster:team.
+  assert.equal(workflowFor({ waves: [[{ taskId: "01", tdd: true }]] }), "muster:team");
+  assert.equal(workflowFor({ waves: [[{ taskId: "01" }, { taskId: "02" }]] }), "muster:team");
+  assert.deepEqual(taskLines({ waves: [[{ taskId: "01", tdd: true, skills: [{ id: "sp-tdd", path: "x" }] }]] }), ["W1 01 · muster-executor · sp-tdd · tdd"]);
 });
 
 test("preflight --model pins every Workflow seat to one model and keeps the outcome intact", async () => {
@@ -168,4 +195,31 @@ test("doctor run-state: reports a leftover fence marker and legacy pre-revival f
   assert.match(check.detail, /run-active is present \(run r1\)/);
   assert.match(check.detail, /\.muster\/manifest\.json/);
   assert.match(check.detail, /STATE-archive-1\.md/);
+});
+
+// Preflight writes preflight.json before plan/go's "refuse a dirty tree" check. In a project that
+// does not ignore .muster/, that file alone made `git status --porcelain` non-empty and the branch
+// step refused muster's own file. The run record itself (CONTEXT.md, PLAN.md...) still shows.
+test("preflight leaves a clean tree clean in a repo that does not ignore .muster/", async () => {
+  const root = await trackedMkdtemp(join(tmpdir(), "muster-preflight-clean-"));
+  const git = (...args) => spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd: root, encoding: "utf8" });
+  assert.equal(git("init", "-q").status, 0);
+  await writeFile(join(root, "index.js"), "export const x = 1;\n");
+  git("add", "index.js");
+  assert.equal(git("commit", "-q", "-m", "init").status, 0);
+  const r = cli(root, ["preflight", "add", "a", "greet", "function", "--json", "--run", "r1"]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(existsSync(join(root, ".muster/runs/r1/preflight.json")));
+  assert.equal(git("status", "--porcelain").stdout, "", "preflight must not dirty the tree");
+  // build-result.json is machine-local too; the run record is not hidden.
+  await writeFile(join(root, ".muster/runs/r1/build-result.json"), "{}\n");
+  assert.equal(git("status", "--porcelain").stdout, "");
+  await writeFile(join(root, ".muster/runs/r1/PLAN.md"), PLAN);
+  assert.match(git("status", "--porcelain", "-uall").stdout, /\.muster\/runs\/r1\/PLAN\.md/);
+  // A user's own runs/.gitignore is never overwritten, and it is not a run.
+  await writeFile(join(root, ".muster/runs/.gitignore"), "mine\n");
+  assert.equal(cli(root, ["preflight", "x", "--json", "--run", "r2"]).status, 0);
+  assert.equal(await readFile(join(root, ".muster/runs/.gitignore"), "utf8"), "mine\n");
+  assert.equal(JSON.parse(cli(root, ["next"]).stdout).runId, "r2");
+  assert.match((await runStateCheck(root)).detail, /2 run directories/);
 });

@@ -1,10 +1,10 @@
 ---
 name: framework-migration-legacy-modernizer
-description: Legacy refactoring, framework migrations and gradual modernization.
+description: Legacy refactors and framework migrations.
 model: opus
 effort: medium
 maxTurns: 25
-tools: Read, Grep, Glob, Edit, Bash
+tools: Read, Grep, Glob, Edit, Write, Bash
 muster_builtin: true
 license: MIT
 upstream:

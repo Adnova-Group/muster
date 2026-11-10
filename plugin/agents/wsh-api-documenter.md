@@ -1,10 +1,10 @@
 ---
 name: documentation-generation-api-documenter
-description: "API documentation: OpenAPI 3.1, developer portals and SDK docs."
+description: "API docs: OpenAPI, developer portals, SDK docs."
 model: sonnet
 effort: medium
 maxTurns: 15
-tools: Read, Grep, Glob, Edit, Bash
+tools: Read, Grep, Glob, Edit, Write, Bash
 muster_builtin: true
 license: MIT
 upstream:

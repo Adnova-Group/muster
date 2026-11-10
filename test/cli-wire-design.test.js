@@ -17,7 +17,7 @@ const DESIGN = "# Product Design\n\n## Direction\nClear and useful.\n";
 test("cli wire: design exposes utilities and exactly 24 workflows", async () => {
   const workflows = JSON.parse((await run(["design", "workflows"])).stdout);
   assert.equal(workflows.workflows.length, 24);
-  assert.equal(workflows.source.ref, "035c8f319edd019936525a062fe99e83ca8d12c6");
+  assert.equal(workflows.source.ref, "b856e5010f2dd86bd97f9b2d5e38e33f3d5bd992");
   assert.match((await run(["help", "design"])).stdout, /design <init\|status\|resolve\|detect\|ignores\|provider\|gate\|workflows\|run>/);
 });
 

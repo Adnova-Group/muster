@@ -27,7 +27,9 @@ const ALLOWED_TOOLS = new Set([
   "WebFetch", "WebSearch", "TodoWrite", "NotebookRead",
   "KillShell", "BashOutput"
 ]);
-const DEFAULT_TOOLS = "Read, Grep, Glob, Edit, Bash";
+// Write is in the default: in a worktree-isolated build, isolation refuses heredocs, so a specialist
+// with no Write tool could not create a file (live e2e 2026-11-10).
+const DEFAULT_TOOLS = "Read, Grep, Glob, Edit, Write, Bash";
 
 const ID_RE = /^[a-zA-Z0-9_-]+$/;
 const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;

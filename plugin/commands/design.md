@@ -1,10 +1,10 @@
 ---
 name: design
-description: "Resolve, gate or initialize DESIGN.md context, or run a pinned design workflow. Usage: /muster:design <init|status|resolve|detect|ignores|provider|workflow> ..."
+description: "DESIGN.md context and pinned design workflows. Usage: /muster:design <init|status|resolve|detect|ignores|provider|workflow> ..."
 argument-hint: "<init|status|resolve|detect|ignores|provider|workflow> [target]"
 upstream:
   - repo: pbakaus/impeccable
-    ref: 035c8f319edd019936525a062fe99e83ca8d12c6
+    ref: b856e5010f2dd86bd97f9b2d5e38e33f3d5bd992
     path: null
     license: Apache-2.0
     relation: inspired-by
@@ -18,7 +18,7 @@ Markdown checklist followed by the design-context receipt.
 
 Use Muster's own deterministic CLI and workflow surface. End users never need
 the Impeccable CLI. The workflows run Impeccable's vendored skills (impeccable-*,
-pinned commit `035c8f319edd019936525a062fe99e83ca8d12c6`, Apache-2.0).
+pinned commit `b856e5010f2dd86bd97f9b2d5e38e33f3d5bd992`, Apache-2.0).
 
 `M` below means `sh "${CLAUDE_PLUGIN_ROOT}/runtime/muster.sh"`: it runs this plugin's own source checkout, else the npm release pinned to this plugin's version, never a global `muster`. Repeat it in full in every Bash call; shell variables do not survive between calls.
 
@@ -87,7 +87,7 @@ checklist. Without Python 3, read uupm's reference files instead. When the
 session has Mobbin MCP tools, pattern- and flow-choosing workflows search
 Mobbin for cited references first; without them, skip that silently. The
 workflow map and the reasons for it are in
-`${CLAUDE_PLUGIN_ROOT}/commands/design/references/supporting-skills.md`; read
+`${CLAUDE_PLUGIN_ROOT}/references/design/supporting-skills.md`; read
 it when a packet's skills need explaining.
 
 When sources disagree: project DESIGN.md > accessibility/WCAG > Impeccable workflow guidance > supporting skills and references (uupm, typeui, intent, pfd, emil, gsap, taste, hallmark, anthropic, jk, elaya, addy, Mobbin).

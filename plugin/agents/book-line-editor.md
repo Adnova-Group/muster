@@ -1,10 +1,11 @@
 ---
 name: book-line-editor
-description: "Minimal in-place line edit of one chapter; canon stays fixed."
+description: "Book workflow: line edit of one chapter."
 tools: Read, Edit, Bash, Grep, Glob
 model: sonnet
 effort: medium
 maxTurns: 25
+omitClaudeMd: true
 upstream:
   - repo: haowjy/creative-writing-skills
     ref: 15003a6fd5a1ce92ff49a13187d648c426c03080

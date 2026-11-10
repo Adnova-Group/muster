@@ -96,7 +96,9 @@ function translatePluginPaths(text) {
     .replaceAll("${PLUGIN_ROOT}/plugin/commands/", `${"${PLUGIN_ROOT}"}/commands/`)
     .replaceAll("${PLUGIN_ROOT}/plugin/skills/", `${"${PLUGIN_ROOT}"}/internal-skills/`)
     .replaceAll("${PLUGIN_ROOT}/plugin/hooks/", `${"${PLUGIN_ROOT}"}/hooks/`)
+    .replaceAll("${PLUGIN_ROOT}/plugin/references/", `${"${PLUGIN_ROOT}"}/references/`)
     .replaceAll("plugin/commands/", `${"${PLUGIN_ROOT}"}/commands/`)
+    .replaceAll("plugin/references/", `${"${PLUGIN_ROOT}"}/references/`)
     .replaceAll("plugin/skills/", `${"${PLUGIN_ROOT}"}/internal-skills/`)
     .replaceAll("plugin/hooks/", `${"${PLUGIN_ROOT}"}/hooks/`);
 }
@@ -722,6 +724,10 @@ async function buildCodexPluginOnce({ root, outDir, nodeExecPath }) {
     ensure(plugin); ensure(runtime);
 
     rmAndCopy(join(root, "plugin", "commands"), join(plugin, "commands"));
+    // The audit hunt lists and design's supporting-skills map, read by path (the runtime's audit
+    // tasks name <plugin root>/references/audit/...). Until revival stage 4 they rode in under
+    // commands/ above; they moved out because Claude Code registered them as commands.
+    rmAndCopy(join(root, "plugin", "references"), join(plugin, "references"));
     // Codex is frozen (docs/strategy/2026-11-revival-review.md): the Claude plan/go/orchestrator
     // were rewritten around the Workflow tool, which Codex lacks, and every Codex anchor below
     // targets the pre-revival prose. codex/frozen/ holds those inputs byte-for-byte as of

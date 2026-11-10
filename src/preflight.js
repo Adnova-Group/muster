@@ -2,7 +2,7 @@
 // capabilities and memory (docs/strategy/stage-2-contracts.md). It prints a compact
 // summary (target < 2 KB) and writes the full detail to .muster/runs/<runId>/preflight.json.
 import { existsSync } from "node:fs";
-import { lstat, readFile } from "node:fs/promises";
+import { lstat, readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { detectScope } from "./scope.js";
 import { assessOutcome } from "./interview.js";
@@ -116,6 +116,26 @@ export function preflightWarnings({ env = process.env, baseRef, hasRemote }) {
   return warnings;
 }
 
+// Does the project show a UI? true on a frontend framework or shape, or a UI source file in the
+// root or a conventional UI directory (one level, no recursion: preflight stays fast); false
+// for an existing project with none of those; undefined for an empty (greenfield) directory,
+// where only the outcome can say. Feeds skillFitsStack's UI-skill filter.
+const UI_FRAMEWORKS = new Set(["react", "react-native", "expo", "vue", "svelte", "angular", "next", "vite"]);
+const UI_SHAPES = new Set(["frontend", "fullstack", "mobile"]);
+const UI_FILE = /\.(?:html?|css|scss|sass|less|vue|svelte|jsx|tsx|astro)$/i;
+const UI_DIRS = ["", "src", "public", "app", "pages", "components", "web", "static", "templates", "views", "client", "frontend", "www", "ui"];
+
+export async function projectShowsUi(cwd, project = {}) {
+  if (project.greenfield) return undefined;
+  if ((project.frameworks || []).some((f) => UI_FRAMEWORKS.has(f)) || UI_SHAPES.has(project.shape)) return true;
+  for (const d of UI_DIRS) {
+    let entries;
+    try { entries = await readdir(join(cwd, d), { withFileTypes: true }); } catch { continue; }
+    if (entries.some((e) => e.isFile() && UI_FILE.test(e.name))) return true;
+  }
+  return false;
+}
+
 const words = (s) => new Set(String(s).toLowerCase().match(/[a-z0-9][a-z0-9-]{2,}/g) || []);
 
 function rankMemory(entries, outcome) {
@@ -153,8 +173,10 @@ export async function runPreflight({ outcome, cwd, home, catalogDir, runId, mode
   // score >= 3 = an id-token hit or three description hits; one shared word ("write") is noise.
   // Language-specific skills are offered only when they fit the project's detected stack (or the
   // outcome names their language), so a JavaScript task is never handed a Python-only skill.
+  // UI and design skills likewise need a UI in the project or the outcome.
+  const projectUi = await projectShowsUi(cwd, project);
   const skillCandidates = matchSkills(outcome, builtinSkills, { limit: 12 })
-    .filter((m) => m.score >= 3 && skillFitsStack(m.id, project.languages || [], outcome))
+    .filter((m) => m.score >= 3 && skillFitsStack(m.id, project.languages || [], outcome, { projectUi }))
     .slice(0, 6).map((m) => ({ id: m.id, score: m.score }));
   // Project pins (.muster/config) lead the candidates; build-args binds them to matching tasks.
   let pins = [];

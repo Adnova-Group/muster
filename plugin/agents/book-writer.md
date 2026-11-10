@@ -1,10 +1,11 @@
 ---
 name: book-writer
-description: "Outlines, drafts and revises book chapters against the run's canon."
+description: "Book workflow: outlines and drafts chapters."
 tools: Read, Write, Edit, Bash, Grep, Glob
 model: sonnet
 effort: high
 maxTurns: 25
+omitClaudeMd: true
 upstream:
   - repo: PenglongHuang/chinese-novelist-skill
     ref: 507d41567925eab520ad459db08fda83813e8051

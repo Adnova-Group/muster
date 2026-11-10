@@ -31,7 +31,10 @@
   },
   "files": [
     "src",
-    "scripts",
+    "scripts/build-codex.mjs",
+    "scripts/check-codex.mjs",
+    "scripts/cowork-probe.mjs",
+    "scripts/chatgpt-work-native-probe.mjs",
     "plugin.json",
     "skills",
     "mcp.json",
@@ -40,14 +43,17 @@
     "codex",
     "catalog",
     "pipelines",
-    "vendor",
+    "vendor/manifest.yaml",
+    "vendor/impeccable.json",
     "cowork",
     "mcp",
     "README.md",
     "SECURITY.md",
     "CHANGELOG.md",
     "LICENSE",
-    "NOTICE"
+    "NOTICE",
+    "!**/__pycache__",
+    "!**/*.pyc"
   ],
   "engines": {
     "node": ">=20"
@@ -59,6 +65,7 @@
     "pretest:fast": "node scripts/build-codex.mjs",
     "eval:router": "node eval/router/grade.mjs",
     "eval:modes": "node eval/modes/grade.mjs",
+    "eval:plugin": "node scripts/plugin-eval.mjs",
     "build:codex": "node scripts/build-codex.mjs",
     "check:codex": "node scripts/check-codex.mjs",
     "build:plugin": "node scripts/build-plugin-runtime.mjs",

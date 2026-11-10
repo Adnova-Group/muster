@@ -1,6 +1,6 @@
 ---
 name: muster-investigator
-description: "Read-only code locator: answers where-is and what-calls questions as a file:line table."
+description: "Read-only code locator: where-is and what-calls answers as file:line."
 tools: Read, Bash, Grep, Glob
 model: haiku
 effort: low

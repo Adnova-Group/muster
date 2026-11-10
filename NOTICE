@@ -6,7 +6,7 @@ Copyright 2026 Adnova Group
 This product includes or is based on material from the repositories below.
 Per-item detail (upstream path, ref, relation) is in each item's `upstream:` field.
 
-- pbakaus/impeccable @ 035c8f319edd019936525a062fe99e83ca8d12c6 (Apache-2.0)
+- pbakaus/impeccable @ b856e5010f2dd86bd97f9b2d5e38e33f3d5bd992 (Apache-2.0)
   Copyright 2025 Paul Bakaus
 - obra/superpowers @ 22f0b463e7a5e579904dd6211a520321035526f7, d884ae04edebef577e82ff7c4e143debd0bbec99 (MIT)
   Copyright (c) 2025 Jesse Vincent
@@ -20,19 +20,19 @@ Per-item detail (upstream path, ref, relation) is in each item's `upstream:` fie
   Copyright (c) 2025 Addy Osmani
 - emilkowalski/skills @ 715c1807e08c497cfd1dc4feb450a2a3300ef2a9 (MIT)
   Copyright (c) 2026 Emil Kowalski
-- nutlope/hallmark @ 407fa689f4a276f2fd389208d271d0fef08f5058 (MIT)
+- nutlope/hallmark @ 7e213cb6feb4ef82733bd66a0600b2e54ca0994c (MIT)
   Copyright (c) 2026 Hallmark contributors
 - greensock/gsap-skills @ aed9cfd3277740755f6bfc1155c7aa645403b760 (MIT)
   Copyright (c) 2026 GreenSock
 - elayadesign/ai-design-skills @ 456d9e0d3e2d84c748bb143c6ca3d90c45e16213 (MIT)
   Copyright (c) 2026 Elaya
-- jakubkrehel/skills @ 72bdd6121cd595f47fd21c9f23e374028c9cbacd (MIT)
+- jakubkrehel/skills @ 8b254eb75dadf3615a6abce87aed28e1b6e4d77c (MIT)
   Copyright (c) 2026 Jakub Krehel
 - gotalab/cc-sdd @ e2a0c671aef37a482404905b409ab5c27092b25b (MIT)
   Copyright (c) 2025 gotalab
 - K-Dense-AI/scientific-agent-skills @ 2d2065fb4520fa3f3f2bcf61cff26ec8b7eba4b5 (MIT)
   Copyright (c) 2025 K-Dense Inc.
-- AminBlg/SimpleEnglish @ a6fcb4fde098b33617cc1578d151ebf58774b883 (MIT)
+- AminBlg/SimpleEnglish @ 300432a9e4c473229a7049ab61b8ca2522d9214c (MIT)
   Copyright (c) 2026 AminBlg
 - supabase/agent-skills @ c9be0e931b7930f7d02126d04774d904c381e7d7 (MIT)
   Copyright (c) 2026 Supabase

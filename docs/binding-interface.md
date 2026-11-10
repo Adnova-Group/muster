@@ -256,13 +256,14 @@ both numbers on every test run from the live prose tree, so this table cannot si
 stale:
 
 ```
-AskUserQuestion    files=10  mentions=22
+AskUserQuestion    files=10  mentions=24
 dispatch (Agent/Task tool)  files=2  mentions=8
 hook (PreToolUse/SessionStart/UserPromptSubmit)  files=2  mentions=3
-worktree   files=10 mentions=65
+worktree   files=9 mentions=64
 ```
 
-The worktree row was refreshed on 2026-11-10 for the dev-team seats: `muster-test-writer` and
+The worktree row dropped to 9 files and 64 mentions at revival stage 4, when go.md's trimmed
+description stopped naming worktrees (its body never did). It was refreshed on 2026-11-10 for the dev-team seats: `muster-test-writer` and
 `muster-integration-checker` work in an isolated and a scratch worktree, and the go and diagnose
 commands name `muster:team`. Counts refreshed for revival stage 2b (2026-11-09): plan.md, go.md and the orchestrator were
 rewritten around the Workflow scripts; plan-backlog, go-backlog, runner, the router,
@@ -272,6 +273,8 @@ domain-router, review-gate, tournament and coordination skills, the muster-runne
 dropped; the test re-derives every number from the live tree.
 2026-11-10: `write-book.md` (book runs) adds one AskUserQuestion mention (the attended
 clarifying questions before the outline).
+Revival stage 4: plan.md and go.md each add one AskUserQuestion mention, the unattended rule
+(no AskUserQuestion under `claude -p`: take the defaults, never ask in plain text).
 
 Refreshed for revival stage 3 (2026-11-10): plan.md and go.md gained the content-route and
 skill-edit questions, and the build briefs and orchestrator describe the worktree base.

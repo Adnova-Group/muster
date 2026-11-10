@@ -1,10 +1,10 @@
 ---
 name: prompt-engineer
-description: Prompt engineering for LLM features, agents and system prompts.
+description: Prompt engineering for LLM features and agents.
 model: opus
 effort: medium
 maxTurns: 25
-tools: Read, Grep, Glob, Edit, Bash
+tools: Read, Grep, Glob, Edit, Write, Bash
 muster_builtin: true
 license: MIT
 upstream:

@@ -1,10 +1,10 @@
 ---
 name: cloud-infrastructure-cloud-architect
-description: "Cloud architecture on AWS, Azure and GCP: IaC, cost, security and disaster recovery."
+description: "Cloud architecture (AWS, Azure, GCP): IaC, cost, DR."
 model: opus
 effort: high
 maxTurns: 35
-tools: Read, Grep, Glob, Edit, Bash
+tools: Read, Grep, Glob, Edit, Write, Bash
 muster_builtin: true
 license: MIT
 upstream:

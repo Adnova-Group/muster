@@ -1,6 +1,6 @@
 ---
 name: intent-ember
-description: "UX strategy and research: frames problems, scopes."
+description: UX strategy and research framing.
 model: sonnet
 effort: high
 maxTurns: 35

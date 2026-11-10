@@ -1,0 +1,76 @@
+schema_version: "1.1"
+name: plan-runs-command
+description: >-
+  /muster:plan on a committed JavaScript repo runs the command, not a same-named workflow:
+  the orchestrator skill is invoked and preflight runs before anything else. Stage 3 renamed
+  plugin/workflows/plan.js to make-plan.js because the workflow took over /muster:plan (raw
+  text in, no preflight). Also checks the absolute CLI prefix, that nothing calls a bare
+  `muster`, and that the JavaScript project is offered no Python-only skill.
+tags: [smoke, lifecycle]
+plugins: ["../../../../plugin"]
+runs: 1
+context:
+  scaffold_script: js-repo.sh
+execution:
+  model: haiku
+  max_turns: 40
+  timeout_seconds: 900
+  allowed_tools: [Read, Glob, Grep, Skill, Agent, AskUserQuestion]
+  # "--model haiku" pins every Workflow seat (planner, checker) to haiku, as plan.md step 1
+  # allows when the user names a model, so the planning half stays cheap.
+  prompt: >-
+    /muster:plan refactor the tally module in index.js to cleaner design patterns and add tests.
+    Success criteria: at least 3 node:test cases pass and the output of tally() is unchanged.
+    Use model haiku for every agent.
+graders:
+  # plan.md: "First invoke the `muster:orchestrator` skill (Skill tool)".
+  - name: orchestrator-invoked
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"muster:orchestrator"'
+    arm: both
+  # plan.md step 1: `M preflight "<outcome>" --json`, M = sh "<plugin root>/runtime/muster.sh".
+  - name: preflight-ran
+    type: tool_used
+    tool: Bash
+    input_match: 'runtime/muster\.sh\\?"? preflight '
+  - name: orchestrator-before-preflight
+    type: tool_order
+    before: { tool: Skill, input_match: 'muster:orchestrator' }
+    after: { tool: Bash, input_match: 'runtime/muster\.sh\\?"? preflight ' }
+  # The stage-3 regression: with plugin/workflows/plan.js named `plan`, the model called
+  # Workflow({name:"muster:plan", args:"<raw outcome>"}) as its first and only tool: no
+  # orchestrator, no preflight (negative control, 2026-11-10: score 0.43, $1.65 on default seats).
+  - name: plan-workflow-not-launched
+    type: tool_used
+    tool: Workflow
+    input_match: '"name"\s*:\s*"muster:plan"'
+    min: 0
+    max: 0
+    arm: both
+  - name: plan-skill-not-called
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"muster:plan"'
+    min: 0
+    max: 0
+    arm: both
+  # Stage 3: preflight returns `cli` (sh "<abs plugin root>/runtime/muster.sh") and the command
+  # passes it to muster:make-plan, whose planner and checker briefs say "Run muster CLI commands
+  # as: <cli> <verb>". The hand-off must carry the absolute prefix.
+  - name: cli-prefix-handed-to-agents
+    type: tool_used
+    tool: Workflow
+    input_match: '"muster:make-plan"[\s\S]*"cli"\s*:\s*"sh \\"/[^"]*/runtime/muster\.sh\\"'
+  # `muster` is not on PATH in a user's project; every call uses preflight's absolute `cli`.
+  - name: no-bare-muster
+    type: regex
+    target: trace
+    pattern: '"command"\s*:\s*"(?:cd [^"]*&&\s*)?muster\s'
+    match: not_contains
+  # preflight's skillFitsStack (stage 3): a JavaScript project never gets a Python-only builtin.
+  - name: no-python-skill
+    type: regex
+    target: trace
+    pattern: 'wsh-(?:async-)?python-'
+    match: not_contains

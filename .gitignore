@@ -28,3 +28,6 @@ wave-*/
 # Python bytecode from running vendored skill scripts (uupm search.py)
 __pycache__/
 *.pyc
+
+# Plugin eval results (npm run eval:plugin): aggregate-result.json + report.html per run
+eval/plugin/results/

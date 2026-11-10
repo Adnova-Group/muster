@@ -1,6 +1,6 @@
 ---
 name: pm
-description: "Write and check intents and specs, split specs into tickets, audit drift, or run a PM pipeline. Usage: /muster:pm <verb> ..."
+description: "Intents, specs, tickets, drift audits and PM pipelines. Usage: /muster:pm <verb> ..."
 argument-hint: "intent <idea> | spec <intent | idea> | check <file> | tickets <SPEC.md[#REF-NN]> | audit <SPEC.md> | run [pipeline] [outcome]"
 disable-model-invocation: true
 upstream: []

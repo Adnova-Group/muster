@@ -1,6 +1,6 @@
 ---
 name: write-book
-description: "Write a book across sessions: outline, parallel drafts, continuity, edit and beta passes. Usage: /muster:write-book <brief | --run id>"
+description: "Write a book across sessions: outline, draft, edit. Usage: /muster:write-book <brief | --run id>"
 argument-hint: "<brief | --run id>"
 upstream: []
 ---

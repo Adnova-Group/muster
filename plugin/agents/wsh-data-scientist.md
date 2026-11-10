@@ -1,10 +1,10 @@
 ---
 name: data-scientist
-description: Analytics, statistical modeling and machine-learning analysis.
+description: Analytics, statistics and ML analysis.
 model: sonnet
 effort: medium
 maxTurns: 25
-tools: Read, Grep, Glob, Edit, Bash
+tools: Read, Grep, Glob, Edit, Write, Bash
 muster_builtin: true
 license: MIT
 upstream:

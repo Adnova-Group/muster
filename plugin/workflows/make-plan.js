@@ -59,15 +59,42 @@ function seat(cfg, name) {
   return o
 }
 
-async function call(prompt, opts) {
+// Turn limits (findings F15; build.js's call() has the full note). An agent() result carries
+// no stop reason: a subagent stopped at its maxTurns throws (it never called StructuredOutput)
+// or returns a schema-valid partial result. Either is {status:'error', reason:'max_turns'},
+// never done or PASS, and is retried once: these agents work in place, so a rerun of the same
+// idempotent brief continues the work.
+const TURN_LIMIT_RE = /without calling StructuredOutput|max(imum)?[ _-]?turns|turn limit/i
+const filled = (v) => (Array.isArray(v) ? v.length > 0 : typeof v === 'string' ? v.trim() !== '' : v != null)
+const gapOf = (r, keys, claim) => {
+  const empty = keys.filter((k) => !filled(r[k]))
+  return empty.length ? `${claim} without ${empty.join(', ')}` : ''
+}
+const EVIDENCE = new Map([
+  [PLAN_RESULT, (r) => (r.status !== 'done' ? '' : !filled(r.planPath) ? 'done without planPath' : r.taskCount > 0 ? '' : 'done with no tasks')],
+])
+
+async function attempt(prompt, opts, gap) {
   try {
     const r = await agent(prompt, opts)
-    if (r && typeof r === 'object') return r
-    return { status: 'error', error: `${opts.label}: agent returned no result` }
+    if (!r || typeof r !== 'object') return { status: 'error', reason: 'no_result', error: `${opts.label}: agent returned no result` }
+    const why = gap ? gap(r) : ''
+    if (!why) return r
+    log(`${opts.label}: ${why}; read as a turn-limited partial result`)
+    return { status: 'error', reason: 'max_turns', error: `${opts.label}: ${why} (max_turns: partial result)` }
   } catch (e) {
-    log(`${opts.label} failed: ${(e && e.message) || e}`)
-    return { status: 'error', error: `${opts.label}: ${(e && e.message) || e}` }
+    const msg = (e && e.message) || String(e)
+    log(`${opts.label} failed: ${msg}`)
+    const turns = TURN_LIMIT_RE.test(msg)
+    return { status: 'error', reason: turns ? 'max_turns' : 'agent_error', error: `${opts.label}: ${msg}${turns ? ' (max_turns: raise the agent\'s maxTurns or split the work)' : ''}` }
   }
+}
+
+async function call(prompt, opts, gap = EVIDENCE.get(opts.schema)) {
+  const r = await attempt(prompt, opts, gap)
+  if (r.reason !== 'max_turns') return r
+  log(`${opts.label}: turn limit; retrying once`)
+  return attempt(prompt, { ...opts, label: `${opts.label} retry` }, gap)
 }
 
 // `muster` is not on PATH in a user's project, and CLAUDE_PLUGIN_ROOT may be unset in an agent's
@@ -98,7 +125,7 @@ function specLines(specPath) {
   ]
 }
 
-function planBrief(cfg, planPath, issues, revision) {
+function planBrief(cfg, planPath, issues, revision, advisories) {
   const lines = [
     `Run ${cfg.runId}. Outcome: ${cfg.outcome || '(see CONTEXT.md)'}`,
     ...specLines(cfg.specPath),
@@ -114,11 +141,18 @@ function planBrief(cfg, planPath, issues, revision) {
       `Check the file first: this brief may be replayed. If ${planPath} already exists and covers this outcome, keep it and report it instead of rewriting it.`,
     )
   } else {
+    const line = (i) => `- [${i.severity}] ${i.dimension}${i.required_property ? ` (${i.required_property})` : ''}: ${i.summary}`
     lines.push(
-      `Revision ${revision} of ${REVISION_CAP}: revise ${planPath} in place to resolve exactly these checker issues.`,
+      `Revision ${revision} of ${REVISION_CAP}: revise ${planPath} in place to resolve exactly these checker blockers.`,
       'Do not reduce scope to make an issue disappear. If an issue conflicts with a D-NN decision, keep the decision and say so in summary.',
-      ...issues.map((i) => `- [${i.severity}] ${i.dimension}${i.required_property ? ` (${i.required_property})` : ''}: ${i.summary}`),
+      ...issues.map(line),
     )
+    if (advisories && advisories.length) {
+      lines.push(
+        'Non-binding warnings (they never block the gate): address one only when it is a small, local edit; leave the rest for the downstream test-writer, reviewers and verifier.',
+        ...advisories.map(line),
+      )
+    }
   }
   lines.push('Return status, planPath, taskCount and a one-paragraph summary.')
   return lines.filter(Boolean).join('\n')
@@ -131,6 +165,7 @@ function checkBrief(cfg, planPath) {
     cfg.specPath ? `Spec: ${cfg.specPath}. Dimension 1 covers its in-scope AC, INV and EV IDs too, and a task whose covers cites an ID must deliver that ID in full.` : '',
     cliLine(cfg),
     `Run ${cliPrefix(cfg)} plan-lint ${planPath} first and carry every lint issue into your result unchanged.`,
+    'Only blockers hold this gate; warnings are shown and handed downstream. Rate severity by your <downstream_defences> and <calibration> sections.',
     'Read only: do not edit the plan. verdict PASS only when no blocker remains.',
   ].filter(Boolean).join('\n')
 }
@@ -147,30 +182,46 @@ const planOpts = (r) => ({ label: `plan r${r}`, phase: 'Plan', schema: PLAN_RESU
 // locked decision. That is the user's call, not a planner error.
 const plannerFailure = (p, revisions, issues) => /^REVISION_CONFLICT\b/.test(String(p.summary || ''))
   ? result('ISSUES', revisions, issues, 'conflict', { conflict: p.summary })
-  : result('ERROR', revisions, issues, 'planner', { error: p.error || p.summary })
+  : result('ERROR', revisions, issues, 'planner', { error: p.error || p.summary, ...(p.reason ? { reason: p.reason } : {}) })
 let plan = await call(planBrief(cfg, planPath, null, 0), planOpts(0))
 if (plan.status !== 'done') return plannerFailure(plan, 0, [])
 
-// gsd's checker reports ISSUES on any issue, info included; only blockers and warnings bind a
-// revision or count toward the stall rule.
-const binding = (issues) => issues.filter((i) => /^(blocker|warning)$/i.test(String(i.severity || '')))
+// gsd's checker reports ISSUES on any issue, info included. muster's gate is proportional (owner's
+// call after the live e2e of 2026-11-10, where warning-only rounds took 60-90% of wall time and
+// stalled 2 of 3 runs): only blockers bind a revision or count toward the stall rule. Warnings
+// never block; they reach the planner as optional notes when a blocker forces a revision anyway,
+// and the main thread shows them. Downstream stages (test-writer, review seats, integration
+// check, verifier, merge-wave's verify re-run) are where a warning gets caught.
+const binding = (issues) => issues.filter((i) => /^blocker$/i.test(String(i.severity || '')))
+const warnings = (issues) => issues.filter((i) => /^warning$/i.test(String(i.severity || '')))
+// A stall is the planner failing to resolve what it was asked to fix: the blocker count did not
+// fall AND an open blocker repeats a dimension from the last round. Same-size blockers in new
+// dimensions mean the old ones were fixed and the checker found new ones: progress, bounded by
+// REVISION_CAP.
+const dims = (issues) => new Set(issues.map((i) => String(i.dimension || '').toLowerCase()))
 let revisions = 0
 let lastCount = Infinity
+let lastDims = new Set()
 for (;;) {
   const check = await call(checkBrief(cfg, planPath), {
     label: `check r${revisions}`, phase: 'Check', schema: CHECK_RESULT, agentType: 'muster:muster-plan-checker', ...seat(cfg, 'checker'),
   })
-  if (check.status === 'error') return result('ERROR', revisions, [], 'checker', { error: check.error })
+  if (check.status === 'error') return result('ERROR', revisions, [], 'checker', { error: check.error, reason: check.reason })
   const issues = Array.isArray(check.issues) ? check.issues : []
   const open = binding(issues)
-  if (check.verdict === 'PASS' || !open.length) return result('PASS', revisions, issues, null)
+  if (check.verdict === 'PASS' || !open.length) {
+    const w = warnings(issues).length
+    if (w) log(`no blockers; passing with ${w} non-blocking warning${w === 1 ? '' : 's'}`)
+    return result('PASS', revisions, issues, null)
+  }
   if (revisions >= REVISION_CAP) return result('ISSUES', revisions, issues, 'cap')
-  if (open.length >= lastCount) {
+  if (open.length >= lastCount && [...dims(open)].some((d) => lastDims.has(d))) {
     log(`blocking issue count stalled at ${open.length}; escalating`)
     return result('ISSUES', revisions, issues, 'stall')
   }
   lastCount = open.length
+  lastDims = dims(open)
   revisions++
-  plan = await call(planBrief(cfg, planPath, open, revisions), planOpts(revisions))
+  plan = await call(planBrief(cfg, planPath, open, revisions, warnings(issues)), planOpts(revisions))
   if (plan.status !== 'done') return plannerFailure(plan, revisions, issues)
 }

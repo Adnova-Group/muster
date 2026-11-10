@@ -44,7 +44,8 @@ sources:
     kind: github
     repo: pbakaus/impeccable
     # Re-pinned 2026-11-10: 32930818 (2026-07-30) -> 035c8f31, the skill-v4.8.2 tag commit
-    # (2026-11-09); main's later commits are engine/CLI plumbing with no command change.
+    # (2026-11-09), then -> b856e501 (main, 2026-11-10: 7 reference files changed; the
+    # command metadata is byte-identical, so the design workflow vocabulary is unchanged).
     # Merge-tracked since 2026-11-10 (every impeccable-* item has a `mode`): the skill and 22 of
     # its reference files are vendored as impeccable-* builtins, each an adapted copy (muster
     # frontmatter, one adaptation note, links to vendored references pointed at their builtins;
@@ -58,9 +59,9 @@ sources:
     # The `design` command and the design-ux audit pattern stay muster's own text (inspired-by):
     # src/design.js / vendor/impeccable.json carry the 24-workflow vocabulary, incl. `generate`.
     # Upstream tags are product-prefixed (skill-v*, engine-v*, ext-v*), none in the plain
-    # vMAJOR.MINOR.PATCH form `muster vendor` fetches by, so the pin is the commit alone:
-    # 035c8f31 is the skill-v4.8.2 tag commit.
-    ref: 035c8f319edd019936525a062fe99e83ca8d12c6
+    # vMAJOR.MINOR.PATCH form `muster vendor` fetches by, so the pin is the commit alone
+    # (b856e501 is main after skill-v4.8.2; `muster vendor outdated` compares it with main).
+    ref: b856e5010f2dd86bd97f9b2d5e38e33f3d5bd992
     tag: null
     license: Apache-2.0
     copyright: "Copyright 2025 Paul Bakaus"
@@ -70,24 +71,24 @@ sources:
       - { id: design, kind: codex-frozen-command, from: null, relation: inspired-by }
       - { id: audit-pattern-design-ux, kind: audit-pattern, from: null, relation: inspired-by }
       - { id: impeccable-core, kind: builtin, from: plugin/skills/impeccable/SKILL.md, to: plugin/builtins/impeccable-core/SKILL.md, mode: adapted, baseBlob: 083a800e6e58b4a3899b8ef1181550a70bf7c739 }
-      - { id: impeccable-adapt, kind: builtin, from: plugin/skills/impeccable/reference/adapt.md, to: plugin/builtins/impeccable-adapt/SKILL.md, mode: adapted, baseBlob: cabc0fde53348f032a2fc6e26d526e90fa6c2ed2 }
+      - { id: impeccable-adapt, kind: builtin, from: plugin/skills/impeccable/reference/adapt.md, to: plugin/builtins/impeccable-adapt/SKILL.md, mode: adapted, baseBlob: 3118eb0c15b2d82f55b47f42694b24b3e778fbbe }
       - { id: impeccable-animate, kind: builtin, from: plugin/skills/impeccable/reference/animate.md, to: plugin/builtins/impeccable-animate/SKILL.md, mode: adapted, baseBlob: 4ae4cc5fcd7ae4341f4f130ab67a7d9b03c00562 }
-      - { id: impeccable-audit, kind: builtin, from: plugin/skills/impeccable/reference/audit.md, to: plugin/builtins/impeccable-audit/SKILL.md, mode: adapted, baseBlob: b082c5a63777c200c51ff08ccb58cbaf318c72d7 }
+      - { id: impeccable-audit, kind: builtin, from: plugin/skills/impeccable/reference/audit.md, to: plugin/builtins/impeccable-audit/SKILL.md, mode: adapted, baseBlob: 3311de953eef7bd55098d178bfad44f83c226450 }
       - { id: impeccable-bolder, kind: builtin, from: plugin/skills/impeccable/reference/bolder.md, to: plugin/builtins/impeccable-bolder/SKILL.md, mode: adapted, baseBlob: d90e62d0d90f6872b5895158017ac25644e15cb9 }
       - { id: impeccable-clarify, kind: builtin, from: plugin/skills/impeccable/reference/clarify.md, to: plugin/builtins/impeccable-clarify/SKILL.md, mode: adapted, baseBlob: 3047a9d82b9cfa31b392e35c643d82bcdb50250a }
       - { id: impeccable-colorize, kind: builtin, from: plugin/skills/impeccable/reference/colorize.md, to: plugin/builtins/impeccable-colorize/SKILL.md, mode: adapted, baseBlob: dc45f88c5f81c61355a915c6ea1391b1a36c9ba8 }
-      - { id: impeccable-critique, kind: builtin, from: plugin/skills/impeccable/reference/critique.md, to: plugin/builtins/impeccable-critique/SKILL.md, mode: adapted, baseBlob: 2e00cbf02255009a7d5417d0aac350a06cfb218a }
+      - { id: impeccable-critique, kind: builtin, from: plugin/skills/impeccable/reference/critique.md, to: plugin/builtins/impeccable-critique/SKILL.md, mode: adapted, baseBlob: 6dbfb2c7e26ee83e394af22c5982305fe2da52e9 }
       - { id: impeccable-delight, kind: builtin, from: plugin/skills/impeccable/reference/delight.md, to: plugin/builtins/impeccable-delight/SKILL.md, mode: adapted, baseBlob: 798c43a5b735a5b75b67484c516821f1355dfbd6 }
-      - { id: impeccable-distill, kind: builtin, from: plugin/skills/impeccable/reference/distill.md, to: plugin/builtins/impeccable-distill/SKILL.md, mode: adapted, baseBlob: d7c525d922900a051d0eacc8a50df70c693369f0 }
+      - { id: impeccable-distill, kind: builtin, from: plugin/skills/impeccable/reference/distill.md, to: plugin/builtins/impeccable-distill/SKILL.md, mode: adapted, baseBlob: 212a91f0f89f8ac8f43019dbf160fc082228548e }
       - { id: impeccable-harden, kind: builtin, from: plugin/skills/impeccable/reference/harden.md, to: plugin/builtins/impeccable-harden/SKILL.md, mode: adapted, baseBlob: e7183cfab285807bfad71dfbf6409e00b6ce5da1 }
       - { id: impeccable-layout, kind: builtin, from: plugin/skills/impeccable/reference/layout.md, to: plugin/builtins/impeccable-layout/SKILL.md, mode: adapted, baseBlob: 7c13be125c644cee234884a06edb2f87e0b87048 }
       - { id: impeccable-optimize, kind: builtin, from: plugin/skills/impeccable/reference/optimize.md, to: plugin/builtins/impeccable-optimize/SKILL.md, mode: adapted, baseBlob: 3f3fc7c33e21b029d5888112a566a547f30a3520 }
-      - { id: impeccable-overdrive, kind: builtin, from: plugin/skills/impeccable/reference/overdrive.md, to: plugin/builtins/impeccable-overdrive/SKILL.md, mode: adapted, baseBlob: 01a1cb131f7bfda4e438dc7a8ff4b7530c07f7f9 }
+      - { id: impeccable-overdrive, kind: builtin, from: plugin/skills/impeccable/reference/overdrive.md, to: plugin/builtins/impeccable-overdrive/SKILL.md, mode: adapted, baseBlob: 9775f8cd2bb21ac273e80fc6f27b1b987f024e2f }
       - { id: impeccable-polish, kind: builtin, from: plugin/skills/impeccable/reference/polish.md, to: plugin/builtins/impeccable-polish/SKILL.md, mode: adapted, baseBlob: ea300b3997247461ca0e159f8bbf8fa6c3d05662 }
-      - { id: impeccable-quieter, kind: builtin, from: plugin/skills/impeccable/reference/quieter.md, to: plugin/builtins/impeccable-quieter/SKILL.md, mode: adapted, baseBlob: bcd4f8a6948f741996777b156f3706955cc802ff }
+      - { id: impeccable-quieter, kind: builtin, from: plugin/skills/impeccable/reference/quieter.md, to: plugin/builtins/impeccable-quieter/SKILL.md, mode: adapted, baseBlob: 147aaf77ad79207d47679a8b7b746f5d4d892211 }
       - { id: impeccable-shape, kind: builtin, from: plugin/skills/impeccable/reference/shape.md, to: plugin/builtins/impeccable-shape/SKILL.md, mode: adapted, baseBlob: 90a74ae813331cbce8fff6beb498ced77970fadf }
       - { id: impeccable-typeset, kind: builtin, from: plugin/skills/impeccable/reference/typeset.md, to: plugin/builtins/impeccable-typeset/SKILL.md, mode: adapted, baseBlob: 013ddbae367cd476842241154b0dd084f4e2b6d0 }
-      - { id: impeccable-onboard, kind: builtin, from: plugin/skills/impeccable/reference/onboard.md, to: plugin/builtins/impeccable-onboard/SKILL.md, mode: adapted, baseBlob: 464ae5516e2623ef4be8260a33968548b33ae697 }
+      - { id: impeccable-onboard, kind: builtin, from: plugin/skills/impeccable/reference/onboard.md, to: plugin/builtins/impeccable-onboard/SKILL.md, mode: adapted, baseBlob: c4df3b6bfc7217937193626c281d83afe169e193 }
       - { id: impeccable-extract, kind: builtin, from: plugin/skills/impeccable/reference/extract.md, to: plugin/builtins/impeccable-extract/SKILL.md, mode: adapted, baseBlob: 4c6255cf2430048b90391ade163ebd2dce88492a }
       - { id: impeccable-document, kind: builtin, from: plugin/skills/impeccable/reference/document.md, to: plugin/builtins/impeccable-document/SKILL.md, mode: adapted, baseBlob: 879ba4e86e3a8d37d0452d1c8053b49456f781b8 }
       - { id: impeccable-craft-floor, kind: builtin, from: plugin/skills/impeccable/reference/craft-floor.md, to: plugin/builtins/impeccable-craft-floor/SKILL.md, mode: adapted, baseBlob: 1f2bb82a2a58c3e90189efcb7884eb3c028bc6cc }
@@ -877,7 +878,7 @@ sources:
     # .hallmark, shots/ or the file, and sloplint.mjs regex-escapes an aria-labelledby value before
     # building a pattern from it (page-controlled ReDoS). test/hallmark-sloplint-hardening.test.js
     # pins both and kill-checks the base copy.
-    ref: 407fa689f4a276f2fd389208d271d0fef08f5058
+    ref: 7e213cb6feb4ef82733bd66a0600b2e54ca0994c
     tag: null
     license: MIT
     copyright: "Copyright (c) 2026 Hallmark contributors"
@@ -985,7 +986,7 @@ sources:
       - { from: skills/hallmark/references/themes/vellum.md, to: plugin/builtins/hallmark/references/themes/vellum.md, mode: adapted, baseBlob: 68ec337fa89c69cdf15b8039b5ca504ca8d4a3ef }
       - { from: skills/hallmark/references/themes/wayfind.md, to: plugin/builtins/hallmark/references/themes/wayfind.md, mode: adapted, baseBlob: a77e14846f745b5a055804d52caddde038e68eb7 }
       - { from: skills/hallmark/references/themes/werkstatt.md, to: plugin/builtins/hallmark/references/themes/werkstatt.md, mode: adapted, baseBlob: 7258a1bea0efb96e9df345fb995d65d2b566ecf4 }
-      - { from: skills/hallmark/scripts/capture.mjs, to: plugin/builtins/hallmark/scripts/capture.mjs, mode: adapted, baseBlob: 6155d9548ef2d8f93b3b5329278d5c388171f09f }
+      - { from: skills/hallmark/scripts/capture.mjs, to: plugin/builtins/hallmark/scripts/capture.mjs, mode: adapted, baseBlob: df020f318872349d78c315376c1f35be0900b5cd }
       - { from: skills/hallmark/scripts/imagegen.mjs, to: plugin/builtins/hallmark/scripts/imagegen.mjs, mode: adapted, baseBlob: a8effb49f85dc0f191ffb51cbbc9a783327f91cd }
       - { from: skills/hallmark/scripts/photos.json, to: plugin/builtins/hallmark/scripts/photos.json, mode: adapted, baseBlob: b9406f915a83f210e8d439813cb0f435af925248 }
       - { from: skills/hallmark/scripts/picture.mjs, to: plugin/builtins/hallmark/scripts/picture.mjs, mode: adapted, baseBlob: 5ee04de24e8629b746030cc56735fa2b6ebcdaf1 }
@@ -1058,7 +1059,7 @@ sources:
     # frontend provider. Precedence: project DESIGN.md > accessibility (jk-better-accessibility 46) >
     # impeccable > these supporting skills (44 review/writing, 42 direction/engineering, 40 motion, 30 opt-in).
     # Not vendored: technical-drawing, teardown and explain-interface (owner scope 2026-11-10).
-    ref: 72bdd6121cd595f47fd21c9f23e374028c9cbacd
+    ref: 8b254eb75dadf3615a6abce87aed28e1b6e4d77c
     tag: null
     license: MIT
     copyright: "Copyright (c) 2026 Jakub Krehel"
@@ -1231,13 +1232,13 @@ sources:
     # compatibility and metadata dropped), a prompt-lint-disable comment after the H1 and the
     # packaging-only header on each reference.
     # Wired into the documentation audit pattern and the runbook pipeline.
-    ref: a6fcb4fde098b33617cc1578d151ebf58774b883
-    tag: v2.1.1-2-ga6fcb4f
+    ref: 300432a9e4c473229a7049ab61b8ca2522d9214c
+    tag: v2.1.2
     license: MIT
     copyright: "Copyright (c) 2026 AminBlg"
     relation: vendored
     items:
-      - { id: simple-english, kind: builtin, from: skills/simple-english/SKILL.md, to: plugin/builtins/simple-english/SKILL.md, mode: adapted, baseBlob: 18968a8a2c631b577327fde0271940335c6a375c }
+      - { id: simple-english, kind: builtin, from: skills/simple-english/SKILL.md, to: plugin/builtins/simple-english/SKILL.md, mode: adapted, baseBlob: ac85b28d6a8ab3b946a4f11c29ef056ee4c61df2 }
       - { from: skills/simple-english/references/rule-catalog.md, to: plugin/builtins/simple-english/references/rule-catalog.md, mode: adapted, baseBlob: 23fd3b823e529b2e2c3f134dd51bf6e2056c88d3 }
       - { from: skills/simple-english/references/strict-vocabulary.md, to: plugin/builtins/simple-english/references/strict-vocabulary.md, mode: adapted, baseBlob: 2233a6da3b35c3e6845722496644e6d555b66b7f }
       - { from: skills/simple-english/references/use-cases.md, to: plugin/builtins/simple-english/references/use-cases.md, mode: adapted, baseBlob: 10b2862740a57f3b091a8c7ff7e5399d548dea18 }

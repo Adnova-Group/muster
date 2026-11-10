@@ -1,10 +1,11 @@
 ---
 name: book-continuity-checker
-description: "Read-only check of one chapter against the book canon."
+description: "Book workflow: chapter vs canon check."
 tools: Read, Bash, Grep, Glob
 model: sonnet
 effort: medium
 maxTurns: 35
+omitClaudeMd: true
 upstream:
   - repo: haowjy/creative-writing-skills
     ref: 15003a6fd5a1ce92ff49a13187d648c426c03080

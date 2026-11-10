@@ -1,6 +1,6 @@
 ---
 name: prt-silent-failure-hunter
-description: "Silent-failure and error-handling review."
+description: Silent-failure and error-handling review.
 model: sonnet
 effort: high
 maxTurns: 35

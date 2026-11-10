@@ -71,6 +71,16 @@ test("no plugin workflow shares its muster:<name> with a command or skill", asyn
   assert.equal(workflows.get("make-plan"), "plugin/workflows/make-plan.js", "the planning workflow is muster:make-plan");
 });
 
+// Claude Code registers every .md under commands/ as a command, subfolders included:
+// plugin/commands/audit/references/audit-pattern-architecture.md loaded as
+// /muster:audit:references:audit-pattern-architecture. Reference files live in plugin/references/.
+test("plugin/commands holds only top-level command files, no subfolders", async () => {
+  const entries = await readdir(join(root, "plugin/commands"), { withFileTypes: true });
+  const dirs = entries.filter((e) => e.isDirectory()).map((e) => `plugin/commands/${e.name}`);
+  assert.deepEqual(dirs, [], "every .md under a commands/ subfolder loads as a slash command; move references to plugin/references/");
+  for (const e of entries) assert.ok(e.name.endsWith(".md"), `plugin/commands/${e.name} is not a command file`);
+});
+
 // CLI verbs, read from the usage string so a new verb is covered without editing this test.
 async function cliVerbs() {
   const src = await read("src/cli.js");

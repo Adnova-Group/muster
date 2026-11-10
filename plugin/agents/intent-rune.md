@@ -1,6 +1,6 @@
 ---
 name: intent-rune
-description: "Design handoff: packages approved work for builders."
+description: Design handoff to builders.
 model: sonnet
 effort: medium
 maxTurns: 25

@@ -1,9 +1,10 @@
 ---
 name: wsh-team-debugger
-description: "Tests one bug hypothesis with cited evidence."
+description: "Debug workflow: tests one bug hypothesis."
 model: sonnet
 effort: high
 maxTurns: 25
+omitClaudeMd: true
 tools: Read, Glob, Grep, Bash
 muster_builtin: true
 license: MIT

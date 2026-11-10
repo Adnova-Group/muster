@@ -1,10 +1,10 @@
 ---
 name: code-documentation-docs-architect
-description: Long-form technical documentation from an existing codebase.
+description: Long-form technical docs from a codebase.
 model: opus
 effort: medium
 maxTurns: 35
-tools: Read, Grep, Glob, Edit, Bash
+tools: Read, Grep, Glob, Edit, Write, Bash
 muster_builtin: true
 license: MIT
 upstream:

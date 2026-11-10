@@ -1,10 +1,10 @@
 ---
 name: frontend-mobile-development-frontend-developer
-description: "Frontend work: React components, layouts, state, performance and accessibility."
+description: "Frontend: React components, layouts, state, accessibility."
 model: opus
 effort: medium
 maxTurns: 25
-tools: Read, Grep, Glob, Edit, Bash
+tools: Read, Grep, Glob, Edit, Write, Bash
 muster_builtin: true
 license: MIT
 upstream:

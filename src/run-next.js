@@ -15,10 +15,15 @@ async function readOrNull(path) {
 }
 
 // Task ids in PLAN.md. The planner's exact format is owned by muster-planner, so accept
-// the common shapes: `<task id="T1">`, `taskId: T1`, and frontmatter `- id: T1`.
+// the common shapes: `<task id="T1">`, `taskId: T1`, and frontmatter `- id: T1`. A plan with
+// `<task>` elements (docs/plan-format.md) names its tasks only there: its frontmatter `- id:`
+// lines are must_haves prohibitions (P-01...), which never get a SUMMARY. Counting them held a
+// fully merged live run at "planned" and pointed `next` back at the build (e2e 2026-11-10).
 export function planTaskIds(plan) {
   const ids = new Set();
-  for (const re of [/<task\b[^>]*\bid="([^"]+)"/g, /^\s*-?\s*taskId:\s*["']?([A-Za-z0-9._-]+)/gm, /^\s*-\s+id:\s*["']?([A-Za-z0-9._-]+)/gm]) {
+  for (const m of plan.matchAll(/<task\b[^>]*\bid="([^"]+)"/g)) ids.add(m[1]);
+  if (ids.size) return [...ids];
+  for (const re of [/^\s*-?\s*taskId:\s*["']?([A-Za-z0-9._-]+)/gm, /^\s*-\s+id:\s*["']?([A-Za-z0-9._-]+)/gm]) {
     for (const m of plan.matchAll(re)) ids.add(m[1]);
   }
   return [...ids];
@@ -33,6 +38,18 @@ export function verificationVerdict(text) {
   if (status) return GSD_STATUS[status[1]];
   const m = text.match(/\b(?:verdict|status)\b[^A-Za-z\n]{0,6}\**\s*(PASS|GAPS|ABSTAIN)\b/i) || text.match(/\b(PASS|GAPS|ABSTAIN)\b/);
   return m ? m[1].toUpperCase() : null;
+}
+
+// plan-check.json holds the make-plan result `{verdict, escalated, issues}` (or the Workflow
+// envelope around it). Anything unreadable is a record of nothing: never a pass.
+export function planCheckRecord(text) {
+  let j;
+  try { j = unwrap(JSON.parse(text || "")); } catch { return { verdict: "UNREADABLE", escalated: null, blockers: 0 }; }
+  if (!j || typeof j !== "object") return { verdict: "UNREADABLE", escalated: null, blockers: 0 };
+  const verdict = typeof j.verdict === "string" ? j.verdict.toUpperCase() : "UNREADABLE";
+  const escalated = typeof j.escalated === "string" && j.escalated ? j.escalated : null;
+  const blockers = Array.isArray(j.issues) ? j.issues.filter((i) => /^blocker$/i.test(String(i?.severity || ""))).length : 0;
+  return { verdict: escalated && verdict === "PASS" ? "ISSUES" : verdict, escalated, blockers };
 }
 
 function mergedTasks(state) {
@@ -59,6 +76,11 @@ export async function nextForRun({ cwd, runId }) {
     try { built = (unwrap(JSON.parse(await readOrNull(join(dir, "build-result.json")))).tasks || []).map((t) => t.taskId); } catch { built = []; }
   }
   const verdict = has("VERIFICATION.md") ? verificationVerdict(await readOrNull(join(dir, "VERIFICATION.md")) || "") : null;
+  // The plan gate's record: the main thread writes every muster:make-plan result to
+  // plan-check.json (orchestrator rule 6). Workflow scripts cannot write files, so without it a
+  // stalled plan looked exactly like a passed one, and `next` pointed a resume at the build of a
+  // plan that never passed the checker (live e2e 2026-11-10, runs 2 and 3).
+  const planCheck = has("plan-check.json") ? planCheckRecord(await readOrNull(join(dir, "plan-check.json"))) : null;
   const rel = `.muster/runs/${runId}`;
 
   // Content runs (muster:pipeline) have pipeline-args.json instead of PLAN.md.
@@ -80,6 +102,15 @@ export async function nextForRun({ cwd, runId }) {
     [position, action, why] = ["discussed", `plan: Workflow({name:"muster:make-plan", args:{runId:"${runId}", contextPath:"${rel}/CONTEXT.md", ...}})`, "CONTEXT.md exists, PLAN.md does not"];
   } else if (built.some((t) => !merged.includes(t))) {
     [position, action, why] = ["built", `merge: muster merge-wave ${runId} --result ${rel}/build-result.json`, `build-result.json has unmerged tasks: ${built.filter((t) => !merged.includes(t)).join(", ")}`];
+  } else if (!has("build-args.json") && !has("build-result.json") && !summarized.length && !merged.length && planCheck?.verdict !== "PASS") {
+    // build-args.json is written only after the gate passes (go step 4), so its absence plus a
+    // missing or non-PASS gate record means this plan was never approved.
+    if (planCheck) {
+      const reason = planCheck.escalated ? `escalated: ${planCheck.escalated}` : `verdict ${planCheck.verdict}`;
+      [position, action, why] = ["plan-escalated", `escalate: the plan never passed the checker (${reason}); show the issues in ${rel}/plan-check.json and offer Revise (record the answer as a D-NN in CONTEXT.md, then re-run muster:make-plan) or Abort; never build it`, `plan-check.json ${reason}${planCheck.blockers ? `, ${planCheck.blockers} blocker(s)` : ""}`];
+    } else {
+      [position, action, why] = ["plan-unchecked", `plan: Workflow({name:"muster:make-plan", args:{runId:"${runId}", ...}}) gates the existing PLAN.md (the planner keeps a plan that covers the outcome); build only after a PASS`, "PLAN.md exists but no checker verdict is on record (no plan-check.json) and no build-args.json"];
+    }
   } else if (planned.length ? planned.some((t) => !summarized.includes(t)) : !summarized.length) {
     const pending = planned.filter((t) => !summarized.includes(t));
     [position, action, why] = ["planned", `build: Workflow({name:"muster:build", args:{runId:"${runId}", waves:[...], base:"<HEAD sha>"}})`, pending.length ? `no SUMMARY for: ${pending.join(", ")}` : "PLAN.md exists, no SUMMARY-*.md yet"];
@@ -98,7 +129,7 @@ export async function nextForRun({ cwd, runId }) {
   const report = {
     runId, position, next: action, why,
     artifacts: {
-      context: has("CONTEXT.md"), plan: !!plan, summaries: summarized, buildResult: has("build-result.json"),
+      context: has("CONTEXT.md"), plan: !!plan, planCheck: planCheck ? planCheck.verdict : null, summaries: summarized, buildResult: has("build-result.json"),
       verification: verdict, paused: has("continue-here.md"), pipeline: has("pipeline-args.json") ? (pipelineVerdict || "pending") : null,
     },
     tasks: { planned, summarized, merged },

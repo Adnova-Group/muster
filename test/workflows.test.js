@@ -66,7 +66,7 @@ test("build: happy path across two waves, schemas, agent types, isolation and mo
   assert.equal(result.runId, "r1");
   assert.equal(result.halted, null);
   assert.deepEqual(result.tasks.map((t) => [t.taskId, t.wave, t.status, t.review.verdict]), [["A", 1, "done", "PASS"], ["B", 1, "done", "PASS"], ["C", 2, "done", "PASS"]]);
-  assert.deepEqual(result.tasks[0].verify, ["node --test A.test.js"]);
+  assert.equal(result.tasks[0].verify, undefined, "verify commands live in build-args.json, not the result");
   assert.equal(result.verification.verdict, "PASS");
 
   const builds = calls.filter((c) => c.opts.label.startsWith("build "));
@@ -272,6 +272,54 @@ test("build: self-check FAILED skips review; ABSTAIN review does not trigger a f
   assert.equal(result.tasks[1].review.verdict, "ABSTAIN");
 });
 
+// Run 1 (first live e2e): every must-have verified, zero gaps, one judgment-checked prohibition
+// left for a human; the verifier mapped human_needed to ABSTAIN and the run kept its branch.
+const p05 = "P-05 (prohibition, judgment): no --json on any command other than report and stats";
+const verifyHuman = {
+  verdict: "HUMAN_NEEDED",
+  truths: [{ claim: "report --json prints one JSON document", status: "VERIFIED", evidence: "node bin/tally.js report --json -> exit 0" }, { claim: p05, status: "UNCERTAIN", evidence: "grep -rn flags src/ -> cli.js only" }],
+  gaps: [],
+  human: [`${p05}: confirm no other command grew a --json flag (judgment prohibition)`],
+};
+
+test("build: a zero-gap verification with judgment-only items is HUMAN_NEEDED with its items, never ABSTAIN", async () => {
+  const { result } = await run("build.js", { runId: "r7", waves: [[task("A")]] }, (label, prompt, opts) => (label.startsWith("verify") ? verifyHuman : happy(label, prompt, opts)));
+  assert.equal(result.verification.verdict, "HUMAN_NEEDED");
+  assert.deepEqual(result.verification.human, verifyHuman.human);
+  assert.deepEqual(result.verification.gaps, []);
+  assert.match(result.summary, /verifier HUMAN_NEEDED \(1 human check\(s\)\)/);
+});
+
+test("build: HUMAN_NEEDED with gaps is GAPS; HUMAN_NEEDED without items or evidence is an unusable result (ABSTAIN)", async () => {
+  const withGaps = await run("build.js", { runId: "r8", waves: [[task("A")]] }, (label, prompt, opts) => (label.startsWith("verify") ? { ...verifyHuman, gaps: ["report --json exits 1"] } : happy(label, prompt, opts)));
+  assert.equal(withGaps.result.verification.verdict, "GAPS");
+  assert.deepEqual(withGaps.result.verification.human, verifyHuman.human, "the human items stay listed");
+  const noItems = await run("build.js", { runId: "r9", waves: [[task("A")]] }, (label, prompt, opts) => (label.startsWith("verify") ? { ...verifyHuman, human: [] } : happy(label, prompt, opts)));
+  assert.equal(noItems.result.verification.verdict, "ABSTAIN");
+  assert.match(noItems.result.verification.gaps[0], /HUMAN_NEEDED without human items/);
+});
+
+test("build: the result leads with its headline and echoes the args digest; verify commands and VERIFIED evidence stay out", async () => {
+  const digests = { plan: "p".repeat(64), args: "a".repeat(64) };
+  const { result } = await run("build.js", { runId: "r10", base: "b0", digests, waves: [[task("A"), task("B")], [task("C")]] }, (label, prompt, opts) => (label.startsWith("verify") ? verifyHuman : happy(label, prompt, opts)));
+  const keys = Object.keys(result);
+  assert.deepEqual(keys.slice(0, 4), ["runId", "summary", "verification", "halted"]);
+  assert.equal(keys.at(-1), "tasks", "the bulky per-task records come last");
+  assert.equal(result.argsDigest, digests.args);
+  assert.match(result.summary, /^3\/3 task\(s\) done with review PASS; verifier HUMAN_NEEDED/);
+  assert.equal(result.verification.truths[0].evidence, undefined, "VERIFIED evidence lives in VERIFICATION.md");
+  assert.ok(result.verification.truths[1].evidence, "a truth a human must judge keeps its evidence");
+  assert.ok(result.tasks.every((t) => !("verify" in t)));
+  // The Workflow tool inlines the first 8000 characters: the verdict and human items are in them.
+  assert.ok(JSON.stringify(result).indexOf(verifyHuman.human[0]) < 8000);
+});
+
+test("backlog: the result opens with one headline per item", async () => {
+  const { result } = await run("backlog.js", { items: [{ itemId: "I1", runId: "ra", waves: [[task("A")]] }] }, (label, prompt, opts) => happy(label.split(" ").slice(1).join(" "), prompt, opts));
+  assert.deepEqual(Object.keys(result), ["summary", "items"]);
+  assert.match(result.summary[0], /^I1: 1\/1 task\(s\) done with review PASS; verifier PASS/);
+});
+
 test("build: string args are parsed; junk args return an error instead of throwing", async () => {
   const args = JSON.stringify({ runId: "r7", waves: [[task("A")]] });
   const { result } = await run("build.js", args, happy);
@@ -339,6 +387,59 @@ test("make-plan: escalates when the issue count stops falling", async () => {
   assert.equal(result.issues.length, 2);
 });
 
+test("make-plan: a same-size set of blockers in new dimensions is progress, not a stall", async () => {
+  // A fixed blocker followed by an unrelated new one: counting alone would escalate a sound plan.
+  const block = (dimension) => ({ verdict: "ISSUES", issues: [{ dimension, severity: "blocker", summary: dimension }] });
+  const rounds = [block("verify_command_sanity"), block("requirement_coverage")];
+  const { result, calls } = await run("make-plan.js", { runId: "p9", outcome: "x" }, (label) => {
+    if (label.startsWith("plan")) return planned;
+    return rounds.shift() || { verdict: "PASS", issues: [] };
+  });
+  assert.equal(result.verdict, "PASS");
+  assert.equal(result.revisions, 2);
+  assert.match(calls.find((c) => c.opts.label === "plan r2").prompt, /requirement_coverage/);
+  // The same dimension coming back at the same count is still a stall.
+  const again = [block("requirement_coverage"), block("requirement_coverage")];
+  const { result: stalled } = await run("make-plan.js", { runId: "p10", outcome: "x" }, (label) => (label.startsWith("plan") ? planned : again.shift()));
+  assert.equal(stalled.escalated, "stall");
+  assert.equal(stalled.revisions, 1);
+});
+
+test("make-plan: warnings never block the gate or count toward the stall rule (live e2e 2026-11-10 runs 2 and 3)", async () => {
+  // Run 2 r0 and run 3 r0 returned warning + info only; each then burned 1-2 Opus revision rounds
+  // and stalled on a repeated malicious_implementer warning. Warnings now pass the gate at r0.
+  const run2r0 = { verdict: "ISSUES", issues: [
+    { dimension: "verify_command_sanity", severity: "warning", required_property: "baseline counts match HEAD", summary: "Task 03 asserts a HEAD baseline of 8 tests; the tree has 7" },
+    { dimension: "stated_failing_direction", severity: "info", summary: "the stated at-HEAD reason is ENOENT, not the TOTAL line" },
+  ] };
+  const { result, calls, logs } = await run("make-plan.js", { runId: "w1", outcome: "x" }, (label) => (label.startsWith("plan") ? planned : run2r0));
+  assert.equal(result.verdict, "PASS");
+  assert.equal(result.revisions, 0);
+  assert.equal(result.escalated, null);
+  assert.equal(result.issues.length, 2, "warnings are still returned for the main thread to show");
+  assert.equal(calls.length, 2, "one planner, one checker: no revision for a warning");
+  assert.ok(logs.some((l) => /1 non-blocking warning/.test(l)));
+  // A repeated warning never escalates as a stall, however many rounds a blocker forces.
+  const rounds = [
+    { verdict: "ISSUES", issues: [{ dimension: "requirement_coverage", severity: "blocker", summary: "b0" }, { dimension: "malicious_implementer", severity: "warning", summary: "whitelist" }] },
+    { verdict: "ISSUES", issues: [{ dimension: "malicious_implementer", severity: "warning", summary: "whitelist" }, { dimension: "malicious_implementer", severity: "warning", summary: "whitelist 2" }] },
+  ];
+  const { result: r2, calls: c2 } = await run("make-plan.js", { runId: "w2", outcome: "x" }, (label) => (label.startsWith("plan") ? planned : rounds.shift()));
+  assert.equal(r2.verdict, "PASS");
+  assert.equal(r2.revisions, 1);
+  assert.equal(r2.escalated, null);
+  // The revision brief binds the blocker and offers the warning as an optional note.
+  const brief = c2.find((c) => c.opts.label === "plan r1").prompt;
+  assert.match(brief, /resolve exactly these checker blockers\.\n[^\n]*\n- \[blocker\] requirement_coverage: b0/);
+  assert.match(brief, /Non-binding warnings \(they never block the gate\)[^\n]*\n- \[warning\] malicious_implementer: whitelist/);
+});
+
+test("make-plan: the checker brief says only blockers hold the gate and points at the calibration", async () => {
+  const { calls } = await run("make-plan.js", { runId: "w3", outcome: "x" }, (label) => (label.startsWith("plan") ? planned : { verdict: "PASS", issues: [] }));
+  assert.match(calls[1].prompt, /Only blockers hold this gate/);
+  assert.match(calls[1].prompt, /<downstream_defences> and <calibration>/);
+});
+
 test("make-plan: escalates at the revision cap of 3", async () => {
   const counts = [9, 7, 5, 3];
   const { result, calls } = await run("make-plan.js", { runId: "p4", outcome: "x" }, (label) => (label.startsWith("plan") ? planned : checkIssues(counts.shift())));
@@ -348,7 +449,7 @@ test("make-plan: escalates at the revision cap of 3", async () => {
   assert.equal(calls.filter((c) => c.opts.label.startsWith("check")).length, 4);
 });
 
-test("make-plan: info-only checker issues pass without a revision (gsd: only blockers and warnings bind)", async () => {
+test("make-plan: info-only checker issues pass without a revision (only blockers bind)", async () => {
   const infoOnly = { verdict: "ISSUES", issues: [{ dimension: "style", severity: "info", summary: "consider a shorter task name" }] };
   const { result, calls } = await run("make-plan.js", { runId: "p6", outcome: "x" }, (label) => (label.startsWith("plan") ? planned : infoOnly));
   assert.equal(result.verdict, "PASS");
@@ -358,7 +459,7 @@ test("make-plan: info-only checker issues pass without a revision (gsd: only blo
   assert.equal(calls.filter((c) => c.opts.label.startsWith("plan")).length, 1, "no revision was requested");
 });
 
-test("make-plan: the stall rule counts blockers and warnings, not info", async () => {
+test("make-plan: the stall rule counts blockers, not info", async () => {
   const mixed = (blockers, infos) => ({ verdict: "ISSUES", issues: [
     ...Array.from({ length: blockers }, (_, i) => ({ dimension: "verify", severity: "blocker", summary: `b${i}` })),
     ...Array.from({ length: infos }, (_, i) => ({ dimension: "style", severity: "info", summary: `i${i}` })),

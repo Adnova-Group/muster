@@ -90,8 +90,9 @@ whole run, including after compaction.
   preflight warns when the setting is missing in a repo with a remote.
 - Workflow agents have no Agent tool (one nesting level) and cannot ask the user, so every human
   stop sits between workflow calls. In `claude -p` a workflow runs as a background task: the
-  session emits a first result early, continues on the completion notification, and kills a
-  workflow still running about 10 minutes after the main turn ended (observed on 2.1.319).
+  session emits a first result early, continues on the completion notification, and stops a
+  workflow still running 10 minutes after the last turn (2.1.322 names the knob:
+  `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0` waits indefinitely; set it for unattended runs).
   A killed run resumes with `/muster:go --run <runId>`; its PLAN.md and commits stay on disk.
 - The Agent tool takes `model`, `effort` and `isolation: "worktree"`; build-args `models` gives
   the per-seat values. Workflow agents append `Co-Authored-By` trailers to their commits.

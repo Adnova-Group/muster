@@ -106,7 +106,8 @@ given file) and take the unticked items in file order, at most 5 per run unless 
 
 - Keep a long attended run alive with `/goal finish /muster:go --run <runId> to the merge
   decision`; `/muster:go --run <runId>` resumes from disk after any stop.
-- `claude -p` kills background workflows ~10 minutes after its main turn (resume with `--run`);
-  run it with `--permission-prompts none` and the orchestrator's `Workflow(muster:*)` rules.
+- `claude -p` stops background workflows 10 minutes after its last turn unless
+  `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0` is set (else resume with `--run`); add
+  `--permission-prompts none` and the orchestrator's `Workflow(muster:*)` rules.
 - A Routine or cloud scheduled task running `/muster:go --run <runId>` (or one outcome) is the
   unattended form: same flow, no questions, ends in a PR.

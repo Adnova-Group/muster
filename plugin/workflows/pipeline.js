@@ -112,7 +112,7 @@ function common(cfg) {
     `Outcome: ${cfg.outcome || '(see CONTEXT.md)'}`,
     cfg.contextPath ? `Decisions (honour every D-NN): ${cfg.contextPath}` : 'No CONTEXT.md: where the outcome leaves something open, choose and record the assumption.',
     `The artifact lives at ${cfg.artifactPath}. Phase notes live under .muster/runs/${cfg.runId}/pipeline/.`,
-    'Write only the artifact and your notes file. Do not commit, push, publish or send anything.',
+    'Write only the artifact, your notes file and files the phase description names (e.g. docs/profiles/). Do not commit, push, publish or send anything.',
   ]
 }
 

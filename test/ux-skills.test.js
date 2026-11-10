@@ -29,8 +29,8 @@ const uxSources = manifest.sources.filter(s => UX_SOURCES.includes(s.id));
 const frontmatter = text => parseYaml(text.match(/^---\r?\n([\s\S]*?)\r?\n---/)[1]);
 const bare = { skills: [], agents: [], plugins: [], mcpServers: [] };
 
-// The UX family only: impeccable-* builtins are also kept out of the frozen Codex lane but are their own source.
-const builtinIds = (await readdir(join(root, "plugin/builtins"))).filter(n => isCodexFrozenOutBuiltin(n) && !n.startsWith("impeccable-")).sort();
+// The UX family only: impeccable-* and muster-pm are also kept out of the frozen Codex lane but are not UX sources.
+const builtinIds = (await readdir(join(root, "plugin/builtins"))).filter(n => isCodexFrozenOutBuiltin(n) && !n.startsWith("impeccable-") && n !== "muster-pm").sort();
 const agentIds = (await readdir(join(root, "plugin/agents"))).filter(f => /^intent-/.test(f)).map(f => f.slice(0, -3)).sort();
 
 // ---- provenance --------------------------------------------------------------

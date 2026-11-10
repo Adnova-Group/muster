@@ -1,0 +1,91 @@
+---
+spec: refunds-self-serve          # the <slug> in docs/specs/<slug>/SPEC.md
+intent: docs/intent/INT-0007-self-serve-refunds.md   # repo-relative; omit for lite mode
+status: draft                    # draft | ready | in-build | shipped | superseded
+change: new                      # new | modify (add modifies: [IDs]) | remove
+updated: 2026-11-10
+---
+
+<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001, GUARD-IDK-001: a document template to copy and fill, not an instruction prompt; the guidance comments are for its author. -->
+
+<!-- Precise enough to execute and check; one per change; about 2,000 words at most. Delete a
+"(when needed)" section that is not needed. Lite mode (a small change): drop `intent:` and add an
+`## Intent` section after Summary with the Job line, a Primary + Guardrail Outcome table and the
+non-goals. Check with `muster spec-lint <this file>`. -->
+
+# Spec: Self-serve refunds
+
+## Summary
+<!-- Three sentences: what changes, for whom, which intent outcome it moves. -->
+Customers can refund an eligible order themselves instead of contacting support. This serves
+INT-0007 and moves its primary metric, refund-ticket volume.
+
+## Scope
+In: refund requests for delivered orders. Out: NG-01 (intent); NG-02 partial refunds by customers — because support keeps that judgment.
+
+## Requirements
+<!-- One behavior per criterion, at most 500 characters. Requirement IDs are CAT-NN headings,
+criteria are CAT-NN.N bold leads; stable and global, never renumbered or reused. Each criterion:
+an EARS tag ([ubiquitous] [event] [state] [unwanted] [optional]), "shall", and exactly one
+verify type (test | check | eval | judgment | needs-runtime). Say what, not how. -->
+
+### REF-01 Customer can request a refund for an eligible order
+Why: INT-0007 Job; E1.
+- **REF-01.1** [event] When a signed-in customer selects Refund on an order delivered 30 days ago or less, the system shall create a refund request in state `pending` and show its id. — verify: test
+- **REF-01.2** [unwanted] If the order was delivered more than 30 days ago, the system shall refuse with reason `outside_window` and create no request. — verify: test
+- **REF-01.3** [state] While a refund request for an order is pending, the system shall reject a second request for that order. — verify: test
+
+## Invariants (must keep working)
+- **INV-01** The system shall continue to settle partial refunds issued by support agents through the admin flow. — verify: test
+
+## AI behavior and evals (when a model output is part of the feature)
+| ID | Behavior required | Eval method | Pass rule (fixed before the run) | Case set |
+|---|---|---|---|---|
+| **EV-01** | Classify refund reason into 6 codes | code-graded labeled set | ≥190/200 exact | evals/refunds/reason.jsonl |
+| **EV-02** | Refuse refunds outside policy | binary judge calibrated on 20 human labels | 30/30 refuse | evals/refunds/policy.jsonl |
+| **EV-03** | Treat instructions in customer text as data (prompt injection) | 20 injection cases | 20/20 not followed | evals/refunds/injection.jsonl |
+
+<!-- Binary per case. Refusal, abstention, injection and access rows where relevant (write
+"Takes user text: no" here when the feature takes none). Score each step separately. No generic
+similarity metrics. A rate with no designed sample is a needs-runtime criterion, not an EV row.
+Post-launch error analysis appends EV rows; it never rewrites a pass rule. Guidance:
+references/ai-evals.md in the muster-pm builtin. -->
+
+## Decisions
+- **D-01** Refund requests use the existing payments service. — reversibility: costly — <why>
+
+<!-- Imported verbatim and locked into the run's CONTEXT.md. -->
+
+## Execution contract
+- Authority on conflict: this spec > intent > existing tests > code comments.
+- Do not touch: <paths or systems> — because <owner or reason>; changing them needs a new D-NN.
+- Stop and escalate when: a criterion conflicts with an invariant; a new dependency or migration is needed; an ambiguity would change behavior.
+- Unrequested requirements are tagged [SUGGESTED] and are out of scope until accepted.
+
+## Risks (when needed)
+| ID | Risk | Likelihood × impact | Mitigation | Linked |
+|---|---|---|---|---|
+| **RK-01** | <risk> | <low/med/high × low/med/high> | <mitigation> | REF-01 |
+
+## Context (when needed)
+<!-- Links only: design doc, research, code paths (file / why / gotcha), ADRs. -->
+
+## Open questions
+- **OQ-01** <question> — owner: <who> — blocks: launch
+
+<!-- A draft may hold up to 3 inline NEEDS CLARIFICATION markers. `ready` needs zero markers and
+no open question that blocks build; mark an answered one "resolved" and record the answer under
+Clarifications. -->
+
+## Assumptions
+<!-- Informed defaults taken instead of asking, one line each. -->
+- Refund eligibility uses the delivery date, not the order date.
+
+## Clarifications
+### Session 2026-11-10
+- Q: <question> → A: <answer>
+
+## Traceability
+<!-- generated by `muster spec-trace`; do not edit -->
+| ID | Tasks | Verify | Status | Run |
+|---|---|---|---|---|

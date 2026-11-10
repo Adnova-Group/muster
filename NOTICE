@@ -28,6 +28,8 @@ Per-item detail (upstream path, ref, relation) is in each item's `upstream:` fie
   Copyright (c) 2026 Elaya
 - jakubkrehel/skills @ 72bdd6121cd595f47fd21c9f23e374028c9cbacd (MIT)
   Copyright (c) 2026 Jakub Krehel
+- gotalab/cc-sdd @ e2a0c671aef37a482404905b409ab5c27092b25b (MIT)
+  Copyright (c) 2025 gotalab
 - open-gsd/gsd-core @ 9385f4618b52ef68ed8a5e8bdd93cfb25bd87765, 1c352d1ea37b010e99b8353905eb5def4f784100 (MIT)
   Copyright (c) 2026 Open GSD
 - nextlevelbuilder/ui-ux-pro-max-skill @ 4f2dbb67e64969a9a30ab00742f2d55d66ddec2b (MIT)
@@ -83,6 +85,13 @@ Per-item detail (upstream path, ref, relation) is in each item's `upstream:` fie
 - deanpeters/Product-Manager-Skills @ 70fb6c4e41637047e7e4976d39145b1a78397464 (CC-BY-NC-SA-4.0)
 - phuryn/pm-skills @ 9af7bfd0bc47fdad43c2eaa7a43cd13918e7aaef (MIT)
   Copyright (c) 2026 Pawel Huryn
+- github/spec-kit @ 08252af8c5fb1c68135768fde2049d6578fa46c3 (MIT)
+  Copyright GitHub, Inc.
+- Fission-AI/OpenSpec @ 579fcac57ae00c2dff38f971b6d88b6f1f098b8a (MIT)
+  Copyright (c) 2024 OpenSpec Contributors
+- Wirasm/prp @ 435292597e7b04f64f8f275da9d2c985c4251281 (MIT)
+  Copyright (c) 2025-2026 Rasmus Widing
+- product-on-purpose/pm-skills @ 9b920db418c5bf641edea9afb4915a286e1d42ea (Apache-2.0)
 - anthropics/knowledge-work-plugins @ e605d8ddbfb688da57dfaaceebd93f12a64ef1d3 (Apache-2.0)
 - joelparkerhenderson/objectives-and-key-results @ f7269521672a63f25fbf01cd4deb652ee181f45c (NONE)
 - architecture-decision-record/architecture-decision-record @ a36c53f49517fc55ceadd459d3e59770c9074416 (CC-BY-NC-SA-4.0)
@@ -126,6 +135,14 @@ from them and carries none of their text; they are credited, not reproduced.
   https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations
 - Define success criteria and build evaluations (Claude Docs), Anthropic (article)
   https://platform.claude.com/docs/en/test-and-evaluate/develop-tests
+- Demystifying evals for AI agents, Anthropic (article)
+  https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents
+- Evaluation best practices (OpenAI API docs), OpenAI (article)
+  https://developers.openai.com/api/docs/guides/evaluation-best-practices
+- Your AI Product Needs Evals, Hamel Husain (article)
+  https://hamel.dev/blog/posts/evals/
+- AI Evals: Everything You Need to Know, Hamel Husain and Shreya Shankar (article)
+  https://hamel.dev/blog/posts/evals-faq/
 - The new rules of context engineering for Claude 5 generation models, Anthropic (article)
   https://claude.com/blog/the-new-rules-of-context-engineering-for-claude-5-generation-models
 - LLM-Cite (paper)

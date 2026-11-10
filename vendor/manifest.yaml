@@ -1033,6 +1033,25 @@ sources:
       - { id: jk-state-machine, kind: builtin, from: skills/state-machine/SKILL.md, to: plugin/builtins/jk-state-machine/SKILL.md, mode: adapted, baseBlob: 26f835284b16b4d08372867ec75b0212019659c9, roles: [frontend], rank: 40, description: "Render every state of a component on a throwaway page with mock data and a keyboard switcher; runs only when explicitly invoked." }
       - { from: skills/state-machine/switcher.md, to: plugin/builtins/jk-state-machine/switcher.md, mode: adapted, baseBlob: f59488c4247e8876f5ac680696b5504bb0950087 }
   # ---- end ui-skills.com UX skills ----
+  - id: cc-sdd
+    kind: github
+    repo: gotalab/cc-sdd
+    # Added 2026-11-10 for the muster-pm builtin (docs/strategy/2026-11-pm-domain-design.md, stage A).
+    # Merge-tracked (the file item has a `mode`): the EARS rules file is a whole-file verbatim copy,
+    # its own base copy checked by git blob hash; `muster vendor update cc-sdd --to <tag>` replaces
+    # it. Taken from the CLI's shared template, the file cc-sdd installs into projects; the
+    # .kiro/settings/rules/ copy in the same repo is a rendered instance ({{LANG_CODE}} -> en).
+    # The muster-pm templates also take the five EARS tags and the rule that every requirement ID
+    # reaches a task, in muster's words. Pinned to main HEAD on 2026-11-10, two commits after
+    # v3.1.0 (the file's blob is the same at v3.1.0). LICENSE kept in vendor/upstream/cc-sdd/.
+    ref: e2a0c671aef37a482404905b409ab5c27092b25b
+    tag: v3.1.0-2-ge2a0c67
+    license: MIT
+    copyright: "Copyright (c) 2025 gotalab"
+    relation: vendored
+    items:
+      - { id: muster-pm, kind: builtin, from: tools/cc-sdd/templates/shared/settings/rules/ears-format.md, relation: vendored }
+      - { from: tools/cc-sdd/templates/shared/settings/rules/ears-format.md, to: plugin/builtins/muster-pm/references/ears.md, mode: verbatim, baseBlob: 75d15be86bd6d0e7c68b7ff520918d94b33404c6 }
   - id: gsd
     kind: github
     repo: open-gsd/gsd-core
@@ -2014,6 +2033,72 @@ sources:
       - { id: user-story, kind: pipeline, from: null }
       - { id: launch-plan, kind: pipeline, from: null }
       - { id: prd, kind: pipeline, from: null }
+      # muster-pm INTENT template: the bets-and-assumptions table (risk type, cheapest test, kill criterion)
+      - { id: muster-pm, kind: builtin, from: null }
+  # --- muster-pm: PM artifact kit (docs/strategy/2026-11-pm-domain-design.md, stage A) ---
+  # Templates, references and src/spec-lint.js take ideas and structure from these, in muster's
+  # own words; only cc-sdd's ears-format is carried as text (the merge-tracked cc-sdd source).
+  # Each pinned at its default-branch HEAD on 2026-11-10 (verified with gh api).
+  - id: spec-kit
+    kind: github
+    repo: github/spec-kit
+    # The spec template's shape, at most 3 [NEEDS CLARIFICATION] markers (templates/commands/
+    # specify.md, "LIMIT: Maximum 3 [NEEDS CLARIFICATION] markers total") and the Clarifications
+    # session log.
+    ref: 08252af8c5fb1c68135768fde2049d6578fa46c3
+    license: MIT
+    copyright: "Copyright GitHub, Inc."
+    relation: inspired-by
+    fetch: false
+    items:
+      # from: null, not the path: a templates/ path in the stamped upstream: block reads as a
+      # pointer into the builtin (test/builtin-references.test.js).
+      - { id: muster-pm, kind: builtin, from: null }
+  - id: openspec
+    kind: github
+    repo: Fission-AI/OpenSpec
+    # Every task states how it is verified: muster's one verify type per acceptance criterion.
+    ref: 579fcac57ae00c2dff38f971b6d88b6f1f098b8a
+    license: MIT
+    copyright: "Copyright (c) 2024 OpenSpec Contributors"
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: muster-pm, kind: builtin, from: null }
+  - id: prp
+    kind: github
+    repo: Wirasm/prp
+    # Preserved invariants ("must keep working") and gates that name what they prove.
+    ref: 435292597e7b04f64f8f275da9d2c985c4251281
+    license: MIT
+    copyright: "Copyright (c) 2025-2026 Rasmus Widing"
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: muster-pm, kind: builtin, from: null }
+  - id: pm-skills-product-on-purpose
+    kind: github
+    repo: product-on-purpose/pm-skills
+    # The AI behavior / eval table and the agent execution contract in the SPEC template.
+    ref: 9b920db418c5bf641edea9afb4915a286e1d42ea
+    license: Apache-2.0
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: muster-pm, kind: builtin, from: null }
+  - id: gsd-core-pm
+    kind: github
+    repo: open-gsd/gsd-core
+    # The CAT-NN requirement ID scheme (gsd-core/templates/requirements.md, "ID: `[CATEGORY]-[NUMBER]`"),
+    # at the gsd source's v1.20.1 pin. A separate attribution entry so the merge-tracked gsd source
+    # above stays the stage-2 agent track's alone.
+    ref: 9385f4618b52ef68ed8a5e8bdd93cfb25bd87765
+    license: MIT
+    copyright: "Copyright (c) 2026 Open GSD"
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: muster-pm, kind: builtin, from: gsd-core/templates/requirements.md }
   - id: knowledge-work-plugins
     kind: github
     repo: anthropics/knowledge-work-plugins
@@ -2360,6 +2445,44 @@ sources:
     fetch: false
     items:
       - { id: muster-prompt-smith, kind: builtin, from: null }
+      - { id: muster-pm, kind: builtin, from: null }
+  # --- muster-pm references/ai-evals.md (muster's own words; these are inspired-by works) ---
+  - id: anthropic-demystifying-evals
+    kind: article
+    title: "Demystifying evals for AI agents"
+    author: Anthropic
+    url: https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: muster-pm, kind: builtin, from: null }
+  - id: openai-evaluation-best-practices
+    kind: article
+    title: "Evaluation best practices (OpenAI API docs)"
+    author: OpenAI
+    url: https://developers.openai.com/api/docs/guides/evaluation-best-practices
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: muster-pm, kind: builtin, from: null }
+  - id: hamel-your-ai-product-needs-evals
+    kind: article
+    title: "Your AI Product Needs Evals"
+    author: Hamel Husain
+    url: https://hamel.dev/blog/posts/evals/
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: muster-pm, kind: builtin, from: null }
+  - id: hamel-evals-faq
+    kind: article
+    title: "AI Evals: Everything You Need to Know"
+    author: Hamel Husain and Shreya Shankar
+    url: https://hamel.dev/blog/posts/evals-faq/
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: muster-pm, kind: builtin, from: null }
   - id: claude-5-context-engineering
     kind: article
     title: "The new rules of context engineering for Claude 5 generation models"

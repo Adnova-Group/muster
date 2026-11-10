@@ -17,8 +17,9 @@ const startupCodexHome = process.env.CODEX_HOME;
 // uupm-*, intent-*, typeui, pfd) are Claude-plugin only and never copied into the
 // Codex bundle's internal skills, so CODEX_COUNTS below stays the frozen census.
 // The Codex lane is frozen: builtins vendored after the freeze (the UX family, impeccable-*) stay
-// out of the generated Codex bundle.
-export const isCodexFrozenOutBuiltin = name => /^(uupm|intent|impeccable)-/.test(name) || name === "typeui" || name === "pfd";
+// out of the generated Codex bundle. So does muster-pm (the PM artifact kit, 2026-11 PM domain
+// stage A): the frozen lane receives no new features.
+export const isCodexFrozenOutBuiltin = name => /^(uupm|intent|impeccable)-/.test(name) || name === "typeui" || name === "pfd" || name === "muster-pm";
 
 // Expected contents of one generated Codex bundle. This census belongs with
 // inventory/build validation; model adapters only translate tiers to models.

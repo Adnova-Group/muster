@@ -31,7 +31,7 @@ file does not duplicate docs/architecture.md or docs/binding-interface.md, it po
 - Receipt-grammar drift: a new backlog annotation key (`{id}`/`{deps}`/`{disposition}`/
   `{claimed}`/`{done}`/`{human-hold}`) must be reflected in BOTH the parsing code
   (`src/scope.js`, `src/batch-plan.js`, `src/sprint-waves.js`) and the prose that documents the
-  grammar (`plugin/commands/go-backlog.md`, `plugin/skills/coordination/SKILL.md`). Grep one side
+  grammar (`plugin/commands/capture.md`, `plugin/skills/interview/SKILL.md`). Grep one side
   for a key the other side doesn't mention; `test/corpus-contradiction.test.js` already guards
   several of these pairs -- check whether a NEW key you find is covered there.
 - Circular/reach-around coupling: a "leaf" utility module (`src/fs-safe.js`, `src/roles.js`,

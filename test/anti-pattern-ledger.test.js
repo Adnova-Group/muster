@@ -4,8 +4,8 @@ import { readFile, access } from "node:fs/promises";
 import { scoreHumanness } from "../src/humanizer-score.js";
 
 // docs/anti-patterns.md: a versioned ledger of caught failure classes (symptom, root
-// cause, the guard that now exists), referenced by the orchestrator's brief-construction
-// prose and cited by muster-improver as an input. See backlog {id: anti-pattern-ledger}.
+// cause, the guard that now exists), cited by muster-improver as an input and by the
+// audit hunt lists. See backlog {id: anti-pattern-ledger}.
 
 const root = new URL("../", import.meta.url);
 const read = (p) => readFile(new URL(p, root), "utf8");
@@ -59,17 +59,6 @@ test("docs/anti-patterns.md: every entry's Guard cites at least one real repo fi
     }
   }
   assert.ok(totalChecked >= 8, `expected at least 8 guard file citations checked, found ${totalChecked}`);
-});
-
-test("plugin/skills/orchestrator/SKILL.md references the anti-pattern ledger in its brief-construction prose", async () => {
-  const text = await read("plugin/skills/orchestrator/SKILL.md");
-  assert.match(text, /docs\/anti-patterns\.md/, "orchestrator SKILL.md must reference docs/anti-patterns.md");
-  // Scoped: the reference must sit in brief-construction prose, not anywhere incidental --
-  // pinned to the "Required skills (brief binding)" section where every other per-task
-  // brief addition (REQUIRED SKILLS, Surface line) already lives.
-  const section = text.match(/^## Required skills \(brief binding\)\n([\s\S]*?)(?=\n## )/m);
-  assert.ok(section, "orchestrator SKILL.md must carry a '## Required skills (brief binding)' section");
-  assert.match(section[1], /docs\/anti-patterns\.md/, "the ledger reference must live in the brief-binding section");
 });
 
 test("plugin/agents/muster-improver.md cites the anti-pattern ledger as an input", async () => {

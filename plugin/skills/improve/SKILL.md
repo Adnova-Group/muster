@@ -1,6 +1,7 @@
 ---
 name: improve
-description: Background retrospective -- mines a just-completed run's STATE, escalations, and review-gate fix-loops for recurring friction, then proposes user-gated edits to muster's own skills, agents, and rules. Triggers on requests to reflect, retrospect, review, or improve muster after a run finishes.
+description: Read-only retrospective over a finished run; proposes user-gated edits to muster itself.
+user-invocable: false
 context: fork
 upstream:
   - repo: damusix/atomic-claude
@@ -18,7 +19,7 @@ context that inherits this conversation so it can mine the run it just watched, 
 cost to the main session.
 
 1. Read the completed run's `.muster/STATE.md`, its recorded escalations, and every
-   review-gate fix-loop (find, fix, re-review) the run went through.
+   review fix loop (find, fix, re-review) the run went through.
 2. Cluster the friction into candidates, then run each through `muster-improver`'s own
    three-gate filter, unchanged: RECURRING (seen in at least 2 distinct runs, cited),
    NON-OBVIOUS (not already stated in the target skill or rule), CODIFIABLE (a concrete

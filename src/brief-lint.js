@@ -133,17 +133,13 @@ export function lintBriefReturnCaps(filesByPath, { charsPerToken = DEFAULT_CHARS
 // already marks and budget-checks in full further down the same file; a signal exists for the
 // canonical, fuller statement of each contract, not for every paraphrase of it.
 export const DISPATCH_SIGNAL_PATTERNS = [
-  { name: "dispatch-contract-heading", re: /^## Dispatch contract$/m, sectionOwned: true },
   { name: "report-back-heading", re: /^## Report back$/m, sectionOwned: true },
   { name: "verdict-heading", re: /^## Verdict$/m, sectionOwned: true },
-  { name: "return-contract-heading", re: /^## Return contract\b.*$/m, sectionOwned: true },
   { name: "request-response-shapes-heading", re: /^## Request and response shapes$/m, sectionOwned: true },
-  { name: "go-spec-gate-return-contract", re: /Return contract: verdict first/ },
   { name: "audit-sweep-return-contract", re: /Each returns findings: severity \(P0\/P1\/P2\)/ },
-  { name: "review-gate-full-brief-identity", re: /You are muster's adversarial review gate/ },
-  { name: "review-gate-fast-path-brief-identity", re: /You are muster's adversarial reviewer for a small/ },
-  { name: "tournament-synthesizer-prompt", re: /You are given several candidate responses, de-identified and numbered/ },
-  { name: "tournament-judge-scoring-shape", re: /scores: \{ criterion: n \}, total, passing/ },
+  // Revival stage 2b retired the go spec-gate, review-gate, tournament and muster-runner
+  // dispatch prose; the orchestrator's prose-fallback executor brief is the marked brief now.
+  { name: "fallback-executor-brief", re: /Brief: run and task id,/ },
 ];
 
 // The start of the next `## `-level heading at or after `fromIndex`, or `text.length` (EOF) when

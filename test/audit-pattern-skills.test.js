@@ -4,10 +4,10 @@
 // Proves the item's hard criterion: 0 audit pillars remain persona-only. Every pillar named
 // (architecture, tech-debt, coverage, simplification, readability, security, UX/design,
 // prompt quality, dead-code/duplication, documentation) resolves to a real, on-disk hunt-list
-// pattern skill (plugin/skills/audit-pattern-<pillar>/SKILL.md), and buildAuditManifest's
-// generated plan composes that skill onto the dimension's persona via the SAME `plan[].skills:
-// [{id, rationale}]` brief-binding mechanism the orchestrator already turns into a "REQUIRED
-// SKILLS -- load before working" block (plugin/skills/orchestrator/SKILL.md) -- no new wiring.
+// pattern file, and buildAuditManifest's generated plan composes it onto the dimension's persona.
+// Revival stage 2b moved the files from plugin/skills/ to plugin/commands/audit/references/
+// (read by path, so they cost nothing per session) and the binding from a `skills` array to
+// the hunt-list paths named in each audit task's own text.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile, readdir } from "node:fs/promises";
@@ -45,10 +45,12 @@ function frontmatter(text) {
 
 // ── (a) every pillar has a resolvable pattern skill: 0 persona-only ────────────────────────
 
-test("every one of the 10 named pillars resolves to an on-disk SKILL.md with matching frontmatter name", async () => {
+const REF_DIR = "plugin/commands/audit/references";
+
+test("every one of the 10 named pillars resolves to an on-disk hunt list with matching frontmatter name", async () => {
   for (const [pillar, skillId] of Object.entries(NAMED_PILLARS)) {
-    const text = await read(`plugin/skills/${skillId}/SKILL.md`).catch((e) => {
-      assert.fail(`pillar "${pillar}" has no resolvable pattern skill at plugin/skills/${skillId}/SKILL.md: ${e.message}`);
+    const text = await read(`${REF_DIR}/${skillId}.md`).catch((e) => {
+      assert.fail(`pillar "${pillar}" has no resolvable hunt list at ${REF_DIR}/${skillId}.md: ${e.message}`);
     });
     const fm = frontmatter(text);
     assert.match(fm, new RegExp(`^name:\\s*${skillId}\\s*$`, "m"), `${skillId}/SKILL.md frontmatter name must match its directory`);
@@ -56,11 +58,14 @@ test("every one of the 10 named pillars resolves to an on-disk SKILL.md with mat
   }
 });
 
-test("every audit-pattern-* directory under plugin/skills is one of the 10 named pillars (no orphaned pattern skill)", async () => {
-  const dirs = (await readdir(new URL("plugin/skills", root), { withFileTypes: true }))
-    .filter((d) => d.isDirectory() && d.name.startsWith("audit-pattern-"))
-    .map((d) => d.name);
-  assert.deepEqual(dirs.sort(), Object.values(NAMED_PILLARS).sort());
+test("every audit-pattern-* hunt list is one of the 10 named pillars, and none is a listed skill any more", async () => {
+  const files = (await readdir(new URL(REF_DIR, root), { withFileTypes: true }))
+    .filter((d) => d.isFile() && d.name.startsWith("audit-pattern-"))
+    .map((d) => d.name.replace(/\.md$/, ""));
+  assert.deepEqual(files.sort(), Object.values(NAMED_PILLARS).sort());
+  const skillDirs = (await readdir(new URL("plugin/skills", root), { withFileTypes: true }))
+    .filter((d) => d.isDirectory() && d.name.startsWith("audit-pattern-"));
+  assert.deepEqual(skillDirs, [], "audit-pattern-* must not ship as per-session skills");
 });
 
 test("PATTERN_SKILL covers every dimension id AUDIT_DIMENSIONS/PROMPT/DESIGN can produce, non-empty", () => {
@@ -98,20 +103,21 @@ test("the documentation pillar composes into BOTH readability and design-ux (not
 
 // ── (b) composition wiring: generated briefs (plan[].skills) carry the reference ───────────
 
-test("buildAuditManifest: every dimension's plan task carries its bound pattern skill(s) in `skills`", () => {
+const huntPaths = (dimId) => PATTERN_SKILL[dimId].map((s) => `<plugin root>/${REF_DIR.replace(/^plugin\//, "")}/${s.id}.md`);
+
+test("buildAuditManifest: every dimension's plan task names its bound hunt list(s) by path", () => {
   const m = buildAuditManifest({}, { prompting: true, designEvidence: true });
   assert.ok(validateManifest(m).ok, `manifest must validate: ${JSON.stringify(validateManifest(m).errors)}`);
   const auditTasks = m.plan.filter((p) => p.id.startsWith("audit-"));
   assert.equal(auditTasks.length, 8, "6 core + prompt-quality + design-ux");
   for (const task of auditTasks) {
     const dimId = task.id.slice("audit-".length);
-    const expected = PATTERN_SKILL[dimId];
-    assert.ok(Array.isArray(task.skills) && task.skills.length > 0, `plan task "${task.id}" has no skills binding -- composition not wired`);
-    assert.deepEqual(task.skills, expected, `plan task "${task.id}".skills must equal PATTERN_SKILL["${dimId}"]`);
+    assert.equal(task.skills, undefined, `plan task "${task.id}" must not carry a skills binding`);
+    for (const path of huntPaths(dimId)) assert.ok(task.task.includes(path), `plan task "${task.id}" must name ${path}`);
   }
 });
 
-test("backlog mode and scoped mode still carry the same skills bindings (composition survives every mode)", () => {
+test("backlog mode and scoped mode still name the same hunt lists (composition survives every mode)", () => {
   const backlog = buildAuditManifest({}, { backlog: true, prompting: true, designEvidence: true });
   const scoped = buildAuditManifest({}, { paths: ["src/"] });
   for (const m of [backlog, scoped]) {
@@ -119,7 +125,7 @@ test("backlog mode and scoped mode still carry the same skills bindings (composi
     assert.ok(auditTasks.length > 0);
     for (const task of auditTasks) {
       const dimId = task.id.slice("audit-".length);
-      assert.deepEqual(task.skills, PATTERN_SKILL[dimId]);
+      for (const path of huntPaths(dimId)) assert.ok(task.task.includes(path), `${task.id} must name ${path}`);
     }
   }
 });
@@ -133,23 +139,10 @@ test("non-dimension plan tasks (consolidate/fix/verify/capture) carry no skills 
 
 // ── (c) packaging-surface lint parity: the new skills pass the repo's own prompt-lint gate ──
 
-test("every canonical audit-pattern-* SKILL.md passes muster's own prompt-lint gate (repo-wide scan, 0 failing among them)", async () => {
+test("every audit-pattern-* hunt list passes muster's own prompt-lint gate (repo-wide scan, 0 failing among them)", async () => {
   const result = await scanRepoPrompts(new URL("../", import.meta.url).pathname);
-  // Scoped to the CANONICAL plugin/skills/ location -- the pattern-library-ripples item added
-  // a portable-package mirror at the repo-root skills/audit-pattern-*/SKILL.md too (the same
-  // Agent Plugins shim convention every other plugin/skills/* entry already has), which also
-  // matches a loose "audit-pattern-" substring filter; disambiguate by path prefix so this
-  // count stays exactly 9 regardless of how many portable copies exist.
-  const mine = result.prompts.filter((p) => p.file.startsWith("plugin/skills/audit-pattern-"));
-  assert.equal(mine.length, 10, "all 10 canonical pattern skills must be discovered as prompt docs by the repo-wide scan");
+  const mine = result.prompts.filter((p) => p.file.startsWith(`${REF_DIR}/audit-pattern-`));
+  assert.equal(mine.length, 10, "all 10 hunt lists must be discovered as prompt docs by the repo-wide scan");
   const failing = mine.filter((p) => !p.passing);
   assert.deepEqual(failing, [], `audit-pattern-* SKILL.md file(s) failing prompt-lint: ${JSON.stringify(failing)}`);
-});
-
-test("every portable audit-pattern-* skill shim (repo-root skills/) also passes prompt-lint", async () => {
-  const result = await scanRepoPrompts(new URL("../", import.meta.url).pathname);
-  const portable = result.prompts.filter((p) => p.file.startsWith("skills/audit-pattern-") && !p.file.startsWith("plugin/"));
-  assert.equal(portable.length, 10, "all 10 portable pattern-skill shims must be discovered as prompt docs by the repo-wide scan");
-  const failing = portable.filter((p) => !p.passing);
-  assert.deepEqual(failing, [], `portable audit-pattern-* SKILL.md shim(s) failing prompt-lint: ${JSON.stringify(failing)}`);
 });

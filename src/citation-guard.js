@@ -7,7 +7,7 @@
 // what counts as an assertive statistic, quote, or named fact. It only reports (a) anchors that
 // fail to resolve against the Sources list (dangling -- an automatic FAIL) and (b) paragraphs
 // with zero citations at all (uncited -- handed to a human/reviewer to judge: is this actually a
-// claim needing evidence, or just connective prose?). See plugin/skills/review-gate/SKILL.md for
+// claim needing evidence, or just connective prose?). See codex/frozen/skills/review-gate/SKILL.md for
 // how the two are used differently downstream.
 
 const CITE_SOURCE = "\\[src:\\s*([A-Za-z0-9_.-]+)\\s*\\]";

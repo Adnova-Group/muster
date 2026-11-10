@@ -36,7 +36,7 @@ Hunt-list for the **coverage** audit dimension (`buildAuditManifest`, `src/audit
 
 ## Repo-specific conventions to enforce
 
-- TDD-first: `review-gate`'s mutant-kill rule and the orchestrator's TDD convention both expect
+- TDD-first: muster-reviewer's failing-test rule and the executor's TDD convention both expect
   the FAILING test to exist before the implementation. A finding here is strongest when it names
   the missing test AND states what failing-first assertion it would need.
 - `test-support/helpers.js` is the shared fixture/harness surface (`trackedMkdtempSync`,

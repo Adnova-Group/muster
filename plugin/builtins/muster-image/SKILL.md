@@ -33,7 +33,7 @@ Respond with the prompt set only — no preamble. If the artifact or brand profi
 5. **State assumptions.** If the brand file marks a value PLACEHOLDER, carry that flag into the draft
    (e.g. "typography not depicted; palette confirmed, typeface placeholder") rather than silently
    treating a placeholder as confirmed brand truth.
-6. **Growing archive.** Once a prompt is accepted (post review-gate/score), append it to the brand
+6. **Growing archive.** Once a prompt is accepted (post review/score), append it to the brand
    file's `## Archive` section — one entry per artifact, newest last, never delete history. Future
    prompt sets should check the archive first so new imagery stays consistent with what already shipped.
 
@@ -49,4 +49,4 @@ Avoid: <negative rules inlined>
 Avoid: <negative rules inlined>
 ```
 
-Respond with the prompt set only. The review-gate + scorer judge it next; once accepted, archive it.
+Respond with the prompt set only. The reviewer + scorer judge it next; once accepted, archive it.

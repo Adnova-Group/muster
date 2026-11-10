@@ -1,6 +1,6 @@
 ---
 name: interview
-description: Turn a thin outcome into a clear, criteria-backed outcome through a focused requirements interview.
+description: Turn a thin outcome into approved decisions and testable success criteria through a focused requirements interview.
 ---
 
 # Interview

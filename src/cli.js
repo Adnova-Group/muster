@@ -56,7 +56,7 @@ import { adaptCatalogForCodex } from "./codex-catalog.js";
 import { readAgentPluginInventory } from "./agent-plugins.js";
 import { assessOutcome } from "./interview.js";
 import { parseDomainArgs, formatError, requireArg, flagValue } from "./cli-args.js";
-import { dirFromImportMeta } from "./fs-util.js";
+import { dirFromImportMeta, readdirSafe } from "./fs-util.js";
 import { matchProviders, matchSkills, suggestSkillsForStack, signalsFromTask } from "./match.js";
 import { prioritize } from "./prioritize.js";
 import { parseIssueRef, resolveIssue } from "./issue.js";
@@ -75,7 +75,7 @@ import { detectScope } from "./scope.js";
 import { runHygiene, renderHygieneReport, DEFAULT_WORKTREE_THRESHOLD } from "./hygiene.js";
 import { resolveMusterCli } from "./cli-resolve.js";
 import { planGateCadence, DEFAULT_REVIEW_DIFF_THRESHOLD } from "./gate-cadence.js";
-import { resolveWaveDispatch, resolveWorktreeIsolation, makeGitShaVerifier } from "./wave-dispatch.js";
+import { resolveWaveDispatch, resolveWorktreeIsolation } from "./wave-dispatch.js";
 import { codexSpawnAgentCall, codexWaitAgentCall } from "./codex-dispatch.js";
 import { runCodexWave, runCodexWaveContinuation } from "./codex-wave-runner.js";
 import { resolvePlanSurface } from "./plan-surface.js";
@@ -88,6 +88,7 @@ import { BACKLOG_PUBLICATION_MAX_BYTES } from "./backlog-publication.js";
 import { runPreflight } from "./preflight.js";
 import { mergeWave } from "./merge-wave.js";
 import { nextForRun } from "./run-next.js";
+import { writeBuildArgs } from "./build-args.js";
 import {
   codexThreadLimitConfigPath,
   resolveCodexThreadCeiling,
@@ -146,9 +147,9 @@ const USAGE = [
   // manifest + waves: validate, order, and drive a plan
   "manifest validate <file> [--work]|wave <file>|next <manifest.json> [--done a,b]|",
   // stage-2 run steps: one-call preflight, deterministic wave merge, run position
-  "preflight <outcome> [--json] [--run <id>]|merge-wave <runId> --result <build-result.json>|next --run <id>|plan-lint <PLAN.md> [--json] [--root <dir>]|",
+  "preflight <outcome> [--json] [--run <id>] [--model <model>]|build-args <runId> [--base <sha>]|merge-wave <runId> --result <build-result.json>|next --run <id>|plan-lint <PLAN.md> [--json] [--root <dir>]|",
   // performance pass + gate helpers
-  "resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|codex-wave <wave.json> --fence-file <action-fence.json> --repository-root <repo> --base-sha <sha>|codex-wave-resume <receipt-id> --review-state <file>|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex>|plan-surface <runtime>|codex-plan <outcome> [--cwd <dir>]|desktop-harness <chatgpt-desktop|codex-desktop|gpt-work>|receipt-verify <sha> --cwd <repo>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|",
+  "resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|codex-wave <wave.json> --fence-file <action-fence.json> --repository-root <repo> --base-sha <sha>|codex-wave-resume <receipt-id> --review-state <file>|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex>|plan-surface <runtime>|codex-plan <outcome> [--cwd <dir>]|desktop-harness <chatgpt-desktop|codex-desktop|gpt-work>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|",
   // sprint waves, review tally, tournament pick/fuse, advisor
   "sprint-waves <backlog.md> [--max-concurrent-threads-per-session N]|sprint-reconcile <progress.json>|backlog-receipts <backlog.md> --release-ref <ref>|backlog-publish <backlog.md> --expect <sha256|absent>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|",
   // harness-native dispatch packets (codex lane)
@@ -659,6 +660,14 @@ async function handleCoreCommandPart1(cmd, rest) {
     out(computeWaves(m.plan));
     return true;
   } else if (cmd === "next") {
+    // Bare `muster next` routes to the newest stage-2 run (run ids sort by date prefix);
+    // `next <manifest.json>` keeps the manifest flow the Cowork MCP and frozen Codex lane use.
+    if (!rest.length) {
+      const runs = (await readdirSafe(join(process.cwd(), ".muster", "runs"))).sort();
+      if (!runs.length) fail("next: no .muster/runs/<id>/ here; pass --run <id> or a manifest file");
+      out(await nextForRun({ cwd: process.cwd(), runId: runs[runs.length - 1] }));
+      return true;
+    }
     const file = requireArg(rest, 0, "next <manifest.json> [--done a,b]: missing file path", fail);
     const m = JSON.parse(await readFile(file, "utf8"));
     if (!Array.isArray(m.plan)) fail("next: manifest has no 'plan' array");
@@ -715,24 +724,6 @@ async function handleCoreCommandPart2(cmd, rest) {
     // resolve to the universal AskUserQuestion fallback, never a thrown error -- see
     // src/plan-surface.js.
     out(resolvePlanSurface(rest[0]));
-    return true;
-  } else if (cmd === "receipt-verify") {
-    // base-sha-receipt-verification item: the executable consumer -- proof that a
-    // base-SHA receipt's SHA is REAL, not just well-formed (buildBaseShaReceipt's
-    // format check alone can't provide that). Runs the git-backed default verifier
-    // (makeGitShaVerifier, src/wave-dispatch.js -- shape-checked before it ever shells
-    // out, so a branch/tag/HEAD/relative-ref argument is correctly reported unverified
-    // rather than a false positive) against an explicit repo `--cwd` (never
-    // process.cwd() -- Codex's spawn_agent has no cwd field, so the caller must always
-    // state the repo) and prints the same {verified, mechanism} shape
-    // buildBaseShaReceipt records.
-    const sha = requireArg(rest, 0, "receipt-verify <sha> --cwd <repo>: missing sha", fail);
-    const cwd = flagValue(rest, "--cwd");
-    if (!cwd) fail("receipt-verify <sha> --cwd <repo>: missing --cwd");
-    const verify = makeGitShaVerifier({ cwd });
-    const verified = verify(sha);
-    out({ sha, cwd, verified, mechanism: verify.mechanism });
-    if (!verified) process.exit(2);
     return true;
   } else if (cmd === "fast-path") {
     // weight-reduction item, criterion 1 (flagship): pre-router single-agent fast path.
@@ -967,7 +958,7 @@ async function handleCoreCommandPart6(cmd, rest) {
     const file = requireArg(rest, 0, "tally <verdicts.json>: missing file path", fail);
     const verdicts = JSON.parse(await readFile(file, "utf8"));
     // verdicts.json is a structured-output-binding contract
-    // (plugin/skills/review-gate/verdict.schema.json). Validation runs BEFORE
+    // (src/verdict.schema.json). Validation runs BEFORE
     // tallying and reports violations loudly -- but the schema is deliberately
     // STRICTER than tallyReview, whose tolerance of a malformed-but-consumable
     // emission is documented (its header, and the schema's own description).
@@ -1227,7 +1218,7 @@ async function handleCoreCommandPart7(cmd, rest) {
     // Deterministic citation guard for research/content artifacts: every `[src: anchor]` must
     // resolve against the trailing "Sources" list; dangling anchors fail loud (exit 2). Paragraphs
     // with zero citations are reported for a reviewer's judgment call, not auto-failed (see
-    // plugin/skills/review-gate/SKILL.md). Reads stdin when the file arg is `-` or absent.
+    // codex/frozen/skills/review-gate/SKILL.md). Reads stdin when the file arg is `-` or absent.
     const text = await readText(rest[0]);
     const r = checkCitations(text);
     out(r);
@@ -1322,7 +1313,7 @@ async function handleCoreCommandPart4(cmd, rest) {
   } else if (cmd === "doctor") {
     const r = rest.includes("--codex")
       ? await runCodexDoctor({ root: new URL("../", import.meta.url) })
-      : await runDoctor({ root: new URL("../", import.meta.url) });
+      : await runDoctor({ root: new URL("../", import.meta.url), cwd: process.cwd() });
     out(r);
     if (!r.ok) process.exit(2);
     return true;
@@ -1485,11 +1476,28 @@ function renderPreflight(s) {
 async function handleRunCommand(cmd, rest) {
   if (cmd === "preflight") {
     const runId = flagValue(rest, "--run");
-    const outcome = rest.filter((a, i) => a !== "--json" && a !== "--run" && rest[i - 1] !== "--run").join(" ");
-    if (!outcome.trim()) fail("preflight <outcome> [--json] [--run <id>]: missing outcome");
-    const summary = await runPreflight({ outcome, cwd: process.cwd(), home: homedir(), catalogDir: CATALOG_DIR, runId });
+    const model = flagValue(rest, "--model");
+    const valued = new Set(["--run", "--model"]);
+    const outcome = rest.filter((a, i) => a !== "--json" && !valued.has(a) && !valued.has(rest[i - 1])).join(" ");
+    if (!outcome.trim()) fail("preflight <outcome> [--json] [--run <id>] [--model <model>]: missing outcome");
+    const summary = await runPreflight({ outcome, cwd: process.cwd(), home: homedir(), catalogDir: CATALOG_DIR, runId, model });
     if (rest.includes("--json")) process.stdout.write(JSON.stringify(summary) + "\n");
     else process.stdout.write(renderPreflight(summary));
+    return true;
+  } else if (cmd === "build-args") {
+    const runId = rest.find((a, i) => !a.startsWith("-") && rest[i - 1] !== "--base");
+    if (!runId) fail("build-args <runId> [--base <sha>]: missing runId");
+    let base = flagValue(rest, "--base");
+    if (!base) {
+      // No trusted git (or no repo): build without a base; merge-wave still checks every commit.
+      try {
+        const head = spawnSync(assertTrustedGitCommand(), ["rev-parse", "HEAD"], { encoding: "utf8" });
+        base = head.status === 0 ? head.stdout.trim() : null;
+      } catch { base = null; }
+    }
+    const report = await writeBuildArgs({ cwd: process.cwd(), runId, base });
+    out(report);
+    if (!report.ok) process.exit(1);
     return true;
   } else if (cmd === "merge-wave") {
     const usage = "merge-wave <runId> --result <build-result.json>";

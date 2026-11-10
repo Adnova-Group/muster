@@ -444,35 +444,16 @@ const SKILL_MD = readFileSync(
   "utf8",
 );
 
-test("orchestrator SKILL.md: forbidden-actions removed before executing the merge disposition", () => {
-  assert.match(
-    SKILL_MD,
-    /remove\s+`\.muster\/forbidden-actions`\s+immediately before executing[^.]*merge disposition/i,
-    "fence lifecycle must state removal happens before the merge disposition executes",
-  );
-  assert.match(
-    SKILL_MD,
-    /human-authorized exit/i,
-    "fence lifecycle must explain why: the declared disposition is the human-authorized exit",
-  );
+test("orchestrator SKILL.md: go writes both fence files before building and removes them at the merge decision", () => {
+  const text = SKILL_MD.replace(/\s+/g, " ");
+  assert.match(text, /writes `\.muster\/run-active` \(the runId\) and `\.muster\/forbidden-actions` \(`send sign submit publish purchase delete-remote`\) before building/);
+  assert.match(text, /removes both at the merge decision or on any escalation exit/);
 });
 
-test("orchestrator SKILL.md: forbidden-actions file carries only the top-level set", () => {
-  assert.match(
-    SKILL_MD,
-    /top-level\s+set/i,
-    "must clarify the file carries the TOP-LEVEL forbiddenActions set",
-  );
-  assert.match(
-    SKILL_MD,
-    /brief-level discipline/i,
-    "must clarify per-task additions are brief-level discipline, not hook-enforced",
-  );
-});
-
-test("orchestrator propagates action-fence markers into each isolated writer worktree", () => {
-  assert.match(SKILL_MD, /every isolated writer worktree must carry a regular-file\s+copy of both `\.muster\/run-active` and the exact top-level `\.muster\/forbidden-actions`/i);
-  assert.match(SKILL_MD, /never rely on\s+the outer worktree's markers and never symlink them/i);
+test("orchestrator SKILL.md: states that the fence reads markers from the tool call's cwd only", () => {
+  const text = SKILL_MD.replace(/\s+/g, " ");
+  assert.match(text, /reads the markers from the tool call's cwd, so it guards the main checkout only/);
+  assert.match(text, /Workflow worktrees start without them/);
 });
 
 test("separate worker cwd denies a forbidden publish using propagated markers", async () => {

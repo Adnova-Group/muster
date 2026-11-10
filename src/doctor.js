@@ -116,7 +116,6 @@ function isCreateOnFirstUseRef(content, index) {
 // `gsd-`-prefixed entries copied in from third-party repos). Their SKILL.md `docs/` references
 // point at the UPSTREAM project's own doc tree, not this repo's — so they must be excluded from
 // the skill-doc-refs check below. Missing/unreadable manifest degrades to an empty set.
-const LEGACY_GSD_BUILTINS = Object.freeze(["gsd-plan-phase", "gsd-execute-phase", "gsd-verify-work"]);
 async function vendoredBuiltinIds(base) {
   const raw = await readFile(join(base, "vendor/manifest.yaml"), "utf8").catch(() => null);
   const ids = new Set();
@@ -129,10 +128,6 @@ async function vendoredBuiltinIds(base) {
     if (s?.fetch === false) continue;
     for (const it of (s.items || [])) if (it?.id && !it.kind) ids.add(it.id);
   }
-  // The three hand-ported gsd builtins left the manifest when gsd was re-pinned for the
-  // stage-2 agents; their files (still upstream text citing gsd's docs/ tree) are deleted
-  // by the command rewrite. Until then they stay excluded like any vendored builtin.
-  for (const id of LEGACY_GSD_BUILTINS) ids.add(id);
   return ids;
 }
 
@@ -194,7 +189,28 @@ async function checkNoteAncestor(note, execImpl) {
   }
 }
 
-export async function runDoctor({ root, home, exec } = {}) {
+// Pre-revival run-state files the stage-2 core no longer writes (docs/strategy/stage-2-contracts.md:
+// a run's record is the committed .muster/runs/<id>/). Doctor only reports them; nothing reads them.
+export const LEGACY_RUN_STATE = Object.freeze(["manifest.json", "capabilities.json", "gate-cadence.json", "verdicts.json", "wave-active", "task-board.json"]);
+
+// Project run state in `cwd`: a leftover action-fence marker (the fence stays armed until it is
+// deleted) and legacy files from the pre-revival flow. Informational: always ok.
+export async function runStateCheck(cwd) {
+  const dir = join(cwd, ".muster");
+  const notes = [];
+  const marker = await readFile(join(dir, "run-active"), "utf8").then(t => t.trim(), () => null);
+  if (marker !== null) {
+    const known = marker && await exists(join(dir, "runs", marker));
+    notes.push(`.muster/run-active is present (${known ? `run ${marker}` : "no matching run"}); the action fence stays armed until a run's merge decision removes it or you delete it`);
+  }
+  const entries = await readdirSafe(dir);
+  const legacy = entries.filter(f => LEGACY_RUN_STATE.includes(f) || /^STATE-archive-.*\.md$/.test(f));
+  if (legacy.length) notes.push(`legacy pre-revival run state, safe to delete: ${legacy.map(f => `.muster/${f}`).join(", ")}`);
+  const runs = (await readdirSafe(join(dir, "runs"))).length;
+  return { name: "run-state", ok: true, detail: notes.length ? notes.join("; ") : `${runs} run director${runs === 1 ? "y" : "ies"}, no stale markers` };
+}
+
+export async function runDoctor({ root, home, exec, cwd } = {}) {
   const base = root instanceof URL ? fileURLToPath(root) : (root || process.cwd());
   const checks = [];
 
@@ -480,5 +496,6 @@ export async function runDoctor({ root, home, exec } = {}) {
     }
   }
 
+  if (cwd) checks.push(await runStateCheck(cwd));
   return { ok: checks.every(c => c.ok), checks };
 }

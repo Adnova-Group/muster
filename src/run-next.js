@@ -4,6 +4,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { readState, runDir, writeStateHead } from "./run-dir.js";
+import { parsePlan } from "./plan-lint.js";
 
 async function readOrNull(path) {
   try { return await readFile(path, "utf8"); } catch { return null; }
@@ -37,7 +38,10 @@ export async function nextForRun({ cwd, runId }) {
   const has = (f) => !!files && files.includes(f);
   const plan = has("PLAN.md") ? await readOrNull(join(dir, "PLAN.md")) : null;
   const state = files ? await readState(cwd, runId) : "";
-  const planned = plan ? planTaskIds(plan) : [];
+  // Checkpoint tasks are human stops (build-args lists them as humanNeeded); they never get a
+  // SUMMARY, so they must not hold the run at "planned" forever.
+  const checkpoints = new Set(plan ? parsePlan(plan).tasks.filter((t) => t.kind === "checkpoint" && t.id).map((t) => t.id) : []);
+  const planned = plan ? planTaskIds(plan).filter((id) => !checkpoints.has(id)) : [];
   const summarized = (files || []).filter((f) => /^SUMMARY-.+\.md$/.test(f)).map((f) => f.slice(8, -3));
   const merged = mergedTasks(state);
   let built = [];

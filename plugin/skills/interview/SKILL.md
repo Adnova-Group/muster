@@ -1,6 +1,7 @@
 ---
 name: interview
-description: Interactive requirements interview — one question at a time via the AskUserQuestion selection UI — that turns a thin outcome into an enriched, criteria-backed outcome the router can run.
+description: Turns a thin outcome into approved decisions and testable success criteria, or splits it into backlog items.
+user-invocable: false
 upstream: []
 ---
 
@@ -16,7 +17,7 @@ Turn a thin outcome into an enriched, criteria-backed one before any routing hap
 - Run when `npx -y @adnova-group/muster assess "<outcome>"` returns `clear: false` (contract:
   `assessOutcome(text) -> { clear, signals }` in `src/interview.js`). The `signals` name the gaps.
 - Run when the user explicitly asks to brainstorm/refine the outcome.
-- **Skip** when `clear: true` — hand straight to the router.
+- **Skip** when `clear: true` — hand straight to the planner.
 
 **Callers:** `/muster:plan` invokes this as its front half before routing; `/muster:go` triggers
 it once on an info-gap (attended mode only — unattended skips the interview and proceeds with
@@ -47,7 +48,7 @@ An **ACCEPTED** split writes the backlog:
 - Publish the complete staged create/append on stdin with `$MUSTER_CLI backlog-publish .muster/backlog.md --expect <sha256|absent>`; on a changed-before-publication failure, reread, redo duplicate detection and the append, then retry. Never write or rename the backlog directly.
 - **Write each part** as an unchecked item to `.muster/backlog.md` — create the file if absent, append if
   present. NEVER remove, reorder, or rewrite existing lines.
-- **Item format** (must match `/muster:go-backlog`'s parser exactly): exactly one line per item —
+- **Item format** (must match the backlog parser, `src/scope.js` and `src/sprint-waves.js`, exactly): exactly one line per item —
   `- [ ] <outcome text with success criteria folded inline as clauses>`, followed by any of `{id: ...}`,
   `{deps: ...}`, `{disposition: ...}` annotations. Criteria fold inline as clauses, always on the single
   item line rather than as sub-lines or nested bullets — a multi-line item is a format violation.
@@ -67,7 +68,7 @@ An **ACCEPTED** split writes the backlog:
   stripped generically) already exists in the file, checked or unchecked; record the skips.
 - **Glass box** — record the written items and the skips in the run STATE.
 - **Then** use **AskUserQuestion** to offer: run the **first item now** (the Go lifecycle), run the
-  **whole backlog** now (`/muster:go-backlog`), or **just save** (stop here).
+  **whole backlog** now (`/muster:go .muster/backlog.md`), or **just save** (stop here).
 
 ## Output
 Produce:
@@ -77,8 +78,8 @@ Produce:
 Present both for approval via the **AskUserQuestion** selection UI: **Approve** / **Revise** / **Cancel**.
 - **Revise** — loop back to the relevant question.
 - **Cancel** — stop; nothing is routed.
-- **Approve** — these feed the router; the caller writes `outcome` + `successCriteria` into
-  `.muster/manifest.json`.
+- **Approve** — the caller records them as numbered decisions (`D-01..`) and success criteria in
+  `.muster/runs/<runId>/CONTEXT.md`, which the planner must honour.
 
 ## Glass box
 Record the gathered answers and the enriched outcome (run STATE) so the run is traceable back to the

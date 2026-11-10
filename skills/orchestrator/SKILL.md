@@ -1,6 +1,6 @@
 ---
 name: orchestrator
-description: Execute a validated Crew Manifest in dependency waves with receipts and adversarial review gates.
+description: Hold the run rules every muster plan or go keeps, with a prose fallback when workflows are unavailable.
 ---
 
 # Orchestrator

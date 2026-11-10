@@ -30,7 +30,9 @@ workflow would take over `/muster:<name>`.
    `muster merge-wave <runId> --result <file>`, run from the main checkout, against the committed
    `build-args.json`. Never `git merge` a task branch by hand, never `--force`, never delete or
    reset a worktree you did not create. The base branch changes only after an explicit human
-   choice at the merge stop; unattended runs end at a PR (or a kept branch with no remote).
+   choice at the merge stop, and pushing is an attended choice too (**Open PR**): unattended runs
+   end at the kept branch and print its push and PR commands. Never edit the committed PLAN.md
+   or `build-args.json` to get past a merge-wave refusal; merge-wave refuses changed inputs.
 4. **Run-active marker lifecycle.** `/muster:go` writes `.muster/run-active` (the runId) and
    `.muster/forbidden-actions` (`send sign submit publish purchase delete-remote`) before
    building and removes both at the merge decision or on any escalation exit. While both exist
@@ -46,6 +48,8 @@ workflow would take over `/muster:<name>`.
    - a wave halts: a task `blocked`/`error`, a self-check FAILED, or a reviewer FAIL after the
      2-round fix cap;
    - the verifier returns GAPS or ABSTAIN (the branch is kept; GAPS become a re-plan outcome).
+     HUMAN_NEEDED (zero gaps, items only a human can judge) is not an escalation: its `human`
+     items go to the attended merge decision.
    For a repeated failure, dispatch `muster:muster-strategist` (read-only) on the failing task
    and its fix history before asking. Unattended: record the stop in STATE via `next --run` and
    end at the reviewable artifact.
@@ -166,8 +170,9 @@ summary starts with `REVISION_CONFLICT`.
 3. Any task not done + PASS halts the later waves (mark them blocked).
 Then Agent `muster:muster-verifier` once, in a scratch worktree at
 `.claude/worktrees/verify-<runId>` with the task commits merged in order; it writes
-VERIFICATION.md and returns `{verdict, truths, gaps}` (ABSTAIN when it cannot gather evidence).
-Write `{runId, base, tasks:[ExecResult + {title, wave, verify, review}], verification}` to
+VERIFICATION.md and returns `{verdict, truths, gaps, human}` (HUMAN_NEEDED with its human items;
+ABSTAIN only when it cannot gather evidence).
+Write `{runId, base, argsDigest: <build-args digests.args>, tasks:[ExecResult + {title, wave, review}], verification}` to
 `build-result.json` and continue with `muster merge-wave` exactly as the command says.
 
 **Backlog.** Run the build loop once per item, sequentially, then merge-wave per item in order.

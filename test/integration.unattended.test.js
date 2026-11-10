@@ -13,7 +13,7 @@ test("go.md documents an unattended cloud-scheduled-task mode with safe finish d
   assert.match(text, /unattended/i, "go must document unattended mode");
   assert.match(text, /cloud scheduled task/i, "go must tie unattended mode to cloud scheduled tasks (F19: formerly Routines)");
   assert.doesNotMatch(text, /\bRoutine\b/, "F19: Routines are now cloud scheduled tasks");
-  assert.match(text, /\bPR\b|pull request/i, "unattended default must be opening a PR");
+  assert.match(text, /\bPR\b|pull request/i, "unattended runs must hand over the PR command");
   // autonomy stops at the reviewable artifact: never auto-merge / push to base
   assert.match(text, /never[^.]*(auto-?merge|push)/i, "go must forbid auto-merge/push in unattended mode");
   // escalations surface via the run report, not an interactive prompt

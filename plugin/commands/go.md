@@ -43,46 +43,47 @@ Never re-plan an approved run.
    and `send sign submit publish purchase delete-remote` (one per line) to
    `.muster/forbidden-actions`. The action fence reads both (gitignored).
 3. **Plan.** `Workflow({name:"muster:make-plan", args:{runId, outcome, contextPath, specPath, candidates, skills, pins, skillRoot, cli, models}})`
-   (`contextPath` only when CONTEXT.md exists; `specPath` for a spec). On `verdict: PASS` print one line per task,
-   `<taskId> · <agent_hint or muster-executor> · <skills or ->`; continue. On `ISSUES` with
-   `escalated` (`cap`, `stall`, `conflict`) or `ERROR`: show the issues and stop for the user;
-   never fix inline.
-4. **Build args (1 call).** `M build-args <runId>` writes `.muster/runs/<runId>/build-args.json`
-   from PLAN.md, then commit the plan inputs in the same call:
-   `git add -f .muster/runs/<runId>/CONTEXT.md .muster/runs/<runId>/PLAN.md .muster/runs/<runId>/build-args.json`
+   (`contextPath` only when CONTEXT.md exists; `specPath` for a spec). `verdict: PASS`: continue.
+   On `ISSUES` with `escalated` (`cap`, `stall`, `conflict`) or `ERROR`: show the issues and stop
+   for the user; never fix inline.
+4. **Build args (1 call).** `M build-args <runId>` writes the run's `build-args.json` from
+   PLAN.md; in the same call `git add -f` the run's CONTEXT.md, PLAN.md and build-args.json
    (skip absent files) and `git commit -m "chore(muster): plan <runId>"` (skip if unchanged).
-   merge-wave trusts only this committed file. Report its `humanNeeded` checkpoints at the merge stop.
-5. **Build.** `Workflow({name:"muster:build", args:<the exact contents of build-args.json>})`;
-   `muster:team` instead (same args, result) when a task has `tdd` or a wave has 2+ tasks.
-   Interrupted? Same session: `{name:"muster:build", resumeFromRunId:"<workflow run id>"}`;
+   merge-wave trusts only this committed file. Never read it: print its stdout `tasks` lines and
+   keep `workflow`, `args`, `humanNeeded`.
+5. **Build.** `Workflow({name:"muster:build", args:<its args>})`, or `muster:team` when its
+   `workflow` says so. Interrupted? Same session: `{name:"muster:build", resumeFromRunId:"<workflow run id>"}`;
    else `/muster:go --run <runId>` (executors are idempotent). Under `-p`, background or Remote
-   Control a usage limit fails agents, no pause (`usageLimitDenial`; tasks `reason: no_result`):
-   skip step 6, and after the reset run `/muster:go --run <runId>`.
-6. **Merge the waves (1 call).** Write the Workflow's returned JSON to
-   `.muster/runs/<runId>/build-result.json` and run `M merge-wave <runId> --result
-   .muster/runs/<runId>/build-result.json` from the main checkout, then `M next --run <runId>`,
-   then commit the run record: `git add -f .muster/runs/<runId>` excluding `preflight.json` and
-   `build-result.json`, `git commit -m "chore(muster): record <runId>"`. A non-zero merge-wave is
-   an escalation: show its `problems` and stop; never merge task branches by hand.
-7. **Verification result.** Report the verifier's verdict from the build result and
-   VERIFICATION.md: PASS, GAPS (list them), or ABSTAIN (say what evidence was missing). A halted
-   wave, a reviewer FAIL after the fix cap, or a task `blocked`/`error` is reported with the task
-   id and its evidence; so is a task's `skillsMissing`. `reason: max_turns`: it ran out of turns
-   (raise its `maxTurns` or split the task). Never restate an agent verdict
-   you did not see.
-8. **Merge decision.** Remove `.muster/run-active` and `.muster/forbidden-actions`. Attended: AskUserQuestion with the work branch,
-   its HEAD sha, the base and its HEAD sha, the verdict and `humanNeeded`: **Merge locally**
-   (`git switch <base> && git merge --no-ff muster/<runId>`) / **Open PR** / **Keep branch** /
-   **Discard**. A GAPS or ABSTAIN verdict defaults to Keep branch. Unattended: never merge into the base or push to main; push the branch and open a PR, or keep the
-   branch when there is no remote.
+   Control a usage limit fails agents (`usageLimitDenial`; tasks `reason: no_result`): skip
+   step 6; after the reset run `/muster:go --run <runId>`.
+6. **Merge the waves (1 call).** From the main checkout: `M merge-wave <runId> --result <f>`,
+   `<f>` = the output file the build's completion names (merge-wave saves `build-result.json`;
+   never read it), else the returned JSON saved as the run's `build-result.json`. Then
+   `M next --run <runId>` and commit the run record: `git add -f .muster/runs/<runId>` minus
+   `preflight.json` and `build-result.json`, `git commit -m "chore(muster): record <runId>"`. A
+   non-zero merge-wave is an escalation: show its `problems` and stop; never merge task branches
+   by hand, and never edit PLAN.md or `build-args.json` to get past a merge-wave failure.
+7. **Verification result.** Report the result's `summary` and verdict: PASS, GAPS (list them),
+   HUMAN_NEEDED (zero gaps; its `human` items go to the merge decision), or ABSTAIN (it could not
+   run; say what was missing). A halted wave, a reviewer FAIL past the fix cap, or a
+   task `blocked`/`error` is reported with the task id and its evidence; so is a task's
+   `skillsMissing`. `reason: max_turns`: it ran out of turns (raise `maxTurns` or split the
+   task). Never restate an agent verdict you did not see.
+8. **Merge decision.** Remove `.muster/run-active` and `.muster/forbidden-actions`. Attended:
+   AskUserQuestion with the work branch and base, each with its HEAD sha, the verdict, its `human`
+   items and `humanNeeded`: **Merge locally** (`git switch <base> && git merge --no-ff muster/<runId>`)
+   / **Open PR** (push, `gh pr create`) / **Keep branch** / **Discard**. GAPS or ABSTAIN defaults
+   to Keep branch; Merge or PR on HUMAN_NEEDED signs its items off. Only Open PR pushes.
+   Unattended: never merge into the base or push to main, nor push the branch: keep it and print
+   its push and PR commands.
 
 ## Content
 
 A document outcome: steps 1-2 as above, then
 1. `M pipeline-args <runId>` (`--out <path>` when the outcome names a file, `--with publish` only
    when asked) writes `pipeline-args.json`.
-2. `Workflow({name:"muster:pipeline", args:<its exact contents>})`. Save the result to
-   `.muster/runs/<runId>/pipeline-result.json`, then commit the artifact and the run dir.
+2. `Workflow({name:"muster:pipeline", args:<its exact contents>})`. Save the result as the run's
+   `pipeline-result.json`, then commit the artifact and the run dir.
 3. Report `verdict`, the score against the gate, `halted`, and each phase's `skillsApplied`;
    then step 8. FAIL or ERROR defaults to Keep branch.
 
@@ -95,9 +96,9 @@ given file) and take the unticked items in file order, at most 5 per run unless 
 2. Plan each item with its own `Workflow({name:"muster:make-plan", ...})`; issue them in one turn.
    Items whose plan escalates are skipped and listed at the end.
 3. One Bash call: `M build-args <runId>` per planned item, then commit all plan inputs.
-4. `Workflow({name:"muster:backlog", args:{items:[{itemId, runId, waves, base, models, cli}]}})`,
-   each item's fields taken from its build-args.json.
-5. Save the result once, then `M merge-wave <runId> --result <file>` per item in backlog order;
+4. `Workflow({name:"muster:backlog", args:{items:[{itemId, runId, waves, base, models, cli, digests}]}})`,
+   each item's fields from its build-args `args`.
+5. `M merge-wave <runId> --result <f>` (step 6's file) per item in backlog order;
    stop at the first refusal. Tick each merged item `- [x]` with `{merge: <its merge-wave sha>}`
    (the receipt CI checks is release-reachable), only through `M backlog-publish <backlog file>
    --expect <sha256>` (the complete edited file on stdin; on a changed-file refusal, reread and
@@ -112,4 +113,4 @@ given file) and take the unticked items in file order, at most 5 per run unless 
   `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0`; add `--permission-prompts none` and the
   orchestrator's `Workflow(muster:*)` rules.
 - A cloud scheduled task running `/muster:go --run <runId>` is the unattended form: no
-  questions, ends in a PR.
+  questions, ends at the kept branch with its PR command.

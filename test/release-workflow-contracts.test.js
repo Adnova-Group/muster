@@ -30,9 +30,57 @@ test("nothing but an explicit human choice merges into the base or pushes", asyn
   const go = (await read("plugin/commands/go.md")).replace(/\s+/g, " ");
   assert.match(go, /Attended: AskUserQuestion/);
   assert.match(go, /never merge into the base or push to main/);
+  // First live e2e: run 1 kept its branch unpushed, run 4 pushed; both were unattended. Pushing
+  // is the attended Open PR choice, whatever the verdict.
+  assert.match(go, /Only Open PR pushes/);
+  assert.match(go, /Unattended: never merge into the base or push to main, nor push the branch: keep it and print its push and PR commands/);
+  assert.doesNotMatch(go, /push the branch and open a PR/);
   const orchestrator = (await read("plugin/skills/orchestrator/SKILL.md")).replace(/\s+/g, " ");
   assert.match(orchestrator, /The base branch changes only after an explicit human choice/);
-  assert.match(orchestrator, /unattended runs end at a PR/);
+  assert.match(orchestrator, /pushing is an attended choice too/);
+  assert.match(orchestrator, /unattended runs end at the kept branch and print its push and PR commands/);
+});
+
+test("go.md routes the build-side contracts from the first live run", async () => {
+  const go = (await read("plugin/commands/go.md")).replace(/\s+/g, " ");
+  // build-args stdout carries the task lines, workflow and args: no re-read of the file.
+  assert.match(go, /Never read it: print its stdout `tasks` lines and keep `workflow`, `args`, `humanNeeded`/);
+  assert.match(go, /Workflow\(\{name:"muster:build", args:<its args>\}\)/);
+  // merge-wave takes the Workflow output file, so a truncated inline result costs no turn.
+  assert.match(go, /`<f>` = the output file the build's completion names \(merge-wave saves `build-result\.json`; never read it\)/);
+  // The escalation rule closes the laundering path merge-wave now refuses.
+  assert.match(go, /never edit PLAN\.md or `build-args\.json` to get past a merge-wave failure/);
+  // A zero-gap verification with judgment-only items reaches the merge decision.
+  assert.match(go, /HUMAN_NEEDED \(zero gaps; its `human` items go to the merge decision\)/);
+  assert.match(go, /its `human` items and `humanNeeded`/);
+  const verifier = await read("plugin/agents/muster-verifier.md");
+  assert.match(verifier, /`human_needed` → HUMAN_NEEDED/);
+  assert.doesNotMatch(verifier, /`human_needed` → ABSTAIN/);
+});
+
+test("every worktree-isolated brief says how to verify when isolation refuses a compound command", async () => {
+  // First live e2e: executors' heredocs, loops and chained git commands were refused as too
+  // complex to prove they stay inside the worktree; merge-wave re-runs the planned command.
+  const AsyncFunction = (async () => {}).constructor;
+  const prompts = [];
+  const agent = async (prompt, opts) => {
+    prompts.push({ prompt, opts });
+    const [kind, id] = opts.label.split(" ");
+    const sha = `${id.toLowerCase()}${"0".repeat(39)}1`;
+    if (kind === "red") return { taskId: id, status: "done", branch: "b", commit: sha, worktree: "/w", testFiles: ["t"], testsRun: ["t"], failingAsExpected: true, failures: [], deviations: [] };
+    if (kind === "build") return { taskId: id, status: "done", branch: "b", commit: sha, worktree: "/w", filesChanged: ["f"], testsRun: ["t"], testsPassed: true, selfCheck: "PASSED", deviations: [] };
+    if (kind === "review") return { taskId: id, verdict: "PASS", commitReviewed: sha, findings: [], testsRun: ["t"], testsPassed: true };
+    return { verdict: "PASS", truths: [{ claim: "c", status: "VERIFIED", evidence: "e" }], gaps: [] };
+  };
+  for (const [file, waves] of [["build.js", [[{ taskId: "A", verify: ["a && b"] }]]], ["team.js", [[{ taskId: "R", tdd: true, verify: ["a && b"] }]]]]) {
+    const src = await read(`plugin/workflows/${file}`);
+    const fn = new AsyncFunction("agent", "parallel", "pipeline", "phase", "log", "args", src.replace(/^export const meta =/, "const meta ="));
+    const pipeline = (items, ...stages) => Promise.all(items.map(async (item) => { let v = item; for (const st of stages) v = await st(v, item); return v; }));
+    await fn(agent, (ts) => Promise.all(ts.map((t) => t())), pipeline, () => {}, () => {}, { runId: "r", waves });
+  }
+  const isolated = prompts.filter((p) => p.opts.isolation === "worktree");
+  assert.deepEqual(isolated.map((p) => p.opts.label), ["build A", "red R"]);
+  for (const p of isolated) assert.match(p.prompt, /\[Verify\] <command> refused by isolation; ran its parts/, p.opts.label);
 });
 
 test("executors write only in isolated worktrees; merge-wave refuses to run inside one", async () => {

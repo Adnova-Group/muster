@@ -1,0 +1,42 @@
+# Muster-authored agent definitions (role specialists). Clean-room: inspired by atomic's
+# role taxonomy, authored fresh for muster. Discovered by Claude Code from plugin/agents/.
+# rank 55 sits just above the rank-50 vendored skills so a muster agent is preferred over a
+# bare skill for the same role (capabilities sorts by rank descending).
+# Convention: roles[0] is the PRIMARY role for each agent — it drives the modelForRole
+# policy assertion in test/agents.muster.test.js.  Place a new agent's governing role first.
+- id: muster-surgeon
+  kind: agent
+  roles: [implement]
+  rank: 55
+  description: "Surgical 1-2 file edits: typos, one-function rewrites, mechanical renames; refuses 3+ files."
+  provenance: { license: Apache-2.0, upstream: [damusix/atomic-claude] }
+- id: muster-executor
+  kind: agent
+  roles: [implement]
+  rank: 56 # default implementer: one PLAN.md task, cohesion-bounded, handles N files; outranks surgeon (refuses 3+)
+  description: Implements one PLAN.md task in its worktree with tagged atomic commits and a self-checked ExecResult.
+  provenance: { license: Apache-2.0, upstream: [open-gsd/gsd-core] }
+- id: muster-reviewer
+  kind: agent
+  roles: [code-review]
+  rank: 55
+  description: "Read-only reviewer of one task's commits; re-runs its tests and returns a PASS/FAIL ReviewResult."
+  provenance: { license: Apache-2.0, upstream: [open-gsd/gsd-core, damusix/atomic-claude] }
+- id: muster-investigator
+  kind: agent
+  roles: [code-navigation]
+  rank: 55
+  description: "Read-only code locator: answers where-is and what-calls questions as a file:line table."
+  provenance: { license: Apache-2.0, upstream: [damusix/atomic-claude] }
+- id: muster-strategist
+  kind: agent
+  roles: [architecture-review, plan]
+  rank: 55
+  description: Read-only heavyweight reasoning on whether an approach, plan or spec is right; does not implement.
+  provenance: { license: Apache-2.0, upstream: [damusix/atomic-claude] }
+- id: muster-improver
+  kind: agent
+  roles: [improve]
+  rank: 55
+  description: "Read-only retrospective over a finished run; proposes user-gated edits to muster's skills and agents."
+  provenance: { license: Apache-2.0, upstream: [damusix/atomic-claude] }

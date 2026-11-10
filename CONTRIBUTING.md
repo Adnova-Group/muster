@@ -30,6 +30,12 @@ node src/cli.js <verb>
 
 Try `node src/cli.js detect` or `node src/cli.js capabilities` to see it work against the current directory.
 
+The Claude plugin ships that CLI bundled in `plugin/runtime/cli/`, committed so the plugin and its CLI always come from the same commit. After changing `src/`, `catalog/`, `pipelines/`, `vendor/manifest.yaml` or the package version, rebuild and commit it; `npm test` fails while it is stale. On a merge conflict inside it, rebuild instead of merging by hand:
+
+```bash
+npm run build:plugin
+```
+
 Build and validate the generated Codex distribution with:
 
 ```bash

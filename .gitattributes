@@ -1,3 +1,6 @@
 # Byte-exact upstream base copies: the vendor-sync doctor check and 3-way merges compare their
 # git blob hashes, so they must never be line-ending converted on checkout (Windows autocrlf).
 vendor/upstream/** -text
+# Generated Claude plugin runtime (scripts/build-plugin-runtime.mjs): stored byte-exact so
+# `npm run check:plugin` can compare it with a fresh build. Never hand-merge it: rebuild it.
+plugin/runtime/cli/** -text -diff linguist-generated=true

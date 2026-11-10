@@ -1,0 +1,63 @@
+id: runbook
+domain: ops
+title: Operations Runbook
+match: [runbook, playbook, on-call, incident response, operations manual, operational procedure]
+upstream:
+  - repo: SkeltonThatcher/run-book-template
+    ref: 7014714b602152c5ade6989bca8282d23522dcfc
+    path: null
+    license: NONE
+    relation: inspired-by
+  - repo: dastergon/awesome-sre
+    ref: null
+    path: null
+    license: CC0-1.0
+    relation: inspired-by
+  - repo: runbear-io/awesome-runbook
+    ref: null
+    path: null
+    license: CC0-1.0
+    relation: inspired-by
+  - repo: Scoutflo/Scoutflo-SRE-Playbooks
+    ref: acc55da0224fda5eda580939a15bc60990e8e69f
+    path: null
+    license: MIT
+    relation: inspired-by
+  - kind: unknown
+    title: The "high-signal sources" behind the first content rubrics
+    author: null
+    url: null
+    relation: inspired-by
+    note: '2026-11-09: commit b99599a (2026-06-07) says the blog, social, lead-magnet, newsletter, case-study and runbook rubrics were "grounded in AIDA/PAS/BAB/QUEST + E-E-A-T from high-signal sources" without naming them; no doc was committed with it. The 2026-06-08 research note (b122ed9) names later sources for most of these pipelines, recorded here as their own entries; the original set is not recoverable.'
+  - kind: book
+    title: Site Reliability Engineering (Managing Incidents)
+    author: Betsy Beyer, Chris Jones, Jennifer Petoff and Niall Richard Murphy (Google)
+    url: https://sre.google/sre-book/managing-incidents/
+    relation: inspired-by
+  - kind: article
+    title: PagerDuty Incident Response documentation
+    author: PagerDuty
+    url: https://response.pagerduty.com/
+    relation: inspired-by
+  - kind: article
+    title: Runbook practice articles (preconditions, observability, escalation, cleanup, idempotency)
+    author: emmer.dev, The Good Shell and Rootly
+    url: null
+    relation: inspired-by
+phases:
+  - { id: intake,         role: brainstorm,  desc: "scope, trigger, owners, prerequisites" }
+  - { id: preconditions,  role: author,      desc: "required access, environment, blast-radius scope, idempotency declaration, tool dependencies" }
+  - { id: triage,         role: author,      desc: "diagnosis decision tree keyed off failure signature (oom / 5xx / latency / saturation) — events-first: check recent deploys/config changes BEFORE deep diagnosis (Google SRE)" }
+  - { id: steps,          role: author,      desc: "numbered, copy-pasteable steps; expected output for each" }
+  - { id: observability,  role: author,      desc: "alert links, dashboard URLs, SLO thresholds, key signals; numeric success criteria (latency, error rate, saturation)" }
+  - { id: validation,     role: author,      desc: "verification checks + success criteria per step" }
+  - { id: rollback,       role: author,      desc: "rollback / abort procedure + safety notes" }
+  - { id: escalation,     role: author,      desc: "escalation levels + owners, trigger conditions (severity x elapsed time), required context fields, on-call rotation link; incident-comms — who updates stakeholders, on what cadence, and where (status channel)" }
+  - { id: cleanup,        role: author,      desc: "revert temp hotfixes, restore flags, postmortem trigger (SEV-1: 48h, SEV-2: 5d), update last-tested date" }
+  - { id: review,         role: code-review, desc: "adversarial review + dry-run check" }
+  - { id: score,          role: score,       desc: "score vs rubric, apply floor principle" }
+  - { id: humanize, role: humanize,     desc: "final pass: strip AI tells (em-dashes, banned words, robotic cadence) for human delivery" }
+gate:
+  criteria: [completeness, clarity, safety, validation, rollback, preconditions, observability, idempotency, escalation-path]
+  floor: 2
+  pass_total: 18

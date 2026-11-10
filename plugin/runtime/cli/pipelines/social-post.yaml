@@ -1,0 +1,44 @@
+id: social-post
+domain: social
+title: Social Media Post
+upstream:
+  - kind: person
+    title: "Unlock AI: Open Engine and Open Skills"
+    author: Nate B. Jones
+    url: https://unlock-ai.natebjones.com/
+    relation: inspired-by
+  - kind: person
+    title: AIDA (Attention, Interest, Desire, Action)
+    author: E. St. Elmo Lewis
+    url: null
+    relation: inspired-by
+  - kind: article
+    title: The QUEST copywriting formula
+    author: Michel Fortin
+    url: https://michelfortin.com/the-quest-copywriting-formula/
+    relation: inspired-by
+  - kind: unknown
+    title: PAS (Problem-Agitate-Solution) and BAB (Before-After-Bridge) copywriting formulas
+    author: null
+    url: null
+    relation: inspired-by
+    note: "2026-11-09: named in muster-author, social-post, lead-magnet and book. Neither muster's history nor a primary source found on this date names who originated either formula."
+  - kind: unknown
+    title: The "high-signal sources" behind the first content rubrics
+    author: null
+    url: null
+    relation: inspired-by
+    note: '2026-11-09: commit b99599a (2026-06-07) says the blog, social, lead-magnet, newsletter, case-study and runbook rubrics were "grounded in AIDA/PAS/BAB/QUEST + E-E-A-T from high-signal sources" without naming them; no doc was committed with it. The 2026-06-08 research note (b122ed9) names later sources for most of these pipelines, recorded here as their own entries; the original set is not recoverable.'
+phases:
+  - { id: intake,   role: brainstorm,  desc: "platform, audience, goal, one core idea, CTA; resolve the target audience to a named profile in docs/profiles/AUDIENCES.md (create/extend the profile on first use)" }
+  - { id: angle,    role: author,      desc: "choose an angle + framework (AIDA / PAS / BAB / QUEST)" }
+  - { id: variants, role: author,      desc: "write 3+ hook/post variants; calibrate jargon, depth, and altitude to the resolved audience profile; resolve the voice profile in docs/profiles/VOICE.md and layer its register, rhythm, and anti-patterns on top (audience owns depth/jargon/altitude, voice owns register/rhythm/anti-patterns); tournament-judge the strongest" }
+  - { id: review,   role: code-review, desc: "adversarial review + platform-fit check" }
+  - { id: score,    role: score,       desc: "score vs rubric, apply floor principle" }
+  - { id: humanize, role: humanize,     desc: "final pass: strip AI tells (em-dashes, banned words, robotic cadence) for human delivery" }
+optional_phases:
+  - { id: publish, role: author, desc: "OPTIONAL, skippable — terminal publish-prep phase after humanize: assemble the packet (final artifact + image prompts + metadata, merged bottom-up into one manifest), run a visual-verify pass (screenshot + console evidence), then STOP at the action fence — publish actions require the human's explicit go-ahead." }
+gate:
+  criteria: [hook, clarity-for-audience, brand-fit, platform-fit, cta]
+  floor: 2
+  pass_total: 12

@@ -15,7 +15,9 @@
 //
 // The plugin/workflows/book.js script fans the agents out and returns schema-validated JSON; it has
 // no filesystem access, so every ledger write happens here, deterministically, from that result.
+import { existsSync } from "node:fs";
 import { access } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { join, resolve } from "node:path";
 import { appendStateLog, assertRunId, ensureRunDir, runDir } from "./run-dir.js";
 import { readContainedFile, sha256, writeContainedFile } from "./fs-safe.js";
@@ -34,6 +36,18 @@ const intOr = (v, d) => (Number.isInteger(v) && v >= 0 ? v : d);
 const norm = (s) => text(s).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 const pad = (n) => String(n).padStart(3, "0");
 const nextId = (prefix, items) => `${prefix}-${pad(1 + items.reduce((m, x) => Math.max(m, Number(String(x.id).slice(prefix.length + 1)) || 0), 0))}`;
+
+// The plugin's builtins directory, the agents' reference shelf. Workflow agents cannot rely on
+// $CLAUDE_PLUGIN_ROOT, and a haiku agent sent to find the shelf searched the whole filesystem in
+// the 2026-11-10 smoke, so the CLI resolves it from its own location (source checkout, or the
+// bundled plugin/runtime/cli/bin/muster.mjs) and hands it to every brief.
+export function builtinsDir() {
+  for (const rel of ["../plugin/builtins/", "../../../builtins/"]) {
+    const dir = fileURLToPath(new URL(rel, import.meta.url));
+    if (existsSync(join(dir, "book-run", "SKILL.md"))) return dir.replace(/[\\/]+$/, "");
+  }
+  return null;
+}
 
 export const chapterPath = (runId, id) => `.muster/runs/${runId}/chapters/${id}.md`;
 export const wordCount = (s) => (String(s).match(/[\p{L}\p{N}][\p{L}\p{N}'’-]*/gu) || []).length;
@@ -220,7 +234,7 @@ export function staleChapters(book, hashes) {
   return book.chapters.filter((c) => isWritten(c) && c.hash && hashes[c.id] !== undefined && hashes[c.id] !== c.hash).map((c) => c.id);
 }
 
-export function bookArgs(book, { hashes = {}, limit = DEFAULT_LIMIT, models = null, beta = null } = {}) {
+export function bookArgs(book, { hashes = {}, limit = DEFAULT_LIMIT, models = null, beta = null, shelf = null } = {}) {
   const stale = new Set(staleChapters(book, hashes));
   const missing = book.chapters.filter((c) => isWritten(c) && hashes[c.id] === null).map((c) => c.id);
   const planned = book.chapters.filter((c) => c.status === "planned");
@@ -265,6 +279,7 @@ export function bookArgs(book, { hashes = {}, limit = DEFAULT_LIMIT, models = nu
       beta: complete ? (Number.isInteger(beta) ? beta : DEFAULT_BETA_READERS) : 0,
     },
     ...(models ? { models } : {}),
+    ...(shelf ? { builtinsDir: shelf } : {}),
   };
   return { args, blocked, missing, remaining: remainingAfter, stale: [...stale] };
 }
@@ -478,7 +493,7 @@ export async function writeBookArgs({ cwd, runId, limit, beta, models }) {
   if (!book) return { ok: false, problems: [`.muster/runs/${runId}/book.json not found: run \`muster book init\` first`] };
   const seatModels = models || null;
   const files = await chapterFiles(cwd, book);
-  const { args, blocked, missing, remaining, stale } = bookArgs(book, { hashes: hashesOf(files), limit, beta, models: seatModels });
+  const { args, blocked, missing, remaining, stale } = bookArgs(book, { hashes: hashesOf(files), limit, beta, models: seatModels, shelf: builtinsDir() });
   await writeContainedFile(cwd, join(runDir(cwd, runId), "book-args.json"), `${JSON.stringify(args, null, 2)}\n`);
   const drafting = args.waves.flat().map((c) => c.id);
   const problems = missing.map((id) => `${id} is recorded as written but its chapter file is missing`);

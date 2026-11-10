@@ -7,7 +7,7 @@ import { mkdtemp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  amendCanon, bookArgs, bookStatus, chapterWaves, newBook, recordResult, renderCanon, renderLedger, runBookCli, validateOutline, wordCount,
+  amendCanon, bookArgs, builtinsDir, bookStatus, chapterWaves, newBook, recordResult, renderCanon, renderLedger, runBookCli, validateOutline, wordCount,
 } from "../src/book.js";
 import { sha256 } from "../src/fs-safe.js";
 
@@ -200,6 +200,8 @@ test("muster book CLI: init, args, record, amend, close and status on a real run
     assert.equal((await cli("args", "salt-road", "--model", "$(rm -rf)")).code, 2);
     assert.deepEqual(r.report.drafting, ["ch01", "ch02"]);
     const args = JSON.parse(await readFile(join(dir, "book-args.json"), "utf8"));
+    assert.equal(args.builtinsDir, builtinsDir(), "the CLI hands the agents its own plugin's builtins directory");
+    assert.match(await readFile(join(args.builtinsDir, "book-run", "SKILL.md"), "utf8"), /^---\nname: book-run\n/);
     assert.equal(args.mode, "pass");
     assert.equal(args.waves[0][0].path, ".muster/runs/salt-road/chapters/ch01.md");
 

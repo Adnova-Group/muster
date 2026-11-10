@@ -244,9 +244,13 @@ const list = (xs) => (Array.isArray(xs) ? xs : xs ? [xs] : [])
 const blocking = (issues) => list(issues).filter((i) => (i.severity === 'blocker' || i.severity === 'major') && !i.maybeIntentional)
 const canonLines = (facts) => list(facts).map((f) => `- ${f.chapterId ? `(${f.chapterId}) ` : ''}[${f.category}] ${f.fact}`)
 
+// Where the agents' craft references live. Without it an agent falls back to $CLAUDE_PLUGIN_ROOT.
+const shelf = (cfg) => (cfg.builtinsDir ? `Reference shelf (the muster builtins directory named in your instructions): ${cfg.builtinsDir}. Read references from there; never search the filesystem for them.` : '')
+
 function header(cfg) {
   const v = cfg.voice || {}
   return [
+    shelf(cfg),
     `Book run ${cfg.runId}: "${cfg.title || ''}" (${cfg.kind || 'fiction'}).`,
     `Canon (binding facts, story bible): ${cfg.canonPath}. Ledger (chapter summaries, open debts): ${cfg.ledgerPath}.`,
     v.pov || v.tense ? `Book voice: POV ${v.pov || '(per chapter)'}, tense ${v.tense || '(per chapter)'}${v.notes ? `; ${v.notes}` : ''}.` : '',
@@ -258,6 +262,7 @@ function header(cfg) {
 function outlineBrief(cfg, variant, prior, issues, revision) {
   const lines = [
     `Book run ${cfg.runId}. Outline mode.`,
+    shelf(cfg),
     `The author's brief: ${cfg.brief || '(none given: ask nothing, return status "blocked" with the reason in summary)'}`,
     cfg.kind ? `Kind: ${cfg.kind}.` : 'Decide whether this is fiction or nonfiction from the brief.',
     cfg.contextPath ? `Decisions already made: ${cfg.contextPath}. Honour every one.` : '',
@@ -282,11 +287,12 @@ function outlineBrief(cfg, variant, prior, issues, revision) {
 function outlineCheckBrief(cfg, outline) {
   return [
     `Book run ${cfg.runId}. Outline check (developmental edit of a plan, before any drafting).`,
+    shelf(cfg),
     `The author's brief: ${cfg.brief || '(see the outline premise)'}`,
     `The outline, as JSON: ${JSON.stringify(outline)}`,
     'Read only. Check the premise and promise, causality between chapters, whether every chapter changes something, stakes, information design and the genre contract (for nonfiction: thesis, one promise per chapter, no orphan chapters).',
     'score 0-10 on how strong a spine this is to draft on. verdict PASS only when no blocker or major issue remains.',
-  ].join('\n')
+  ].filter(Boolean).join('\n')
 }
 
 const outlineScore = (c) => (c && c.status !== 'error' ? (c.verdict === 'PASS' ? 100 : 0) + (Number(c.score) || 0) * 5 - blocking(c.issues).length : -1)
@@ -374,7 +380,7 @@ function fixBrief(cfg, ch, issues, round) {
     'If an issue is wrong because the canon itself should change, leave the prose as it is and say so in notes. Never edit CANON.md or LEDGER.md.',
     `This brief may be replayed: if ${ch.path} already resolves these issues, report it as it stands.`,
     'Return the result for the revised file.',
-  ].join('\n')
+  ].filter(Boolean).join('\n')
 }
 
 async function continuityLoop(cfg, ch, provisional, debts) {
@@ -411,7 +417,7 @@ function devBrief(cfg, chapters) {
     'Read only. Diagnose structure before prose: premise and promise, causality (could chapters be reordered without breaking anything?), what each chapter changes, pacing, character decisions, stakes, information design, the genre contract; for nonfiction the thesis, each chapter\'s promise and whether the argument holds.',
     'Each note names one structural action (cut, move, expand, compress, combine, split, reframe, seed-earlier, delay-payoff, change-decision), its reader cost, and the chapter ("" for the whole book). Rate each chapter\'s tension 1-5 in pacing.',
     'verdict PASS when structure is sound enough for line editing; REVISE when a blocker or major note would change chapters a line edit would polish.',
-  ].join('\n')
+  ].filter(Boolean).join('\n')
 }
 
 function lineBrief(cfg, ch) {
@@ -422,19 +428,20 @@ function lineBrief(cfg, ch) {
     'The canon is fixed. Do not change any fact, name, number, date, quote or claim. If a sentence you must fix carries a canon fact, keep the fact; if you changed one anyway, list it in canonTouched.',
     `This brief may be replayed: if ${ch.path} already reads as line-edited, report status "skipped" with edits 0.`,
     'Return chapterId, status, path, edits (how many passages you changed), the 2-4 recurring patterns you fixed with their reader cost and examples, and canonTouched.',
-  ].join('\n')
+  ].filter(Boolean).join('\n')
 }
 
 function betaBrief(cfg, persona, chapters) {
   return [
     `You are a first-time reader of "${cfg.title || 'this book'}" (${cfg.kind || 'fiction'}). Your persona: ${persona}`,
+    shelf(cfg),
     'Read these chapter files in order, as a reader, not an editor:',
     ...chapterList(chapters),
     `Do not open ${cfg.canonPath}, ${cfg.ledgerPath} or any outline: a reader has only the pages.`,
     'Read only. Report the felt experience, chapter by chapter: engagement 1-5, where you leaned in, where you drifted, what confused you (with the line and quote), what stayed with you.',
     'If you would have stopped reading, say where (putDownChapter) and why, then finish anyway so the rest still gets a read. putDownChapter is "" when you never wanted to stop.',
     'source is always "simulated". Your verdict is one paragraph in this persona\'s own voice.',
-  ].join('\n')
+  ].filter(Boolean).join('\n')
 }
 
 // ---- the pass -----------------------------------------------------------------------------------

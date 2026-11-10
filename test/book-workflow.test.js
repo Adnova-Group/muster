@@ -107,6 +107,17 @@ test("book pass: waves draft in parallel, later waves see earlier canon, each ch
   assert.deepEqual(result.beta, []);
 });
 
+test("book: every brief names the reference shelf when the args carry one, and none otherwise", async () => {
+  const p = { continuity: true, developmental: true, lineEdit: true, beta: 1 };
+  const withShelf = await run(passArgs({ builtinsDir: "/opt/muster/plugin/builtins", passes: p, waves: [[ch("ch01")]], manuscript: manuscript(["ch01"]) }), (label) => (label.startsWith("check") && label.endsWith("r0") ? { chapterId: "ch01", verdict: "ISSUES", issues: [issue()], debtsResolved: [] } : happy(label)));
+  for (const c of withShelf.calls) assert.match(c.prompt, /Reference shelf \(the muster builtins directory named in your instructions\): \/opt\/muster\/plugin\/builtins\. Read references from there; never search the filesystem/, c.opts.label);
+  assert.ok(withShelf.calls.some((c) => c.opts.label.startsWith("fix")) && withShelf.calls.some((c) => c.opts.label.startsWith("beta")));
+  const outline = await run({ runId: "b9", mode: "outline", brief: "x", builtinsDir: "/s" }, (label) => (label.includes("check") ? { verdict: "PASS", score: 9, issues: [] } : { status: "done", title: "T", kind: "fiction", premise: "p", voice: { pov: "first", tense: "past" }, chapters: [], canon: [], summary: "" }));
+  for (const c of outline.calls) assert.match(c.prompt, /Reference shelf .*: \/s\./);
+  const none = await run(passArgs(), happy);
+  for (const c of none.calls) { assert.doesNotMatch(c.prompt, /Reference shelf/); assert.doesNotMatch(c.prompt, /\n\n/, "no blank line where the shelf would go"); }
+});
+
 test("book pass: a blocking continuity issue sends the writer back, then the re-check passes", async () => {
   const { result, calls } = await run(passArgs({ waves: [[ch("ch01")]] }), (label) => {
     if (label === "check ch01 r0") return { chapterId: "ch01", verdict: "ISSUES", issues: [issue()], debtsResolved: [] };

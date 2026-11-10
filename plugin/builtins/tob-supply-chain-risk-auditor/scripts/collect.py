@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# License: CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Adapted from trailofbits/skills @ e4dd0bb5b15535f7c5a0834187dffba6ac37e4ff plugins/supply-chain-risk-auditor/skills/supply-chain-risk-auditor/scripts/collect.py, made by Trail of Bits. Changes made by Muster: security hardening of _git_commit (a symlinked .git or .git/HEAD is refused and HEAD and the ref are opened with O_NOFOLLOW, .git must resolve inside the project root, only a 40-64 character hex object id is emitted), the os import it needs, and this header.
+# License: CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Adapted from trailofbits/skills @ e4dd0bb5b15535f7c5a0834187dffba6ac37e4ff plugins/supply-chain-risk-auditor/skills/supply-chain-risk-auditor/scripts/collect.py, made by Trail of Bits. Changes made by Muster: security hardening of _git_commit (a symlinked .git or .git/HEAD is refused and HEAD and the ref are opened with O_NOFOLLOW, .git must resolve inside the project root, only a 40-64 character hex object id is emitted), the os import it needs, manifest and lockfile reads that refuse a symlink or non-regular file (security review 2026-11-10: a symlinked requirements*.txt could put lines of a file outside the project into the report and registry queries), pip-audit cross-check entries limited to valid names and versions, and this header.
 # /// script
 # requires-python = ">=3.11"
 # ///
@@ -26,6 +26,7 @@ import argparse
 import json
 import os
 import re
+import stat
 import sys
 import tempfile
 import tomllib
@@ -615,6 +616,29 @@ def _go_indirect(
 PARSERS = (parse_npm, parse_pypi, parse_go)
 
 
+def _read_manifest(path: Path) -> str:
+    """Read a manifest or lockfile in the project root without following a symlink.
+
+    Muster hardening: the audited checkout is untrusted. Every manifest sits directly in
+    the project root, so a symlink there (``requirements-ci.txt -> ~/.netrc``) or a FIFO
+    is refused outright instead of being read: its lines would otherwise reach the report
+    (unparseable requirement notes) and the registries (as package names).
+    """
+    try:
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
+    except OSError as exc:
+        if path.is_symlink():
+            raise SystemExit(
+                f"error: {path} is a symlink; refusing to read a manifest that may point "
+                f"outside the project"
+            ) from exc
+        raise
+    with os.fdopen(fd, "rb") as handle:
+        if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+            raise SystemExit(f"error: {path} is not a regular file; refusing to read it")
+        return handle.read().decode("utf-8")
+
+
 def _read_text(path: Path) -> str:
     """Read a plain-text manifest as UTF-8, refusing anything that will not decode.
 
@@ -635,7 +659,7 @@ def _read_text(path: Path) -> str:
         SystemExit: The file is not UTF-8, or could not be read.
     """
     try:
-        return path.read_text(encoding="utf-8")
+        return _read_manifest(path)
     except UnicodeDecodeError as exc:
         raise SystemExit(
             f"error: {path} is not UTF-8, so its contents cannot be read: {exc}. "
@@ -648,7 +672,7 @@ def _read_text(path: Path) -> str:
 
 def _read_json(path: Path) -> dict:
     try:
-        data = json.loads(path.read_text(encoding="utf-8"), strict=False)
+        data = json.loads(_read_manifest(path), strict=False)
         if not isinstance(data, dict):
             raise SystemExit(
                 f"error: {path} holds a JSON {type(data).__name__}, not the object this "
@@ -669,7 +693,7 @@ def _read_json(path: Path) -> dict:
 
 def _read_toml(path: Path) -> dict:
     try:
-        return tomllib.loads(path.read_text(encoding="utf-8"))
+        return tomllib.loads(_read_manifest(path))
     except tomllib.TOMLDecodeError as exc:
         raise SystemExit(f"error: {path} is not valid TOML: {exc}") from exc
     except UnicodeDecodeError as exc:
@@ -1255,6 +1279,11 @@ def _cross_check_pip_audit(deps: list[Dependency], found: dict[str, list[str]]) 
     not have, so the note says "resolved" and the version-source caveats stay in force.
     """
     resolved = [d for d in deps if d.ecosystem == "PyPI" and d.version]
+    if not resolved:
+        return None
+    # Muster hardening: lockfile versions are untrusted text; a newline in one would add
+    # requirement options (-r, --index-url) to the file pip-audit reads.
+    resolved = [d for d in resolved if _VALID_NAME.match(d.name) and _VALID_VERSION.match(d.version)]
     if not resolved:
         return None
     with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as handle:

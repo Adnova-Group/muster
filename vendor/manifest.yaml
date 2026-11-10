@@ -1155,7 +1155,12 @@ sources:
     # resources from the source directory only (Path.cwd() dropped); scripts/search_databases.py
     # writes every fetched field as one escaped line (Markdown and TeX punctuation backslash-escaped,
     # TeX specials escaped in BibTeX fields, the entry type reduced to letters). Both are adapted
-    # with base copies; test/kdense-pdf-safety.test.js pins it. market-research-reports'
+    # with base copies; test/kdense-pdf-safety.test.js pins it. Stage 3 pre-PR review (2026-11-10):
+    # paranoid TeX access still reads relative names and Pandoc passes math through verbatim
+    # ($\input{notes/keys.txt}$), so generate_pdf.py runs pandoc from a fresh empty temporary
+    # directory (every path it passes is absolute) with shell_escape=f; SKILL.md's uv command adds
+    # `--no-config --python "$(command -v python3)"` (a checkout's .python-version or .venv otherwise
+    # chooses the interpreter uv runs, even with --isolated). market-research-reports'
     # assets/FORMATTING_GUIDE.md (adapted for its header) runs its documented xelatex command under
     # the same openin_any=p / openout_any=p; it is the only other pandoc/LaTeX invocation shipped. verify_citations.py (Crossref,
     # public and keyless) is verbatim. Cross-references to upstream skills muster does not carry (parallel-web,
@@ -2126,6 +2131,15 @@ sources:
     # 40-64 character hex object id; render.py _safe_text entity-escapes & < >, backslash-escapes
     # backslash, backtick, |, [, *, _ and ~, and caps third-party text at 200 characters.
     # test/tob-supply-chain-hardening.test.js pins both (skipped without python3 >= 3.11).
+    # Stage 3 pre-PR security review (2026-11-10): collect.py also reads every manifest and
+    # lockfile through O_NOFOLLOW and refuses a symlink or non-regular file (a symlinked
+    # requirements*.txt put lines of an outside file into the report and the registry queries),
+    # and writes only valid names and versions into its pip-audit requirements file (a newline in
+    # a uv.lock version added requirement options); SKILL.md runs both scripts with
+    # `uv run --no-config --python "$(command -v python3)"` so the audited checkout's
+    # .python-version, .venv, uv.toml or [tool.uv] cannot choose or download the interpreter
+    # (reproduced with uv 0.11: a planted .python-version or .venv ran its own binary). Both
+    # changes are noted in the license headers; the same test file pins them.
     ref: e4dd0bb5b15535f7c5a0834187dffba6ac37e4ff
     tag: null
     license: CC-BY-SA-4.0

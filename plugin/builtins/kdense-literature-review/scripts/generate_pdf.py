@@ -4,6 +4,7 @@
 import argparse
 import os
 import subprocess
+import tempfile
 from pathlib import Path
 
 # Reviews embed untrusted text (paper titles and abstracts from search exports), so the
@@ -12,6 +13,9 @@ from pathlib import Path
 # dotfiles) for both reading and writing. Together they keep an injected \input or
 # \include from embedding a local file in the PDF. TeX math stays enabled for real reviews;
 # Pandoc passes math through verbatim, so the paranoid engine setting is what covers it.
+# Paranoid mode still reads relative names, so pandoc runs from a fresh empty directory
+# (every path it is given is absolute) and shell escape is off: math such as
+# $\input{notes/keys.txt}$ finds nothing to read from the checkout.
 PANDOC_INPUT_FORMAT = 'markdown-raw_tex-raw_attribute'
 
 
@@ -20,6 +24,7 @@ def tex_env(base=None):
     env = dict(os.environ if base is None else base)
     env['openin_any'] = 'p'
     env['openout_any'] = 'p'
+    env['shell_escape'] = 'f'
     return env
 
 
@@ -92,7 +97,8 @@ def run_pandoc(cmd, destination, citation_style, template, toc, number_sections,
             return False
         cmd.extend(['--template', str(Path(template).resolve())])
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True, env=tex_env())
+        with tempfile.TemporaryDirectory(prefix='kdense-pdf-') as workdir:
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True, env=tex_env(), cwd=workdir)
         if result.stderr:
             print(result.stderr.strip())  # Surface missing citation and rendering warnings.
         if not destination.is_file() or not destination.read_bytes().startswith(b'%PDF-'):

@@ -82,6 +82,46 @@
     upstream:
       - anthropics/skills
   description: Create original static visual art (posters, PNG or PDF canvases) from a written design philosophy; not for product UI.
+- id: taste-high-end-visual-design
+  kind: builtin
+  roles:
+    - frontend
+  rank: 30
+  provenance:
+    license: MIT
+    upstream:
+      - Leonxlnx/taste-skill-classics
+  description: "Opt-in classic taste style, use only when named: a calm premium look with soft contrast, generous whitespace and spring motion."
+- id: taste-minimalist-ui
+  kind: builtin
+  roles:
+    - frontend
+  rank: 30
+  provenance:
+    license: MIT
+    upstream:
+      - Leonxlnx/taste-skill-classics
+  description: "Opt-in classic taste style, use only when named: editorial minimalist product UI with a warm monochrome palette and flat bento grids."
+- id: taste-industrial-brutalist-ui
+  kind: builtin
+  roles:
+    - frontend
+  rank: 30
+  provenance:
+    license: MIT
+    upstream:
+      - Leonxlnx/taste-skill-classics
+  description: "Opt-in classic taste style, use only when named: industrial brutalism with Swiss type, rigid grids and extreme scale contrast."
+- id: taste-stitch-design-taste
+  kind: builtin
+  roles:
+    - frontend
+  rank: 30
+  provenance:
+    license: MIT
+    upstream:
+      - Leonxlnx/taste-skill-classics
+  description: "Opt-in classic, use only when named: write a Google Stitch export file with strict type, colour and layout rules; a project's canonical DESIGN.md wins."
 - id: wsh-stride-analysis-patterns
   kind: builtin
   roles:

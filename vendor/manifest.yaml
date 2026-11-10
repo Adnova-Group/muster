@@ -602,6 +602,38 @@ sources:
       - { from: skills/frontend-design/LICENSE.txt, to: plugin/builtins/anthropic-frontend-design/LICENSE.txt, mode: adapted, baseBlob: f433b1a53f5b830a205fd2df78e2b34974656c7b }
       - { id: anthropic-canvas-design, kind: builtin, from: skills/canvas-design/SKILL.md, to: plugin/builtins/anthropic-canvas-design/SKILL.md, mode: adapted, relation: adapted, baseBlob: 9f63fee82de84cd4230e1d0e322247b61eb4c94c, roles: [frontend], rank: 30, description: "Create original static visual art (posters, PNG or PDF canvases) from a written design philosophy; not for product UI." }
       - { from: skills/canvas-design/LICENSE.txt, to: plugin/builtins/anthropic-canvas-design/LICENSE.txt, mode: adapted, baseBlob: 4f881c52d1f72f4cfb720e339e2d35c3058d01a9 }
+  - id: taste-skill-classics
+    kind: github
+    repo: Leonxlnx/taste-skill-classics
+    # Added 2026-11-10 from the ui-skills.com registry (best-of-breed UX skills, by GitHub stars).
+    # Merge-tracked (every item has a `mode`): plain `muster vendor` never regenerates it, and
+    # `muster vendor update <id>` 3-way merges each muster file against its byte-exact base copy in
+    # vendor/upstream/<id>/. Pinned to upstream HEAD on 2026-11-10 (no release tag at that commit).
+    # Kept muster divergence: every SKILL.md swaps the upstream frontmatter for muster's (name kept,
+    # one-line description, muster_builtin, SPDX license, generated upstream:); harness keys such as
+    # disable-model-invocation, hooks, metadata and agents/openai.yaml are dropped. Bodies are
+    # upstream's; cross-references by upstream skill name resolve through the kept `name:`.
+    # Catalog: role frontend, ranked below the wsh frontend builtins (50) so none becomes the default
+    # frontend provider. Precedence: project DESIGN.md > accessibility (jk-better-accessibility 46) >
+    # impeccable > these supporting skills (44 review/writing, 42 direction/engineering, 40 motion, 30 opt-in).
+    # Leonxlnx/taste-skill (the registry's source, 113k stars) moved these four classic skills here
+    # in its 2.1.3 release ("Same install names, same files"). Its HEAD f6b76575 (v2.5.1) carries one
+    # skill, design-taste-frontend, at 36.6 MB / 1,631 files with a frontmatter Stop hook, Node 22 and a
+    # headless browser: not vendored (no pointer could stay resolved without carrying it whole), and
+    # redesign-existing-projects was retired into it in 2.1.1. Upstream marks the classics opt-in
+    # (disable-model-invocation); the descriptions say so and the catalog ranks them 30.
+    # stitch-skill/DESIGN.md (an unreferenced example export) is not carried, so no DESIGN.md ships
+    # inside the plugin to compete with a project's canonical one.
+    ref: 5e08c9383dc4ad7fc0df70e1ac8cfa09ec356305
+    tag: null
+    license: MIT
+    copyright: "Copyright (c) 2026 Leonxlnx"
+    relation: vendored
+    items:
+      - { id: taste-high-end-visual-design, kind: builtin, from: skills/soft-skill/SKILL.md, to: plugin/builtins/taste-high-end-visual-design/SKILL.md, mode: adapted, baseBlob: 78a7a4a69665fcd3f6a6135c749d27fa64057b66, roles: [frontend], rank: 30, description: "Opt-in classic taste style, use only when named: a calm premium look with soft contrast, generous whitespace and spring motion." }
+      - { id: taste-minimalist-ui, kind: builtin, from: skills/minimalist-skill/SKILL.md, to: plugin/builtins/taste-minimalist-ui/SKILL.md, mode: adapted, baseBlob: e6902a6428723cfd98746eb08c5092bbd520ade3, roles: [frontend], rank: 30, description: "Opt-in classic taste style, use only when named: editorial minimalist product UI with a warm monochrome palette and flat bento grids." }
+      - { id: taste-industrial-brutalist-ui, kind: builtin, from: skills/brutalist-skill/SKILL.md, to: plugin/builtins/taste-industrial-brutalist-ui/SKILL.md, mode: adapted, baseBlob: 119030a65f7ef7e0eccf290e269ffaebbcdcca8e, roles: [frontend], rank: 30, description: "Opt-in classic taste style, use only when named: industrial brutalism with Swiss type, rigid grids and extreme scale contrast." }
+      - { id: taste-stitch-design-taste, kind: builtin, from: skills/stitch-skill/SKILL.md, to: plugin/builtins/taste-stitch-design-taste/SKILL.md, mode: adapted, baseBlob: 4f4e5a33a6acc5d6257b56a5edb7db219caa5f2e, roles: [frontend], rank: 30, description: "Opt-in classic, use only when named: write a Google Stitch export file with strict type, colour and layout rules; a project's canonical DESIGN.md wins." }
   # ---- end ui-skills.com UX skills ----
   - id: gsd
     kind: github

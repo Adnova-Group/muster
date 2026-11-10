@@ -123,7 +123,7 @@ For annotated backlog files driven through the sprint protocol, Codex dispatches
 | Pipelines | all of them |
 | MCP tools | 30 tools: 29 CLI-wrapper tools plus `muster_sprint_protocol` |
 | Custom-agent profiles | 27 |
-| Skills | 69 total: 8 public + 61 internal |
+| Skills | 73 total: 8 public + 65 internal |
 | Internal skill breakdown | 7 native + 46 capability + 3 frozen lifecycle (router, review-gate, tournament) + 3 `muster-gsd-*` fallbacks |
 
 ## Inspecting a Codex install

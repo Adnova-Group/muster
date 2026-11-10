@@ -20,6 +20,8 @@ Per-item detail (upstream path, ref, relation) is in each item's `upstream:` fie
   Copyright (c) 2025 Addy Osmani
 - emilkowalski/skills @ 715c1807e08c497cfd1dc4feb450a2a3300ef2a9 (MIT)
   Copyright (c) 2026 Emil Kowalski
+- nutlope/hallmark @ 407fa689f4a276f2fd389208d271d0fef08f5058 (MIT)
+  Copyright (c) 2026 Hallmark contributors
 - open-gsd/gsd-core @ 9385f4618b52ef68ed8a5e8bdd93cfb25bd87765, 1c352d1ea37b010e99b8353905eb5def4f784100 (MIT)
   Copyright (c) 2026 Open GSD
 - blader/humanizer @ 1b48564898e999219882660237fde01bf4843a0f (MIT)

@@ -292,6 +292,16 @@
     upstream:
       - emilkowalski/skills
   description: Pick an opinionated frontend library for a task (charts, OTP, command menu, toasts, drag and drop); runs only when explicitly invoked.
+- id: hallmark
+  kind: builtin
+  roles:
+    - frontend
+  rank: 42
+  provenance:
+    license: MIT
+    upstream:
+      - nutlope/hallmark
+  description: "Hallmark anti-slop page builder: dealt themes, a hard design floor and sloplint checks for new websites; existing designs only when Hallmark is named."
 - id: wsh-stride-analysis-patterns
   kind: builtin
   roles:

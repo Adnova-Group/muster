@@ -212,3 +212,22 @@ branches with `branch -d` only.
     `src/specialists.js`, and the integration checker and `wsh-team-debugger` are `readOnly`,
     so no `agent_hint` builds with them. `wsh-code-reviewer` left the Claude plugin for
     `codex/frozen/agents/`.
+
+## Amendments from PM stage B (2026-11-10: planning from a SPEC.md)
+
+18. **Spec runs** (`docs/strategy/2026-11-pm-domain-design.md` "Plan integration",
+    `docs/plan-format.md` "Planning from a spec"). `muster preflight` detects a SPEC.md in the
+    outcome (or a backlog item's `{spec: path#REF-02}`), runs spec-lint in the same call and
+    returns `spec: {path, anchor, status, ready, acs, invariants, evals, decisions,
+    openQuestions}`; `clear` is `spec.ready` and `route` is `code`. New CLI steps:
+    `muster spec-clarify <SPEC.md>` (one question round's answers on stdin, written under a dated
+    `## Clarifications` session; a draft that now passes becomes `ready`), `muster spec-context
+    <runId>` (CONTEXT.md gets the spec's D-NN verbatim and LOCKED, its non-goals as Deferred
+    Ideas, and the spec's path and sha256; the command never hand-writes it) and `muster
+    spec-trace <runId> [--accept <IDs>] [--coverage]` (the spec's Traceability block from
+    PLAN.md `covers`/`proves` and the verifier's `## Acceptance` table; `status: shipped` when
+    every ID is VERIFIED or accepted). `plan.js` takes `specPath` and passes the coverage rules
+    to the planner and the delivery check to the checker on every round. PLAN.md gains `spec:`,
+    `requirements:`, `ac:` on must-haves, `covers` on tasks and `proves` on `<automated>`;
+    plan-lint's `spec_traceability` dimension applies only when `spec:` is set. Change-set and
+    diff gates exclude `.muster/`.

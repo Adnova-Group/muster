@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Adapted by Muster from nextlevelbuilder/ui-ux-pro-max-skill @ 4f2dbb67e64969a9a30ab00742f2d55d66ddec2b (MIT): the shadcn version read from package.json must be a plain semver and component names must be plain registry names (security hardening).
 """
 shadcn/ui Component Installer
 
@@ -8,10 +9,21 @@ Wraps shadcn CLI for programmatic component installation.
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
 from typing import List, Optional
+
+
+# Muster hardening: package.json and the component arguments can come from an untrusted
+# checkout or from model-composed commands. `npx shadcn@<spec>` installs and runs whatever
+# <spec> names (github:owner/repo, npm:other-package, a tarball URL), and a component given as
+# a URL or flag makes the shadcn CLI fetch a remote registry item (writing its files and
+# installing its dependencies) or retarget --cwd/--path. Only a plain semver version and plain
+# registry names pass.
+SAFE_VERSION = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$")
+SAFE_COMPONENT = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 
 
 class ShadcnInstaller:
@@ -73,7 +85,11 @@ class ShadcnInstaller:
                 for section in ("dependencies", "devDependencies"):
                     version = pkg.get(section, {}).get("shadcn")
                     if version:
-                        return version.lstrip("^~>=<").split()[0]
+                        parts = version.lstrip("^~>=<").split() if isinstance(version, str) else []
+                        candidate = parts[0] if parts else ""
+                        if SAFE_VERSION.match(candidate):
+                            return candidate
+                        break
             except (json.JSONDecodeError, KeyError):
                 pass
         return "2.3.0"  # pinned fallback; update when newer stable release is needed
@@ -93,6 +109,10 @@ class ShadcnInstaller:
         """
         if not components:
             return False, "No components specified"
+
+        invalid = [c for c in components if not SAFE_COMPONENT.match(c)]
+        if invalid:
+            return False, f"Invalid component name(s): {', '.join(invalid)} (expected plain names such as button or dropdown-menu)"
 
         if not self.check_shadcn_config():
             return (

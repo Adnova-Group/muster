@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Adapted by Muster from ghaida/intent @ 1806110106a472bc588d7a8a2b7e3d39aee4a4b8 (CC0-1.0): chart category and series names may not start with "=" (security hardening; python-pptx writes them into the embedded workbook as formulas).
 """Build a .pptx from a /present deck spec (JSON). Shared path for PowerPoint and
 Google Slides (import the .pptx into Slides). Usage: build_deck.py deck.json out.pptx
 
@@ -82,6 +83,13 @@ def _validate(spec):
                     raise ValueError(f"slide {i}: each chart series needs a name and one value per category")
                 if any(isinstance(v, bool) or not isinstance(v, (int, float)) for v in ser["values"]):
                     raise ValueError(f"slide {i}: chart values must be numbers, as stated in the source")
+            # Muster hardening: python-pptx writes categories and series names into the chart's
+            # embedded workbook with XlsxWriter's write(), which stores a string starting with
+            # "=" as a live formula (=HYPERLINK(...) exfiltrates cells on Edit Data). Deck
+            # specs are model-written, often from untrusted sources.
+            labels = list(cats) + [ser.get("name") for ser in series]
+            if any(isinstance(x, str) and x.lstrip().startswith(("=", "{=")) for x in labels):
+                raise ValueError(f"slide {i}: chart categories and series names cannot start with '=' (spreadsheet formula)")
             hi = c.get("highlight", 0)
             if isinstance(hi, bool) or not isinstance(hi, int) or hi not in range(len(series)):
                 raise ValueError(f"slide {i}: chart highlight must be the index of one series (0 to {len(series) - 1})")

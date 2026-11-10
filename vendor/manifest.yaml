@@ -1668,6 +1668,17 @@ sources:
     # sibling paths, skill names or the canvas-fonts directory changed. Everything else verbatim.
     # uupm-ui-styling/LICENSE.txt is the Apache-2.0 text upstream ships beside that skill;
     # it is carried verbatim with it.
+    # Security adaptations (stage 3 pre-PR review, 2026-11-10; base copies kept, each noted in its
+    # file header): ui-styling/scripts/shadcn_add.py ran `npx shadcn@<package.json spec>` with the
+    # spec only stripped of ^~>=<, so a checkout's "shadcn": "github:owner/repo" (or npm:, a
+    # tarball URL) installed and ran attacker code, and passed component arguments unchecked (a
+    # registry-item URL or a --cwd/--path flag); it now accepts only a plain semver (else the pin)
+    # and names matching [a-z0-9][a-z0-9-]*. design/scripts/cip/render-html.py base64-embedded
+    # every *.png it globbed, symlinks included (a.png -> ~/.ssh/id_rsa), and interpolated brand,
+    # industry, CSV fields and file-derived titles into HTML raw (a file name carrying
+    # " onerror=... ran script); it now skips symlinked or non-regular images, HTML-escapes every
+    # value, slugs the default output name and refuses a symlinked output path.
+    # test/vendored-script-hardening.test.js pins both and kill-checks the base copies.
     ref: 4f2dbb67e64969a9a30ab00742f2d55d66ddec2b
     tag: v2.15.0-80-g4f2dbb6
     license: MIT
@@ -1751,7 +1762,7 @@ sources:
       - { from: .claude/skills/design/references/social-photos-design.md, to: plugin/builtins/uupm-design/references/social-photos-design.md, mode: adapted, baseBlob: 1dc1fdc533c16b1ef2adb13e167977e685b7d1a4 }
       - { from: .claude/skills/design/scripts/cip/core.py, to: plugin/builtins/uupm-design/scripts/cip/core.py, mode: verbatim, baseBlob: 5e6b7a902ceabbc2f7a9ef425923774c9435f9da }
       - { from: .claude/skills/design/scripts/cip/generate.py, to: plugin/builtins/uupm-design/scripts/cip/generate.py, mode: verbatim, baseBlob: 394b06de244392b9b13317f2097cbfd0087116d0 }
-      - { from: .claude/skills/design/scripts/cip/render-html.py, to: plugin/builtins/uupm-design/scripts/cip/render-html.py, mode: verbatim, baseBlob: 34e378261f642ea98303ee4a7718568b78ec8520 }
+      - { from: .claude/skills/design/scripts/cip/render-html.py, to: plugin/builtins/uupm-design/scripts/cip/render-html.py, mode: adapted, baseBlob: 34e378261f642ea98303ee4a7718568b78ec8520 }
       - { from: .claude/skills/design/scripts/cip/search.py, to: plugin/builtins/uupm-design/scripts/cip/search.py, mode: verbatim, baseBlob: 894f4841979ef66920e5b96b8f41c89c896b8f6a }
       - { from: .claude/skills/design/scripts/icon/generate.py, to: plugin/builtins/uupm-design/scripts/icon/generate.py, mode: verbatim, baseBlob: 375f7896e531be6ad0c5719052f4a5ba50eaf166 }
       - { from: .claude/skills/design/scripts/logo/core.py, to: plugin/builtins/uupm-design/scripts/logo/core.py, mode: verbatim, baseBlob: b3de30c5d7c4afecb1c8a51c52688184530ea300 }
@@ -1773,7 +1784,7 @@ sources:
       - { from: .claude/skills/ui-styling/references/tailwind-responsive.md, to: plugin/builtins/uupm-ui-styling/references/tailwind-responsive.md, mode: verbatim, baseBlob: f252e1857bb2f5f5a884711fcf983ea945ce45e7 }
       - { from: .claude/skills/ui-styling/references/tailwind-utilities.md, to: plugin/builtins/uupm-ui-styling/references/tailwind-utilities.md, mode: verbatim, baseBlob: 7b7b12363f2dbe40961cd7a11446419046a921af }
       - { from: .claude/skills/ui-styling/scripts/requirements.txt, to: plugin/builtins/uupm-ui-styling/scripts/requirements.txt, mode: verbatim, baseBlob: 75f72ca91d5c2eca4e9d3d1621a9db07f7d25dd3 }
-      - { from: .claude/skills/ui-styling/scripts/shadcn_add.py, to: plugin/builtins/uupm-ui-styling/scripts/shadcn_add.py, mode: verbatim, baseBlob: 983d5009ea9af4307c390e5a87d6b91146cfc69d }
+      - { from: .claude/skills/ui-styling/scripts/shadcn_add.py, to: plugin/builtins/uupm-ui-styling/scripts/shadcn_add.py, mode: adapted, baseBlob: 983d5009ea9af4307c390e5a87d6b91146cfc69d }
       - { from: .claude/skills/ui-styling/scripts/tailwind_config_gen.py, to: plugin/builtins/uupm-ui-styling/scripts/tailwind_config_gen.py, mode: verbatim, baseBlob: da94fc6bbed9ce72453131c07d406d646eef0f1b }
       - { id: uupm-ui-ux-pro-max, kind: builtin, from: .claude/skills/ui-ux-pro-max/SKILL.md, to: plugin/builtins/uupm-ui-ux-pro-max/SKILL.md, mode: adapted, relation: adapted, baseBlob: 2cacc8756e816a1eb6bfa44307372f2aeb445902 }
       - { from: .claude/skills/ui-ux-pro-max/data/app-interface.csv, to: plugin/builtins/uupm-ui-ux-pro-max/data/app-interface.csv, mode: verbatim, baseBlob: 95e328c807a23be02c9c32c736d0fa19109c6076 }
@@ -1830,6 +1841,10 @@ sources:
     # an "In muster" note mapping /<skill> to ../intent-<skill>/SKILL.md; intent-noor's present
     # paths point at ${CLAUDE_PLUGIN_ROOT}/builtins/intent-present/references/). Not vendored:
     # the Cursor/Copilot ports, hooks/, docs/ site, tests/ and build scripts.
+    # Security adaptation (stage 3 pre-PR review, 2026-11-10; base copy kept, noted in its header):
+    # present/references/build_deck.py rejects chart categories and series names starting with "="
+    # (python-pptx writes them into the embedded workbook through XlsxWriter's write(), which stores
+    # such a string as a live formula); test/vendored-script-hardening.test.js pins it.
     ref: 1806110106a472bc588d7a8a2b7e3d39aee4a4b8
     tag: v1.7.4
     license: CC0-1.0
@@ -1866,7 +1881,7 @@ sources:
       - { id: intent-organize, kind: builtin, from: skills/organize/SKILL.md, to: plugin/builtins/intent-organize/SKILL.md, mode: adapted, relation: adapted, baseBlob: bfa2bb364ea2625c911f9396cc032ec5bed2b7ed }
       - { id: intent-philosopher, kind: builtin, from: skills/philosopher/SKILL.md, to: plugin/builtins/intent-philosopher/SKILL.md, mode: adapted, relation: adapted, baseBlob: 6406b25447e3811c81af8feba63a565acdf876b0 }
       - { id: intent-present, kind: builtin, from: skills/present/SKILL.md, to: plugin/builtins/intent-present/SKILL.md, mode: adapted, relation: adapted, baseBlob: 759c57726b5cab4d8fad4f631efeb518df31fd46 }
-      - { from: skills/present/references/build_deck.py, to: plugin/builtins/intent-present/references/build_deck.py, mode: verbatim, baseBlob: 1ed828c93b786408280713ab264a779a98afba1f }
+      - { from: skills/present/references/build_deck.py, to: plugin/builtins/intent-present/references/build_deck.py, mode: adapted, baseBlob: 1ed828c93b786408280713ab264a779a98afba1f }
       - { from: skills/present/references/deck-theme.css, to: plugin/builtins/intent-present/references/deck-theme.css, mode: verbatim, baseBlob: 416e973c730569ff2c5917b270207b8825c36e19 }
       - { from: skills/present/references/deck-theme.md, to: plugin/builtins/intent-present/references/deck-theme.md, mode: verbatim, baseBlob: 2af37b4156c693f8a5a88d4f0f3622aae9d28fbf }
       - { from: skills/present/references/reveal-template.html, to: plugin/builtins/intent-present/references/reveal-template.html, mode: verbatim, baseBlob: a9ad7b815d90e90befae44c849af27b13e8f9f1c }

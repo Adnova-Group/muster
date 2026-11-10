@@ -22,10 +22,14 @@ const claudeSurface = [
   "pipelines"
 ];
 
+// Runtime artifacts are not part of the surface: Python bytecode appears wherever a vendored
+// script has been run (the uupm search tests regenerate it), so it differs between machines.
+const RUNTIME_ARTIFACT = name => name === "__pycache__" || name.endsWith(".pyc");
+
 async function files(path) {
   try {
     const entries = await readdir(join(root, path), { withFileTypes: true });
-    return (await Promise.all(entries.map(entry => files(join(path, entry.name))))).flat();
+    return (await Promise.all(entries.filter(entry => !RUNTIME_ARTIFACT(entry.name)).map(entry => files(join(path, entry.name))))).flat();
   } catch {
     return [path];
   }
@@ -40,7 +44,7 @@ test("Claude orchestration surface remains byte-identical outside release metada
     hash.update(await readFile(join(root, path)));
     hash.update("\0");
   }
-  assert.equal(paths.length, 911); // 0.7.0 retired the run/autopilot/sprint command files; 2026-11-09 removed five always-on hook files; stage 1 removed references/kimi-dispatch.md; stage 2 adds plugin/workflows (plan, build, backlog, schemas) and gsd-derived agents (planner, plan-checker, verifier, executor replacing builder); stage 2b deletes the backlog/runner verbs and router-era skills (see the 2026-11-09e re-pin below). Revival stage 3 (2026-11-10): vendored skill library and new workflows, agents and commands.
+  assert.equal(paths.length, 908); // 0.7.0 retired the run/autopilot/sprint command files; 2026-11-09 removed five always-on hook files; stage 1 removed references/kimi-dispatch.md; stage 2 adds plugin/workflows (plan, build, backlog, schemas) and gsd-derived agents (planner, plan-checker, verifier, executor replacing builder); stage 2b deletes the backlog/runner verbs and router-era skills (see the 2026-11-09e re-pin below). Revival stage 3 (2026-11-10): vendored skill library and new workflows, agents and commands.
   // Previous 159-file surface +1: audit-pattern-batch2's new
   // plugin/skills/audit-pattern-documentation/SKILL.md (the 10th pattern skill, approved via the
   // second improver batch, composed onto readability + design-ux). The batch also appended 19
@@ -1530,7 +1534,7 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // .claude/worktrees/), resolved from the worktree's .git file without spawning git, and the
   // orchestrator says so; plugin/runtime/muster.sh no longer falls back to a global or project
   // muster (possibly an older release) and pins npx to the plugin's own version. Deliberate.
-  // Re-pin 2026-11-10 (revival stage 3, 137 -> 911 files). One re-pin for the whole stage:
+  // Re-pin 2026-11-10 (revival stage 3, 137 -> 908 files; Python bytecode excluded as a runtime artifact). One re-pin for the whole stage:
   // - every builtin refreshed from its upstream and merge-tracked: superpowers v7.0.2, wshobson
   //   9c61ab2 (plus its references/ files), impeccable skill-v4.8.2 vendored as the main UX skill;
   // - new vendored families, each with provenance: UX (uupm, intent, typeui, pfd, anthropic,
@@ -1545,5 +1549,5 @@ test("Claude orchestration surface remains byte-identical outside release metada
   //   fail-open hooks, the bundled runtime, and security fixes in vendored scripts.
   // Plan: docs/strategy/2026-11-revival-review.md, stage-2-contracts.md amendments 9-19.
   // Deliberate, not drift.
-  assert.equal(hash.digest("hex"), "b4097f402a4e5fd0c8fa7e89d636caebff0e617826e8d14d657f88c17d14f8dd");
+  assert.equal(hash.digest("hex"), "7ba99aa10a7411b8263aa44c2412039e649bde98e4d330a343dbbcc7c29cbcd9");
 });

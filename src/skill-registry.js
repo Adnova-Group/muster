@@ -70,11 +70,20 @@ async function writeCache(cacheDir, registry, fetchedAt) {
   await rename(tmp, path);
 }
 
+// A referenced timer, not AbortSignal.timeout: that one is unref'd, so when the request holds no
+// handle of its own (an injected fetch, a stalled stream) Node 20/22 can exit with the request
+// still pending instead of timing out. Cleared as soon as the request settles.
 async function fetchText(fetchImpl, url, { timeoutMs = FETCH_TIMEOUT_MS, maxBytes, headers = {} } = {}) {
-  const res = await fetchImpl(url, { headers: { "User-Agent": USER_AGENT, ...headers }, signal: AbortSignal.timeout(timeoutMs) });
-  const text = res.ok ? await res.text() : "";
-  if (res.ok && maxBytes && Buffer.byteLength(text, "utf8") > maxBytes) throw new Error(`${url}: response over ${maxBytes} bytes`);
-  return { status: res.status, ok: res.ok, text };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(new DOMException(`timed out after ${timeoutMs} ms`, "TimeoutError")), timeoutMs);
+  try {
+    const res = await fetchImpl(url, { headers: { "User-Agent": USER_AGENT, ...headers }, signal: controller.signal });
+    const text = res.ok ? await res.text() : "";
+    if (res.ok && maxBytes && Buffer.byteLength(text, "utf8") > maxBytes) throw new Error(`${url}: response over ${maxBytes} bytes`);
+    return { status: res.status, ok: res.ok, text };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // The registry for an explicit search or add: a fresh cache, else the network (short timeout),

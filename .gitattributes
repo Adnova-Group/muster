@@ -19,6 +19,8 @@ plugin/builtins/mp-*/** -text
 plugin/builtins/splab-*/** -text
 plugin/builtins/addy-source-driven-development/** -text
 plugin/agents/prt-*.md -text
+# cc-sdd ears-format, a whole-file verbatim copy (its own base copy) in the muster-pm builtin.
+plugin/builtins/muster-pm/references/ears.md -text
 # Generated Claude plugin runtime (scripts/build-plugin-runtime.mjs): stored byte-exact so
 # `npm run check:plugin` can compare it with a fresh build. Never hand-merge it: rebuild it.
 plugin/runtime/cli/** -text -diff linguist-generated=true

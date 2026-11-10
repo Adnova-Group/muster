@@ -621,6 +621,14 @@ test("prompt-smith-optimize-proposal: a stronger non-baseline winner reports no 
   assert.equal(gradeCase({ check: "prompt-smith-optimize-proposal", expect: { regression: false } }, regressed).pass, false);
 });
 
+test("pm-spec-lint: a ready lite spec passes; ready with markers and an unverifiable criterion blocks", () => {
+  const ready = "---\nspec: x\nstatus: ready\n---\n\n## Intent\nJob: x.\n\n- **NG-01** y — because z.\n\n## Requirements\n\n### EXP-01 Dates parse\n- **EXP-01.1** [ubiquitous] The system shall write dates as YYYY-MM-DD. — verify: test\n";
+  assert.equal(gradeCase({ check: "pm-spec-lint", expect: { verdict: "PASS", blocks: false } }, ready).pass, true);
+  const early = ready.replace(" — verify: test", " [NEEDS CLARIFICATION: which zone?]");
+  assert.equal(gradeCase({ check: "pm-spec-lint", expect: { verdict: "ISSUES", blocks: true, dimensions: ["readiness", "acceptance_criteria"] } }, early).pass, true);
+  assert.equal(gradeCase({ check: "pm-spec-lint", expect: { verdict: "PASS" } }, early).pass, false);
+});
+
 test("author-draft-shape: a stated framework + single CTA pass; no framework and multiple CTAs are correctly detected as such", () => {
   const clean = "Framework: PAS\n\nbody text\n\nCTA: buy now.";
   assert.equal(gradeCase({ check: "author-draft-shape", expect: { framework: "PAS", ctaCount: 1 } }, clean).pass, true);
@@ -736,10 +744,10 @@ const CONTENT_PIPELINES = [
   "competitive-battlecard",
 ];
 // The native-builtin layer (eval/modes extended to plugin/builtins/muster-*/SKILL.md) --
-// the 7 built-in pipeline-role providers (the gsd-*/sp-*/wsh-* builtins are vendored
+// the 7 built-in pipeline-role providers plus the muster-pm artifact kit (the gsd-*/sp-*/wsh-* builtins are vendored
 // generic technique skills, not muster's own pipeline-role prompts, and are out of scope
 // for this eval — see README's coverage table).
-const BUILTINS = ["muster-research", "muster-image", "muster-video", "muster-humanizer", "muster-scorer", "muster-prompt-smith", "muster-author"];
+const BUILTINS = ["muster-research", "muster-image", "muster-video", "muster-humanizer", "muster-scorer", "muster-prompt-smith", "muster-author", "muster-pm"];
 // The knowledge-pipeline layer (eval/modes extended to the 11 remaining pipelines/*.yaml
 // not already covered by the content-pipeline layer above: ai-implementation-spec,
 // ai-test-plan, book, business-case, epic, launch-plan, okrs, prd, roadmap, runbook,
@@ -788,9 +796,9 @@ test("dataset covers all 9 content pipelines with at least 2 cases each, 18+ tot
   for (const pipeline of CONTENT_PIPELINES) assert.ok((byPipeline[pipeline] || 0) >= 2, `pipeline "${pipeline}" has only ${byPipeline[pipeline] || 0} cases`);
 });
 
-test("dataset covers all 7 native builtins with at least 2 cases each, 14+ total", () => {
+test("dataset covers all 8 native builtins with at least 2 cases each, 16+ total", () => {
   const builtinCases = dataset.cases.filter((c) => BUILTINS.includes(c.mode));
-  assert.ok(builtinCases.length >= 14, `expected 14+ native-builtin cases, got ${builtinCases.length}`);
+  assert.ok(builtinCases.length >= 16, `expected 16+ native-builtin cases, got ${builtinCases.length}`);
   const byBuiltin = {};
   for (const c of builtinCases) byBuiltin[c.mode] = (byBuiltin[c.mode] || 0) + 1;
   for (const builtin of BUILTINS) assert.ok((byBuiltin[builtin] || 0) >= 2, `builtin "${builtin}" has only ${byBuiltin[builtin] || 0} cases`);

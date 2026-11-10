@@ -774,6 +774,22 @@
       "artifact": "fixtures/builtins/muster-author/draft-missing-framework-multiple-ctas.md",
       "expect": { "framework": null, "ctaCount": 2 }
     },
+    {
+      "id": "muster-pm-spec-from-template-passes-spec-lint",
+      "mode": "muster-pm",
+      "outcome": "muster-pm's stated contract: a lite-mode spec written from templates/SPEC.md (EARS-tagged criteria, one verify type each, numbered EV pass rules, refusal and injection rows) passes the REAL lintSpec with zero issues.",
+      "check": "pm-spec-lint",
+      "artifact": "fixtures/builtins/muster-pm/spec-lite-ready.md",
+      "expect": { "verdict": "PASS", "blocks": false }
+    },
+    {
+      "id": "muster-pm-spec-marked-ready-too-early-blocked",
+      "mode": "muster-pm",
+      "outcome": "The corrupt twin: status ready with clarification markers left in and a criterion with no verify type -- exactly what \"ready needs zero markers\" and \"exactly one verify type\" forbid.",
+      "check": "pm-spec-lint",
+      "artifact": "fixtures/builtins/muster-pm/spec-ready-too-early.md",
+      "expect": { "verdict": "ISSUES", "blocks": true, "dimensions": ["readiness", "acceptance_criteria"] }
+    },
 
     {
       "id": "epic-gate-achievability-passing",

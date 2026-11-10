@@ -546,7 +546,7 @@ test("C2c: collectScanFiles excludes files inside .agents (codex build-staging m
 // Every other merge-tracked source's whole-file verbatim items (byte-exact upstream copies that
 // cannot carry a prompt-lint directive, e.g. the CC BY-SA references of sentry-security-review)
 // are excluded on the same ground; their adapted files stay in scope and carry the directive.
-const UPSTREAM_PROMPT_SOURCES = new Set(["uupm", "intent", "typeui", "pfd"]);
+const UPSTREAM_PROMPT_SOURCES = new Set(["uupm", "intent", "typeui", "pfd", "cc-sdd"]);
 async function upstreamPromptFiles(repoRoot) {
   const manifest = parseYaml(await readFile(path.join(repoRoot, "vendor", "manifest.yaml"), "utf8"));
   const ux = manifest.sources.filter((s) => UPSTREAM_PROMPT_SOURCES.has(s.id))

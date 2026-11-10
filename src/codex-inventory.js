@@ -17,10 +17,10 @@ const startupCodexHome = process.env.CODEX_HOME;
 // uupm-*, intent-*, typeui, pfd; impeccable-*; the complementary evaluation/security/engineering
 // skills: evals-*, sentry-*, openai-*, tob-*, mp-*, splab-*, addy-source-driven-development) are
 // Claude-plugin only and never copied into the Codex bundle's internal skills, so CODEX_COUNTS
-// below stays the frozen census.
+// below stays the frozen census. So does muster-pm (the PM artifact kit): the frozen lane gets no new features.
 export const isUxFamilyBuiltin = name => /^(uupm|intent)-/.test(name) || name === "typeui" || name === "pfd";
 export const isComplementBuiltin = name => /^(evals|sentry|openai|tob|mp|splab)-/.test(name) || name === "addy-source-driven-development";
-export const isCodexFrozenOutBuiltin = name => isUxFamilyBuiltin(name) || isComplementBuiltin(name) || /^impeccable-/.test(name);
+export const isCodexFrozenOutBuiltin = name => isUxFamilyBuiltin(name) || isComplementBuiltin(name) || /^impeccable-/.test(name) || name === "muster-pm";
 
 // Expected contents of one generated Codex bundle. This census belongs with
 // inventory/build validation; model adapters only translate tiers to models.

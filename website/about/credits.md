@@ -46,6 +46,7 @@ Every non-vendored source, generated from the manifest. Each row lists the items
 | [greensock/gsap-skills](https://github.com/greensock/gsap-skills) @ `aed9cfd32777` | MIT | 8 vendored builtins and agents | vendored |
 | [elayadesign/ai-design-skills](https://github.com/elayadesign/ai-design-skills) @ `456d9e0d3e2d` | MIT | 2 vendored builtins and agents | vendored |
 | [jakubkrehel/skills](https://github.com/jakubkrehel/skills) @ `72bdd6121cd5` | MIT | 46 vendored builtins and agents | vendored |
+| [gotalab/cc-sdd](https://github.com/gotalab/cc-sdd) @ `e2a0c671aef3` | MIT | 2 vendored builtins and agents | vendored |
 | [open-gsd/gsd-core](https://github.com/open-gsd/gsd-core) @ `9385f4618b52` | MIT | 42 vendored builtins and agents | adapted, vendored |
 | [nextlevelbuilder/ui-ux-pro-max-skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) @ `4f2dbb67e649` | MIT | 144 vendored builtins and agents | vendored, inspired-by, adapted |
 | [ghaida/intent](https://github.com/ghaida/intent) @ `1806110106a4` | CC0-1.0 | 42 vendored builtins and agents | vendored, inspired-by, adapted |
@@ -91,7 +92,12 @@ Every non-vendored source, generated from the manifest. Each row lists the items
 | [hesreallyhim/awesome-claude-code](https://github.com/hesreallyhim/awesome-claude-code) @ `957922fca4cc` | CC-BY-NC-ND-4.0 | `muster-runner` | inspired-by |
 | [deanpeters/product-manager-prompts](https://github.com/deanpeters/product-manager-prompts) @ `418049a64858` | CC-BY-NC-SA-4.0 | `prd`, `epic` | inspired-by |
 | [deanpeters/Product-Manager-Skills](https://github.com/deanpeters/Product-Manager-Skills) @ `70fb6c4e4163` | CC-BY-NC-SA-4.0 | `prd`, `epic`, `user-story`, `launch-plan` | inspired-by |
-| [phuryn/pm-skills](https://github.com/phuryn/pm-skills) @ `9af7bfd0bc47` | MIT | `user-story`, `launch-plan`, `prd` | inspired-by |
+| [phuryn/pm-skills](https://github.com/phuryn/pm-skills) @ `9af7bfd0bc47` | MIT | `user-story`, `launch-plan`, `prd`, `muster-pm` | inspired-by |
+| [github/spec-kit](https://github.com/github/spec-kit) @ `08252af8c5fb` | MIT | `muster-pm` | inspired-by |
+| [Fission-AI/OpenSpec](https://github.com/Fission-AI/OpenSpec) @ `579fcac57ae0` | MIT | `muster-pm` | inspired-by |
+| [Wirasm/prp](https://github.com/Wirasm/prp) @ `435292597e7b` | MIT | `muster-pm` | inspired-by |
+| [product-on-purpose/pm-skills](https://github.com/product-on-purpose/pm-skills) @ `9b920db418c5` | Apache-2.0 | `muster-pm` | inspired-by |
+| [open-gsd/gsd-core](https://github.com/open-gsd/gsd-core) @ `9385f4618b52` | MIT | `muster-pm` | inspired-by |
 | [anthropics/knowledge-work-plugins](https://github.com/anthropics/knowledge-work-plugins) @ `e605d8ddbfb6` | Apache-2.0 | `prd` | inspired-by |
 | [joelparkerhenderson/objectives-and-key-results](https://github.com/joelparkerhenderson/objectives-and-key-results) @ `f7269521672a` | NONE | `okrs` | inspired-by |
 | [architecture-decision-record/architecture-decision-record](https://github.com/architecture-decision-record/architecture-decision-record) @ `a36c53f49517` | CC-BY-NC-SA-4.0 | `ai-implementation-spec` | inspired-by |
@@ -122,7 +128,11 @@ Articles, books, papers, standards, talks and people whose ideas, frameworks or 
 | [LLM-Blender: Ensembling Large Language Models with Pairwise Ranking and Generative Fusion](https://arxiv.org/abs/2306.02561), Dongfu Jiang, Xiang Ren and Bill Yuchen Lin (ACL 2023) | paper | `tournament` |
 | [Prompting best practices (Claude Docs)](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices), Anthropic | article | `muster-prompt-smith` |
 | [Reduce hallucinations (Claude Docs, Strengthen guardrails)](https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations), Anthropic | article | `muster-prompt-smith` |
-| [Define success criteria and build evaluations (Claude Docs)](https://platform.claude.com/docs/en/test-and-evaluate/develop-tests), Anthropic | article | `muster-prompt-smith` |
+| [Define success criteria and build evaluations (Claude Docs)](https://platform.claude.com/docs/en/test-and-evaluate/develop-tests), Anthropic | article | `muster-prompt-smith`, `muster-pm` |
+| [Demystifying evals for AI agents](https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents), Anthropic | article | `muster-pm` |
+| [Evaluation best practices (OpenAI API docs)](https://developers.openai.com/api/docs/guides/evaluation-best-practices), OpenAI | article | `muster-pm` |
+| [Your AI Product Needs Evals](https://hamel.dev/blog/posts/evals/), Hamel Husain | article | `muster-pm` |
+| [AI Evals: Everything You Need to Know](https://hamel.dev/blog/posts/evals-faq/), Hamel Husain and Shreya Shankar | article | `muster-pm` |
 | [The new rules of context engineering for Claude 5 generation models](https://claude.com/blog/the-new-rules-of-context-engineering-for-claude-5-generation-models), Anthropic | article | `muster-prompt-smith` |
 | LLM-Cite | paper | `muster-research` |
 | [Wikipedia:Signs of AI writing](https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing), WikiProject AI Cleanup (Wikipedia editors) | article | `muster-humanizer` |

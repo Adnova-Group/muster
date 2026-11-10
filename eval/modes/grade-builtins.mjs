@@ -1,11 +1,12 @@
 // Native-builtin layer of eval/modes/'s grading logic (eval/modes extended to
-// plugin/builtins/muster-*/SKILL.md, the 7 built-in pipeline-role providers). One of
+// plugin/builtins/muster-*/SKILL.md, the 8 native builtins). One of
 // grade-lib.mjs's layer modules (see grade-lib.mjs's header for the full layer list);
 // grade-lib.mjs composes this module's CHECKS/ARTIFACT_KIND with the other layers' into
 // the public dispatch tables. No IO here, same rule as every other eval/modes module --
 // callers read fixtures/build artifacts and pass them in via `artifacts`.
 import { scoreArtifact } from "../../src/score.js";
 import { selectWinner } from "../../src/prompt-optimize.js";
+import { lintSpec } from "../../src/spec-lint.js";
 import { rowFormatCheck } from "./grade-core.mjs";
 
 // muster-image/SKILL.md's output contract: a "hero" prompt + 2+ "variant" prompts per
@@ -129,6 +130,22 @@ function authorDraftShapeCheck(testCase, artifacts) {
   return checks;
 }
 
+// muster-pm/SKILL.md's stated contract: a spec written from templates/SPEC.md passes `muster
+// spec-lint`, and a spec marked ready while it still carries clarification markers or an
+// unverifiable criterion does not. Graded against the REAL lintSpec (src/spec-lint.js), the
+// exact function the CLI wraps. Fixtures are lite-mode specs, so lintSpec reads no intent file.
+function pmSpecLintCheck(testCase, artifacts) {
+  const expect = testCase.expect || {};
+  const r = lintSpec(String(artifacts));
+  const dims = [...new Set(r.issues.map((i) => i.dimension))];
+  const blocks = r.issues.some((i) => i.severity === "blocker");
+  const checks = [];
+  if (expect.verdict !== undefined) checks.push({ name: "verdict", ok: r.verdict === expect.verdict, detail: `verdict=${r.verdict}, expected ${expect.verdict}${r.issues.length ? ` (${r.issues.map((i) => i.summary).join("; ")})` : ""}` });
+  if (expect.blocks !== undefined) checks.push({ name: "blocks", ok: blocks === expect.blocks, detail: `blocker present=${blocks}, expected ${expect.blocks}` });
+  for (const d of expect.dimensions || []) checks.push({ name: `dimension:${d}`, ok: dims.includes(d), detail: dims.includes(d) ? `${d} reported` : `${d} not reported (got ${dims.join(", ") || "none"})` });
+  return checks;
+}
+
 export const ARTIFACT_KIND = {
   "image-prompt-set-shape": "text",
   "video-shot-list-shape": "text",
@@ -136,6 +153,7 @@ export const ARTIFACT_KIND = {
   "scorer-verdict-shape": "json",
   "prompt-smith-optimize-proposal": "json",
   "author-draft-shape": "text",
+  "pm-spec-lint": "text",
 };
 
 export const CHECKS = {
@@ -145,4 +163,5 @@ export const CHECKS = {
   "scorer-verdict-shape": scorerVerdictShapeCheck,
   "prompt-smith-optimize-proposal": promptSmithProposalCheck,
   "author-draft-shape": authorDraftShapeCheck,
+  "pm-spec-lint": pmSpecLintCheck,
 };

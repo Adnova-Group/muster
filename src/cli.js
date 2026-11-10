@@ -147,7 +147,7 @@ const USAGE = [
   // manifest + waves: validate, order, and drive a plan
   "manifest validate <file> [--work]|wave <file>|next <manifest.json> [--done a,b]|",
   // stage-2 run steps: one-call preflight, deterministic wave merge, run position
-  "preflight <outcome> [--json] [--run <id>] [--model <model>]|build-args <runId> [--base <sha>]|pipeline-args <runId> [--pipeline <id>] [--out <path>] [--with <phase,...>]|merge-wave <runId> --result <build-result.json>|next --run <id>|plan-lint <PLAN.md> [--json] [--root <dir>]|",
+  "preflight <outcome> [--json] [--run <id>] [--model <model>]|build-args <runId> [--base <sha>]|pipeline-args <runId> [--pipeline <id>] [--out <path>] [--with <phase,...>]|merge-wave <runId> --result <build-result.json>|next --run <id>|plan-lint <PLAN.md> [--json] [--root <dir>]|spec-lint <SPEC.md> [--intent] [--json] [--root <dir>]|",
   // performance pass + gate helpers
   "resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|codex-wave <wave.json> --fence-file <action-fence.json> --repository-root <repo> --base-sha <sha>|codex-wave-resume <receipt-id> --review-state <file>|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex>|plan-surface <runtime>|codex-plan <outcome> [--cwd <dir>]|desktop-harness <chatgpt-desktop|codex-desktop|gpt-work>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|",
   // sprint waves, review tally, tournament pick/fuse, advisor
@@ -1548,6 +1548,13 @@ async function handleCoreCommand(cmd, rest) {
     // Skill discovery and per-project opt-in (src/skills.js). Network only on search and add.
     const { runSkillsCli } = await import("./skills.js");
     process.exitCode = await runSkillsCli(rest);
+    return true;
+  }
+  if (cmd === "spec-lint") {
+    // Deterministic SPEC / INTENT gates (src/spec-lint.js, docs/spec-format.md). Same exit
+    // contract as plan-lint: 0 = no blockers, 1 = blockers, 2 = not evaluated.
+    const { runSpecLintCli } = await import("./spec-lint.js");
+    process.exitCode = runSpecLintCli(rest);
     return true;
   }
   if (await handleCoreCommandPart1(cmd, rest)) return true;

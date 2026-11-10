@@ -839,6 +839,35 @@ sources:
       - { from: skills/hallmark/scripts/sloplint-render.mjs, to: plugin/builtins/hallmark/scripts/sloplint-render.mjs, mode: adapted, baseBlob: 10f62daf83a3e14a9636bdf6d0a0fa8c5f5cdffa }
       - { from: skills/hallmark/scripts/sloplint.mjs, to: plugin/builtins/hallmark/scripts/sloplint.mjs, mode: adapted, baseBlob: a7a2cc80c5cc9404e929e53a7b5bd1d91effb092 }
       - { from: skills/hallmark/scripts/theme.mjs, to: plugin/builtins/hallmark/scripts/theme.mjs, mode: adapted, baseBlob: 079d3cd29f6a102d5ef926bf3a1fb32c5e288517 }
+  - id: gsap-skills
+    kind: github
+    repo: greensock/gsap-skills
+    # Added 2026-11-10 from the ui-skills.com registry (best-of-breed UX skills, by GitHub stars).
+    # Merge-tracked (every item has a `mode`): plain `muster vendor` never regenerates it, and
+    # `muster vendor update <id>` 3-way merges each muster file against its byte-exact base copy in
+    # vendor/upstream/<id>/. Pinned to upstream HEAD on 2026-11-10 (no release tag at that commit).
+    # Kept muster divergence: every SKILL.md swaps the upstream frontmatter for muster's (name kept,
+    # one-line description, muster_builtin, SPDX license, generated upstream:); harness keys such as
+    # disable-model-invocation, hooks, metadata and agents/openai.yaml are dropped. Bodies are
+    # upstream's; cross-references by upstream skill name resolve through the kept `name:`.
+    # Catalog: role frontend, ranked below the wsh frontend builtins (50) so none becomes the default
+    # frontend provider. Precedence: project DESIGN.md > accessibility (jk-better-accessibility 46) >
+    # impeccable > these supporting skills (44 review/writing, 42 direction/engineering, 40 motion, 30 opt-in).
+    # Official GreenSock skills; their names already carry the gsap- prefix, so ids equal names.
+    ref: aed9cfd3277740755f6bfc1155c7aa645403b760
+    tag: null
+    license: MIT
+    copyright: "Copyright (c) 2026 GreenSock"
+    relation: vendored
+    items:
+      - { id: gsap-core, kind: builtin, from: skills/gsap-core/SKILL.md, to: plugin/builtins/gsap-core/SKILL.md, mode: adapted, baseBlob: 98639432f4112b664aa5e53cf5d8ea1a4697eff9, roles: [frontend], rank: 40, description: "Official GSAP core API: gsap.to, from and fromTo, easing, stagger, defaults and matchMedia for responsive or reduced-motion animation." }
+      - { id: gsap-frameworks, kind: builtin, from: skills/gsap-frameworks/SKILL.md, to: plugin/builtins/gsap-frameworks/SKILL.md, mode: adapted, baseBlob: 3c2df8611b61d0c97abb8d32ed922ce8207424e5, roles: [frontend], rank: 40, description: "Official GSAP in Vue, Nuxt, Svelte and SvelteKit: lifecycle hooks, scoped selectors and cleanup on unmount." }
+      - { id: gsap-performance, kind: builtin, from: skills/gsap-performance/SKILL.md, to: plugin/builtins/gsap-performance/SKILL.md, mode: adapted, baseBlob: 05792acf5b0ea7fd30042cdc5e91282e8e047898, roles: [frontend], rank: 40, description: "Official GSAP performance: transforms over layout properties, batching, will-change and avoiding jank for smooth 60fps." }
+      - { id: gsap-plugins, kind: builtin, from: skills/gsap-plugins/SKILL.md, to: plugin/builtins/gsap-plugins/SKILL.md, mode: adapted, baseBlob: bb5f7483038adf26a889c8b2b85e3ef2cf0141dc, roles: [frontend], rank: 40, description: "Official GSAP plugins: Flip, Draggable, ScrollSmoother, SplitText, SVG drawing, CustomEase and plugin registration." }
+      - { id: gsap-react, kind: builtin, from: skills/gsap-react/SKILL.md, to: plugin/builtins/gsap-react/SKILL.md, mode: adapted, baseBlob: e2e51805457943cd4982fe792b858c14fa2c3c8f, roles: [frontend], rank: 40, description: "Official GSAP in React and Next.js: the useGSAP hook, refs, gsap.context() and cleanup." }
+      - { id: gsap-scrolltrigger, kind: builtin, from: skills/gsap-scrolltrigger/SKILL.md, to: plugin/builtins/gsap-scrolltrigger/SKILL.md, mode: adapted, baseBlob: 6d8c09f2136c108595c9e0db859c4a39460e99cf, roles: [frontend], rank: 40, description: "Official GSAP ScrollTrigger: scroll-linked animation, pinning, scrub, parallax and trigger configuration." }
+      - { id: gsap-timeline, kind: builtin, from: skills/gsap-timeline/SKILL.md, to: plugin/builtins/gsap-timeline/SKILL.md, mode: adapted, baseBlob: 1fed372b0e5276b2a207d80bc23f81180a0dff55, roles: [frontend], rank: 40, description: "Official GSAP timelines: gsap.timeline(), the position parameter, nesting and playback control for sequenced animation." }
+      - { id: gsap-utils, kind: builtin, from: skills/gsap-utils/SKILL.md, to: plugin/builtins/gsap-utils/SKILL.md, mode: adapted, baseBlob: 367e405e027936ce6b5fb85ec996beb135715194, roles: [frontend], rank: 40, description: "Official gsap.utils helpers: clamp, mapRange, normalize, interpolate, random, snap, toArray, wrap and pipe." }
   # ---- end ui-skills.com UX skills ----
   - id: gsd
     kind: github

@@ -302,6 +302,86 @@
     upstream:
       - nutlope/hallmark
   description: "Hallmark anti-slop page builder: dealt themes, a hard design floor and sloplint checks for new websites; existing designs only when Hallmark is named."
+- id: gsap-core
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - greensock/gsap-skills
+  description: "Official GSAP core API: gsap.to, from and fromTo, easing, stagger, defaults and matchMedia for responsive or reduced-motion animation."
+- id: gsap-frameworks
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - greensock/gsap-skills
+  description: "Official GSAP in Vue, Nuxt, Svelte and SvelteKit: lifecycle hooks, scoped selectors and cleanup on unmount."
+- id: gsap-performance
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - greensock/gsap-skills
+  description: "Official GSAP performance: transforms over layout properties, batching, will-change and avoiding jank for smooth 60fps."
+- id: gsap-plugins
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - greensock/gsap-skills
+  description: "Official GSAP plugins: Flip, Draggable, ScrollSmoother, SplitText, SVG drawing, CustomEase and plugin registration."
+- id: gsap-react
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - greensock/gsap-skills
+  description: "Official GSAP in React and Next.js: the useGSAP hook, refs, gsap.context() and cleanup."
+- id: gsap-scrolltrigger
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - greensock/gsap-skills
+  description: "Official GSAP ScrollTrigger: scroll-linked animation, pinning, scrub, parallax and trigger configuration."
+- id: gsap-timeline
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - greensock/gsap-skills
+  description: "Official GSAP timelines: gsap.timeline(), the position parameter, nesting and playback control for sequenced animation."
+- id: gsap-utils
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - greensock/gsap-skills
+  description: "Official gsap.utils helpers: clamp, mapRange, normalize, interpolate, random, snap, toArray, wrap and pipe."
 - id: wsh-stride-analysis-patterns
   kind: builtin
   roles:

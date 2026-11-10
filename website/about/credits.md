@@ -43,6 +43,7 @@ Every non-vendored source, generated from the manifest. Each row lists the items
 | [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills) @ `301b02b12bff` | MIT | 3 vendored builtins and agents | adapted, vendored |
 | [emilkowalski/skills](https://github.com/emilkowalski/skills) @ `715c1807e08c` | MIT | 23 vendored builtins and agents | vendored |
 | [nutlope/hallmark](https://github.com/nutlope/hallmark) @ `407fa689f4a2` | MIT | 109 vendored builtins and agents | adapted, vendored |
+| [greensock/gsap-skills](https://github.com/greensock/gsap-skills) @ `aed9cfd32777` | MIT | 8 vendored builtins and agents | vendored |
 | [open-gsd/gsd-core](https://github.com/open-gsd/gsd-core) @ `9385f4618b52` | MIT | 40 vendored builtins and agents | adapted, vendored |
 | [open-gsd/gsd-core](https://github.com/open-gsd/gsd-core) @ `1c352d1ea37b` | MIT | `muster-gsd-plan-phase`, `muster-gsd-execute-phase`, `muster-gsd-verify-work` | mechanism-port |
 | [wshobson/agents](https://github.com/wshobson/agents) @ `2de74ac1c8f6` | MIT | `wsh-signed-audit-trails-recipe` | mechanism-port |

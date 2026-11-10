@@ -26,7 +26,7 @@ function verifyCommands(verifyBody) {
 // A task's agent_hint becomes `agentType` only when it names a dispatchable plugin agent
 // (build.js otherwise runs muster-executor with the hint as a domain lens); its `skills`
 // become [{id, path}] with the absolute SKILL.md path the executor reads before working.
-export function buildArgsFromPlan(planText, { runId, base = null, models = null, catalog = specialistCatalog() } = {}) {
+export function buildArgsFromPlan(planText, { runId, base = null, branch = null, models = null, catalog = specialistCatalog() } = {}) {
   const plan = parsePlan(planText);
   const problems = [];
   const humanNeeded = [];
@@ -55,7 +55,7 @@ export function buildArgsFromPlan(planText, { runId, base = null, models = null,
   }
   const waves = [...byWave.keys()].sort((a, b) => a - b).map((w) => byWave.get(w));
   if (!waves.length) problems.push("PLAN.md has no buildable tasks");
-  const args = { runId, ...(base ? { base } : {}), ...(models ? { models } : {}), waves };
+  const args = { runId, ...(base ? { base } : {}), ...(branch ? { branch } : {}), ...(models ? { models } : {}), waves };
   return { args, humanNeeded, problems };
 }
 
@@ -65,14 +65,14 @@ async function readJsonOrNull(path) {
 
 // Reads PLAN.md (and the seat models preflight computed), writes build-args.json, returns a
 // compact report. ok:false leaves no file behind.
-export async function writeBuildArgs({ cwd, runId, base = null }) {
+export async function writeBuildArgs({ cwd, runId, base = null, branch = null }) {
   const dir = runDir(cwd, runId);
   let planText;
   try { planText = await readFile(join(dir, "PLAN.md"), "utf8"); } catch {
     return { ok: false, runId, problems: [`.muster/runs/${runId}/PLAN.md not found`] };
   }
   const models = (await readJsonOrNull(join(dir, "preflight.json")))?.models || null;
-  const { args, humanNeeded, problems } = buildArgsFromPlan(planText, { runId, base, models });
+  const { args, humanNeeded, problems } = buildArgsFromPlan(planText, { runId, base, branch, models });
   const rel = `.muster/runs/${runId}/build-args.json`;
   if (problems.length) return { ok: false, runId, problems, humanNeeded };
   await writeContainedFile(cwd, join(dir, "build-args.json"), JSON.stringify(args, null, 2) + "\n");

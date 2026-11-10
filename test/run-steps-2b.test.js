@@ -42,10 +42,11 @@ must_haves: [greet works]
 `;
 
 test("buildArgsFromPlan: waves in order, decoded verify commands, agentHint kept, checkpoints become humanNeeded", () => {
-  const { args, humanNeeded, problems } = buildArgsFromPlan(PLAN, { runId: "r1", base: "abc", models: { executor: { model: "haiku" } } });
+  const { args, humanNeeded, problems } = buildArgsFromPlan(PLAN, { runId: "r1", base: "abc", branch: "muster/r1", models: { executor: { model: "haiku" } } });
   assert.deepEqual(problems, []);
   assert.equal(args.runId, "r1");
   assert.equal(args.base, "abc");
+  assert.equal(args.branch, "muster/r1", "executors fast-forward to the work branch tip, which carries the plan commit");
   assert.deepEqual(args.models, { executor: { model: "haiku" } });
   assert.deepEqual(args.waves.map((w) => w.map((t) => t.taskId)), [["01"], ["02"]]);
   assert.deepEqual(args.waves[0][0], {

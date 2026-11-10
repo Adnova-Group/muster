@@ -138,6 +138,10 @@ function builderType(t) {
   return typeof t.agentType === 'string' && AGENT_TYPE_RE.test(t.agentType) ? t.agentType : EXECUTOR
 }
 
+// What a behind-the-run worktree fast-forwards to: the work branch (its tip carries the plan
+// commit, which build-args.json's own base cannot name), else the base itself.
+const syncRef = (cfg) => (typeof cfg.branch === 'string' && /^[A-Za-z0-9._\/-]{1,200}$/.test(cfg.branch) ? cfg.branch : cfg.base)
+
 const boundSkills = (t) => list(t.skills).filter((k) => k && typeof k.id === 'string' && typeof k.path === 'string')
 
 function skillLines(t) {
@@ -181,7 +185,7 @@ function execBrief(cfg, t, prior) {
     'You are in a fresh, isolated git worktree. This brief may be replayed after a crash, so:',
     `1. Check git state first: git status --short; git log --oneline ${cfg.base || 'HEAD~20'}..HEAD. If a commit whose message contains ${tag} already exists and the tree is clean, do not redo the work: re-run the verify commands and report that commit.`,
     cfg.base
-      ? `2. Base check: git merge-base --is-ancestor ${cfg.base} HEAD. If that fails but git merge-base --is-ancestor HEAD ${cfg.base} succeeds, your worktree started behind the run (Claude Code branches isolated worktrees from the remote default branch unless worktree.baseRef is "head"): git merge --ff-only ${cfg.base}, then re-check. If the base is still not an ancestor of HEAD, stop and return status "blocked" with "base mismatch: HEAD <sha>, base ${cfg.base}". Never reset or rebase.`
+      ? `2. Sync and base check. Claude Code starts isolated worktrees from the remote default branch unless worktree.baseRef is "head", so yours may lack the run's plan commit. If .muster/runs/${cfg.runId}/PLAN.md is missing or git merge-base --is-ancestor ${cfg.base} HEAD fails, and git merge-base --is-ancestor HEAD ${syncRef(cfg)} succeeds, run git merge --ff-only ${syncRef(cfg)}. Then git merge-base --is-ancestor ${cfg.base} HEAD must succeed; otherwise stop and return status "blocked" with "base mismatch: HEAD <sha>, base ${cfg.base}". Never reset or rebase.`
       : '2. (no base commit given; skip the base check)',
     prior.length
       ? `3. Integrate the earlier waves first. For each commit C of ${prior.map((p) => p.commit).join(' ')}: git merge-base --is-ancestor C HEAD || git merge --no-ff --no-edit C`

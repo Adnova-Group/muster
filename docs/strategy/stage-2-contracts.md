@@ -177,8 +177,11 @@ branches with `branch -d` only.
     `agent({isolation:'worktree'})` started at `origin/main` (the unpushed commit absent); with
     `{"worktree":{"baseRef":"head"}}` in `.claude/settings.local.json` it started at the local
     HEAD. Without a remote it falls back to local HEAD, which is why the stage-2 smokes passed.
-    So the executor brief's base step now fast-forwards (`git merge --ff-only <base>`) when HEAD
-    is an ancestor of the base and blocks with `base mismatch` otherwise (never a reset), and
+    The base alone is not enough: `build-args.json` is committed after `base` is computed, so
+    the base never contains PLAN.md. `build-args` therefore also records `branch` (the work
+    branch), and the executor brief fast-forwards (`git merge --ff-only <branch>`, else the base)
+    when PLAN.md is missing or the base is not an ancestor, then requires the base, blocking with
+    `base mismatch` otherwise (never a reset), and
     preflight warns when `worktree.baseRef` is not `head` in a repo with a remote. A plugin
     `settings.json` cannot set `worktree`, so the setting stays the user's choice.
 15. **Runtime limits (F8, F12, F13).** Up to 16 concurrent Workflow agents by default

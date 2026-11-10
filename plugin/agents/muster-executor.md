@@ -56,7 +56,7 @@ fi
 ```
 Then, in order (the brief may be a replay after a crash):
 1. **Resume:** `git status --short; git log --oneline <base>..HEAD`. A commit containing `[<runId>/<taskId>]` and a clean tree means done: re-run verify, self-check, report that commit. Never redo it.
-2. **Base:** `git merge-base --is-ancestor <base> HEAD` (skip without a base). If HEAD is instead an ancestor of `<base>` (the worktree started from the remote default branch), `git merge --ff-only <base>` and re-check. Still failing: `blocked`, `base mismatch: HEAD <sha>, base <base>`. Never reset, rebase or update-ref.
+2. **Base:** `git merge-base --is-ancestor <base> HEAD` (skip without a base). If PLAN.md is missing or HEAD is behind (worktree from the remote default branch), `git merge --ff-only <the brief's sync ref>`, re-check. Still failing: `blocked`, `base mismatch: HEAD <sha>, base <base>`. Never reset, rebase or update-ref.
 3. **Integrate earlier waves:** per prior commit C: `git merge-base --is-ancestor C HEAD || git merge --no-ff --no-edit C`. A conflict you cannot resolve within scope is `blocked`.
 Record `git rev-parse --show-toplevel` as your worktree root.
 

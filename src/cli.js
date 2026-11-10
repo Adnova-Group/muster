@@ -1507,7 +1507,14 @@ async function handleRunCommand(cmd, rest) {
         base = head.status === 0 ? head.stdout.trim() : null;
       } catch { base = null; }
     }
-    const report = await writeBuildArgs({ cwd: process.cwd(), runId, base });
+    // The work branch: its tip after the plan commit is what executors fast-forward to when an
+    // isolated worktree starts from the remote default branch (findings F1).
+    let branch = null;
+    try {
+      const b = spawnSync(assertTrustedGitCommand(), ["symbolic-ref", "--quiet", "--short", "HEAD"], { encoding: "utf8" });
+      branch = b.status === 0 ? b.stdout.trim() || null : null;
+    } catch { branch = null; }
+    const report = await writeBuildArgs({ cwd: process.cwd(), runId, base, branch });
     out(report);
     if (!report.ok) process.exit(1);
     return true;

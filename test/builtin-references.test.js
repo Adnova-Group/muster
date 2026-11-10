@@ -20,6 +20,9 @@ const builtinsRoot = join(pluginRoot, "builtins");
 const NOT_A_FILE = {
   "wsh-architecture-decision-records": ["template.md", "NNNN-title-with-dashes.md"], // ADR naming in the user's repo
   "sp-writing-skills": ["scripts/tool.sh", "scripts/tool.js"], // example script names in the skill the user writes
+  // Inline Go generics read as a markdown link: `errors.AsType[T](err)`, `reflect.TypeAssert[T](value)`.
+  "go-error-handling": ["err"],
+  "go-safety": ["value"],
   // Former upstream file names, named only to say their content now lives inline in this file.
   "impeccable-adapt": ["responsive-design.md"],
   "impeccable-critique": ["cognitive-load.md", "heuristics-scoring.md", "personas.md"]

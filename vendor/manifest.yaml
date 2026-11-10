@@ -1268,6 +1268,60 @@ sources:
       - { from: skills/supabase-postgres-best-practices/references/security-privileges.md, to: plugin/builtins/supabase-postgres-best-practices/references/security-privileges.md, mode: adapted, baseBlob: 448ec345fab6c5a0116c584d65638b86d758c558 }
       - { from: skills/supabase-postgres-best-practices/references/security-rls-basics.md, to: plugin/builtins/supabase-postgres-best-practices/references/security-rls-basics.md, mode: adapted, baseBlob: c61e1a8503de113be0981759b82f5e37090f344c }
       - { from: skills/supabase-postgres-best-practices/references/security-rls-performance.md, to: plugin/builtins/supabase-postgres-best-practices/references/security-rls-performance.md, mode: adapted, baseBlob: c3c7c416d57d9a46a9993f4e0c20f772fb64483d }
+  - id: samber-golang
+    kind: github
+    repo: samber/cc-skills-golang
+    # Added 2026-11-10 (owner-approved complements). Merge-tracked (every item has a `mode`), with
+    # byte-exact base copies in vendor/upstream/samber-golang/; `muster vendor update samber-golang`
+    # 3-way merges them. Pinned to upstream HEAD on 2026-11-10, 15 commits past release v2.0.0.
+    # Carried: golang-error-handling, golang-testing, golang-security and golang-safety as
+    # go-<name>, each with every file under its references/. Not carried: evals/evals.json and the
+    # other 42 skills of the repository.
+    # Kept muster divergence: each SKILL.md swaps the upstream frontmatter for muster's (name kept,
+    # one-line description, muster_builtin, SPDX license, generated upstream:; user-invocable,
+    # compatibility, metadata, allowed-tools and paths dropped) and adds a prompt-lint-disable
+    # comment at the top of the body (upstream opens with a Persona line, no H1 first); each
+    # reference gains the packaging-only header.
+    # Accepted as upstream (not adapted): `samber/cc-skills-golang@golang-<name>` cross-references
+    # name upstream skills. The four carried here resolve through their kept `name:`; the rest
+    # (samber-oops, samber-slog, concurrency, benchmark, stretchr-testify, ...) are not shipped, and
+    # wsh-go-concurrency-patterns covers concurrency in muster.
+    # Catalog: implement, test-author and security-review entries ranked below the rank-50 wsh/sp
+    # defaults, beside wsh-go-concurrency-patterns as complements.
+    ref: d68d80aec298e1b74b37c2a472c002b5217248b3
+    tag: v2.0.0-15-gd68d80a
+    license: MIT
+    copyright: "Copyright (c) 2026 Samuel Berthe"
+    relation: vendored
+    items:
+      - { id: go-error-handling, kind: builtin, from: skills/golang-error-handling/SKILL.md, to: plugin/builtins/go-error-handling/SKILL.md, mode: adapted, baseBlob: 8254778086dafcc0d86ec37b33a149b72b49116b }
+      - { from: skills/golang-error-handling/references/error-creation.md, to: plugin/builtins/go-error-handling/references/error-creation.md, mode: adapted, baseBlob: 3d871bec153354dd4cdd84513b4a101ca3fd1716 }
+      - { from: skills/golang-error-handling/references/error-handling.md, to: plugin/builtins/go-error-handling/references/error-handling.md, mode: adapted, baseBlob: df4744408c6b6cc040e84ea96e2a21f23996bb30 }
+      - { from: skills/golang-error-handling/references/error-wrapping.md, to: plugin/builtins/go-error-handling/references/error-wrapping.md, mode: adapted, baseBlob: 01405dc1473176e91e9a0cbe5a159074890ed3eb }
+      - { id: go-testing, kind: builtin, from: skills/golang-testing/SKILL.md, to: plugin/builtins/go-testing/SKILL.md, mode: adapted, baseBlob: 7c437a850b220e8ad04a2c975062889044cf6750 }
+      - { from: skills/golang-testing/references/benchmarks.md, to: plugin/builtins/go-testing/references/benchmarks.md, mode: adapted, baseBlob: 5fd29f065b6d7feca95dbde251f619e3c7514860 }
+      - { from: skills/golang-testing/references/coverage.md, to: plugin/builtins/go-testing/references/coverage.md, mode: adapted, baseBlob: 46618241a898c7424b3aa75447a1c198a9eb9a5e }
+      - { from: skills/golang-testing/references/examples.md, to: plugin/builtins/go-testing/references/examples.md, mode: adapted, baseBlob: 103889b49cabdb5484eb9c6630ac7c16349d1830 }
+      - { from: skills/golang-testing/references/helpers.md, to: plugin/builtins/go-testing/references/helpers.md, mode: adapted, baseBlob: 3c0487705d10105125e86259e8b21c2adb21a5c9 }
+      - { from: skills/golang-testing/references/http-testing.md, to: plugin/builtins/go-testing/references/http-testing.md, mode: adapted, baseBlob: a7ff122f34194a93e358e2db1b6eba31e8cb6e12 }
+      - { from: skills/golang-testing/references/integration-testing.md, to: plugin/builtins/go-testing/references/integration-testing.md, mode: adapted, baseBlob: a5d11413e313015a89b3a009f48f2afd8f88ee7e }
+      - { from: skills/golang-testing/references/mocking.md, to: plugin/builtins/go-testing/references/mocking.md, mode: adapted, baseBlob: 4c93e4668635d541a553af654caf7c6db15b8984 }
+      - { id: go-security, kind: builtin, from: skills/golang-security/SKILL.md, to: plugin/builtins/go-security/SKILL.md, mode: adapted, baseBlob: 88822a8bbd11ee80908a2301055ca633460c4f47 }
+      - { from: skills/golang-security/references/architecture.md, to: plugin/builtins/go-security/references/architecture.md, mode: adapted, baseBlob: b713636c5d91fde05abb72f634e08860ca165579 }
+      - { from: skills/golang-security/references/checklist.md, to: plugin/builtins/go-security/references/checklist.md, mode: adapted, baseBlob: e4767635c851c0ad1c0479fc71b23535ab54561c }
+      - { from: skills/golang-security/references/cookies.md, to: plugin/builtins/go-security/references/cookies.md, mode: adapted, baseBlob: 54c34abec20265bc15933f7582780973e46dca5b }
+      - { from: skills/golang-security/references/cryptography.md, to: plugin/builtins/go-security/references/cryptography.md, mode: adapted, baseBlob: 969f03efdc266033156d362223b3fc5e4ab59933 }
+      - { from: skills/golang-security/references/filesystem.md, to: plugin/builtins/go-security/references/filesystem.md, mode: adapted, baseBlob: 00e43845d18138c9936ff514135570bafe215705 }
+      - { from: skills/golang-security/references/injection.md, to: plugin/builtins/go-security/references/injection.md, mode: adapted, baseBlob: d935624a7c6b1298810fb9186b0d6f1d6aee78a8 }
+      - { from: skills/golang-security/references/logging.md, to: plugin/builtins/go-security/references/logging.md, mode: adapted, baseBlob: fd150476ee7c9bbee9d57385c08e0026e831179c }
+      - { from: skills/golang-security/references/memory-safety.md, to: plugin/builtins/go-security/references/memory-safety.md, mode: adapted, baseBlob: 84d602a3289663fc8e83a3c1f178b961f5b37143 }
+      - { from: skills/golang-security/references/network.md, to: plugin/builtins/go-security/references/network.md, mode: adapted, baseBlob: f42816b2af9d9f734d9ce6aed6864f5a2eb4f993 }
+      - { from: skills/golang-security/references/secrets.md, to: plugin/builtins/go-security/references/secrets.md, mode: adapted, baseBlob: c29eb2112f9fe7762467ecf638552c33d0e470a1 }
+      - { from: skills/golang-security/references/third-party.md, to: plugin/builtins/go-security/references/third-party.md, mode: adapted, baseBlob: c8052134e1d17f6f50d4a10ee84c28c90b151897 }
+      - { from: skills/golang-security/references/threat-modeling.md, to: plugin/builtins/go-security/references/threat-modeling.md, mode: adapted, baseBlob: 0ce7455e487e1cd89780d7f521a18dc57dec369d }
+      - { id: go-safety, kind: builtin, from: skills/golang-safety/SKILL.md, to: plugin/builtins/go-safety/SKILL.md, mode: adapted, baseBlob: cb90ba22aa41832a9e0fb05bb6f0167a5396a1d8 }
+      - { from: skills/golang-safety/references/nil-safety.md, to: plugin/builtins/go-safety/references/nil-safety.md, mode: adapted, baseBlob: 915ee2e4a05ed58d49d03d275b63d20b1216273b }
+      - { from: skills/golang-safety/references/slice-map-safety.md, to: plugin/builtins/go-safety/references/slice-map-safety.md, mode: adapted, baseBlob: 0b5793292995935410a77c00f78349fd90733f30 }
   - id: gsd
     kind: github
     repo: open-gsd/gsd-core

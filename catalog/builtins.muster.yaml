@@ -534,3 +534,31 @@
   keywords: [postgres, postgresql, sql, rls, schema, migration, index, supabase]
   description: "Supabase's Postgres rules for schema design, indexes, RLS, connection pooling, locking, migrations and query diagnosis, for Postgres running anywhere."
   provenance: { license: MIT, upstream: [supabase/agent-skills] }
+- id: go-error-handling
+  kind: builtin
+  roles: [implement]
+  rank: 44
+  keywords: [golang, errors, wrapping, sentinel, slog]
+  description: "Idiomatic Go error handling: creation, %w wrapping, errors.Is/As, sentinel and custom types, the single-handling rule and structured slog logging."
+  provenance: { license: MIT, upstream: [samber/cc-skills-golang] }
+- id: go-safety
+  kind: builtin
+  roles: [implement]
+  rank: 43
+  keywords: [golang, nil, panic, aliasing, overflow]
+  description: "Defensive Go against accidental bugs: nil panics, typed-nil interfaces, append aliasing, integer truncation, float comparison, defer in loops and safe zero values."
+  provenance: { license: MIT, upstream: [samber/cc-skills-golang] }
+- id: go-testing
+  kind: builtin
+  roles: [test-author]
+  rank: 45
+  keywords: [golang, testify, fuzzing, goleak, tabledriven]
+  description: "Production Go tests: table-driven and parallel tests, testify, fuzzing, fixtures, goleak, coverage, integration tests and flaky-test diagnosis."
+  provenance: { license: MIT, upstream: [samber/cc-skills-golang] }
+- id: go-security
+  kind: builtin
+  roles: [security-review]
+  rank: 44
+  keywords: [golang, gosec, govulncheck, injection, crypto]
+  description: "Go security review: injection, cryptography, path traversal, SSRF, cookies, secrets, PII in logs, threat modeling, gosec and govulncheck."
+  provenance: { license: MIT, upstream: [samber/cc-skills-golang] }

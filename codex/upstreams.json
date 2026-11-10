@@ -15,7 +15,7 @@
       "id": "wshobson-agents",
       "repository": "https://github.com/wshobson/agents",
       "version": null,
-      "ref": "2de74ac1c8f6669821dcef13153332c3168033c1",
+      "ref": "9c61ab243def98f72da12abd41cfcf5bcd91af9d",
       "codex": "Official marketplace and per-plugin manifests; make generate HARNESS=codex emits native skills and TOML agents.",
       "musterStrategy": "Prefer enabled unprefixed native skills; keep wsh-* skills and strict-model Muster profiles as collision-free fallbacks."
     },

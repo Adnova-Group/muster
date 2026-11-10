@@ -209,7 +209,8 @@ class EventBus:
     async def start(self):
         self.producer = AIOKafkaProducer(
             bootstrap_servers=self.bootstrap_servers,
-            value_serializer=lambda v: json.dumps(v).encode()
+            # default=str turns datetime fields such as occurred_at into text
+            value_serializer=lambda v: json.dumps(v, default=str).encode()
         )
         await self.producer.start()
 
@@ -251,6 +252,7 @@ async def create_order(order_data: dict):
         data={
             "order_id": order.id,
             "customer_id": order.customer_id,
+            "items": order_data["items"],
             "total": order.total
         }
     )

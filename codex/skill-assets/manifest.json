@@ -9,7 +9,7 @@
     {
       "id": "wshobson-agents",
       "repository": "https://github.com/wshobson/agents",
-      "ref": "2de74ac1c8f6669821dcef13153332c3168033c1"
+      "ref": "9c61ab243def98f72da12abd41cfcf5bcd91af9d"
     }
   ],
   "skills": [
@@ -51,29 +51,11 @@
       ]
     },
     {
-      "id": "sp-plan",
-      "source": "superpowers:skills/writing-plans",
-      "adaptation": "packaging-only prompt-lint annotations on Markdown supporting assets",
-      "files": [
-        "plan-document-reviewer-prompt.md"
-      ]
-    },
-    {
       "id": "sp-review",
       "source": "superpowers:skills/requesting-code-review",
       "adaptation": "packaging-only prompt-lint annotations on Markdown supporting assets",
       "files": [
         "code-reviewer.md"
-      ]
-    },
-    {
-      "id": "sp-subagents",
-      "source": "superpowers:skills/subagent-driven-development",
-      "adaptation": "packaging-only prompt-lint annotations on Markdown supporting assets",
-      "files": [
-        "implementer-prompt.md",
-        "scripts",
-        "task-reviewer-prompt.md"
       ]
     },
     {
@@ -92,6 +74,21 @@
         "assets",
         "references"
       ]
+    },
+    {
+      "id": "wsh-architecture-decision-records",
+      "source": "wshobson-agents:plugins/documentation-generation/skills/architecture-decision-records",
+      "adaptation": "upstream supporting assets with prompt-lint annotations on Markdown; intentional local supporting-asset overlay",
+      "files": [
+        "references"
+      ],
+      "overlay": {
+        "source": "plugin/builtins/wsh-architecture-decision-records",
+        "files": [
+          "references/decision-templates.md",
+          "references/deprecation-rfc-templates.md"
+        ]
+      }
     },
     {
       "id": "wsh-architecture-patterns",
@@ -116,6 +113,35 @@
       "files": [
         "references"
       ]
+    },
+    {
+      "id": "wsh-code-review-excellence",
+      "source": "wshobson-agents:plugins/developer-essentials/skills/code-review-excellence",
+      "adaptation": "upstream supporting assets with prompt-lint annotations on Markdown; intentional local supporting-asset overlay",
+      "files": [
+        "references"
+      ],
+      "overlay": {
+        "source": "plugin/builtins/wsh-code-review-excellence",
+        "files": [
+          "references/review-patterns.md",
+          "references/review-techniques.md"
+        ]
+      }
+    },
+    {
+      "id": "wsh-debugging-strategies",
+      "source": "wshobson-agents:plugins/developer-essentials/skills/debugging-strategies",
+      "adaptation": "upstream supporting assets with prompt-lint annotations on Markdown; intentional local supporting-asset overlay",
+      "files": [
+        "references"
+      ],
+      "overlay": {
+        "source": "plugin/builtins/wsh-debugging-strategies",
+        "files": [
+          "references/tools-and-techniques.md"
+        ]
+      }
     },
     {
       "id": "wsh-design-system-patterns",
@@ -249,6 +275,23 @@
         "seo-snippet-hunter.md",
         "seo-structure-architect.md"
       ]
+    },
+    {
+      "id": "wsh-signed-audit-trails-recipe",
+      "source": "wshobson-agents:plugins/signed-audit-trails/skills/signed-audit-trails-recipe",
+      "adaptation": "upstream supporting assets with prompt-lint annotations on Markdown; intentional local supporting-asset overlay",
+      "files": [
+        "references"
+      ],
+      "overlay": {
+        "source": "plugin/builtins/wsh-signed-audit-trails-recipe",
+        "files": [
+          "references/cedar-policy.md",
+          "references/ci-cd.md",
+          "references/hook-wiring.md",
+          "references/receipt-format.md"
+        ]
+      }
     },
     {
       "id": "wsh-stride-analysis-patterns",

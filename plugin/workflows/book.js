@@ -227,17 +227,44 @@ function seat(cfg, name) {
   return o
 }
 
-// One schema failure (agent() throws after its retry cap) or a skipped agent (null) becomes
-// {status:'error'} instead of killing the pass.
-async function call(prompt, opts) {
+// Turn limits (findings F15; build.js's call() has the full note). An agent() result carries
+// no stop reason: a subagent stopped at its maxTurns throws (it never called StructuredOutput)
+// or returns a schema-valid partial result. Either is {status:'error', reason:'max_turns'},
+// never done or PASS, and is retried once: these agents work in place, so a rerun of the same
+// idempotent brief continues the work.
+const TURN_LIMIT_RE = /without calling StructuredOutput|max(imum)?[ _-]?turns|turn limit/i
+const filled = (v) => (Array.isArray(v) ? v.length > 0 : typeof v === 'string' ? v.trim() !== '' : v != null)
+const gapOf = (r, keys, claim) => {
+  const empty = keys.filter((k) => !filled(r[k]))
+  return empty.length ? `${claim} without ${empty.join(', ')}` : ''
+}
+const EVIDENCE = new Map([
+  [OUTLINE_RESULT, (r) => (r.status === 'done' ? gapOf(r, ['chapters'], 'done') : '')],
+  [DRAFT_RESULT, (r) => (r.status !== 'done' ? '' : !filled(r.path) ? 'done without path' : r.words > 0 ? '' : 'done with no words')],
+  [LINE_RESULT, (r) => (r.status === 'done' ? gapOf(r, ['path'], 'done') : '')],
+])
+
+async function attempt(prompt, opts, gap) {
   try {
     const r = await agent(prompt, opts)
-    if (r && typeof r === 'object') return r
-    return { status: 'error', error: `${opts.label}: agent returned no result` }
+    if (!r || typeof r !== 'object') return { status: 'error', reason: 'no_result', error: `${opts.label}: agent returned no result` }
+    const why = gap ? gap(r) : ''
+    if (!why) return r
+    log(`${opts.label}: ${why}; read as a turn-limited partial result`)
+    return { status: 'error', reason: 'max_turns', error: `${opts.label}: ${why} (max_turns: partial result)` }
   } catch (e) {
-    log(`${opts.label} failed: ${(e && e.message) || e}`)
-    return { status: 'error', error: `${opts.label}: ${(e && e.message) || e}` }
+    const msg = (e && e.message) || String(e)
+    log(`${opts.label} failed: ${msg}`)
+    const turns = TURN_LIMIT_RE.test(msg)
+    return { status: 'error', reason: turns ? 'max_turns' : 'agent_error', error: `${opts.label}: ${msg}${turns ? ' (max_turns: raise the agent\'s maxTurns or split the work)' : ''}` }
   }
+}
+
+async function call(prompt, opts, gap = EVIDENCE.get(opts.schema)) {
+  const r = await attempt(prompt, opts, gap)
+  if (r.reason !== 'max_turns') return r
+  log(`${opts.label}: turn limit; retrying once`)
+  return attempt(prompt, { ...opts, label: `${opts.label} retry` }, gap)
 }
 
 const list = (xs) => (Array.isArray(xs) ? xs : xs ? [xs] : [])

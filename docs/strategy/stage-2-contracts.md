@@ -54,11 +54,50 @@ action fence reads, and `.claude/worktrees/`.
   stages, inlined, because Workflow nesting is one level only.
 
 Every `agent()` call:
-- is wrapped so that one schema failure records `{status:"error"}` rather than killing the run;
+- is wrapped so that one schema failure records `{status:"error"}` rather than killing the run,
+  with a `reason`: `max_turns`, `agent_error` or `no_result`;
+- never reads a turn-limited agent as done or PASS (findings F15). The platform gives the script
+  no turn-limit signal: `agent({schema})` returns only the validated object, `null` for a
+  skipped agent or terminal API error, and throws `subagent completed without calling
+  StructuredOutput` when the subagent stops first (2.1.319 runtime; 2.1.246's "marked as
+  partial" note reaches Agent-tool callers, not scripts). So that throw, or a done/PASS claim
+  with empty evidence (a commit sha, branch, worktree, files and tests for a build; the
+  reviewed commit and tests for a review; evidence on every truth for a verify), becomes
+  `{status:"error", reason:"max_turns"}`. An agent that works in place is retried once; an
+  isolated builder is not. Whether a claimed commit exists is `merge-wave`'s check;
 - sets `model` / `effort` from args (the tier map is computed by the CLI);
 - has an idempotent builder brief: check git state before acting.
 
-The main thread calls the workflows as `Workflow({name:"muster:make-plan"|"muster:build"|"muster:backlog", args:{…}})` (amendment 19). It resumes with `{name, resumeFromRunId}`, never with `scriptPath`.
+The main thread calls the workflows as `Workflow({name:"muster:make-plan"|"muster:build"|"muster:backlog", args:{…}})` (amendment 19). It resumes with `{name, resumeFromRunId}`, never with `scriptPath`, and only in the same session (or after `claude --resume`); otherwise `/muster:go --run <runId>`.
+
+Runtime limits (docs/workflows, "Behavior and limits"; findings F12, F13):
+- "Up to 16 concurrent agents by default" (`CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS`,
+  v2.1.269+), so a wave wider than 16 tasks queues; "1,000 agents total per run".
+- The `Large workflow` warning appears "When a workflow schedules more than 25 agents, or its
+  projected token total passes 1.5 million" and "doesn't pause or limit the run". A 5-item
+  `muster:backlog` run with several tasks each (executor, reviewer, up to 2 fixers, verifier)
+  passes 25 agents, so the warning is expected for backlogs and team runs; tell users so.
+- At a usage limit "the run pauses rather than failing that agent", but "A run doesn't pause in
+  non-interactive mode with `claude -p` or the Agent SDK, in a background session, or in a
+  Remote Control" session. There `agent()` returns `null` for the limited agent (2.1.319
+  runtime), the wrapper records `reason: "no_result"`, the run halts and escalates, and the
+  Workflow run output carries `usageLimitDenial`. The retry is `/muster:go --run <runId>` after
+  the limit resets; merge-wave is skipped for that result.
+- Consent: manual and accept-edits modes ask "Every run, unless you've selected **Yes, and
+  don't ask again** for that workflow in this project" (Desktop: **Always**), a one-time choice
+  per project; auto mode asks on the first launch only; `claude -p` needs the named allow rules
+  `Workflow(muster:<name>)`.
+
+Brief-only seats (findings F14): `muster-plan-checker`, `muster-verifier`,
+`muster-integration-checker`, `wsh-team-debugger` and the five `book-*` agents set
+`omitClaudeMd: true` (2.1.271: "letting custom and plugin subagents run without user, project and
+local CLAUDE.md files; managed policy files still load"). Their brief, PLAN.md/CONTEXT.md or the
+book's canon carries what they need; the plan-checker and verifier still Read `./CLAUDE.md`
+themselves for the CLAUDE.md-compliance check. Each spawn saves the injected CLAUDE.md files
+(user, project and local, with their imports): N tokens of CLAUDE.md saves N input tokens per
+spawn of these seats, which run often (a verifier per run, an integration check per wave, 2-5
+debugger investigators plus challengers, a continuity check per chapter). The executor, planner, reviewer and test
+writer keep CLAUDE.md: they write or judge project code against its conventions.
 
 ## Result schemas (JSON Schema, in plugin/workflows/schemas.js)
 
@@ -81,7 +120,11 @@ re-runs `testsRun` before merging, through `muster merge-wave`.
   capabilities, memory and validate. Prints a small JSON summary: scope, fast-path eligibility, tier
   map, top candidate agents, gsd/plugin detections. Full detail goes to a file.
 - `muster merge-wave <runId> --result <build-result.json>`:
-  1. verify every claimed commit exists on its branch;
+  1. verify every claimed commit exists on its branch, and that no task branch modifies the
+     run's committed inputs (`CONTEXT.md`, `PLAN.md`, `build-args.json`) relative to the plan
+     commit. Plan rules exclude `.muster/` from the builders' diff and change-set gates, so this
+     is the check that keeps a builder from rewriting its own plan. `SUMMARY-*.md` is exempt;
+     `merge-wave` writes it;
   2. merge the branches in manifest order (`--no-ff`);
   3. re-run each task's `verify` / `testsRun`;
   4. remove the worktrees and branches;

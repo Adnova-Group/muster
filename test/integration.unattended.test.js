@@ -2,15 +2,17 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-// Unattended domain: when fired by a Routine there is no human, so go's finish
+// Unattended domain: when fired by a cloud scheduled task (formerly a Routine) or `claude -p`
+// there is no human, so go's finish
 // step must be non-interactive with safe defaults, and the README must tell operators how.
 
-test("go.md documents an unattended Routine mode with safe finish defaults", async () => {
+test("go.md documents an unattended cloud-scheduled-task mode with safe finish defaults", async () => {
   // go.md is the canonical hands-off runner; the autopilot.md alias was retired
   // in 0.7.0.
   const text = await readFile(new URL("../plugin/commands/go.md", import.meta.url), "utf8");
   assert.match(text, /unattended/i, "go must document unattended mode");
-  assert.match(text, /routine/i, "go must tie unattended mode to Routines");
+  assert.match(text, /cloud scheduled task/i, "go must tie unattended mode to cloud scheduled tasks (F19: formerly Routines)");
+  assert.doesNotMatch(text, /\bRoutine\b/, "F19: Routines are now cloud scheduled tasks");
   assert.match(text, /\bPR\b|pull request/i, "unattended default must be opening a PR");
   // autonomy stops at the reviewable artifact: never auto-merge / push to base
   assert.match(text, /never[^.]*(auto-?merge|push)/i, "go must forbid auto-merge/push in unattended mode");

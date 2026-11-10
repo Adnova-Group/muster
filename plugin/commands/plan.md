@@ -72,5 +72,5 @@ refusal, tell the user to leave plan mode and stop.
      .muster/runs/<runId>/PLAN.md`, and show step 4 again. build-args reads the edited file.
    - **Cancel:** stop. Leave the branch and run directory for the user to delete or resume.
 
-Unattended (Routine, `claude -p`): never block on the approval; write the plan, report the
+Unattended (cloud scheduled task, `claude -p`): never block on the approval; write the plan, report the
 verdict, and stop. Building needs `/muster:go`.

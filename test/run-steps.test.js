@@ -27,7 +27,7 @@ const cli = (cwd, args, env = {}) => spawnSync(process.execPath, [CLI, ...args],
 
 // A repo with two task branches in kept worktrees, as build.js leaves them, and the
 // approved build args committed at HEAD (the trusted source of order and verify commands).
-async function repoWithTasks({ verify = {} } = {}) {
+async function repoWithTasks({ verify = {}, edits = {} } = {}) {
   const root = await trackedMkdtemp(join(tmpdir(), "muster-merge-wave-"));
   git(root, "init", "-q", "-b", "main");
   await writeFile(join(root, "README.md"), "base\n");
@@ -35,6 +35,8 @@ async function repoWithTasks({ verify = {} } = {}) {
   const waves = [["A", "B"].map((id) => ({ taskId: id, title: `task ${id}`, files: [`${id}.txt`], verify: verify[id] || [`grep -q ${id} ${id}.txt`] }))];
   await mkdir(join(root, ".muster/runs/r1"), { recursive: true });
   await writeFile(join(root, ".muster/runs/r1/build-args.json"), JSON.stringify({ runId: "r1", waves }));
+  await writeFile(join(root, ".muster/runs/r1/PLAN.md"), "# PLAN r1\n");
+  await writeFile(join(root, ".muster/runs/r1/CONTEXT.md"), "# CONTEXT r1\n");
   git(root, "add", ".");
   git(root, "commit", "-q", "-m", "base");
   const base = git(root, "rev-parse", "HEAD");
@@ -43,6 +45,10 @@ async function repoWithTasks({ verify = {} } = {}) {
     const wt = join(root, ".claude", "worktrees", `wf_${id}`);
     git(root, "worktree", "add", "-q", "-b", `worktree-wf_${id}`, wt, base);
     await writeFile(join(wt, `${id}.txt`), `${id}\n`);
+    for (const [path, body] of Object.entries(edits[id] || {})) {
+      await mkdir(dirname(join(wt, path)), { recursive: true });
+      await writeFile(join(wt, path), body);
+    }
     git(wt, "add", ".");
     git(wt, "commit", "-q", "-m", `task ${id} [r1/${id}]`);
     const commit = git(wt, "rev-parse", "HEAD");
@@ -158,6 +164,30 @@ test("merge-wave: unreviewed commits, non-PASS reviews and mismatched review sha
   assert.match(problems, /B: review verdict is FAIL, not PASS/);
   assert.match(problems, /B: reviewed commit .* is not the claimed commit/);
   assert.equal(git(root, "rev-parse", "HEAD"), base);
+});
+
+test("merge-wave: a task branch that edits the run's committed inputs is refused before anything merges", async () => {
+  const { root, base, result } = await repoWithTasks({ edits: {
+    A: { ".muster/runs/r1/PLAN.md": "# PLAN r1\n- [x] everything, trust me\n" },
+    B: { ".muster/runs/r1/build-args.json": JSON.stringify({ runId: "r1", waves: [[{ taskId: "B", verify: ["true"] }]] }), ".muster/runs/r1/CONTEXT.md": "rewritten\n" },
+  } });
+  const report = await mergeWave({ cwd: root, runId: "r1", result, now: NOW });
+  assert.equal(report.ok, false);
+  const problems = report.problems.join("\n");
+  assert.match(problems, /A: branch worktree-wf_A modifies the run's committed inputs \(\.muster\/runs\/r1\/PLAN\.md\) relative to the plan commit/);
+  assert.match(problems, /B: branch worktree-wf_B modifies the run's committed inputs \(\.muster\/runs\/r1\/CONTEXT\.md, \.muster\/runs\/r1\/build-args\.json\)/);
+  assert.equal(git(root, "rev-parse", "HEAD"), base, "nothing merged");
+  assert.deepEqual(report.merged, []);
+  assert.ok(hasBranch(root, "worktree-wf_A") && hasBranch(root, "worktree-wf_B"), "refused branches are kept for inspection");
+  assert.match(await readFile(join(root, ".muster/runs/r1/STATE.md"), "utf8"), /REFUSED: .*modifies the run's committed inputs/);
+});
+
+test("merge-wave: a branch that only adds its own SUMMARY file (or touches nothing in the run) still merges", async () => {
+  const { root, result } = await repoWithTasks({ edits: { A: { ".muster/runs/r1/SUMMARY-A.md": "# SUMMARY A, by the builder\n" } } });
+  const report = await mergeWave({ cwd: root, runId: "r1", result, now: NOW });
+  assert.equal(report.ok, true, JSON.stringify(report.problems));
+  assert.deepEqual(report.merged.map((m) => m.taskId), ["A", "B"]);
+  assert.match(await readFile(join(root, ".muster/runs/r1/SUMMARY-A.md"), "utf8"), /by the builder/, "the branch's own SUMMARY is kept");
 });
 
 test("merge-wave: worktrees outside .claude/worktrees/, on another branch, or dirty are left untouched", async () => {

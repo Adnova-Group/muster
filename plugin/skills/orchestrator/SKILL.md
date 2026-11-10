@@ -84,8 +84,18 @@ workflow would take over `/muster:<name>`.
   `claude --resume`), never via `scriptPath`; otherwise `/muster:go --run <runId>`.
 - **Unattended runs never wait on a prompt:** `claude -p --permission-prompts none`, or
   `permissions.denyInsteadOfPrompting` in a scheduled environment's settings; a denied call is
-  a tool error and escalates. Workflows there do not pause at usage limits: agents fail, the
-  run escalates, and `/muster:go --run <runId>` retries.
+  a tool error and escalates. Usage limits pause a run only in an interactive session: "A run
+  doesn't pause in non-interactive mode with `claude -p` or the Agent SDK, in a background
+  session, or in a Remote Control" session (docs/workflows). There a limited agent fails
+  (`null`, so task `reason: "no_result"`; the run output carries `usageLimitDenial`): skip
+  merge-wave, and after the reset `/muster:go --run <runId>` retries.
+- **A turn-limited agent is an error, never done or PASS.** A Workflow result carries no
+  turn-limit marker, so the scripts read the "completed without calling StructuredOutput" throw,
+  or a done/PASS with empty evidence, as `reason: "max_turns"`; an in-place seat is retried
+  once, an isolated builder never. Report it: raise that agent's `maxTurns` or split the task.
+- **Workflow limits:** 16 concurrent agents by default (wider waves queue), 1,000 per run. The
+  `Large workflow` warning (over 25 agents or 1.5M projected tokens) is expected for backlogs
+  and team runs; it does not pause or limit the run.
 - **Isolated worktrees start from the remote default branch** unless `worktree.baseRef` is
   `"head"` (probed live 2026-11-10); executor briefs fast-forward to the run base or block.
   preflight warns when the setting is missing in a repo with a remote.

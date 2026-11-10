@@ -97,6 +97,23 @@ whole run, including after compaction.
 - The Agent tool takes `model`, `effort` and `isolation: "worktree"`; build-args `models` gives
   the per-seat values. Workflow agents append `Co-Authored-By` trailers to their commits.
 
+## Spec runs (planning from a SPEC.md)
+
+preflight's `spec` (a SPEC.md path in the outcome, `#REF-02` scoping one requirement, or a
+backlog item's `{spec: path#REF-02}`) replaces the interview (docs/plan-format.md):
+1. `spec.error`: show it and stop. `spec.ready`: ask nothing.
+2. Not ready: ONE AskUserQuestion over `spec.openQuestions` (at most 4, quoted verbatim; none
+   left: "Mark the spec ready and plan from it?"). Unattended: stop and list them.
+3. In step 2's Bash call, after the branch switch: pipe the answers as `[{id, a}]` JSON to
+   `M spec-clarify <spec.path>` (a dated `## Clarifications` session; a draft that now passes
+   becomes ready; a non-zero exit shows `blockers` and stops), then `M spec-context <runId>`,
+   which writes CONTEXT.md: the spec's D-NN verbatim and LOCKED, non-goals as Deferred Ideas.
+   Never hand-write that CONTEXT.md.
+4. `muster:plan` args add `specPath` = `spec.path`, plus `#<spec.anchor>` when set.
+5. At the approval stop, show `M spec-trace <runId> --coverage` (one line per requirement).
+   After verification, `M spec-trace <runId>` rewrites the spec's Traceability block (and
+   `status: shipped` when every ID is VERIFIED or accepted); commit the spec with the run.
+
 ## Prose fallback (no Workflow tool)
 
 Use this only when the `Workflow` tool is absent (some Desktop and Cowork surfaces, or a

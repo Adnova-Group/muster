@@ -80,9 +80,21 @@ function pinLine(pins) {
   return `Project-pinned skills, always bound at build time: ${list}. Bind each pinned builtin in its matching tasks' skills attribute (build-args adds any left out, and the project-installed ones) and plan those tasks to follow it.`
 }
 
+// A run planned from a SPEC.md (docs/plan-format.md "Planning from a spec"): plan-lint's
+// spec_traceability checks every line of this brief, so the planner hears the rules up front.
+function specLines(specPath) {
+  if (typeof specPath !== 'string' || !specPath.trim()) return []
+  return [
+    `Spec: ${specPath}. Read it first; it outranks the outcome text. Write spec: ${specPath} and requirements: [the in-scope requirement IDs] in the PLAN.md frontmatter, and list every spec D-NN in decisions:.`,
+    'Every in-scope AC, INV and EV ID appears in some task\'s covers="..."; never cover an ID you do not deliver in full.',
+    'Each INV-NN becomes a must_haves.prohibitions entry with ac: [INV-NN]; each EV-NN gets an eval command; each test/check AC is named by the <automated proves="..."> command that proves it; each verify: judgment AC gets a checkpoint:human-verify task that covers it. needs-runtime ACs need no task.',
+  ]
+}
+
 function planBrief(cfg, planPath, issues, revision) {
   const lines = [
     `Run ${cfg.runId}. Outcome: ${cfg.outcome || '(see CONTEXT.md)'}`,
+    ...specLines(cfg.specPath),
     cfg.contextPath ? `Decisions and resolved gray areas: ${cfg.contextPath}. Honour every D-NN decision in it.` : '',
     cfg.candidates ? `Candidate specialists for each task's agent_hint: ${JSON.stringify(cfg.candidates)}` : '',
     cfg.skills ? `Candidate builtin skills for each task's skills attribute: ${JSON.stringify(cfg.skills)}${cfg.skillRoot ? `; every other builtin id is a directory name under ${cfg.skillRoot}` : ''}` : '',
@@ -108,13 +120,14 @@ function checkBrief(cfg, planPath) {
   return [
     `Check the plan at ${planPath} for run ${cfg.runId}. Outcome: ${cfg.outcome || '(see CONTEXT.md)'}`,
     cfg.contextPath ? `Decisions it must honour: ${cfg.contextPath}.` : '',
+    cfg.specPath ? `Spec: ${cfg.specPath}. Dimension 1 covers its in-scope AC, INV and EV IDs too, and a task whose covers cites an ID must deliver that ID in full.` : '',
     `Run muster plan-lint ${planPath} first and carry every lint issue into your result unchanged.`,
     'Read only: do not edit the plan. verdict PASS only when no blocker remains.',
   ].filter(Boolean).join('\n')
 }
 
 const cfg = parseArgs(args)
-if (!cfg.runId && !cfg.outcome) return { status: 'error', error: 'plan needs args {runId, outcome, contextPath, candidates, skills, skillRoot}' }
+if (!cfg.runId && !cfg.outcome) return { status: 'error', error: 'plan needs args {runId, outcome, contextPath, specPath, candidates, skills, skillRoot}' }
 if (!cfg.runId) cfg.runId = slug(cfg.outcome)
 const planPath = `.muster/runs/${cfg.runId}/PLAN.md`
 const result = (verdict, revisions, issues, escalated, extra) => ({ runId: cfg.runId, planPath, verdict, revisions, issues, escalated, ...extra })

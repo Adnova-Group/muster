@@ -39,18 +39,24 @@ refusal, tell the user to leave plan mode and stop.
    - `route: "pipeline"` (or `"ask"` answered as a document, one AskUserQuestion): after step 2,
      run `M pipeline-args <runId>` instead of step 3, show its phases (with skills) and gate, and
      stop at step 4's approval; **Approve & build** invokes `muster:go --run <runId>`.
+   - `spec` set (the outcome names a SPEC.md, e.g. `docs/specs/x/SPEC.md#REF-02`, or a backlog
+     item carries `{spec: path#REF-02}`): follow the orchestrator's **Spec runs**. A ready spec
+     skips the interview; one that is not ready gets one round on `spec.openQuestions` only.
 2. **Branch + context (1 call).** When `clear` is false, first ask up to 4 questions in ONE
    AskUserQuestion built from `unclear` (scope, success criteria, constraints) and record the
    answers as numbered decisions `D-01..` in `.muster/runs/<runId>/CONTEXT.md`. Then in one Bash
-   call: refuse a dirty tree, `git switch -c muster/<runId>`, write CONTEXT.md if any.
+   call: refuse a dirty tree, `git switch -c muster/<runId>`, write CONTEXT.md if any (a spec run
+   runs `M spec-clarify` when it asked, then `M spec-context <runId>`, instead of writing it).
    Planning writes only under `.muster/runs/<runId>/`, so no run-active marker is needed yet.
-3. **Plan.** `Workflow({name:"muster:plan", args:{runId, outcome, contextPath, candidates, skills, pins, skillRoot, models}})`
-   (`contextPath` only when CONTEXT.md exists). The workflow runs muster-planner, then
+3. **Plan.** `Workflow({name:"muster:plan", args:{runId, outcome, contextPath, specPath, candidates, skills, pins, skillRoot, models}})`
+   (`contextPath` only when CONTEXT.md exists; `specPath` = `spec.path`, plus `#<spec.anchor>`,
+   only for a spec). The workflow runs muster-planner, then
    muster-plan-checker (which runs `muster plan-lint`), revising at most 3 times.
 4. **Show and stop.** Present, in this order: the checker `verdict`, `revisions`, any blocker or
    warning issues verbatim, `escalated` when set, and a compact view of PLAN.md: tasks by wave,
    each as `<taskId> · <agent_hint or muster-executor> · <skills or ->` plus title, files and
-   verify command; must-haves; checkpoints. Do not paste the whole file. Say the user can add or
+   verify command; must-haves; checkpoints. A spec run adds the coverage lines from
+   `M spec-trace <runId> --coverage`, one per requirement, verbatim. Do not paste the whole file. Say the user can add or
    remove a task's skills before approving. Then:
    AskUserQuestion: **Approve & build** / **Revise** / **Cancel**.
    An `escalated` result (`cap`, `stall`, `conflict`) or `ERROR` offers only **Revise** or

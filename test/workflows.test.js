@@ -377,6 +377,38 @@ test("plan: a plain string arg is the outcome, and the runId is derived from it"
   assert.equal(r.status, "error");
 });
 
+test("plan: specPath reaches the planner (covers, prohibitions, eval, human-verify rules) and the checker, on every revision", async () => {
+  const specPath = "docs/specs/refunds/SPEC.md#REF-02";
+  const counts = [2];
+  const { result, calls } = await run("plan.js", { runId: "s1", outcome: `plan ${specPath}`, specPath }, (label) => {
+    if (label.startsWith("plan")) return planned;
+    const n = counts.shift();
+    return n === undefined ? { verdict: "PASS", issues: [] } : checkIssues(n);
+  });
+  assert.equal(result.verdict, "PASS");
+  const plans = calls.filter((c) => c.opts.label.startsWith("plan"));
+  assert.equal(plans.length, 2);
+  for (const p of plans) {
+    assert.match(p.prompt, /Spec: docs\/specs\/refunds\/SPEC\.md#REF-02\. Read it first/);
+    assert.match(p.prompt, /Write spec: docs\/specs\/refunds\/SPEC\.md#REF-02 and requirements:/);
+    assert.match(p.prompt, /Every in-scope AC, INV and EV ID appears in some task's covers="\.\.\."; never cover an ID you do not deliver in full\./);
+    assert.match(p.prompt, /Each INV-NN becomes a must_haves\.prohibitions entry/);
+    assert.match(p.prompt, /each EV-NN gets an eval command/);
+    assert.match(p.prompt, /<automated proves="\.\.\.">/);
+    assert.match(p.prompt, /verify: judgment AC gets a checkpoint:human-verify task/);
+    assert.match(p.prompt, /every spec D-NN in decisions:/);
+  }
+  for (const c of calls.filter((x) => x.opts.label.startsWith("check"))) {
+    assert.match(c.prompt, /Spec: docs\/specs\/refunds\/SPEC\.md#REF-02\. Dimension 1 covers its in-scope AC, INV and EV IDs/);
+    assert.match(c.prompt, /must deliver that ID in full/);
+  }
+});
+
+test("plan: without specPath the briefs carry no spec lines", async () => {
+  const { calls } = await run("plan.js", { runId: "s2", outcome: "add a flag" }, (label) => (label.startsWith("plan") ? planned : { verdict: "PASS", issues: [] }));
+  for (const c of calls) assert.doesNotMatch(c.prompt, /Spec:|covers=|proves=/);
+});
+
 test("backlog: items run sequentially through the build stages with prefixed labels", async () => {
   const order = [];
   const args = { models: MODELS, items: [{ itemId: "I1", runId: "ra", waves: [[task("A")]] }, { itemId: "I2", runId: "rb", waves: [[task("A")]] }, { itemId: "bad" }] };

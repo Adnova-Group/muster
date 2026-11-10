@@ -402,6 +402,126 @@
     upstream:
       - elayadesign/ai-design-skills
   description: Design inside Figma through the Figma MCP with real variables, text styles, auto layout, components and token rules.
+- id: jk-better-ui
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - jakubkrehel/skills
+  description: "UI polish with exact values: border radius, optical alignment, shadows, icon states and micro-animation."
+- id: jk-better-colors
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - jakubkrehel/skills
+  description: "Colour systems: generate OKLCH palettes, name semantic tokens, convert formats and measure contrast."
+- id: jk-better-typography
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - jakubkrehel/skills
+  description: "Text rendering: type scale, spacing, font features, wrapping, truncation and punctuation."
+- id: jk-better-interface
+  kind: builtin
+  roles:
+    - frontend
+  rank: 44
+  provenance:
+    license: MIT
+    upstream:
+      - jakubkrehel/skills
+  description: Whole-interface review that runs the better-* domain skills and returns one ranked report across accessibility, layout, copy, type, colour and polish.
+- id: jk-better-accessibility
+  kind: builtin
+  roles:
+    - frontend
+  rank: 46
+  provenance:
+    license: MIT
+    upstream:
+      - jakubkrehel/skills
+  description: "Accessibility audit and fixes against WCAG 2.2: keyboard focus, ARIA, accessible names, form labels and errors, screen reader announcements, motion and zoom."
+- id: jk-better-layout
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - jakubkrehel/skills
+  description: "Layout structure: grouping, alignment, reading order, responsive behaviour and room for translated or mirrored (RTL) text."
+- id: jk-better-writing
+  kind: builtin
+  roles:
+    - frontend
+  rank: 44
+  provenance:
+    license: MIT
+    upstream:
+      - jakubkrehel/skills
+  description: "UX writing for interface copy: rewrite labels, button text, error messages, empty state copy and confirmations in the product's voice."
+- id: jk-interface-review
+  kind: builtin
+  roles:
+    - frontend
+  rank: 44
+  provenance:
+    license: MIT
+    upstream:
+      - jakubkrehel/skills
+  description: "Change-scoped interface review of a branch, pull request or uncommitted diff: UI problems it introduced or regressed."
+- id: jk-variant
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - jakubkrehel/skills
+  description: Build several variants of the component in progress on its real page and iterate to pick one; runs only when explicitly invoked.
+- id: jk-break
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - jakubkrehel/skills
+  description: Render one component under every reachable scenario on a temporary page to stress test it; runs only when explicitly invoked.
+- id: jk-build-design
+  kind: builtin
+  roles:
+    - frontend
+  rank: 42
+  provenance:
+    license: MIT
+    upstream:
+      - jakubkrehel/skills
+  description: Build UI from a Figma file or a design image so it matches, using the project's existing tokens and components.
+- id: jk-state-machine
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - jakubkrehel/skills
+  description: Render every state of a component on a throwaway page with mock data and a keyboard switcher; runs only when explicitly invoked.
 - id: wsh-stride-analysis-patterns
   kind: builtin
   roles:

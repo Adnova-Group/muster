@@ -890,6 +890,73 @@ sources:
     items:
       - { id: elaya-landing-page-design, kind: builtin, from: skills/landing-page-design/SKILL.md, to: plugin/builtins/elaya-landing-page-design/SKILL.md, mode: adapted, baseBlob: 519a6f2cd6c942c2fb36a906b8ef7d11f78ba6d1, roles: [frontend], rank: 42, description: "Landing page system: intake, section structure, conversion copy, SEO and strict visual rules for high-converting marketing pages." }
       - { id: elaya-figma-designer, kind: builtin, from: skills/figma-designer/SKILL.md, to: plugin/builtins/elaya-figma-designer/SKILL.md, mode: adapted, baseBlob: d9aba588919e3dccee89355df8fa8501c2e92eae, roles: [frontend], rank: 42, description: "Design inside Figma through the Figma MCP with real variables, text styles, auto layout, components and token rules." }
+  - id: jakubkrehel-skills
+    kind: github
+    repo: jakubkrehel/skills
+    # Added 2026-11-10 from the ui-skills.com registry (best-of-breed UX skills, by GitHub stars).
+    # Merge-tracked (every item has a `mode`): plain `muster vendor` never regenerates it, and
+    # `muster vendor update <id>` 3-way merges each muster file against its byte-exact base copy in
+    # vendor/upstream/<id>/. Pinned to upstream HEAD on 2026-11-10 (no release tag at that commit).
+    # Kept muster divergence: every SKILL.md swaps the upstream frontmatter for muster's (name kept,
+    # one-line description, muster_builtin, SPDX license, generated upstream:); harness keys such as
+    # disable-model-invocation, hooks, metadata and agents/openai.yaml are dropped. Bodies are
+    # upstream's; cross-references by upstream skill name resolve through the kept `name:`.
+    # Catalog: role frontend, ranked below the wsh frontend builtins (50) so none becomes the default
+    # frontend provider. Precedence: project DESIGN.md > accessibility (jk-better-accessibility 46) >
+    # impeccable > these supporting skills (44 review/writing, 42 direction/engineering, 40 motion, 30 opt-in).
+    # Not vendored: technical-drawing, teardown and explain-interface (owner scope 2026-11-10).
+    ref: 72bdd6121cd595f47fd21c9f23e374028c9cbacd
+    tag: null
+    license: MIT
+    copyright: "Copyright (c) 2026 Jakub Krehel"
+    relation: vendored
+    items:
+      - { id: jk-better-ui, kind: builtin, from: skills/better-ui/SKILL.md, to: plugin/builtins/jk-better-ui/SKILL.md, mode: adapted, baseBlob: b8abea328cfc49549423adce6674af7f50cce044, roles: [frontend], rank: 40, description: "UI polish with exact values: border radius, optical alignment, shadows, icon states and micro-animation." }
+      - { from: skills/better-ui/animations.md, to: plugin/builtins/jk-better-ui/animations.md, mode: adapted, baseBlob: e24309ab099e012c95f171b0187bf6d3746249ae }
+      - { from: skills/better-ui/enter-exit.md, to: plugin/builtins/jk-better-ui/enter-exit.md, mode: adapted, baseBlob: b2b2ec813b1f767a8f79442e134afd65abf80059 }
+      - { from: skills/better-ui/icon-transitions.md, to: plugin/builtins/jk-better-ui/icon-transitions.md, mode: adapted, baseBlob: a8ae54ef48da7ff86db5422e64bb33d8d12a0996 }
+      - { from: skills/better-ui/icons.md, to: plugin/builtins/jk-better-ui/icons.md, mode: adapted, baseBlob: b5dabd7181cd4b5c43df0581b458929723a244d8 }
+      - { from: skills/better-ui/performance.md, to: plugin/builtins/jk-better-ui/performance.md, mode: adapted, baseBlob: 0a4a1e12b0a9167e81d27434fde812902490e10b }
+      - { from: skills/better-ui/surfaces.md, to: plugin/builtins/jk-better-ui/surfaces.md, mode: adapted, baseBlob: 8dcd37a45a4175e64b3c7422e26e8ce1e579eb92 }
+      - { id: jk-better-colors, kind: builtin, from: skills/better-colors/SKILL.md, to: plugin/builtins/jk-better-colors/SKILL.md, mode: adapted, baseBlob: e0b3049b65a4e369217ca5f67b89ad3adf311fa0, roles: [frontend], rank: 40, description: "Colour systems: generate OKLCH palettes, name semantic tokens, convert formats and measure contrast." }
+      - { from: skills/better-colors/color-formats.md, to: plugin/builtins/jk-better-colors/color-formats.md, mode: adapted, baseBlob: 1a87448505f8030146820fc8470f277fb273921f }
+      - { from: skills/better-colors/color-usage.md, to: plugin/builtins/jk-better-colors/color-usage.md, mode: adapted, baseBlob: 2a2b8af8a9dc8a5d7698ca33807fce276e6e3de5 }
+      - { from: skills/better-colors/contrast.md, to: plugin/builtins/jk-better-colors/contrast.md, mode: adapted, baseBlob: d84e9d94c95e4b7118cad2be56e3ccdeeb24aa7a }
+      - { from: skills/better-colors/palette-generation.md, to: plugin/builtins/jk-better-colors/palette-generation.md, mode: adapted, baseBlob: 3c45253bdd2f673335b66ef30afbeedaca02af4c }
+      - { from: skills/better-colors/palette-structure.md, to: plugin/builtins/jk-better-colors/palette-structure.md, mode: adapted, baseBlob: 480781afbef455b3268cad43d6b38b5c8acc8337 }
+      - { from: skills/better-colors/token-naming.md, to: plugin/builtins/jk-better-colors/token-naming.md, mode: adapted, baseBlob: f69a0022dda0437986cc46c0505c8fcce113ea32 }
+      - { id: jk-better-typography, kind: builtin, from: skills/better-typography/SKILL.md, to: plugin/builtins/jk-better-typography/SKILL.md, mode: adapted, baseBlob: 843e22d6c32b930d8aa225d7150201bf6f6c80b6, roles: [frontend], rank: 40, description: "Text rendering: type scale, spacing, font features, wrapping, truncation and punctuation." }
+      - { from: skills/better-typography/choosing-fonts.md, to: plugin/builtins/jk-better-typography/choosing-fonts.md, mode: adapted, baseBlob: f20acea6fc5ef4e9692234e28bb67a255efb0589 }
+      - { from: skills/better-typography/css-cheat-sheet.md, to: plugin/builtins/jk-better-typography/css-cheat-sheet.md, mode: adapted, baseBlob: e79e12d59c5addb3ec049b777f279e86118069b1 }
+      - { from: skills/better-typography/details-and-accessibility.md, to: plugin/builtins/jk-better-typography/details-and-accessibility.md, mode: adapted, baseBlob: bf12e53d65e5e0f07eb67c2dbcf00713754d247c }
+      - { from: skills/better-typography/spacing-and-sizing.md, to: plugin/builtins/jk-better-typography/spacing-and-sizing.md, mode: adapted, baseBlob: a6523cb8f72ba0781b6be5768053f8043132f349 }
+      - { from: skills/better-typography/variable-fonts-and-opentype.md, to: plugin/builtins/jk-better-typography/variable-fonts-and-opentype.md, mode: adapted, baseBlob: 5fa1b72c55a21a20d635b900fc20680946cc63cf }
+      - { from: skills/better-typography/wrapping-and-punctuation.md, to: plugin/builtins/jk-better-typography/wrapping-and-punctuation.md, mode: adapted, baseBlob: 4a17017136190ab98647654f6877e8f5aa83e967 }
+      - { id: jk-better-interface, kind: builtin, from: skills/better-interface/SKILL.md, to: plugin/builtins/jk-better-interface/SKILL.md, mode: adapted, baseBlob: 11a75671a0cca1d24aeb6d70007aff6079c85696, roles: [frontend], rank: 44, description: "Whole-interface review that runs the better-* domain skills and returns one ranked report across accessibility, layout, copy, type, colour and polish." }
+      - { from: skills/better-interface/review-format.md, to: plugin/builtins/jk-better-interface/review-format.md, mode: adapted, baseBlob: 345dc43af4ce9f971ab55afd7ceae786b1c4d36a }
+      - { id: jk-better-accessibility, kind: builtin, from: skills/better-accessibility/SKILL.md, to: plugin/builtins/jk-better-accessibility/SKILL.md, mode: adapted, baseBlob: 5e9ab11b4c109d56c435731198ed23ba0267e529, roles: [frontend], rank: 46, description: "Accessibility audit and fixes against WCAG 2.2: keyboard focus, ARIA, accessible names, form labels and errors, screen reader announcements, motion and zoom." }
+      - { from: skills/better-accessibility/focus-and-keyboard.md, to: plugin/builtins/jk-better-accessibility/focus-and-keyboard.md, mode: adapted, baseBlob: ba4982b56ea2e2c8d3af560db0a9277ce1a567b2 }
+      - { from: skills/better-accessibility/forms.md, to: plugin/builtins/jk-better-accessibility/forms.md, mode: adapted, baseBlob: 6e9839d2ea1c2790efd8132027ebf44dd8f206e5 }
+      - { from: skills/better-accessibility/hit-areas.md, to: plugin/builtins/jk-better-accessibility/hit-areas.md, mode: adapted, baseBlob: f44d07d20ecd529985b82883273c6830c8ecb9f1 }
+      - { from: skills/better-accessibility/motion-and-zoom.md, to: plugin/builtins/jk-better-accessibility/motion-and-zoom.md, mode: adapted, baseBlob: 7ba3f3a2466c4365bb300df9e8c6fa74b51ad279 }
+      - { from: skills/better-accessibility/screen-readers.md, to: plugin/builtins/jk-better-accessibility/screen-readers.md, mode: adapted, baseBlob: 275394c2b880277fff1abea51098243029dd684d }
+      - { from: skills/better-accessibility/semantics-and-aria.md, to: plugin/builtins/jk-better-accessibility/semantics-and-aria.md, mode: adapted, baseBlob: 410c022391ab661c074141dab948f8b85a282e79 }
+      - { id: jk-better-layout, kind: builtin, from: skills/better-layout/SKILL.md, to: plugin/builtins/jk-better-layout/SKILL.md, mode: adapted, baseBlob: d2a6a8226dc12d0cbb8f5c193fbf4c8329325085, roles: [frontend], rank: 40, description: "Layout structure: grouping, alignment, reading order, responsive behaviour and room for translated or mirrored (RTL) text." }
+      - { from: skills/better-layout/grouping-and-alignment.md, to: plugin/builtins/jk-better-layout/grouping-and-alignment.md, mode: adapted, baseBlob: 848d886ecd10454ce2dfd4a60009868156ef9443 }
+      - { from: skills/better-layout/spacing-and-adaptivity.md, to: plugin/builtins/jk-better-layout/spacing-and-adaptivity.md, mode: adapted, baseBlob: 10dce94ddbdc4eebf661b7f34130ead08f14f52e }
+      - { id: jk-better-writing, kind: builtin, from: skills/better-writing/SKILL.md, to: plugin/builtins/jk-better-writing/SKILL.md, mode: adapted, baseBlob: 54f93d31197446fc5b4d8645fddaa3ec91baa5c2, roles: [frontend], rank: 44, description: "UX writing for interface copy: rewrite labels, button text, error messages, empty state copy and confirmations in the product's voice." }
+      - { from: skills/better-writing/patterns.md, to: plugin/builtins/jk-better-writing/patterns.md, mode: adapted, baseBlob: be3001190b33523c7e031bf368bcaf15cc19cd07 }
+      - { id: jk-interface-review, kind: builtin, from: skills/interface-review/SKILL.md, to: plugin/builtins/jk-interface-review/SKILL.md, mode: adapted, baseBlob: 3b14135fedc6ba71738070312024a0931d50cff1, roles: [frontend], rank: 44, description: "Change-scoped interface review of a branch, pull request or uncommitted diff: UI problems it introduced or regressed." }
+      - { from: skills/interface-review/removed-signals.md, to: plugin/builtins/jk-interface-review/removed-signals.md, mode: adapted, baseBlob: 5295ca310a5b0bd730932e16d09ab60f9ba1bba3 }
+      - { from: skills/interface-review/scope-resolution.md, to: plugin/builtins/jk-interface-review/scope-resolution.md, mode: adapted, baseBlob: bb754eee4bf212ce040e149b8827f0bf6506f60a }
+      - { id: jk-variant, kind: builtin, from: skills/variant/SKILL.md, to: plugin/builtins/jk-variant/SKILL.md, mode: adapted, baseBlob: 45c3a5491800a6808433cf8452812c519578c404, roles: [frontend], rank: 40, description: "Build several variants of the component in progress on its real page and iterate to pick one; runs only when explicitly invoked." }
+      - { from: skills/variant/picker.md, to: plugin/builtins/jk-variant/picker.md, mode: adapted, baseBlob: 12ee27b2e905b693867b9698ed336dd2bfc724e0 }
+      - { id: jk-break, kind: builtin, from: skills/break/SKILL.md, to: plugin/builtins/jk-break/SKILL.md, mode: adapted, baseBlob: c8627584766cd688d761fb65e2c16f9c95be2d87, roles: [frontend], rank: 40, description: "Render one component under every reachable scenario on a temporary page to stress test it; runs only when explicitly invoked." }
+      - { from: skills/break/scenarios.md, to: plugin/builtins/jk-break/scenarios.md, mode: adapted, baseBlob: 9042346559a6d6467567cc532a1982a898fa2aed }
+      - { id: jk-build-design, kind: builtin, from: skills/build-design/SKILL.md, to: plugin/builtins/jk-build-design/SKILL.md, mode: adapted, baseBlob: f598b6e37c9e58e2e4913250df317a9dfd0bd517, roles: [frontend], rank: 42, description: "Build UI from a Figma file or a design image so it matches, using the project's existing tokens and components." }
+      - { from: skills/build-design/figma.md, to: plugin/builtins/jk-build-design/figma.md, mode: adapted, baseBlob: e622e5acc3821d6837adb92cfa34b0596d4a5dc0 }
+      - { id: jk-state-machine, kind: builtin, from: skills/state-machine/SKILL.md, to: plugin/builtins/jk-state-machine/SKILL.md, mode: adapted, baseBlob: 26f835284b16b4d08372867ec75b0212019659c9, roles: [frontend], rank: 40, description: "Render every state of a component on a throwaway page with mock data and a keyboard switcher; runs only when explicitly invoked." }
+      - { from: skills/state-machine/switcher.md, to: plugin/builtins/jk-state-machine/switcher.md, mode: adapted, baseBlob: f59488c4247e8876f5ac680696b5504bb0950087 }
   # ---- end ui-skills.com UX skills ----
   - id: gsd
     kind: github

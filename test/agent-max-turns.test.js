@@ -55,6 +55,9 @@ const CLASS_MAP = {
     "wsh-ml-engineer",
     "wsh-prompt-engineer",
     "wsh-test-automator",
+    // intent UX agents that produce artifacts: experience design and the build handoff.
+    "intent-wren",
+    "intent-rune",
   ],
   // review/strategy -- gates other work (verdicts, architecture, retrospectives);
   // needs headroom for a deep re-read plus re-verification, coherent with Codex's
@@ -70,6 +73,11 @@ const CLASS_MAP = {
     "wsh-backend-architect",
     "wsh-cloud-architect",
     "wsh-docs-architect",
+    // intent UX agents that frame, evaluate or route (strategy, evaluation, orientation, brainstorming).
+    "intent-ember",
+    "intent-noor",
+    "intent-vigil",
+    "intent-sage",
   ],
   // security -- the one rare, high-consequence xhigh lane, coherent with Codex's
   // own 14-heartbeat wsh-security-auditor-specific extension ceiling (PR #83).

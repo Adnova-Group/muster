@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A vendored UX skill family, merge-tracked like gsd.** 27 builtins and 6 agents from four upstreams, pinned to their newest commits: `uupm-*` (7 skills from nextlevelbuilder/ui-ux-pro-max-skill, MIT, with its searchable style, palette, font, UX-guideline and stack data and `search.py`), `intent-*` (18 skills and 6 agents from ghaida/intent, CC0-1.0), `typeui` (bergside/typeui, MIT; needs the TypeUI MCP server) and `pfd` (skovalik/perception-first-design, CC BY-SA 4.0, kept under that license). `uupm-ui-ux-pro-max` is the default UX review skill: the design-ux audit pattern applies its priority table and pre-delivery checklist beside impeccable's critique dimensions, deduplicated, under one precedence (project `DESIGN.md` > accessibility/WCAG > impeccable > the supporting skills). Design-system output is presented as a `DESIGN.md` proposal and never written over `DESIGN.md`. `vendor-sync` gains whole-file verbatim items (the vendored file is its own base copy) and describe-form pins between releases; `muster provenance` enforces that share-alike text keeps its license, and NOTICE carries upstream trademark notices. The frozen Codex lane ships none of the family.
+
 ### Fixed
 
 - **Codex waves on macOS report the platform limit instead of a phantom install problem.** The only platform gate lived inside `runProcessWave`, downstream of Codex executable resolution, so a wave on macOS died with `no trusted Codex executable was found outside the repository` — a provenance error that reads as a fixable install problem. Operators (and driving agents) chased a nonexistent trust failure instead of the real one. The check now runs first, and says what it means: containment is unavailable on this platform, the run is refused, and the refusal must not be satisfied by re-hosting the wave in a container, VM, or remote Linux host, nor by forwarding Codex credentials into one. That workaround strips the `tmpfs` masking that keeps `~/.codex` away from the worker, so it is strictly less safe than the refusal it appears to resolve.

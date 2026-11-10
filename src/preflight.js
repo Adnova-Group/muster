@@ -170,6 +170,8 @@ export async function runPreflight({ outcome, cwd, home, catalogDir, runId, mode
   const routing = spec
     ? { route: "code", domain: "software", pipeline: null }
     : routeOutcome(outcome, await loadPipelines(PIPELINES_DIR), project);
+  // A spec is one change: its `.md` path must not read as a backlog file ref (scope rule 1).
+  if (spec && scope.scope !== "item") Object.assign(scope, { scope: "item", signals: [...(scope.signals || []), `the outcome names a spec (${spec.path}), one change`] });
   const memory = rankMemory(await readMemory(join(cwd, ".muster", "memory"), ""), outcome);
   const baseRef = await worktreeBaseRef(cwd, home);
   const warnings = preflightWarnings({ env, baseRef, hasRemote: !!project.vcs?.hasRemote });

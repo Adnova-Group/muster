@@ -167,6 +167,7 @@ test("preflight: a ready spec skips the interview and reports its IDs in the sam
   assert.equal(s.clear, true);
   assert.deepEqual(s.unclear, []);
   assert.equal(s.route, "code");
+  assert.equal(s.scope, "item", "a SPEC.md path is one change, not a backlog file ref");
   assert.deepEqual(s.spec, {
     path: "docs/specs/refunds/SPEC.md", anchor: null, status: "ready", ready: true,
     acs: ["REF-01.1", "REF-01.2", "REF-02.1", "REF-02.2"], invariants: ["INV-01"], evals: ["EV-01", "EV-02"], decisions: ["D-01", "D-02"], openQuestions: [],

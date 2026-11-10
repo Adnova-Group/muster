@@ -1288,6 +1288,13 @@ sources:
   - id: atomic-claude
     kind: github
     repo: damusix/atomic-claude
+    # No recorded pin until 2026-11-10. Pinned to the main HEAD read then (b4ca195c, v6.10.0 plus
+    # a README badge). Since muster's last use (2026-07-02) context/output-styles/atomic.md was
+    # trimmed (3211d2d8) into "Cut / Shape / Length / Format routing"; muster's output style took
+    # one idea, in its own words: say the fact a stock phrase was decorating (literal over
+    # mannered). The agents (context/agents/atomic-*) gained loop/gate plumbing for atomic's own
+    # verbs; muster's role agents are clean-room and took nothing from it.
+    ref: b4ca195cae6022464b0cc5c07273b3fa9602da17
     license: MIT
     copyright: "Copyright (c) 2026 Danilo Alonso"
     relation: inspired-by
@@ -1329,6 +1336,8 @@ sources:
   - id: voltagent-subagents
     kind: github
     repo: VoltAgent/awesome-claude-code-subagents
+    # Checked 2026-11-10: upstream 51 commits ahead (new agent files). muster-runner is a byte-frozen Codex
+    # input (codex/frozen/agents/muster-runner.md) and cannot take changes, so the pin stays.
     ref: 14bbcf5d984c8ce61a0aa17f897b7d8e63739783
     license: MIT
     copyright: "Copyright (c) 2025 VoltAgent"
@@ -1339,6 +1348,7 @@ sources:
   - id: twelve-factor-agents
     kind: github
     repo: humanlayer/12-factor-agents
+    # Checked 2026-11-10: still upstream HEAD.
     ref: d20c728368bf9c189d6d7aab704744decb6ec0cc
     # Code Apache-2.0; content (the twelve factors) CC BY-SA 4.0, per the upstream README.
     license: Apache-2.0 AND CC-BY-SA-4.0
@@ -1360,7 +1370,8 @@ sources:
         Compared all 38 Markdown files at the pin with plugin/agents/muster-runner.md and
         plugin/commands/runner.md: zero shared 5-grams. Muster took two mechanisms named in
         docs/research/lifecycle-agent-patterns.md (trigger examples in the description;
-        per-agent constraints and success measures) and wrote its own text.
+        per-agent constraints and success measures) and wrote its own text. Re-checked
+        2026-11-10: upstream unchanged; muster-runner is frozen and unchanged.
     items:
       - { id: muster-runner, kind: codex-frozen-agent, from: null }
   - id: infinite-agentic-loop
@@ -1377,6 +1388,7 @@ sources:
         Compared .claude/commands/infinite.md, prime.md, CLAUDE.md and README.md at the pin
         with muster-runner and runner.md: zero shared 5-grams. Mechanisms only (derive
         progress from the filesystem; a fixed dispatch-prompt shape; capped waves).
+        Re-checked 2026-11-10: upstream unchanged; muster-runner is frozen and unchanged.
     items:
       - { id: muster-runner, kind: codex-frozen-agent, from: null }
   - id: awesome-claude-code
@@ -1395,6 +1407,8 @@ sources:
         with muster-runner, runner.md and docs/research/lifecycle-agent-patterns.md: the
         only shared 6-grams are two URLs it links to (code.claude.com docs and Anthropic's
         "Building effective agents"). Used as an index; nothing derived from its text.
+        Re-checked 2026-11-10: upstream 1,164 commits ahead (list entries), licence still
+        CC BY-NC-ND 4.0; muster-runner is frozen and unchanged, so nothing new is derived.
     items:
       - { id: muster-runner, kind: codex-frozen-agent, from: null }
 
@@ -1419,7 +1433,10 @@ sources:
         prompts/jobs-to-be-done.md, proto-persona-profile.md, backlog-epic-hypothesis.md
         and the user-story prompts at the pin with every PM pipeline: no shared 4-gram
         beyond framework names ("jobs to be done"). Its epic hypothesis uses an
-        "If we / for / Then we will" form muster never used.
+        "If we / for / Then we will" form muster never used. Re-checked 2026-11-10: upstream 39
+        commits ahead, licence still CC BY-NC-SA 4.0, nothing taken; after the prd.yaml update
+        the shared 4-grams are still only framework names and the title of Richard Lawrence's
+        story-splitting guide.
     items:
       - { id: prd, kind: pipeline, from: null }
       - { id: epic, kind: pipeline, from: null }
@@ -1445,7 +1462,9 @@ sources:
         anthropics/knowledge-work-plugins' write-spec structure, Apache-2.0; epic from the
         Lean UX hypothesis slots). No other shared 4-gram beyond framework names
         ("As a / I want / So that", "break out a spike", which both take from their
-        originators).
+        originators). Re-checked 2026-11-10: upstream 56 commits ahead, licence still
+        CC BY-NC-SA 4.0, nothing taken; after the prd.yaml update the shared 4-grams are only
+        framework names, work titles and upstream: block paths.
     items:
       - { id: prd, kind: pipeline, from: skills/prd-development/SKILL.md }
       - { id: epic, kind: pipeline, from: skills/epic-hypothesis/SKILL.md }
@@ -1454,7 +1473,13 @@ sources:
   - id: pm-skills-phuryn
     kind: github
     repo: phuryn/pm-skills
-    ref: d384f0c9eb81fe74656a4f6da168587836939edb
+    # Re-pinned 2026-11-10: d384f0c -> 9af7bfd (v2.3.0). Taken into prd.yaml's draft, in muster's
+    # words, from pm-execution/skills/create-prd/SKILL.md (v2.2.0 "lean create-prd"): lean by
+    # default, no TBD placeholders, unknowns go to open questions, a research finding enters only if
+    # it changes a decision, two or three segments at most for a first version, say what was skipped.
+    # Skipped: the 6-part JTBD value-proposition template (prd.yaml's framing phase already does
+    # JTBD), pm-ai-shipping (moved out), live-qa / live-polls / survey-design (no muster item).
+    ref: 9af7bfd0bc47fdad43c2eaa7a43cd13918e7aaef
     license: MIT
     copyright: "Copyright (c) 2026 Pawel Huryn"
     relation: inspired-by
@@ -1467,7 +1492,9 @@ sources:
   - id: knowledge-work-plugins
     kind: github
     repo: anthropics/knowledge-work-plugins
-    ref: ca4618669075c133a8f437310775428a5c664e09
+    # Re-pinned 2026-11-10: ca461866 -> e605d8dd (main). product-management/skills/write-spec/
+    # SKILL.md is byte-identical at both (blob 183cf053); nothing new to take.
+    ref: e605d8ddbfb688da57dfaaceebd93f12a64ef1d3
     license: Apache-2.0
     relation: inspired-by
     fetch: false
@@ -1489,7 +1516,8 @@ sources:
         Compared README.md at the pin with okrs.yaml: the only shared 4-gram is the phrase
         "objectives and key results". The "Verb + Metric from X to Y by Date" formula does
         not appear upstream; output-versus-outcome and stretch grading are the general OKR
-        method (Grove, Doerr), named in muster's own words.
+        method (Grove, Doerr), named in muster's own words. Re-checked 2026-11-10: upstream
+        unchanged since the pin.
     items:
       - { id: okrs, kind: pipeline, from: null }
   - id: adr
@@ -1506,14 +1534,18 @@ sources:
       evidence: >-
         ai-implementation-spec names ADR section headings only. Since 48ae2918
         (2026-06-23) those headings follow MADR 4.0 (adr/madr, MIT OR CC0-1.0), recorded
-        separately. No sentence from this repository appears in any item.
+        separately. No sentence from this repository appears in any item. Re-checked
+        2026-11-10: upstream 170 commits ahead, licence unchanged; ai-implementation-spec is
+        unchanged and takes nothing from it.
     items:
       - { id: ai-implementation-spec, kind: pipeline, from: null }
   - id: madr
     kind: github
     repo: adr/madr
     # 48ae2918: ADR phase -> MADR 4.0. Ref: default-branch HEAD on 2026-06-23.
-    ref: 8cb64d7e8a85699ed090661ca3224c8889e2a224
+    # Re-pinned 2026-11-10: 8cb64d7e -> ba75bb1b (develop); the 9 commits are typo, link and CI
+    # fixes. MADR 4.0.0 is still the template release; nothing to take.
+    ref: ba75bb1b20d42af5746b246ad348c202419ae681
     license: MIT OR CC0-1.0
     copyright: "Copyright (c) 2017-2022 Oliver Kopp, Olaf Zimmermann"
     relation: inspired-by
@@ -1525,7 +1557,12 @@ sources:
     repo: olivierlacan/keep-a-changelog
     # The note cites keepachangelog.com; this is its source. Ref: HEAD on 2026-06-15,
     # the last commit before the note's categories were last edited (8425e131).
-    ref: 37364f7ae516f0bb1309c4f3f6a7f7fbd4778af4
+    # Re-pinned 2026-11-10: 37364f7a -> 08d0df5a (main). Taken into release-notes.yaml from the
+    # 2.0.0 spec page (source/en/2.0.0/index.html.md), in muster's words: change types ordered by
+    # urgency (Security, Removed, Changed, Deprecated, Fixed, Added) with empty ones omitted, a
+    # Security entry as a short summary linking the advisory, an optional area prefix per entry.
+    # Skipped: the site's version/language picker work and the merge-conflict FAQ.
+    ref: 08d0df5a7e93b71d902def8be0f0d40025b56289
     license: MIT
     copyright: "Copyright (c) 2014 Olivier Lacan"
     relation: inspired-by
@@ -1536,6 +1573,7 @@ sources:
     kind: github
     repo: gcamilo/management-consulting
     # b7dd4d90: Fact / Inference / Assumption labels in executive-summary. Ref: HEAD on 2026-06-23.
+    # Still upstream HEAD on 2026-11-10.
     ref: dd2d099dc390811015c16ecac306415d62b31008
     license: MIT
     copyright: "Copyright (c) 2026"
@@ -1558,7 +1596,8 @@ sources:
       evidence: >-
         Compared README.md at the pin with executive-summary.yaml: no shared 5-gram. One
         idea (decompose the question into an issue tree before answering), itself from
-        Minto's Pyramid Principle.
+        Minto's Pyramid Principle. Re-checked 2026-11-10: upstream 20 commits ahead (a tree
+        viewer/editor and its tooling), still no licence; executive-summary is unchanged.
     items:
       - { id: executive-summary, kind: pipeline, from: null }
   - id: ai-prd-generator
@@ -1577,11 +1616,19 @@ sources:
         Compared README.md at the pin with prd.yaml: no shared 5-gram. Two ideas (keep
         clarifying until confident before drafting; give every claim a confidence flag
         and flag the unsupported ones) in muster's own words; no code or prompt text.
+        Re-checked 2026-11-10: upstream unchanged; the updated prd.yaml shares no 5-gram.
     items:
       - { id: prd, kind: pipeline, from: null }
   - id: marketingskills
     kind: github
     repo: coreyhaines31/marketingskills
+    # No recorded pin until 2026-11-10; pinned to the main HEAD read then (v2.14.9 line). Taken,
+    # in muster's words: competitive-battlecard gets skills/competitors' evidence discipline
+    # (date competitor facts; "not listed" is not "lacks"; no guessed motives; fact apart from
+    # interpretation) and skills/sales-enablement's "why we win needs evidence, else a
+    # hypothesis" and "say where we lose"; lead-magnet gets skills/lead-magnets' buyer-stage
+    # match and fewest-form-fields rule.
+    ref: 8a3bde8083bd121971f61cba4bdbe5fd8c0eee7d
     license: MIT
     copyright: "Copyright (c) 2025 Corey Haines"
     relation: inspired-by
@@ -1594,6 +1641,12 @@ sources:
   - id: email-marketing-bible
     kind: github
     repo: CosmoBlk/email-marketing-bible
+    # No recorded pin until 2026-11-10; pinned to the main HEAD read then (v2.8.2). Taken into
+    # newsletter's deliverability preflight from skills/email-marketing-bible/SKILL.md, in
+    # muster's words: SPF/DKIM/DMARC aligned, RFC 8058 one-click unsubscribe plus a physical
+    # address, preview text that adds information, offer facts identical in email and landing
+    # page, and holding a broad send at a complaint rate of 0.1% or more.
+    ref: 962648c1b147652244c4e4953e96c65421a79e70
     license: MIT
     copyright: "Copyright (c) 2026 George Hartley"
     relation: inspired-by
@@ -1602,6 +1655,9 @@ sources:
   - id: claude-email
     kind: github
     repo: AgriciDaniel/claude-email
+    # No recorded pin until 2026-11-10; pinned to the main HEAD read then (v1.0.0, unchanged since
+    # 2026-04-10). Its skills are inbox triage and campaign tooling; nothing new to take.
+    ref: 182270a0bbcd9c710713cbff4b7ce8475f5964f9
     license: MIT
     copyright: "Copyright (c) 2026 Daniel Agrici"
     relation: inspired-by
@@ -1622,12 +1678,14 @@ sources:
         4-gram outside the upstream: block. The template is a system operation manual
         (service overview, hours of operation, backup and restore ...); runbook.yaml's
         phases (preconditions, triage, steps, observability, validation, rollback,
-        escalation, cleanup) do not follow it.
+        escalation, cleanup) do not follow it. Re-checked 2026-11-10: upstream unchanged.
     items:
       - { id: runbook, kind: pipeline, from: null }
   - id: awesome-sre
     kind: github
     repo: dastergon/awesome-sre
+    # No recorded pin until 2026-11-10: master HEAD, unchanged since 2022-10-08 (before the item).
+    ref: e91ef69aa52129662164e54cc22272bc90e9b636
     license: CC0-1.0
     relation: inspired-by
     fetch: false
@@ -1636,6 +1694,8 @@ sources:
   - id: awesome-runbook
     kind: github
     repo: runbear-io/awesome-runbook
+    # No recorded pin until 2026-11-10: main HEAD, unchanged since 2024-08-07 (before the item).
+    ref: d83a294e4eb650a62b4afce3dfee29f837f8c041
     license: CC0-1.0
     relation: inspired-by
     fetch: false
@@ -1645,6 +1705,7 @@ sources:
     kind: github
     repo: Scoutflo/Scoutflo-SRE-Playbooks
     # b7dd4d90: events-first triage keyed off the failure signature. Ref: HEAD on 2026-06-23.
+    # Still upstream HEAD on 2026-11-10.
     ref: acc55da0224fda5eda580939a15bc60990e8e69f
     license: MIT
     copyright: "Copyright (c) 2026 Scoutflo"
@@ -1668,13 +1729,16 @@ sources:
         Compared README.md at the pin with muster-author: the only shared 5-grams are
         framework expansions ("Attention, Interest, Desire, Action"; "Qualify, Understand,
         Educate, Stimulate, Transition") that name the formulas, not text from it.
+        Re-checked 2026-11-10: upstream unchanged; the updated muster-author shares only those.
     items:
       - { id: muster-author, kind: builtin, from: null }
   - id: boraoztunc-skills
     kind: github
     repo: boraoztunc/skills
     # The 2026-06-23 audit's "dedicated de-slop pass"; b7dd4d90 adopted it in muster-author.
-    ref: c5c5dea7cebaaf801a90a04e1f15123d29de61c1
+    # Re-pinned 2026-11-10: c5c5dea7 -> 1209fb6b (main). stop-slop, the de-slop pass muster-author
+    # follows, is unchanged; the five commits only add design skills vendored from other repos.
+    ref: 1209fb6b07b8acc54ec5b1fcb0f1326df0e668f1
     license: Apache-2.0
     relation: inspired-by
     fetch: false

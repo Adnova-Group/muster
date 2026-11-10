@@ -96,7 +96,7 @@ Lint, eval, and optimize prompts an application generates to build agents/agenti
 | `prompt lint <file> [--agent] [--tools] [--system] [--tool-schema <f>] [--chat <f>] [--workflow <f>]` | Lint prompt structure + guardrails against Anthropic's best practices (no LLM). Returns a scored rubric and `findings[]` with source-cited rule ids. `--tool-schema` passes real tool schemas so the schema↔intent rule checks each tool + its required fields; `--chat` lints a multi-turn chat for role-ordering / role-bleed; `--workflow` lints a multi-prompt workflow for context-boundary erosion. Reads stdin when the file arg is `-` or absent. |
 | `prompt variations <file> [--agent] [--tools] [--system]` | Emit deterministic, technique-driven prompt variations, each closing a specific lint gap. |
 | `prompt eval <suite.json>` | Grade a suite of pre-collected outputs: code graders (`json`/`regex`/`python`/`tool-call`/`trajectory`) combined with the model-judge score; reports per-case `score`, `accuracy`, `averageScore`. |
-| `prompt optimize <file.json>` | Select the winning variation from scored candidates via the tournament floor; flags a `regression` when no variation beats the pinned baseline. |
+| `prompt optimize <file.json>` | Select the winning variation from scored candidates via the `pick` pass floor; flags a `regression` when no variation beats the pinned baseline. |
 | `prompt scan <dir>` | Walk a repo for candidate prompts (`.prompt` files, `prompts/` dirs, backtick `system`/`prompt`/`instructions` assignments) and lint each. Returns per-prompt findings + a pass/fail summary. Powers the conditional `prompt-quality` audit dimension. |
 
 ```sh
@@ -191,7 +191,7 @@ The same deterministic core is also exposed as a local MCP server. The canonical
 | `muster_gate_cadence` | `gate-cadence` | Compute review-gate cadence (spec-gate rounds, batched review passes, reviewer count) from a manifest's waves. |
 | `muster_score` | `score` | Score an artifact against a gate (floor principle). |
 | `muster_prioritize` | `prioritize` | Rank backlog items by RICE/ICE/WSJF/weighted. |
-| `muster_pick` | `pick` | Pick the tournament winner from scored candidates. |
+| `muster_pick` | `pick` | Pick the highest-scoring passing candidate (best-of-N). |
 | `muster_tally` | `tally` | Tally adversarial review verdicts into a gate decision. |
 | `muster_fuse` | `fuse` | Fusion decision engine: validate the debate map, apply the agreement gate, select top-K or fall back. |
 | `muster_advise` | `advise` | Validate an advice request and resolve the advisor tier (apex degrades to prime; the active runtime adapter supplies any concrete model value). |

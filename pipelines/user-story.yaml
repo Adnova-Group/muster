@@ -9,7 +9,7 @@ upstream:
     license: CC-BY-NC-SA-4.0
     relation: inspired-by
   - repo: phuryn/pm-skills
-    ref: d384f0c9eb81fe74656a4f6da168587836939edb
+    ref: 9af7bfd0bc47fdad43c2eaa7a43cd13918e7aaef
     path: null
     license: MIT
     relation: inspired-by

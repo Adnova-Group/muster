@@ -110,6 +110,8 @@ function translatePluginPaths(text) {
 // failing loud if one of the CARRIER files' own copy of the sentence is reworded.
 // init/design/capture froze at revival stage 3, when their Claude copies moved to runtime/muster.sh.
 const FROZEN_CODEX_COMMANDS = ["plan.md", "go.md", "audit.md", "diagnose.md", "init.md", "design.md", "capture.md"];
+// Post-freeze Claude-only commands: the frozen Codex lane never ships them.
+const CLAUDE_ONLY_COMMANDS = ["skills.md"];
 const FROZEN_CODEX_SKILLS = ["orchestrator", "router", "review-gate", "tournament"];
 const RUN_MARKER_FILES = ["go.md", "diagnose.md", "audit.md", "plan.md"];
 const STALE_MARKER_FILES = ["go.md", "diagnose.md", "audit.md", "plan.md"];
@@ -725,6 +727,7 @@ async function buildCodexPluginOnce({ root, outDir, nodeExecPath }) {
     // targets the pre-revival prose. codex/frozen/ holds those inputs byte-for-byte as of
     // revival stage 2; the Claude sources no longer feed the Codex lane for these files.
     for (const name of FROZEN_CODEX_COMMANDS) cpSync(join(root, "codex", "frozen", "commands", name), join(plugin, "commands", name));
+    for (const name of CLAUDE_ONLY_COMMANDS) rmSync(join(plugin, "commands", name), { force: true });
     rmAndCopy(join(root, "catalog"), join(plugin, "catalog"));
     rmAndCopy(join(root, "pipelines"), join(plugin, "pipelines"));
     rmAndCopy(join(root, "vendor"), join(plugin, "vendor"));

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- **The Claude plugin runs a bundled CLI instead of npx.** `plugin/runtime/cli/` holds `src/cli.js` bundled with esbuild plus the catalog, pipelines and vendor manifest it reads, committed so the plugin's commands and its CLI always come from the same commit. `runtime/muster.sh` now tries the source checkout, then the bundle, then pinned npx. An installed plugin's CLI call drops from about 0.54 s (npx, warm cache) or 2 s (cold) to about 0.12 s; a `/muster:go` makes about six. It also ends the skew where an installed plugin's commands called verbs (`preflight`, `next --run`) that the npm release of the same version lacked. `npm run build:plugin` rebuilds it; `npm test` and `prepublishOnly` fail while it differs from its sources by a single byte.
+- **`/muster:init` learns a project about 6x faster** (a copy of this repository: 8.2 s to 1.2 s median; without `.git`, 22 s to 3 s). `learnProjectProfile` walks the repository with bounded parallelism (8 pinned directory windows, 32 leaf calls, 64 fingerprint paths in flight) instead of one filesystem call at a time, keeping every fail-closed TOCTOU check and producing the same fingerprint digests.
+- **The action fence hook spawns `node` directly, fails open, and skips Claude Desktop's two turn tools.** Exec form (`"command": "node", "args": [...]`) with `onFailure: "continue"`, and a matcher anchored to `Bash`, `PowerShell` and every MCP tool except exactly `mcp__ccd_turn__update_plan` and `mcp__ccd_turn__wrap_up`.
+
 ### Fixed
 
 - **Codex waves on macOS report the platform limit instead of a phantom install problem.** The only platform gate lived inside `runProcessWave`, downstream of Codex executable resolution, so a wave on macOS died with `no trusted Codex executable was found outside the repository` — a provenance error that reads as a fixable install problem. Operators (and driving agents) chased a nonexistent trust failure instead of the real one. The check now runs first, and says what it means: containment is unavailable on this platform, the run is refused, and the refusal must not be satisfied by re-hosting the wave in a container, VM, or remote Linux host, nor by forwarding Codex credentials into one. That workaround strips the `tmpfs` masking that keeps `~/.codex` away from the worker, so it is strictly less safe than the refusal it appears to resolve.

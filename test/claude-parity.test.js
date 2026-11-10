@@ -15,7 +15,9 @@ const claudeSurface = [
   "plugin/builtins",
   "plugin/commands",
   "plugin/hooks",
+  "plugin/references",
   "plugin/skills",
+  "plugin/workflows",
   "cowork/mcp-server.mjs",
   "mcp/server.mjs",
   "catalog",
@@ -44,7 +46,7 @@ test("Claude orchestration surface remains byte-identical outside release metada
     hash.update(await readFile(join(root, path)));
     hash.update("\0");
   }
-  assert.equal(paths.length, 908); // 0.7.0 retired the run/autopilot/sprint command files; 2026-11-09 removed five always-on hook files; stage 1 removed references/kimi-dispatch.md; stage 2 adds plugin/workflows (plan, build, backlog, schemas) and gsd-derived agents (planner, plan-checker, verifier, executor replacing builder); stage 2b deletes the backlog/runner verbs and router-era skills (see the 2026-11-09e re-pin below). Revival stage 3 (2026-11-10): vendored skill library and new workflows, agents and commands.
+  assert.equal(paths.length, 917); // 0.7.0 retired the run/autopilot/sprint command files; 2026-11-09 removed five always-on hook files; stage 1 removed references/kimi-dispatch.md; stage 2 adds plugin/workflows (plan, build, backlog, schemas) and gsd-derived agents (planner, plan-checker, verifier, executor replacing builder); stage 2b deletes the backlog/runner verbs and router-era skills (see the 2026-11-09e re-pin below). Revival stage 3 (2026-11-10): vendored skill library and new workflows, agents and commands. Revival stage 4: the surface adds plugin/references and plugin/workflows.
   // Previous 159-file surface +1: audit-pattern-batch2's new
   // plugin/skills/audit-pattern-documentation/SKILL.md (the 10th pattern skill, approved via the
   // second improver batch, composed onto readability + design-ux). The batch also appended 19
@@ -1549,5 +1551,13 @@ test("Claude orchestration surface remains byte-identical outside release metada
   //   fail-open hooks, the bundled runtime, and security fixes in vendored scripts.
   // Plan: docs/strategy/2026-11-revival-review.md, stage-2-contracts.md amendments 9-19.
   // Deliberate, not drift.
-  assert.equal(hash.digest("hex"), "7ba99aa10a7411b8263aa44c2412039e649bde98e4d330a343dbbcc7c29cbcd9");
+  // Re-pin 2026-11-10 (revival stage 4, 908 -> 917 files): the surface now also covers
+  // plugin/references (audit hunt lists and design supporting-skills, moved out of commands/,
+  // where every .md loads as a slash command) and plugin/workflows (the orchestration scripts).
+  // Content: fixes from the first live production e2e run and the plugin eval suite (plan-checker
+  // calibration: only blockers hold the gate; HUMAN_NEEDED verdict; merge-wave refuses plan
+  // inputs changed after build-args; tracer waves; unattended plan defaults; specialists get
+  // Write), turn-limit handling and omitClaudeMd seats, trimmed always-on descriptions, and
+  // impeccable/hallmark/simple-english/jakubkrehel upstream updates. Deliberate, not drift.
+  assert.equal(hash.digest("hex"), "ccf7e40a0c766405f473203515eacb39008f129f3042a0afbf7f9572a0d1b121");
 });

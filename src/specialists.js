@@ -17,7 +17,7 @@ const ROOT = fileURLToPath(new URL("../", import.meta.url));
 export const PLUGIN_ROOT = join(ROOT, "plugin");
 
 // Workflow seats run their own stages; they are never a task's executor.
-export const WORKFLOW_SEATS = Object.freeze(["muster-planner", "muster-plan-checker", "muster-reviewer", "muster-verifier"]);
+export const WORKFLOW_SEATS = Object.freeze(["muster-planner", "muster-plan-checker", "muster-reviewer", "muster-verifier", "muster-test-writer", "muster-integration-checker"]);
 
 function readFrontmatter(path) {
   try {

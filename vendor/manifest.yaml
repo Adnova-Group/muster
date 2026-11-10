@@ -430,15 +430,9 @@ sources:
         roles: [architecture-review]
         as: agent
         description: "Backend architecture: API design, service boundaries, resilience and observability."
-      - from: plugins/code-documentation/agents/code-reviewer.md
-        id: wsh-code-reviewer
-        kind: agent
-        to: plugin/agents/wsh-code-reviewer.md
-        mode: adapted
-        baseBlob: 7972beb0d273d258c463ab30a78601701f76fb5a
-        roles: [code-review]
-        as: agent
-        description: Code review for quality, security and production reliability.
+      # wsh-code-reviewer left the Claude plugin on 2026-11-10 (dev-team track,
+      # docs/strategy/dev-team-topologies.md): muster-reviewer already owns code review. Its file
+      # lives on in codex/frozen/agents/ for the frozen Codex lane (wshobson-codex below).
       - from: plugins/debugging-toolkit/agents/debugger.md
         id: wsh-debugger
         kind: agent
@@ -449,6 +443,19 @@ sources:
         roles: [debug]
         as: agent
         description: Debugging errors, test failures and unexpected behavior.
+      # Hypothesis investigator for the muster:debug workflow (agent-teams plugin). Read-only;
+      # TaskList/SendMessage dropped because Workflow agents cannot message each other. Ranked
+      # below wsh-debugger so the debug role (and the frozen Codex lane's seed) is unchanged.
+      - from: plugins/agent-teams/agents/team-debugger.md
+        id: wsh-team-debugger
+        kind: agent
+        to: plugin/agents/wsh-team-debugger.md
+        mode: adapted
+        baseBlob: 07dbeb8128cf50f1c85fbc6c1630f42bed4bbfe0
+        relation: adapted
+        roles: [debug]
+        as: agent
+        description: "Tests one bug hypothesis with cited evidence."
       - from: plugins/backend-development/agents/security-auditor.md
         id: wsh-security-auditor
         kind: agent
@@ -1062,6 +1069,9 @@ sources:
       - { id: muster-executor, kind: agent, from: agents/gsd-executor.md, to: plugin/agents/muster-executor.md, mode: adapted, baseBlob: 0edccaf308cd7ce8aeb831a3bcc08c904da6ed60, issues: [2075, 2924, 3097, 3099, 3542, 3819] }
       - { id: muster-verifier, kind: agent, from: agents/gsd-verifier.md, to: plugin/agents/muster-verifier.md, mode: adapted, baseBlob: 860c6f833806441adb51c70dd1df2ba3c69a9dc1, issues: [1955, 3304] }
       - { id: muster-reviewer, kind: agent, from: agents/gsd-code-reviewer.md, to: plugin/agents/muster-reviewer.md, mode: adapted, baseBlob: e79259d281d738b495963c1ae0ada8d58449266e, issues: [] }
+      # adapted: the dev-team seats (docs/strategy/dev-team-topologies.md, 2026-11-10)
+      - { id: muster-integration-checker, kind: agent, from: agents/gsd-integration-checker.md, to: plugin/agents/muster-integration-checker.md, mode: adapted, baseBlob: bd72738891c1b3aff805ac5636a0d27f8b065f74, issues: [] }
+      - { id: muster-test-writer, kind: agent, from: agents/gsd-nyquist-auditor.md, to: plugin/agents/muster-test-writer.md, mode: adapted, baseBlob: 17ecb91ecc7c8b5927637a6568fdadeb88218ed8, issues: [] }
       # verbatim: reference protocols carried byte-for-byte inside the agents (one item per consumer)
       - { id: muster-planner, kind: agent, from: gsd-core/references/prohibition-probe.md, to: plugin/agents/muster-planner.md, mode: verbatim, relation: vendored, baseBlob: d8c1fe398b437c0738f5b949cc54faa8b3dff270, issues: [644, 1278, 1279] }
       - { id: muster-planner, kind: agent, from: gsd-core/references/planner-revision.md, to: plugin/agents/muster-planner.md, mode: verbatim, relation: vendored, baseBlob: 59c6ad83323a3bc969b4b5ebc9a05bfc1cc48b1a, issues: [] }
@@ -1467,6 +1477,8 @@ sources:
     fetch: false
     items:
       - { id: wsh-signed-audit-trails-recipe, kind: codex-fallback, from: plugins/signed-audit-trails/skills/signed-audit-trails-recipe/SKILL.md }
+      # Retired from the Claude plugin on 2026-11-10; the frozen Codex lane still sources it.
+      - { id: wsh-code-reviewer, kind: codex-frozen-agent, from: plugins/code-documentation/agents/code-reviewer.md, ref: 9c61ab243def98f72da12abd41cfcf5bcd91af9d, relation: vendored }
 
   # --- muster-humanizer: AI-tell removal, tell taxonomy and tiered vocabulary ---
   - id: blader-humanizer

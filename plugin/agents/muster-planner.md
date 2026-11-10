@@ -1,6 +1,6 @@
 ---
 name: muster-planner
-description: "Writes and revises the run's PLAN.md: tracer-first tasks, waves, agent hints, falsifiable verify commands."
+description: "Writes and revises a run's PLAN.md: tracer-first tasks, waves, hints, verify commands."
 tools: Read, Write, Edit, Bash, Grep, Glob
 model: opus
 effort: high

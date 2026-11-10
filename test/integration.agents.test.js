@@ -11,7 +11,8 @@ const AGENTS_DIR = new URL("../plugin/agents/", import.meta.url);
 // Agent layer: provenance is honored per source, the ladder prefers installed > agent > skill,
 // every agent file has a catalog entry (and vice versa), and the dispatch docs wire chosen.kind.
 
-const GSD_SEATS = ["muster-executor"];
+// muster-test-writer and muster-integration-checker: the dev-team seats (docs/strategy/dev-team-topologies.md).
+const GSD_SEATS = ["muster-executor", "muster-test-writer", "muster-integration-checker"];
 
 test("muster agents credit their upstream (atomic-claude role concept, gsd-core for the lifecycle seats); vendored agents carry MIT provenance", async () => {
   const catalog = await loadCatalog(CATALOG);

@@ -3,7 +3,7 @@ export const meta = {
   description: 'Build several planned backlog items one after another through the muster build stages',
   whenToUse: 'Backlog scope: every item already has an approved plan. Run `muster merge-wave` per item afterwards.',
   phases: [
-    { title: 'Build', detail: 'one muster-executor per task, each in its own worktree' },
+    { title: 'Build', detail: 'one builder per task (muster-executor or the planned specialist), each in its own worktree' },
     { title: 'Review', detail: 'muster-reviewer verdict; fixer in the same worktree, at most 2 rounds' },
     { title: 'Verify', detail: 'muster-verifier once per item' },
   ],
@@ -30,6 +30,10 @@ const EXEC_RESULT = {
     testsPassed: { type: 'boolean' },
     selfCheck: { type: 'string', enum: ['PASSED', 'FAILED'] },
     deviations: strList,
+    skillsApplied: {
+      type: 'array',
+      items: { type: 'object', properties: { id: str, how: str, quote: str }, required: ['id', 'how'] },
+    },
   },
   required: ['taskId', 'status', 'branch', 'commit', 'worktree', 'filesChanged', 'testsRun', 'testsPassed', 'selfCheck', 'deviations'],
 }
@@ -70,6 +74,12 @@ const VERIFY_RESULT = {
 }
 
 const REVIEW_CAP = 2 // fix rounds per task; review runs at most REVIEW_CAP + 1 times
+// Executors started at once, i.e. worktrees being created at once. Simultaneous
+// `git worktree add` calls can race on .git/config.lock (gsd #48); args.worktreeConcurrency
+// overrides it (1 serializes the builders; reviews and fixes reuse existing worktrees).
+const WORKTREE_CAP = 3
+const EXECUTOR = 'muster:muster-executor'
+const AGENT_TYPE_RE = /^muster:[a-z0-9][a-z0-9-]{0,80}$/
 
 // Slash-command text arrives as one string; a tool call passes an object.
 function parseArgs(raw) {
@@ -108,21 +118,75 @@ async function call(prompt, opts) {
 
 const list = (xs) => (Array.isArray(xs) ? xs : xs ? [xs] : [])
 
+// Counting semaphore: at most n thunks in flight, the rest queue in call order.
+function limiter(n) {
+  let active = 0
+  const queue = []
+  const pump = () => {
+    while (active < n && queue.length) {
+      const job = queue.shift()
+      active++
+      job.fn().then(job.resolve, job.reject).then(() => { active--; pump() })
+    }
+  }
+  return (fn) => new Promise((resolve, reject) => { queue.push({ fn, resolve, reject }); pump() })
+}
+
+// build-args resolves agent_hint to `agentType` only for a dispatchable plugin agent;
+// anything else (absent, malformed, the executor itself) runs muster-executor.
+function builderType(t) {
+  return typeof t.agentType === 'string' && AGENT_TYPE_RE.test(t.agentType) ? t.agentType : EXECUTOR
+}
+
+// What a behind-the-run worktree fast-forwards to: the work branch (its tip carries the plan
+// commit, which build-args.json's own base cannot name), else the base itself.
+const syncRef = (cfg) => (typeof cfg.branch === 'string' && /^[A-Za-z0-9._\/-]{1,200}$/.test(cfg.branch) ? cfg.branch : cfg.base)
+
+const boundSkills = (t) => list(t.skills).filter((k) => k && typeof k.id === 'string' && typeof k.path === 'string')
+
+function skillLines(t) {
+  const skills = boundSkills(t)
+  if (!skills.length) return []
+  return [
+    'REQUIRED SKILLS: before any other work, Read each file below in full and follow it for this task:',
+    ...skills.map((k) => `- ${k.id}: ${k.path}`),
+    'Return skillsApplied with one {id, how, quote} per skill: how = one line on how this task applied it; quote = one line copied verbatim from the file, proving you read it. A skill that turns out not to apply still gets read; say why in how.',
+  ]
+}
+
+// Specialist agents (wsh-*, surgeon) do not carry muster-executor's protocol, so the brief does.
+function contractLines(tag) {
+  return [
+    'You are building one task for muster. Your own agent instructions do not know muster\'s executor contract; where they conflict, these rules win:',
+    '- Stay on your worktree branch: git rev-parse --abbrev-ref HEAD must be an agent-*, worktree-agent-* or worktree-wf_* branch, never main/master/develop or a detached HEAD; otherwise return status "blocked" without committing.',
+    '- Never reset, rebase, push, update-ref or force anything. Stage files one at a time (never git add . or git add -A).',
+    `- Commit as <type>(<taskId>): <summary> ${tag}, with a conventional type (feat, fix, test, docs, refactor, chore).`,
+    '- Do not install new packages (return "blocked" naming the package). An architectural choice the plan leaves open is "blocked" too, with the options.',
+    '- Create new files with Write, or with Bash (cat > path <<\'EOF\') when Write is not among your tools.',
+    '- Return the ExecResult object: status done|blocked|error; selfCheck PASSED only when every verify command passed and git log shows your tagged commit, otherwise FAILED; deviations lists anything you did beyond or instead of the plan.',
+  ]
+}
+
 function emptyExec(t, status, why) {
   return { taskId: t.taskId, status, branch: '', commit: '', worktree: '', filesChanged: [], testsRun: [], testsPassed: false, selfCheck: 'FAILED', deviations: [why] }
 }
 
 function execBrief(cfg, t, prior) {
   const tag = `[${cfg.runId}/${t.taskId}]`
+  const specialist = builderType(t) !== EXECUTOR
   const steps = [
     `Run ${cfg.runId}, task ${t.taskId}: ${t.title || ''}`,
     `Your task is defined in .muster/runs/${cfg.runId}/PLAN.md; that file is the source of truth.`,
-    t.agentHint ? `Domain lens for this task: ${t.agentHint}.` : '',
+    t.agentHint && !specialist ? `Domain lens for this task: ${t.agentHint}.` : '',
+    ...(specialist ? contractLines(tag) : []),
+    ...skillLines(t),
     `Files in scope: ${list(t.files).join(', ') || '(see PLAN.md)'}`,
     `Verify commands: ${list(t.verify).join(' ; ') || '(see PLAN.md)'}`,
     'You are in a fresh, isolated git worktree. This brief may be replayed after a crash, so:',
     `1. Check git state first: git status --short; git log --oneline ${cfg.base || 'HEAD~20'}..HEAD. If a commit whose message contains ${tag} already exists and the tree is clean, do not redo the work: re-run the verify commands and report that commit.`,
-    cfg.base ? `2. Run git merge-base --is-ancestor ${cfg.base} HEAD. If it fails, stop and return status "blocked".` : '2. (no base commit given; skip the base check)',
+    cfg.base
+      ? `2. Sync and base check. Claude Code starts isolated worktrees from the remote default branch unless worktree.baseRef is "head", so yours may lack the run's plan commit. If .muster/runs/${cfg.runId}/PLAN.md is missing or git merge-base --is-ancestor ${cfg.base} HEAD fails, and git merge-base --is-ancestor HEAD ${syncRef(cfg)} succeeds, run git merge --ff-only ${syncRef(cfg)}. Then git merge-base --is-ancestor ${cfg.base} HEAD must succeed; otherwise stop and return status "blocked" with "base mismatch: HEAD <sha>, base ${cfg.base}". Never reset or rebase.`
+      : '2. (no base commit given; skip the base check)',
     prior.length
       ? `3. Integrate the earlier waves first. For each commit C of ${prior.map((p) => p.commit).join(' ')}: git merge-base --is-ancestor C HEAD || git merge --no-ff --no-edit C`
       : '3. (first wave: nothing to integrate)',
@@ -134,16 +198,23 @@ function execBrief(cfg, t, prior) {
 
 function reviewBrief(cfg, t, ex, prior) {
   const not = [cfg.base, ...prior.map((p) => p.commit)].filter(Boolean).join(' ')
+  const skills = boundSkills(t)
+  const used = list(ex.skillsApplied).map((u) => `${u.id}: ${u.how}`)
   return [
     `Review task ${t.taskId} of run ${cfg.runId}: ${t.title || ''}`,
     `The task is defined in .muster/runs/${cfg.runId}/PLAN.md.`,
     `Code: branch ${ex.branch}, commit ${ex.commit}, worktree ${ex.worktree}.`,
     `Review only this task's own commits: git log -p --no-merges ${ex.commit}${not ? ` --not ${not}` : ''}`,
     `Re-run the verify commands inside the worktree (cd ${ex.worktree} && ...): ${list(t.verify).join(' ; ') || '(see PLAN.md)'}`,
+    ...(skills.length ? [
+      `The task is bound to these skills; Read each and check the diff against its rules: ${skills.map((k) => `${k.id} (${k.path})`).join(', ')}.`,
+      `The builder reports skillsApplied: ${used.join('; ') || '(none)'}.`,
+      'Not following a bound skill is a FAIL finding (cite the rule); so is a bound skill missing from skillsApplied.',
+    ] : []),
     'Read only: do not edit files or commit.',
     `Set taskId to ${t.taskId} and commitReviewed to the full sha you reviewed (it must be ${ex.commit}).`,
     'verdict PASS only when no blocker remains; FAIL with one finding per problem; ABSTAIN when you cannot review.',
-  ].join('\n')
+  ].filter(Boolean).join('\n')
 }
 
 function fixBrief(cfg, t, ex, review, round) {
@@ -156,8 +227,9 @@ function fixBrief(cfg, t, ex, review, round) {
     '2. Address exactly these findings, nothing else:',
     ...findings,
     `3. Re-run the verify commands (${list(t.verify).join(' ; ') || 'see PLAN.md'}) and commit with a message containing ${tag}.`,
+    boundSkills(t).length ? `The task is bound to these skills; keep the fix consistent with them: ${boundSkills(t).map((k) => `${k.id} (${k.path})`).join(', ')}` : '',
     'Return the ExecResult for the new HEAD (same branch and worktree).',
-  ].join('\n')
+  ].filter(Boolean).join('\n')
 }
 
 function verifyBrief(cfg, tasks) {
@@ -188,13 +260,17 @@ async function reviewLoop(cfg, t, ex, prior) {
       current = { ...current, deviations: [...list(current.deviations), `fix round ${round + 1}: ${fx.error || fx.status}`] }
       break
     }
-    current = { ...fx, taskId: t.taskId, branch: current.branch, worktree: current.worktree }
+    current = { ...fx, taskId: t.taskId, branch: current.branch, worktree: current.worktree, skillsApplied: current.skillsApplied }
   }
   return { current, reviews }
 }
 
 async function finishTask(cfg, t, w, ex, prior) {
-  const base = { title: t.title || '', wave: w + 1, verify: list(t.verify) }
+  const base = { title: t.title || '', wave: w + 1, verify: list(t.verify), agentType: builderType(t) }
+  // Evidence for the main thread: bound skills the builder did not prove it read.
+  const proven = new Set(list(ex && ex.skillsApplied).filter((u) => u && u.how).map((u) => u.id))
+  const missing = boundSkills(t).map((k) => k.id).filter((id) => !proven.has(id))
+  if (missing.length) base.skillsMissing = missing
   if (!ex || ex.status === 'error') return { ...emptyExec(t, 'error', (ex && ex.error) || 'executor failed'), ...base, review: null }
   if (ex.status !== 'done' || ex.selfCheck !== 'PASSED') return { ...ex, taskId: t.taskId, ...base, review: null }
   const { current, reviews } = await reviewLoop(cfg, t, ex, prior)
@@ -209,6 +285,7 @@ async function runBuild(cfg) {
   const tasks = []
   const prior = []
   let halted = null
+  const startBuilder = limiter(Math.max(1, Math.floor(Number(cfg.worktreeConcurrency)) || WORKTREE_CAP))
   for (let w = 0; w < waves.length; w++) {
     const wave = waves[w]
     if (halted) {
@@ -219,9 +296,9 @@ async function runBuild(cfg) {
     const before = prior.slice()
     const results = await pipeline(
       wave,
-      (t) => call(execBrief(cfg, t, before), {
-        label: `${pre}build ${t.taskId}`, phase: 'Build', schema: EXEC_RESULT, agentType: 'muster:muster-executor', isolation: 'worktree', ...seat(cfg, 'executor'),
-      }),
+      (t) => startBuilder(() => call(execBrief(cfg, t, before), {
+        label: `${pre}build ${t.taskId}`, phase: 'Build', schema: EXEC_RESULT, agentType: builderType(t), isolation: 'worktree', ...seat(cfg, 'executor'),
+      })),
       (ex, t) => finishTask(cfg, t, w, ex, before),
     )
     const done = results.map((r, i) => r || { ...emptyExec(wave[i], 'error', 'pipeline dropped the task'), wave: w + 1, verify: list(wave[i].verify), review: null })

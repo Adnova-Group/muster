@@ -74,7 +74,7 @@ as a skill (the other is `audit-pattern-dead-code-duplication`).
   none of which name the specific path/state that triggered them, so a failure report alone can't
   tell a reader WHICH of several similar guards fired.
 - **Comment rot**: a comment or prose reference to a renamed/removed symbol, a retired verb name
-  used as if still primary (`run`/`sprint`/`autopilot` instead of `plan`/`go`/`go-backlog` --
+  used as if still primary (`run`/`sprint`/`autopilot` instead of `plan`/`go` --
   legitimate only on their documented one-line alias note, never elsewhere), the OLD tier
   vocabulary used as if it were still the role-tier taxonomy (`haiku`/`sonnet`/`opus`/`fable` as
   role tiers -- semantic tiers have been `scout`/`core`/`prime`/`apex` since 2026-07-27; the old

@@ -108,7 +108,8 @@ function translatePluginPaths(text) {
 // (same `name`-array convention already used below for the --roles-only/manifest-validate
 // rewrites) keeps the guard from firing on files it was never meant to touch, while still
 // failing loud if one of the CARRIER files' own copy of the sentence is reworded.
-const FROZEN_CODEX_COMMANDS = ["plan.md", "go.md", "audit.md", "diagnose.md"];
+// init/design/capture froze at revival stage 3, when their Claude copies moved to runtime/muster.sh.
+const FROZEN_CODEX_COMMANDS = ["plan.md", "go.md", "audit.md", "diagnose.md", "init.md", "design.md", "capture.md"];
 const FROZEN_CODEX_SKILLS = ["orchestrator", "router", "review-gate", "tournament"];
 const RUN_MARKER_FILES = ["go.md", "diagnose.md", "audit.md", "plan.md"];
 const STALE_MARKER_FILES = ["go.md", "diagnose.md", "audit.md", "plan.md"];
@@ -462,6 +463,9 @@ function bindBundledCodexCli(text) {
   const cli = `node ${"${PLUGIN_ROOT}"}/runtime/muster.mjs`;
   const escapedCli = escapeRe(cli);
   let result = text
+    // Claude prose calls the CLI through the per-call resolver (plugin/runtime/muster.sh);
+    // the Codex package's resolved CLI is the bundled runtime.
+    .replaceAll('sh "${CLAUDE_PLUGIN_ROOT}/runtime/muster.sh"', cli)
     // The Claude-side performance pass resolves `$MUSTER_CLI` once per run
     // (plugin/commands/go.md step -2) because a raw `npx` call pays a cold
     // start on every invocation. The Codex package has no such ambiguity:

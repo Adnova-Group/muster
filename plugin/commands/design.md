@@ -20,23 +20,9 @@ Use Muster's own deterministic CLI and workflow surface. End users never need
 the Impeccable CLI. The workflows run Impeccable's vendored skills (impeccable-*,
 pinned commit `035c8f319edd019936525a062fe99e83ca8d12c6`, Apache-2.0).
 
-Resolve the CLI once:
+`M` below means `sh "${CLAUDE_PLUGIN_ROOT}/runtime/muster.sh"`: it runs this plugin's own source checkout, else the npm release pinned to this plugin's version, never a global `muster`. Repeat it in full in every Bash call; shell variables do not survive between calls.
 
-```bash
-if [ -n "$CLAUDE_PLUGIN_ROOT" ] && [ -f "$CLAUDE_PLUGIN_ROOT/runtime/muster.mjs" ]; then
-  MUSTER_CLI="node $CLAUDE_PLUGIN_ROOT/runtime/muster.mjs"
-elif [ -n "$PLUGIN_ROOT" ] && [ -f "$PLUGIN_ROOT/runtime/muster.mjs" ]; then
-  MUSTER_CLI="node $PLUGIN_ROOT/runtime/muster.mjs"
-elif [ -f "./src/cli.js" ] && [ -f "./src/design.js" ]; then
-  MUSTER_CLI="node ./src/cli.js"
-elif command -v muster >/dev/null 2>&1; then
-  MUSTER_CLI="muster"
-else
-  MUSTER_CLI="npx -y @adnova-group/muster"
-fi
-```
-
-The deterministic utilities are:
+The deterministic utilities (each run as `M <utility>`) are:
 
 - `design init [dir] [--target path] [--content-file file]`
 - `design status|resolve|detect [dir] [--target path]`

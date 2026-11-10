@@ -3,6 +3,7 @@ name: muster-strategist
 description: Read-only heavyweight reasoning on whether an approach, plan or spec is right; does not implement.
 tools: Read, Bash, Grep, Glob
 model: opus
+effort: high
 maxTurns: 35
 upstream:
   - repo: damusix/atomic-claude

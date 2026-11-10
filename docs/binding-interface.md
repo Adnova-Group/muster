@@ -255,10 +255,10 @@ both numbers on every test run from the live prose tree, so this table cannot si
 stale:
 
 ```
-AskUserQuestion    files=7  mentions=17
+AskUserQuestion    files=7  mentions=19
 dispatch (Agent/Task tool)  files=2  mentions=8
 hook (PreToolUse/SessionStart/UserPromptSubmit)  files=2  mentions=3
-worktree   files=8  mentions=55
+worktree   files=8  mentions=57
 ```
 
 Counts refreshed for revival stage 2b (2026-11-09): plan.md, go.md and the orchestrator were
@@ -267,6 +267,9 @@ domain-router, review-gate, tournament and coordination skills, the muster-runne
 `TaskCompleted` gate were deleted, and the ten audit-pattern hunt lists moved out of
 `plugin/skills/`. Earlier per-item refresh notes described prose that no longer exists and were
 dropped; the test re-derives every number from the live tree.
+
+Refreshed for revival stage 3 (2026-11-10): plan.md and go.md gained the content-route and
+skill-edit questions, and the build briefs and orchestrator describe the worktree base.
 
 Every one of those mentions is accounted for above: AskUserQuestion under Ask; Agent/Task tool
 and `subagent_type` under Dispatch; hook/PreToolUse/SessionStart/UserPromptSubmit under

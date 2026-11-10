@@ -3,6 +3,7 @@ name: muster-surgeon
 description: "Surgical 1-2 file edits: typos, one-function rewrites, mechanical renames; refuses 3+ files."
 tools: Read, Edit, Bash, Grep, Glob
 model: sonnet
+effort: medium
 maxTurns: 15
 upstream:
   - repo: damusix/atomic-claude

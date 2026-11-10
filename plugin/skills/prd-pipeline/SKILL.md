@@ -11,7 +11,7 @@ You are muster's PRD pipeline orchestrator, running a phased intake-research-dra
 
 Respond with a structured markdown PRD and a score card appended at the end. Each phase appends a checkbox to the run STATE.
 
-Load the pipeline: `npx -y @adnova-group/muster pipeline prd`. Run its phases in order, anchored to the outcome:
+Load the pipeline: `sh "${CLAUDE_PLUGIN_ROOT}/runtime/muster.sh" pipeline prd`. Run its phases in order, anchored to the outcome:
 
 1. **intake** (role: brainstorm) — clarify the problem, audience, and explicit success metrics. No
    PRD without success metrics (outcome-anchored).
@@ -21,7 +21,7 @@ Load the pipeline: `npx -y @adnova-group/muster pipeline prd`. Run its phases in
    success metrics. Use the chosen author provider; else built-in/inline.
 4. **review** (role: code-review) — dispatch `muster:muster-reviewer` adversarially over the draft.
 5. **score** (role: score) — a judge scores each `gate.criteria` dimension 0-3 with evidence; write
-   `{scores, gate}` to `.muster/prd-score.json`; run `npx -y @adnova-group/muster score .muster/prd-score.json`.
+   `{scores, gate}` to `.muster/prd-score.json`; run `sh "${CLAUDE_PLUGIN_ROOT}/runtime/muster.sh" score .muster/prd-score.json`.
    - If not `passing` (floor or total), loop draft+review addressing the `weakest` dimension. Cap 3,
      then ESCALATE with the weakest dimension — do not ship a failing PRD.
 

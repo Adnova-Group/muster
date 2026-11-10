@@ -11,21 +11,21 @@ import { agentProfiles } from "./agent-manifest.js";
 // frontmatter `model:` field, the Agent tool's `model` param, and settings-level
 // model aliases. They are harness words now, exactly like "gpt-5.6-sol".
 //
-// Claude Code's per-subagent reasoning-effort knob exists on exactly ONE
-// surface: the Workflow tool's agent() takes `effort:
-// 'low'|'medium'|'high'|'xhigh'|'max'` per spawned agent (observed live against
-// a 2.1.220 session, 2026-07-29 — the cc-workflow-lane correction; through
-// 2026-07-28 this adapter documented "no per-subagent effort surface", which
-// was true of the Agent tool and still is: the Agent tool carries no effort
-// parameter). A semantic effort therefore resolves to a lane-scoped
-// `workflowEffort` field — consumed only by Workflow-lane dispatch
-// (orchestrator SKILL.md's native lane), never emitted into agent frontmatter
-// or Agent-tool calls. Ladder mirrors the Codex lanes (codex.js CODEX_EFFORT):
-// workhorse=medium (the cost/quality default), judgment=high (output gates
-// other work), peak=xhigh (rare high-consequence; max never routine). No
-// declared effort -> no workflowEffort key: Workflow agent() omits effort to
-// inherit the session effort, so an absent key is the correct default.
-const CLAUDE_WORKFLOW_EFFORT = Object.freeze({ workhorse: "medium", judgment: "high", peak: "xhigh" });
+// Claude Code's per-subagent reasoning effort has two dispatch surfaces, and the
+// same semantic ladder feeds both:
+//   - the Workflow tool's agent() `effort` (observed live on 2.1.220, 2026-07-29),
+//     resolved here as `workflowEffort`;
+//   - the Agent tool's `effort` parameter, added in Claude Code 2.1.292 (it
+//     overrides the agent's frontmatter `effort:`), resolved here as `agentEffort`.
+//     Through 2.1.291 the Agent tool had no effort parameter and this adapter said
+//     so; the prose fallback (orchestrator SKILL.md) now passes it per seat.
+// Agent frontmatter `effort:` is written from the same ladder by vendor.js. Ladder
+// mirrors the Codex lanes (codex.js CODEX_EFFORT): workhorse=medium (the
+// cost/quality default), judgment=high (output gates other work), peak=xhigh
+// (rare high-consequence; max never routine). No declared effort -> neither key:
+// an omitted effort inherits the session's, so an absent key is the correct
+// default. CLAUDE_CODE_EFFORT_LEVEL still beats both surfaces (preflight warns).
+const CLAUDE_EFFORT = Object.freeze({ workhorse: "medium", judgment: "high", peak: "xhigh" });
 
 export const CLAUDE_MODEL_POLICY = Object.freeze({
   tiers: Object.freeze({
@@ -38,12 +38,12 @@ export const CLAUDE_MODEL_POLICY = Object.freeze({
     // dispatch resolves rather than throwing.
     apex: Object.freeze({ model: "fable" }),
   }),
-  // A semantic effort dials the Workflow-lane effort on the tier's model; an
+  // A semantic effort dials both lanes' effort on the tier's model; an
   // unknown semantic (shouldn't reach here -- assertNeutralProfile guards it)
   // leaves the profile untouched, same fall-through as codex.js.
   applyEffort(base, semantic) {
-    const workflowEffort = CLAUDE_WORKFLOW_EFFORT[semantic];
-    return workflowEffort ? { ...base, workflowEffort } : { ...base };
+    const effort = CLAUDE_EFFORT[semantic];
+    return effort ? { ...base, workflowEffort: effort, agentEffort: effort } : { ...base };
   },
 });
 

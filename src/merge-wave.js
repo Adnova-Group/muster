@@ -32,8 +32,11 @@ export function isClaudeWorktree(path) {
   return `${path}${sep}`.includes(`${sep}.claude${sep}worktrees${sep}`);
 }
 
-// A build result is either build.js's `{runId, tasks}` or backlog.js's `{items:[...]}`.
+// A build result is either build.js's `{runId, tasks}` or backlog.js's `{items:[...]}`, or the
+// Workflow tool's envelope around one (`{summary, agentCount, logs, result}`), which is what the
+// main thread saw in the stage-3 smokes and may save verbatim.
 export function tasksFor(result, runId) {
+  if (result && result.result && typeof result.result === "object" && !Array.isArray(result.tasks) && !Array.isArray(result.items)) result = result.result;
   if (result && Array.isArray(result.tasks)) {
     if (result.runId && result.runId !== runId) throw new Error(`result is for run ${result.runId}, not ${runId}`);
     return { tasks: result.tasks, base: result.base || null };
@@ -151,6 +154,9 @@ async function writeSummary(root, runId, plan, task, merged, runs) {
     `- commit: ${task.commit}`,
     `- merged as: ${merged}`,
     `- files: ${list(task.filesChanged).join(", ") || "-"}`,
+    ...(task.agentType ? [`- builder: ${task.agentType}`] : []),
+    ...(Array.isArray(task.skillsApplied) ? task.skillsApplied : []).filter((k) => k && k.id).map((k) => `- skill ${String(k.id).trim()}: ${String(k.how || "").trim()}`),
+    ...(list(task.skillsMissing).length ? [`- skills without evidence: ${list(task.skillsMissing).join(", ")}`] : []),
     `- review: ${task.review?.verdict} (${list(task.review?.findings?.map((f) => `${f.severity} ${f.file}: ${f.summary}`)).join("; ") || "no findings"})`,
     ...runs.map((r) => `- verify \`${r.cmd}\`: exit ${r.status}`),
     ...list(task.deviations).map((d) => `- deviation: ${d}`),

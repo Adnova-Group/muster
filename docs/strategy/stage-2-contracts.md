@@ -138,3 +138,61 @@ branches with `branch -d` only.
 - `vendor/reports/gsd-<tag>.md` is the per-item upstream diff report.
 - `.github/workflows/upstream-watch.yml` runs weekly. It opens an issue when a new gsd release
   touches tracked files.
+
+## Amendments from stage 3 (2026-11-10: wiring the dropped breadth back in)
+
+9. **Specialists.** A task's `agent_hint` names a catalog agent id. `build-args` resolves a
+   *dispatchable* one (not a workflow seat, not `readOnly` in the agent manifest, has Bash) to
+   `agentType: "muster:<frontmatter name>"` (`src/specialists.js`; `wsh-debugger` runs as
+   `muster:debugging-toolkit-debugger`). `build.js` dispatches that type for the build stage
+   and puts the executor contract in the brief (branch check, tagged commit, no package
+   installs, no SUMMARY file, ExecResult fields), since specialists do not carry it. Anything
+   else runs `muster-executor` with the hint as a lens. Fixers stay `muster-executor`
+   (amendment 4 unchanged).
+10. **Skills.** A task's `skills="id, id"` binds builtin skills (`plugin/builtins/<id>/`).
+    `build-args` writes `skills: [{id, path}]` with the absolute `SKILL.md` path; the builder
+    reads each first and returns `skillsApplied: [{id, how, quote?}]` (optional in ExecResult);
+    the reviewer gets the same skills and fails work that does not follow one; `build.js`
+    reports bound skills without evidence as the task's `skillsMissing`. Path binding is
+    deliberate: Workflow `agent()` has no skills option, frontmatter `skills:` preloading is
+    per agent (not per task) and cannot load `disable-model-invocation` skills, and exposing
+    the builtins as plugin skills would list 46 descriptions in every session.
+    `muster plan-lint` blocks unknown skill ids, warns on unknown or non-dispatchable hints,
+    and warns on a task with no `skills` attribute when a preflight `skillCandidates` entry
+    scored >= 4 and matches the task (`skills=""` declines).
+11. **preflight** also returns `skills`, `skillRoot`, `route` (`code` | `pipeline` | `ask`),
+    `domain` and `pipeline`, and writes `skillCandidates` (with scores) to `preflight.json`.
+    Seat tiers: planner, checker and verifier `prime`, executor and reviewer `core`.
+12. **Worktree cap.** `build.js` starts at most `args.worktreeConcurrency` builders at once
+    (default 3) to keep simultaneous `git worktree add` calls off `.git/config.lock`.
+13. **Content pipelines.** `muster pipeline-args <runId>` writes `pipeline-args.json`
+    (`{runId, outcome, contextPath?, pipeline:{id, title, gate}, phases:[{id, role, desc,
+    skills}], artifactPath, models}`); `plugin/workflows/pipeline.js` runs the phases in order
+    in the main checkout, then review + score as the gate (JS applies the floor and pass total;
+    at most 2 revisions of the last author phase), then the remaining phases. It returns
+    `{runId, pipeline, artifactPath, verdict: PASS|FAIL|ERROR, halted, revisions, score, review,
+    phases}`; the main thread saves it as `pipeline-result.json`, which `next --run` reads.
+14. **Worktree base (findings F1, probed live 2026-11-10 on 2.1.322).** In a scratch repo with a
+    bare `origin` and one unpushed commit on the work branch, a Workflow
+    `agent({isolation:'worktree'})` started at `origin/main` (the unpushed commit absent); with
+    `{"worktree":{"baseRef":"head"}}` in `.claude/settings.local.json` it started at the local
+    HEAD. Without a remote it falls back to local HEAD, which is why the stage-2 smokes passed.
+    The base alone is not enough: `build-args.json` is committed after `base` is computed, so
+    the base never contains PLAN.md. `build-args` therefore also records `branch` (the work
+    branch), and the executor brief fast-forwards (`git merge --ff-only <branch>`, else the base)
+    when PLAN.md is missing or the base is not an ancestor, then requires the base, blocking with
+    `base mismatch` otherwise (never a reset), and
+    preflight warns when `worktree.baseRef` is not `head` in a repo with a remote. A plugin
+    `settings.json` cannot set `worktree`, so the setting stays the user's choice.
+15. **Runtime limits (F8, F12, F13).** Up to 16 concurrent Workflow agents by default
+    (`CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS`), 1,000 agents per run; the `Large workflow`
+    warning (over 25 agents or 1.5M projected tokens) is advisory and expected for backlogs. In
+    `claude -p`, background and cloud sessions, a usage limit fails the agent instead of pausing
+    the run; the `agent()` wrapper records `{status:"error"}` and `/muster:go --run <runId>`
+    retries. `CLAUDE_CODE_EFFORT_LEVEL`, `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`,
+    `CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL` and `CLAUDE_CODE_SUBAGENT_EFFORT` can replace
+    `args.models[seat]`; preflight lists any that are set in `warnings`.
+16. **Plan mode (F3, probed 2026-11-10).** Started with `--permission-mode plan`, the session
+    declined the branch switch, the CONTEXT.md write and the Workflow call before any tool ran,
+    citing plan mode. `/muster:plan` therefore leaves plan mode first (ExitPlanMode) instead of
+    presenting the finished plan through it.

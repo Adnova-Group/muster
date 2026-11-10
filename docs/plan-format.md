@@ -45,7 +45,7 @@ Output: [Artifacts created]
 
 <tasks>
 
-<task id="01" type="tracer" wave="1" agent_hint="wsh-backend-architect">
+<task id="01" type="tracer" wave="1" agent_hint="wsh-backend-architect" skills="wsh-nodejs-backend-patterns">
   <name>End-to-end "log in" through one path only</name>
   <files>src/routes/login.js, src/auth/session.js, test/login.e2e.test.js</files>
   <action>Wire POST /login through the session store to a signed cookie. One entry point, no
@@ -127,7 +127,8 @@ Each `<task>` is one executor dispatch in its own worktree.
 | `type` | no | `auto` (default when absent), `tracer`, `tdd`, or `checkpoint:human-verify` / `checkpoint:decision` / `checkpoint:human-action`. |
 | `wave` | yes | Integer ≥ 1. Tasks in one wave run in parallel. |
 | `depends_on` | no | Comma- or space-separated task ids. Every dependency sits in an earlier wave. |
-| `agent_hint` | no | One agent id for the executor (gsd's `agent_hint`, per task). Absent means the default executor. |
+| `agent_hint` | no | One plugin agent id from the catalog (gsd's `agent_hint`, per task), e.g. `wsh-debugger`. Absent means the default executor. A dispatchable agent (not a workflow seat, not read-only, has Bash) builds the task itself: `build-args` resolves it to the Workflow `agentType` (`muster:<frontmatter name>`, so `wsh-debugger` runs as `muster:debugging-toolkit-debugger`) and the build brief carries the executor contract. Any other id stays a domain lens in the default executor's brief. |
+| `skills` | no | Comma- or space-separated builtin skill ids (`plugin/builtins/<id>/`), e.g. `skills="sp-tdd, sp-debug"`. The builder Reads each `SKILL.md` before working and returns `skillsApplied: [{id, how, quote}]`; the reviewer checks the diff against the same skills, and not following one is a FAIL finding. `skills=""` records that the planner considered preflight's candidates and declined them. |
 | `tdd` | no | `"true"` for a test-first task; pair it with `<behavior>`. |
 
 ### Wave rules
@@ -209,6 +210,10 @@ required_property, summary}]}`. Any issue makes the verdict `ISSUES`. The exit c
 issue is a blocker, 1 when at least one is, and 2 when the plan was not evaluated (missing or
 unreadable file, bad usage). Treat any exit other than 0 or 1 as "not evaluated", never as a pass.
 
+The CLI checks `agent_hint` and `skills` against the plugin catalog (`src/specialists.js`) and
+reads `preflight.json` from the PLAN.md's directory for the skill-candidate warning; `lintPlan()`
+called without `catalog` / `skillCandidates` options checks only the id shapes.
+
 `--root` (default: the current directory) anchors the filesystem probes. plan-lint is a
 pre-execution gate: it compares gates against the tree as it is when you run it, so run it before
 any task's work lands.
@@ -216,7 +221,7 @@ any task's work lands.
 | Dimension | Blocker | Warning |
 |---|---|---|
 | `plan_structure` | missing/invalid frontmatter, missing required field, truncated file, unclosed fence or `<task>`, no tasks | unknown task type |
-| `task_completeness` | missing id/name/action/verify/files, empty `<files>`, duplicate id, checkpoint fields, checkpoints with `autonomous` not false | missing `<done>`, malformed `agent_hint` |
+| `task_completeness` | missing id/name/action/verify/files, empty `<files>`, duplicate id, checkpoint fields, checkpoints with `autonomous` not false, a `skills` id that is malformed or not a builtin | missing `<done>`, malformed `agent_hint`, an `agent_hint` that is not a catalog agent or cannot execute (read-only, workflow seat), a task with no `skills` attribute when a preflight skill candidate scored ≥ 4 and matches the task's name and action |
 | `nyquist_compliance` | `<verify>` with no `<automated>`; command with missing, blank or placeholder `<fails_when>` | orphan `<fails_when>`, MISSING sentinel |
 | `verify_command_paths` | `cd`/`--prefix` target missing, or missing its manifest | dynamic path, target outside root, unreadable manifest, missing npm script |
 | `verify_command_sanity` | gate already passes at HEAD | same, with a recorded baseline |

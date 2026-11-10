@@ -54,7 +54,7 @@ test("capabilities: workflowEffort rides claudeProfile exactly when the member's
   // so the key is absent and Workflow agent() inherits the session effort.
   const reviewer = roleByAgent("muster-reviewer");
   assert.ok(reviewer, "no role resolves to the muster-reviewer agent");
-  assert.deepEqual(reviewer.claudeProfile, { model: "opus", workflowEffort: "high" });
+  assert.deepEqual(reviewer.claudeProfile, { model: "opus", workflowEffort: "high", agentEffort: "high" });
   const investigator = roleByAgent("muster-investigator");
   assert.ok(investigator, "no role resolves to the muster-investigator agent");
   assert.deepEqual(investigator.claudeProfile, { model: "haiku" });
@@ -90,7 +90,7 @@ test("capabilities: an agent-backed role's claudeModel IS its claudeProfile.mode
   // (prime + workhorse in catalog/agents.manifest.json) while the implement role
   // tier is core -- claudeModel used to say sonnet next to a profile saying opus.
   assert.equal(roles.implement.chosen.id, "muster-executor", "sanity: implement resolves to muster-executor");
-  assert.deepEqual(roles.implement.claudeProfile, { model: "opus", workflowEffort: "medium" });
+  assert.deepEqual(roles.implement.claudeProfile, { model: "opus", workflowEffort: "medium", agentEffort: "medium" });
   assert.equal(roles.implement.claudeModel, "opus", "implement must dispatch on the profile's model, not the role tier");
 });
 

@@ -147,7 +147,7 @@ const USAGE = [
   // manifest + waves: validate, order, and drive a plan
   "manifest validate <file> [--work]|wave <file>|next <manifest.json> [--done a,b]|",
   // stage-2 run steps: one-call preflight, deterministic wave merge, run position
-  "preflight <outcome> [--json] [--run <id>] [--model <model>]|build-args <runId> [--base <sha>]|merge-wave <runId> --result <build-result.json>|next --run <id>|plan-lint <PLAN.md> [--json] [--root <dir>]|",
+  "preflight <outcome> [--json] [--run <id>] [--model <model>]|build-args <runId> [--base <sha>]|pipeline-args <runId> [--pipeline <id>] [--out <path>] [--with <phase,...>]|merge-wave <runId> --result <build-result.json>|next --run <id>|plan-lint <PLAN.md> [--json] [--root <dir>]|",
   // performance pass + gate helpers
   "resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|codex-wave <wave.json> --fence-file <action-fence.json> --repository-root <repo> --base-sha <sha>|codex-wave-resume <receipt-id> --review-state <file>|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex>|plan-surface <runtime>|codex-plan <outcome> [--cwd <dir>]|desktop-harness <chatgpt-desktop|codex-desktop|gpt-work>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|",
   // sprint waves, review tally, tournament pick/fuse, advisor
@@ -1463,8 +1463,10 @@ function renderPreflight(s) {
     `run ${s.runId}: scope ${s.scope}, clear ${yn(s.clear)}${s.clear ? "" : ` (${s.unclear.join(", ")})`}, fast-path ${yn(s.fastPath)}`,
     `project ${s.project.languages.join("/") || "unknown"}, tests ${s.project.testRunner}, branch ${s.project.branch ?? "-"}${s.project.dirty ? " (dirty)" : ""}`,
     `models ${models}`,
-    `candidates ${s.candidates.join(", ") || "-"}`,
+    `candidates ${s.candidates.join(", ") || "-"}; skills ${(s.skills || []).join(", ") || "-"}`,
+    `route ${s.route}${s.pipeline ? ` (pipeline ${s.pipeline}, domain ${s.domain})` : ""}`,
     `gsd ${yn(s.detected.gsd)}, plugins ${s.detected.plugins.join(", ") || "-"}, memory ${s.memory.join(", ") || "-"}`,
+    ...(s.warnings || []).map((w) => `warning: ${w}`),
     `detail ${s.detail}`,
   ].join("\n") + "\n";
 }
@@ -1481,6 +1483,16 @@ async function handleRunCommand(cmd, rest) {
     if (rest.includes("--json")) process.stdout.write(JSON.stringify(summary) + "\n");
     else process.stdout.write(renderPreflight(summary));
     return true;
+  } else if (cmd === "pipeline-args") {
+    const valued = new Set(["--pipeline", "--out", "--with"]);
+    const runId = rest.find((a, i) => !a.startsWith("-") && !valued.has(rest[i - 1]));
+    if (!runId) fail("pipeline-args <runId> [--pipeline <id>] [--out <path>] [--with <phase,...>]: missing runId");
+    const { writePipelineArgs } = await import("./pipeline-args.js");
+    const withPhases = (flagValue(rest, "--with") || "").split(",").map((s) => s.trim()).filter(Boolean);
+    const report = await writePipelineArgs({ cwd: process.cwd(), runId, pipelineId: flagValue(rest, "--pipeline"), out: flagValue(rest, "--out"), withPhases });
+    out(report);
+    if (!report.ok) process.exit(1);
+    return true;
   } else if (cmd === "build-args") {
     const runId = rest.find((a, i) => !a.startsWith("-") && rest[i - 1] !== "--base");
     if (!runId) fail("build-args <runId> [--base <sha>]: missing runId");
@@ -1492,7 +1504,14 @@ async function handleRunCommand(cmd, rest) {
         base = head.status === 0 ? head.stdout.trim() : null;
       } catch { base = null; }
     }
-    const report = await writeBuildArgs({ cwd: process.cwd(), runId, base });
+    // The work branch: its tip after the plan commit is what executors fast-forward to when an
+    // isolated worktree starts from the remote default branch (findings F1).
+    let branch = null;
+    try {
+      const b = spawnSync(assertTrustedGitCommand(), ["symbolic-ref", "--quiet", "--short", "HEAD"], { encoding: "utf8" });
+      branch = b.status === 0 ? b.stdout.trim() || null : null;
+    } catch { branch = null; }
+    const report = await writeBuildArgs({ cwd: process.cwd(), runId, base, branch });
     out(report);
     if (!report.ok) process.exit(1);
     return true;

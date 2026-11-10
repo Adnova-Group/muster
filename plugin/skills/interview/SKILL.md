@@ -14,7 +14,7 @@ Produce a list: an enriched outcome string and testable success criteria, presen
 Turn a thin outcome into an enriched, criteria-backed one before any routing happens.
 
 ## When to run
-- Run when `npx -y @adnova-group/muster assess "<outcome>"` returns `clear: false` (contract:
+- Run when `sh "${CLAUDE_PLUGIN_ROOT}/runtime/muster.sh" assess "<outcome>"` returns `clear: false` (contract:
   `assessOutcome(text) -> { clear, signals }` in `src/interview.js`). The `signals` name the gaps.
 - Run when the user explicitly asks to brainstorm/refine the outcome.
 - **Skip** when `clear: true` — hand straight to the planner.
@@ -45,7 +45,7 @@ If the outcome spans multiple independent subsystems, surface it via the **AskUs
 offer to split into independent parts rather than route one over-broad outcome.
 
 An **ACCEPTED** split writes the backlog:
-- Publish the complete staged create/append on stdin with `$MUSTER_CLI backlog-publish .muster/backlog.md --expect <sha256|absent>`; on a changed-before-publication failure, reread, redo duplicate detection and the append, then retry. Never write or rename the backlog directly.
+- Publish the complete staged create/append on stdin with `sh "${CLAUDE_PLUGIN_ROOT}/runtime/muster.sh" backlog-publish .muster/backlog.md --expect <sha256|absent>`; on a changed-before-publication failure, reread, redo duplicate detection and the append, then retry. Never write or rename the backlog directly.
 - **Write each part** as an unchecked item to `.muster/backlog.md` — create the file if absent, append if
   present. NEVER remove, reorder, or rewrite existing lines.
 - **Item format** (must match the backlog parser, `src/scope.js` and `src/sprint-waves.js`, exactly): exactly one line per item —
@@ -60,7 +60,7 @@ An **ACCEPTED** split writes the backlog:
   (`sprint` defaults unannotated items to `pr`); write it only when the user explicitly chose a
   disposition for that item during the interview.
 - **Measurable per item** — each item must embed at least one number or measurable keyword so
-  `npx -y @adnova-group/muster assess "<item text>"` — run with every `{key: value}` annotation stripped
+  `sh "${CLAUDE_PLUGIN_ROOT}/runtime/muster.sh" assess "<item text>"` — run with every `{key: value}` annotation stripped
   generically, so `{id}`/`{deps}`/`{disposition}` are excluded from measurability altogether — returns
   `clear: true` standalone (`src/interview.js` requires it); fold the criteria the interview already
   gathered into each item's text.

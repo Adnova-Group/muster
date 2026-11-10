@@ -99,6 +99,78 @@ test("build: happy path across two waves, schemas, agent types, isolation and mo
   assert.equal(calls.filter((c) => c.opts.label.startsWith("verify ")).length, 1, "verifier runs once per run");
 });
 
+test("build: a planned specialist is dispatched with the executor contract; bound skills reach builder, reviewer and fixer", async () => {
+  const skills = [{ id: "sp-tdd", path: "/plugin/builtins/sp-tdd/SKILL.md" }, { id: "sp-debug", path: "/plugin/builtins/sp-debug/SKILL.md" }];
+  const args = { runId: "r1", waves: [[
+    task("A", { agentHint: "wsh-debugger", agentType: "muster:debugging-toolkit-debugger", skills }),
+    task("B", { agentType: "evil; rm -rf /" }),
+  ]] };
+  let reviewedA = 0;
+  const { result, calls } = await run("build.js", args, (label, prompt, opts) => {
+    if (label === "build A") return exec("A", 1, { skillsApplied: [{ id: "sp-tdd", how: "test first", quote: "Write the test first." }] });
+    if (label === "review A r0") { reviewedA++; return review("A", "FAIL", exec("A").commit, [{ severity: "blocker", file: "A.js", summary: "sp-debug: no root cause" }]); }
+    return happy(label, prompt, opts);
+  });
+  const buildA = calls.find((c) => c.opts.label === "build A");
+  assert.equal(buildA.opts.agentType, "muster:debugging-toolkit-debugger");
+  assert.equal(buildA.opts.isolation, "worktree");
+  assert.match(buildA.prompt, /executor contract/);
+  assert.match(buildA.prompt, /\[r1\/A\]/);
+  assert.match(buildA.prompt, /Do not write a SUMMARY file/);
+  assert.match(buildA.prompt, /REQUIRED SKILLS/);
+  assert.match(buildA.prompt, /- sp-tdd: \/plugin\/builtins\/sp-tdd\/SKILL\.md/);
+  assert.doesNotMatch(buildA.prompt, /Domain lens/, "a dispatched specialist is the lens");
+  // A malformed agentType never reaches the runtime; the plain executor gets no contract block.
+  const buildB = calls.find((c) => c.opts.label === "build B");
+  assert.equal(buildB.opts.agentType, "muster:muster-executor");
+  assert.doesNotMatch(buildB.prompt, /executor contract|REQUIRED SKILLS/);
+  const reviewA = calls.find((c) => c.opts.label === "review A r0").prompt;
+  assert.match(reviewA, /sp-debug \(\/plugin\/builtins\/sp-debug\/SKILL\.md\)/);
+  assert.match(reviewA, /sp-tdd: test first/);
+  assert.match(reviewA, /Not following a bound skill is a FAIL finding/);
+  const fixA = calls.find((c) => c.opts.label === "fix A r1");
+  assert.equal(fixA.opts.agentType, "muster:muster-executor", "fixers reuse the executor (amendment 4)");
+  assert.match(fixA.prompt, /sp-tdd \(/);
+  assert.equal(reviewedA, 1);
+  const a = result.tasks.find((t) => t.taskId === "A");
+  assert.equal(a.agentType, "muster:debugging-toolkit-debugger");
+  assert.deepEqual(a.skillsMissing, ["sp-debug"], "a bound skill without skillsApplied evidence is surfaced");
+  assert.equal(a.review.verdict, "PASS");
+});
+
+test("build: at most worktreeConcurrency builders start at once (the .git/config.lock race)", async () => {
+  for (const [cap, expected] of [[undefined, 3], [1, 1], [2, 2]]) {
+    let active = 0;
+    let peak = 0;
+    const wave = ["A", "B", "C", "D", "E"].map((id) => task(id));
+    const { result } = await run("build.js", { runId: "r1", waves: [wave], ...(cap ? { worktreeConcurrency: cap } : {}) }, async (label, prompt, opts) => {
+      if (!label.startsWith("build ")) return happy(label, prompt, opts);
+      active++;
+      peak = Math.max(peak, active);
+      await new Promise((r) => setTimeout(r, 5));
+      active--;
+      return happy(label, prompt, opts);
+    });
+    assert.equal(peak, expected, `cap ${cap}`);
+    assert.equal(result.tasks.filter((t) => t.status === "done").length, 5);
+  }
+});
+
+test("build: a worktree that starts behind the run fast-forwards to the work branch, never resets (F1: remote-default worktrees)", async () => {
+  const { calls } = await run("build.js", { runId: "r1", base: "base123", branch: "muster/r1", waves: [[task("A", { agentType: "muster:debugging-toolkit-debugger" }), task("B")]] }, happy);
+  for (const b of calls.filter((c) => c.opts.label.startsWith("build "))) {
+    assert.match(b.prompt, /If \.muster\/runs\/r1\/PLAN\.md is missing or git merge-base --is-ancestor base123 HEAD fails/);
+    assert.match(b.prompt, /git merge-base --is-ancestor HEAD muster\/r1 succeeds, run git merge --ff-only muster\/r1/);
+    assert.match(b.prompt, /return status "blocked" with "base mismatch: HEAD <sha>, base base123"/);
+    assert.match(b.prompt, /Never reset or rebase/);
+  }
+  // Without a (well-formed) branch the base itself is the sync ref.
+  for (const branch of [undefined, "bad branch; rm -rf /"]) {
+    const { calls: c2 } = await run("build.js", { runId: "r1", base: "base123", branch, waves: [[task("A")]] }, happy);
+    assert.match(c2.find((c) => c.opts.label === "build A").prompt, /git merge --ff-only base123\./);
+  }
+});
+
 test("build: unset models are omitted so agents inherit the session model", async () => {
   const { calls } = await run("build.js", { runId: "r1", waves: [[task("A")]] }, happy);
   for (const c of calls) {
@@ -333,7 +405,7 @@ test("backlog.js inlines build.js's shared stages byte for byte", async () => {
 });
 
 test("workflow scripts have a literal meta with name, description and matching phase titles", async () => {
-  for (const [file, name] of [["plan.js", "plan"], ["build.js", "build"], ["backlog.js", "backlog"]]) {
+  for (const [file, name] of [["plan.js", "plan"], ["build.js", "build"], ["backlog.js", "backlog"], ["pipeline.js", "pipeline"]]) {
     const src = await readFile(new URL(file, dir), "utf8");
     const meta = src.slice(0, src.indexOf("\n}\n") + 2);
     assert.match(meta, new RegExp(`name: '${name}'`));

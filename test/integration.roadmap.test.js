@@ -34,7 +34,7 @@ test("the roadmap pipeline loads, validates, and routes for prioritization outco
 
 test("the roadmap skill wires the deterministic scorer + graceful gh issues", async () => {
   const skill = await readFile(new URL("../plugin/skills/roadmap-prioritization/SKILL.md", import.meta.url), "utf8");
-  assert.match(skill, /muster prioritize/, "skill must call the deterministic scorer");
+  assert.match(skill, /runtime\/muster\.sh" prioritize/, "skill must call the deterministic scorer");
   assert.match(skill, /gh issue create|gh\b/, "skill must offer GitHub issues");
   assert.match(skill, /AskUserQuestion/, "skill must use the selection UI for choices");
 });

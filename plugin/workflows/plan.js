@@ -75,7 +75,8 @@ function planBrief(cfg, planPath, issues, revision) {
   const lines = [
     `Run ${cfg.runId}. Outcome: ${cfg.outcome || '(see CONTEXT.md)'}`,
     cfg.contextPath ? `Decisions and resolved gray areas: ${cfg.contextPath}. Honour every D-NN decision in it.` : '',
-    cfg.candidates ? `Candidate specialists for each task's agentHint: ${JSON.stringify(cfg.candidates)}` : '',
+    cfg.candidates ? `Candidate specialists for each task's agent_hint: ${JSON.stringify(cfg.candidates)}` : '',
+    cfg.skills ? `Candidate builtin skills for each task's skills attribute: ${JSON.stringify(cfg.skills)}${cfg.skillRoot ? `; every other builtin id is a directory name under ${cfg.skillRoot}` : ''}` : '',
   ]
   if (!issues) {
     lines.push(
@@ -103,7 +104,7 @@ function checkBrief(cfg, planPath) {
 }
 
 const cfg = parseArgs(args)
-if (!cfg.runId && !cfg.outcome) return { status: 'error', error: 'plan needs args {runId, outcome, contextPath, candidates}' }
+if (!cfg.runId && !cfg.outcome) return { status: 'error', error: 'plan needs args {runId, outcome, contextPath, candidates, skills, skillRoot}' }
 if (!cfg.runId) cfg.runId = slug(cfg.outcome)
 const planPath = `.muster/runs/${cfg.runId}/PLAN.md`
 const result = (verdict, revisions, issues, escalated, extra) => ({ runId: cfg.runId, planPath, verdict, revisions, issues, escalated, ...extra })

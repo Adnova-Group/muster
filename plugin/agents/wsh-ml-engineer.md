@@ -1,7 +1,7 @@
 ---
 name: ml-engineer
 description: Build production ML systems with PyTorch 2.x, TensorFlow, and modern ML frameworks. Implements model serving, feature engineering, A/B testing, and monitoring. Use PROACTIVELY for ML model deployment, inference optimization, or production ML infrastructure.
-model: sonnet
+model: opus
 maxTurns: 25
 tools: Read, Grep, Glob, Edit, Bash
 muster_builtin: true

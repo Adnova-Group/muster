@@ -3,12 +3,7 @@ name: gsd-execute-phase
 description: Built-in for implement (adapted from open-gsd/gsd-core)
 muster_builtin: true
 license: MIT
-upstream:
-  - repo: open-gsd/gsd-core
-    ref: 18995380ce8d85bccd8a3c64973664348b29cab8
-    path: gsd-core/workflows/execute-phase.md
-    license: MIT
-    relation: adapted
+upstream: []
 ---
 
 <!-- prompt-lint-disable ANTH-POS-001: orchestration prompt — its prohibitions (the wave guard, fail-closed phase-completion gate) are intentional, safety-critical guarantees and must stay imperative -->

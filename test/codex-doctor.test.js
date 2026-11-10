@@ -1106,7 +1106,7 @@ test("Codex doctor fails codex-plugin-selection and refuses to green-light an un
   await mkdir(join(pluginDir, "runtime"), { recursive: true });
   await writeFile(join(pluginDir, ".codex-plugin", "plugin.json"), JSON.stringify({ name: "muster", version }));
   await writeFile(join(pluginDir, "package.json"), JSON.stringify({ name: "muster", version }));
-  await writeFile(join(pluginDir, "agents", "muster-builder.toml"), "name = 'muster-builder'\n");
+  await writeFile(join(pluginDir, "agents", "muster-executor.toml"), "name = 'muster-executor'\n");
   await writeFile(join(pluginDir, "runtime", "muster.mjs"), "");
   await writeFile(join(pluginDir, "runtime", "muster-mcp.mjs"), "");
   await writeFile(join(pluginDir, ".mcp.json"), "{}");
@@ -1188,24 +1188,24 @@ test("Codex doctor passes codex-agents and codex-runtime for the genuinely well-
 
 test("Codex doctor fails codex-agents when a .codex/agents entry is a directory, not a regular profile", async () => {
   const { tmp, base, pluginDir } = await stageSelectableTree();
-  const target = join(pluginDir, "agents", "muster-builder.toml");
+  const target = join(pluginDir, "agents", "muster-executor.toml");
   await rm(target);
   await mkdir(target); // a DIRECTORY named *.toml still ends in .toml and counts toward the suffix total
   const report = await artifactDoctor(base, tmp);
   const agents = report.checks.find(check => check.name === "codex-agents");
   assert.equal(agents?.ok, false, "a directory named *.toml must FAIL codex-agents, not count toward the total");
-  assert.match(agents?.detail || "", /muster-builder\.toml/);
+  assert.match(agents?.detail || "", /muster-executor\.toml/);
   assert.equal(report.ok, false, "the overall report must reflect the codex-agents failure");
   await rm(tmp, { recursive: true, force: true });
 });
 
 test("Codex doctor fails codex-agents when a generated profile is not parseable as TOML", async () => {
   const { tmp, base, pluginDir } = await stageSelectableTree();
-  await writeFile(join(pluginDir, "agents", "muster-builder.toml"), 'name = "muster-builder\nthis is not valid toml [[[\n');
+  await writeFile(join(pluginDir, "agents", "muster-executor.toml"), 'name = "muster-executor\nthis is not valid toml [[[\n');
   const report = await artifactDoctor(base, tmp);
   const agents = report.checks.find(check => check.name === "codex-agents");
   assert.equal(agents?.ok, false, "a malformed-TOML profile must FAIL codex-agents, not count toward the total");
-  assert.match(agents?.detail || "", /muster-builder\.toml/);
+  assert.match(agents?.detail || "", /muster-executor\.toml/);
   assert.equal(report.ok, false, "the overall report must reflect the codex-agents failure");
   await rm(tmp, { recursive: true, force: true });
 });

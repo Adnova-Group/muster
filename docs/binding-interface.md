@@ -283,8 +283,13 @@ stale:
 AskUserQuestion    files=14  mentions=35
 dispatch (Agent/Task tool)  files=7  mentions=17
 hook (PreToolUse/SessionStart/UserPromptSubmit)  files=10  mentions=26
-worktree   files=7  mentions=54
+worktree   files=12  mentions=97
 ```
+
+Counts refreshed for the stage-2 gsd-derived agents: `muster-executor` (worktree branch check, base
+assert, fix rounds in the builder's worktree), `muster-reviewer` (re-runs verify inside the task
+worktree), `muster-verifier` (scratch integration worktree), `muster-planner` and
+`muster-plan-checker` add worktree matches; the deleted `muster-builder` had none.
 
 Counts refreshed for the release action-fence follow-up: `go.md`, `go-backlog.md`, and the
 orchestrator now require run markers to be copied into each isolated writer cwd. That adds

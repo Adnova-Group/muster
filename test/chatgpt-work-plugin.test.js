@@ -333,7 +333,7 @@ test("installed full Work runtime executes with Work-only capability semantics",
       name: "muster_manifest_validate",
       arguments: { manifest: {
         outcome: "test", successCriteria: ["green"],
-        crew: [{ role: "implement", provider: "muster-builder", source: "builtin" }],
+        crew: [{ role: "implement", provider: "muster-executor", source: "builtin" }],
         plan: [{ id: "a", task: "test", deps: [] }],
       } },
     } },
@@ -369,7 +369,7 @@ test("installed full Work runtime executes with Work-only capability semantics",
     const body = JSON.parse(response(id).content[0].text);
     const manifest = body.manifest || body;
     assert.ok(manifest.crew.every(member => member.source === "inline"));
-    assert.doesNotMatch(JSON.stringify(body), /muster-builder|wsh-|claude|sonnet|opus/i);
+    assert.doesNotMatch(JSON.stringify(body), /muster-executor|wsh-|claude|sonnet|opus/i);
   }
   assert.equal(
     response(7).content[0].text,

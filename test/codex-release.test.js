@@ -31,7 +31,7 @@ async function stagedPlugin(root, marker) {
   await write(join(plugin, ".codex-plugin", "plugin.json"), JSON.stringify({ name: "muster", version: "0.5.0" }));
   await write(join(plugin, "skills", "muster", "SKILL.md"), `---\nname: muster\ndescription: ${marker}\n---\n\n${marker}\n`);
   await write(join(plugin, "runtime", "muster.mjs"), `export const marker = ${JSON.stringify(marker)};\n`);
-  await write(join(plugin, "agents", "muster-builder.toml"), `name = "muster-builder"\nmarker = ${JSON.stringify(marker)}\n`);
+  await write(join(plugin, "agents", "muster-executor.toml"), `name = "muster-executor"\nmarker = ${JSON.stringify(marker)}\n`);
   await write(join(plugin, "package.json"), JSON.stringify({ version: "0.5.0" }));
   return plugin;
 }
@@ -929,7 +929,7 @@ test("resolveCodexPlugin round-trips a published plugin and fails closed when no
   const selected = await resolveCodexPlugin(root, { pluginsRoot: join(root, ".agents", "plugins") });
   assert.equal(selected.pluginRoot, join(root, ".agents", "plugins", "plugin"));
   assert.equal(selected.packageVersion, "0.5.0");
-  assert.equal(await readFile(join(selected.profilesRoot, "muster-builder.toml"), "utf8"), 'name = "muster-builder"\nmarker = "resolve"\n');
+  assert.equal(await readFile(join(selected.profilesRoot, "muster-executor.toml"), "utf8"), 'name = "muster-executor"\nmarker = "resolve"\n');
 });
 
 test("resolveCodexPlugin rejects a marketplace pointer that does not name the fixed plugin path", async t => {

@@ -414,7 +414,7 @@ test("cli wire: fast-path --capabilities <file> on an eligible outcome emits the
   const capsFile = join(tmp, "capabilities.json");
   await writeFile(capsFile, JSON.stringify({
     roles: {
-      implement: { chosen: { id: "muster-builder", source: "builtin", kind: "agent" }, chain: [{ id: "inline", source: "inline", kind: "inline" }], recommendations: [], model: "sonnet" },
+      implement: { chosen: { id: "muster-executor", source: "builtin", kind: "agent" }, chain: [{ id: "inline", source: "inline", kind: "inline" }], recommendations: [], model: "sonnet" },
       "code-review": { chosen: { id: "muster-reviewer", source: "builtin", kind: "agent" }, chain: [{ id: "inline", source: "inline", kind: "inline" }], recommendations: [], model: "sonnet" },
     },
   }));
@@ -432,7 +432,7 @@ test("cli wire: fast-path --capabilities <file> on a NOT-eligible outcome does n
   const capsFile = join(tmp, "capabilities.json");
   await writeFile(capsFile, JSON.stringify({
     roles: {
-      implement: { chosen: { id: "muster-builder", source: "builtin", kind: "agent" }, chain: [{ id: "inline", source: "inline", kind: "inline" }], recommendations: [], model: "sonnet" },
+      implement: { chosen: { id: "muster-executor", source: "builtin", kind: "agent" }, chain: [{ id: "inline", source: "inline", kind: "inline" }], recommendations: [], model: "sonnet" },
       "code-review": { chosen: { id: "muster-reviewer", source: "builtin", kind: "agent" }, chain: [{ id: "inline", source: "inline", kind: "inline" }], recommendations: [], model: "sonnet" },
     },
   }));

@@ -2,8 +2,8 @@
   "format": 1,
   "description": "Authoritative conceptual-tier + harness-neutral effort mapping for the 27 Codex agent profiles. Each entry is { tier, effort? }: the tier picks the gpt-5.6 model + a default reasoning effort via src/codex.js's CODEX_MODEL_POLICY, and the optional SEMANTIC effort (workhorse|judgment|peak) is resolved to a native reasoning effort by that policy's applyEffort (workhorse->medium, judgment->high, peak->xhigh). No entry names a concrete gpt-5.6 model any more (2026-07-23 neutral-shape migration; the resolved {model,effort} is byte-identical to the prior hardcoded mapping). The lanes (evidence: DeepSWE v1.1 + the sol effort research, per-role rationale in the codex-tier-remap-receipts PR): Sol/medium (prime+workhorse) is the measured builder point; Sol/high (prime default, or prime+judgment) is reserved for judgment that gates other work (architecture, review verdicts, strategy); Sol/xhigh (prime+peak) is the single rare high-consequence lane, wsh-security-auditor; Luna/xhigh (the core tier) is the bounded-work lane whose output is verified downstream and whose per-task context stays small -- muster-surgeon (1-2 file mechanical edits), wsh-api-documenter and wsh-tutorial-engineer (doc recipes over given sources), wsh-test-automator (module-scoped authoring, self-verified by running the suite, deliberately a different model family than the Sol builders it checks -- METR flags Sol's reward-hack rate highest on verifier-adjacent work), and the human-read content quartet wsh-business-analyst/wsh-content-marketer/wsh-customer-support/wsh-data-scientist. The former 'luna-xhigh' tier was byte-identical to core and has been removed. Terra/high (the scout tier) is reserved for the read-only locator muster-investigator. Fable stays conceptual and adapts to Sol/high, never routine max.",
   "agents": {
-    "muster-builder": {
-      "source": "plugin/agents/muster-builder.md",
+    "muster-executor": {
+      "source": "plugin/agents/muster-executor.md",
       "tier": "prime",
       "effort": "workhorse"
     },

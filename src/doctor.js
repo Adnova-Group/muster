@@ -1,3 +1,4 @@
+import { checkVendorSync } from "./vendor-sync.js";
 import { loadCatalog } from "./catalog.js";
 import { loadPipelines } from "./pipeline.js";
 import { knownDomains } from "./domain.js";
@@ -115,6 +116,7 @@ function isCreateOnFirstUseRef(content, index) {
 // `gsd-`-prefixed entries copied in from third-party repos). Their SKILL.md `docs/` references
 // point at the UPSTREAM project's own doc tree, not this repo's — so they must be excluded from
 // the skill-doc-refs check below. Missing/unreadable manifest degrades to an empty set.
+const LEGACY_GSD_BUILTINS = Object.freeze(["gsd-plan-phase", "gsd-execute-phase", "gsd-verify-work"]);
 async function vendoredBuiltinIds(base) {
   const raw = await readFile(join(base, "vendor/manifest.yaml"), "utf8").catch(() => null);
   const ids = new Set();
@@ -127,6 +129,10 @@ async function vendoredBuiltinIds(base) {
     if (s?.fetch === false) continue;
     for (const it of (s.items || [])) if (it?.id && !it.kind) ids.add(it.id);
   }
+  // The three hand-ported gsd builtins left the manifest when gsd was re-pinned for the
+  // stage-2 agents; their files (still upstream text citing gsd's docs/ tree) are deleted
+  // by the command rewrite. Until then they stay excluded like any vendored builtin.
+  for (const id of LEGACY_GSD_BUILTINS) ids.add(id);
   return ids;
 }
 
@@ -399,6 +405,25 @@ export async function runDoctor({ root, home, exec } = {}) {
       });
     } else {
       checks.push({ name: "version-parity", ok: true, detail: `both at ${pkgVersion}` });
+    }
+  }
+
+  // --- vendor sync (offline) ---
+  // Merge-tracked sources (src/vendor-sync.js): every base copy under vendor/upstream/
+  // matches its recorded baseBlob, every adapted/verbatim file exists, and verbatim regions
+  // still equal their base lines. A cached report for a newer upstream tag is surfaced as
+  // "behind" without failing. No network.
+  {
+    let manifest = null;
+    try { manifest = parseYaml(await readFile(join(base, "vendor/manifest.yaml"), "utf8")); } catch { /* reported by vendor-note-staleness below */ }
+    if (!manifest || !Array.isArray(manifest.sources)) {
+      checks.push({ name: "vendor-sync", ok: true, detail: "no readable vendor/manifest.yaml — skip" });
+    } else {
+      const res = await checkVendorSync({ root: base, manifest });
+      const behind = res.behind.length ? `; ${res.behind.join("; ")}` : "";
+      checks.push(res.ok
+        ? { name: "vendor-sync", ok: true, detail: `${res.checked} merge-tracked item(s) match their base copies${behind}` }
+        : { name: "vendor-sync", ok: false, detail: res.problems.join("; ") });
     }
   }
 

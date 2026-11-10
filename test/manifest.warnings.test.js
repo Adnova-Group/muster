@@ -11,7 +11,7 @@ const base = {
 };
 
 const inlineMember = { stage: "build", provider: "inline", source: "inline", rationale: "r", evidence: "e", fallback: "inline" };
-const builtinMember = { stage: "implement", provider: "muster-builder", source: "builtin", rationale: "r", evidence: "e", fallback: "inline" };
+const builtinMember = { stage: "implement", provider: "muster-executor", source: "builtin", rationale: "r", evidence: "e", fallback: "inline" };
 
 test("manifestWarnings: all-inline crew warns about a likely routing bypass", () => {
   const w = manifestWarnings({ ...base, crew: [inlineMember, { ...inlineMember, stage: "verify" }] });
@@ -42,7 +42,7 @@ test("validateManifest contract is unchanged (no warnings key)", () => {
 // ---------------------------------------------------------------------------
 
 const skillsInventory = [
-  { id: "muster-builder", source: "builtin", description: "" },
+  { id: "muster-executor", source: "builtin", description: "" },
   { id: "nextjs", source: "installed", description: "" },
 ];
 
@@ -63,7 +63,7 @@ test("manifestWarnings: a bound skill id present in the inventory does not warn"
   const m = {
     ...base,
     plan: [{ id: "t1", task: "implement", mode: "single",
-      skills: [{ id: "muster-builder", rationale: "r" }] }],
+      skills: [{ id: "muster-executor", rationale: "r" }] }],
   };
   assert.deepEqual(manifestWarnings(m, skillsInventory), []);
 });
@@ -127,11 +127,11 @@ test("manifestWarnings: an explicitly empty inventory flags every bound skill as
   const m = {
     ...base,
     plan: [{ id: "t1", task: "x", mode: "single",
-      skills: [{ id: "muster-builder", rationale: "r" }] }],
+      skills: [{ id: "muster-executor", rationale: "r" }] }],
   };
   const w = manifestWarnings(m, []);
   assert.equal(w.length, 1);
-  assert.match(w[0], /muster-builder/);
+  assert.match(w[0], /muster-executor/);
 });
 
 test("manifestWarnings: a UI-implying skill binding on a surface:none task warns", () => {
@@ -206,7 +206,7 @@ test("manifestWarnings: a non-surface-implying skill binding on a surface:none t
   const m = {
     ...base,
     plan: [{ id: "t1", task: "refactor internals", mode: "single", surface: "none",
-      skills: [{ id: "muster-builder", rationale: "r" }] }],
+      skills: [{ id: "muster-executor", rationale: "r" }] }],
   };
   assert.deepEqual(manifestWarnings(m, skillsInventory), []);
 });

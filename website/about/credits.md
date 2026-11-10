@@ -38,7 +38,7 @@ Every non-vendored source, generated from the manifest. Each row lists the items
 | [pbakaus/impeccable](https://github.com/pbakaus/impeccable) @ `32930818a109` | Apache-2.0 | `design`, `audit-pattern-design-ux` | inspired-by |
 | [obra/superpowers](https://github.com/obra/superpowers) @ `284be5905ed5` | MIT | 9 vendored builtins and agents | adapted, vendored |
 | [wshobson/agents](https://github.com/wshobson/agents) @ `cf6059d030bf` | MIT | 52 vendored builtins and agents | adapted, vendored |
-| [open-gsd/gsd-core](https://github.com/open-gsd/gsd-core) @ `18995380ce8d` | MIT | 13 vendored builtins and agents | adapted |
+| [open-gsd/gsd-core](https://github.com/open-gsd/gsd-core) @ `9385f4618b52` | MIT | 40 vendored builtins and agents | adapted, vendored |
 | [open-gsd/gsd-core](https://github.com/open-gsd/gsd-core) @ `1c352d1ea37b` | MIT | `muster-gsd-plan-phase`, `muster-gsd-execute-phase`, `muster-gsd-verify-work` | mechanism-port |
 | [wshobson/agents](https://github.com/wshobson/agents) @ `2de74ac1c8f6` | MIT | `wsh-signed-audit-trails-recipe` | mechanism-port |
 | [blader/humanizer](https://github.com/blader/humanizer) @ `1b48564898e9` | MIT | `muster-humanizer` | adapted |
@@ -58,7 +58,7 @@ Every non-vendored source, generated from the manifest. Each row lists the items
 | [microsoft/LLM-Rubric](https://github.com/microsoft/LLM-Rubric) @ `70d56fc4e9a2` | MIT | `muster-scorer` | inspired-by |
 | [assafelovic/gpt-researcher](https://github.com/assafelovic/gpt-researcher) @ `409b8b60b477` | Apache-2.0 | `muster-research` | inspired-by |
 | [mbzuai-nlp/qraft](https://github.com/mbzuai-nlp/qraft) @ `3bbea66c832d` | NONE | `muster-research` | inspired-by |
-| [damusix/atomic-claude](https://github.com/damusix/atomic-claude) | MIT | `muster-surgeon`, `muster-builder`, `muster-reviewer`, `muster-investigator`, `muster-strategist`, `muster-improver`, `improve`, `muster` | inspired-by |
+| [damusix/atomic-claude](https://github.com/damusix/atomic-claude) | MIT | `muster-surgeon`, `muster-reviewer`, `muster-investigator`, `muster-strategist`, `muster-improver`, `improve`, `muster` | inspired-by |
 | [obra/superpowers](https://github.com/obra/superpowers) @ `d884ae04edeb` | MIT | `muster-runner` | mechanism-port |
 | [wshobson/agents](https://github.com/wshobson/agents) @ `511f8345cf42` | MIT | `muster-runner` | mechanism-port |
 | [VoltAgent/awesome-claude-code-subagents](https://github.com/VoltAgent/awesome-claude-code-subagents) @ `14bbcf5d984c` | MIT | `muster-runner` | mechanism-port |
@@ -176,12 +176,20 @@ The bundled `sp-*`, `wsh-*`, and `muster-gsd-*` skills are deterministic **fallb
 Alongside the vendored material, Muster ships its own specialists in `plugin/agents/`, authored fresh from atomic-claude's role concept (muster-runner from the lifecycle mechanisms listed above):
 
 - **muster-surgeon**: precise 1-2 file edits
-- **muster-builder**: a cohesive vertical slice
-- **muster-reviewer**: verdict-emitting review
 - **muster-investigator**: read-only locator
 - **muster-strategist**: heavyweight reasoning
 - **muster-improver**: read-only post-run retrospective that proposes self-improvement edits
 - **muster-runner**: single-item lifecycle driver — TDD build, explicit-PASS review gate, receipts-backed PR (the dispatchable subagent form of the runner mode)
+
+## Lifecycle seats adapted from GSD
+
+The stage-2 lifecycle agents are adapted from [gsd-core](https://github.com/open-gsd/gsd-core) v1.20.1 agents (MIT). gsd's measured protocol text (honest abstain, the evidence gate, revision-loop limits, failing direction, the must-NOT probe, deviation rules, the self-check and the destructive-git ban) is carried verbatim in marked regions; `muster vendor update gsd` keeps them in sync by 3-way merge:
+
+- **muster-planner**: writes the run's PLAN.md (from gsd-planner)
+- **muster-plan-checker**: checks PLAN.md before execution (from gsd-plan-checker)
+- **muster-executor**: implements one task in its own worktree (from gsd-executor, with the former builder's one-slice scope contract)
+- **muster-verifier**: goal-backward verification with honest abstain (from gsd-verifier)
+- **muster-reviewer**: adversarial review of one task's commits (from gsd-code-reviewer, with muster's verdict discipline)
 
 ## Additional inspiration (clean-room, mechanism-level)
 

@@ -52,7 +52,7 @@ test("built Codex plugin's MCP server resolves roles to named agent profiles, no
   assert.notEqual(response.result.isError, true, `muster_capabilities errored: ${String(response.result.content?.[0]?.text).slice(0, 300)}`);
   const capabilities = JSON.parse(response.result.content[0].text);
 
-  const expected = { implement: "muster-builder", "code-review": "muster-reviewer", "test-author": "wsh-test-automator" };
+  const expected = { implement: "muster-executor", "code-review": "muster-reviewer", "test-author": "wsh-test-automator" };
   for (const [role, id] of Object.entries(expected)) {
     const chosen = capabilities.roles?.[role]?.chosen;
     assert.equal(chosen?.id, id, `role ${role} must resolve to ${id}, got ${JSON.stringify(chosen)} -- MUSTER_RUNTIME=cowork leaking into the Codex-spawned CLI child forces the coworkMcpOnly gate and every role collapses to inline`);
@@ -81,7 +81,7 @@ test("MUSTER_RUNTIME=cowork leaking into `capabilities --codex` is the proven me
   const clean = { ...process.env };
   delete clean.MUSTER_RUNTIME;
   const cleanOut = JSON.parse((await execFile(process.execPath, [cli, "capabilities", "--codex", "--roles-only"], { cwd: tmp, env: clean })).stdout);
-  assert.equal(cleanOut.roles.implement.chosen.id, "muster-builder", "clean env: --codex must resolve implement to muster-builder");
+  assert.equal(cleanOut.roles.implement.chosen.id, "muster-executor", "clean env: --codex must resolve implement to muster-executor");
 
   const poisoned = { ...process.env, MUSTER_RUNTIME: "cowork" };
   const poisonedOut = JSON.parse((await execFile(process.execPath, [cli, "capabilities", "--codex", "--roles-only"], { cwd: tmp, env: poisoned })).stdout);

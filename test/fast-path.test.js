@@ -16,8 +16,8 @@ import { planGateCadence } from "../src/gate-cadence.js";
 const FAKE_CAPABILITIES = {
   roles: {
     implement: {
-      chosen: { id: "muster-builder", source: "builtin", kind: "agent" },
-      chain: [{ id: "muster-builder", source: "builtin", kind: "agent" }, { id: "inline", source: "inline", kind: "inline" }],
+      chosen: { id: "muster-executor", source: "builtin", kind: "agent" },
+      chain: [{ id: "muster-executor", source: "builtin", kind: "agent" }, { id: "inline", source: "inline", kind: "inline" }],
       recommendations: [],
       model: "sonnet",
     },
@@ -236,7 +236,7 @@ test("buildFastPathManifest: emits a minimal builder + one-reviewer, one-task ma
   assert.equal(m.plan.length, 1, "single task");
   assert.equal(m.plan[0].mode, "single");
   assert.deepEqual(m.plan[0].deps, []);
-  assert.equal(m.crew.some((c) => c.provider === "muster-builder"), true);
+  assert.equal(m.crew.some((c) => c.provider === "muster-executor"), true);
   assert.equal(m.crew.some((c) => c.provider === "muster-reviewer"), true);
 });
 

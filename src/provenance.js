@@ -49,13 +49,15 @@ export const ITEM_PATHS = Object.freeze({
 
 export const isFetchedSource = source => source?.fetch !== false;
 export const itemKind = item => item.kind || (item.as === "agent" ? "agent" : "builtin");
-// A file item maps one upstream file onto a muster source file ({from, to, mode, baseBlob}; see
-// docs/strategy/stage-2-contracts.md "Sync model"). It has no kind or id: it is never vendored,
-// stamped or projected onto an item, but its ref still reaches NOTICE.
-export const SYNC_MODES = Object.freeze(["adapted", "verbatim", "watch"]);
-export const isFileItem = item => typeof item?.to === "string";
 // Only items of a fetched source without an explicit `kind` are copied by `muster vendor`.
-export const isVendoredItem = (source, item) => isFetchedSource(source) && !item.kind && !isFileItem(item);
+// Items with a `mode` belong to a merge-tracked source (src/vendor-sync.js) and are only
+// ever touched by `muster vendor update`, never regenerated.
+export const isVendoredItem = (source, item) => isFetchedSource(source) && !item.kind && item.mode === undefined;
+// A merge-tracked item projects onto a Muster item's `upstream:` only when it names one
+// (id + kind). `watch` items are never carried into Muster, and file items (no id: an
+// upstream file mapped onto a source file such as src/plan-lint.js) are not items; both
+// still reach NOTICE through the source's ref.
+export const isProjectedItem = item => (item.mode === undefined ? true : item.mode !== "watch" && item.id !== undefined);
 
 export function isValidLicense(license) {
   if (typeof license !== "string") return false;
@@ -100,7 +102,7 @@ export function projectManifest(manifest) {
   const map = new Map();
   for (const source of manifest?.sources || []) {
     for (const item of source.items || []) {
-      if (isFileItem(item)) continue;
+      if (!isProjectedItem(item)) continue;
       const key = itemKey(itemKind(item), item.id);
       if (!map.has(key)) map.set(key, []);
       map.get(key).push(upstreamEntry(source, item));
@@ -235,7 +237,7 @@ export function checkLicenseWaivers(manifest) {
   const reviewed = [];
   for (const source of manifest?.sources || []) {
     if (isWorkSource(source)) continue;
-    const textRelations = (source.items || []).map(i => i.relation ?? source.relation).filter(r => r === "vendored" || r === "adapted");
+    const textRelations = (source.items || []).filter(isProjectedItem).map(i => i.relation ?? source.relation).filter(r => r === "vendored" || r === "adapted");
     const restricted = isRestrictedLicense(source.license);
     const waiver = waivers.get(source.id);
     const who = `${source.id} (${source.repo})`;

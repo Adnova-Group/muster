@@ -746,7 +746,7 @@ export async function buildCodexPlugin(options, retries = 1) {
         && readFileSync(join(current.pluginRoot, "runtime", "in-process-worker.mjs")).length > 0
         && readFileSync(join(current.pluginRoot, "runtime", "verdict.schema.json")).length > 0
         && readFileSync(join(current.pluginRoot, "skills", "muster", "SKILL.md")).length > 0
-        && readFileSync(join(current.pluginRoot, "agents", "muster-builder.toml")).length > 0;
+        && readFileSync(join(current.pluginRoot, "agents", "muster-executor.toml")).length > 0;
       if (current.inputDigest === inputDigest
         && current.packageVersion === packageVersion
         && completeCodexContract) return current;

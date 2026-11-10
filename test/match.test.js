@@ -229,7 +229,7 @@ test("impliedSurfaceForSkillId: sp-verify implies surface integration", () => {
 });
 
 test("impliedSurfaceForSkillId: an id with no surface implication returns null", () => {
-  assert.equal(impliedSurfaceForSkillId("muster-builder"), null);
+  assert.equal(impliedSurfaceForSkillId("muster-executor"), null);
   assert.equal(impliedSurfaceForSkillId("totally-unrelated-skill"), null);
 });
 

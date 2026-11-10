@@ -4,8 +4,14 @@
 # NousResearch/autonovel, Chapter Blog nonfiction outline, ProWritingAid,
 # Minto Pyramid/SCQA, StoryBrand SB7, and Before-After-Bridge.
 # Adopted from the upstream sweep (docs/audits): book-genesis premise-forge (scored
-# variants behind a floor before any drafting) + per-chapter scored loop, and
-# autonovel's continuity-propagation ledger (edits tracked as debts against a story bible).
+# variants behind a floor before any drafting) and autonovel's continuity-propagation
+# ledger (edits tracked as debts against a story bible).
+# Re-ported from book-genesis-studio 5.x (2026-11-10): prose-first drafting with blind
+# reader checkpoints (the writer never sees the rubric), an audit that ends in a
+# pass / revise / major-rewrite verdict and blocks scoring, a bounded revision loop that
+# keeps a rewrite only when blind readers prefer it, and a final score that reports
+# completeness and quality gates separately. This replaces the earlier per-chapter
+# scored loop, which upstream retired.
 id: book
 domain: book
 title: Book
@@ -25,7 +31,7 @@ match:
   - personal development book
 upstream:
   - repo: felipelobomotta-blip/book-genesis-studio
-    ref: a43a429bdec1770232ee64e7de634c5ce5109b80
+    ref: c2fc628fd5d1266b63e98ed962f6a2db37518a53
     path: null
     license: MIT
     relation: mechanism-port
@@ -110,25 +116,60 @@ phases:
   - id: drafting
     role: author
     desc: >-
-      Draft chapter by chapter; consistent voice; concrete scenes/examples.
-      nonfiction: each chapter = concept (one idea) + proof (case/story/data) + how (steps) + bridge.
-      PER-CHAPTER LOOP: after drafting each chapter, score it against the gate criteria — advance only
-      when it clears the floor; below floor, revise in place (cap 3 cycles, then flag for audit). Read
-      the continuity ledger before drafting and write any new canonical fact back to it; when an edit
-      contradicts an earlier chapter, record a propagation debt and reconcile it (do not leave the
-      ledger and the prose disagreeing).
+      Draft chapter by chapter, prose first: write, then check. The writer's brief holds the premise,
+      reader promise, point of view, this chapter's outline entry and word range, the cast it uses, and
+      only the ledger facts the chapter depends on; it never holds the gate criteria, scores or earlier
+      verdicts. fiction: give each scene a goal, resistance, a decision, a cost and a consequence, and keep
+      every character inside what they have actually learned on the page.
+      nonfiction: each chapter = concept (one idea) + proof (case/story/data) + how (steps) + bridge;
+      find the source before writing the claim.
+      AFTER EACH CHAPTER: check its length against the plan and its names, facts, voice and character
+      knowledge against the continuity ledger. Write any new canonical fact back to the ledger; when the
+      prose contradicts an earlier chapter, record a propagation debt and reconcile it (never leave the
+      ledger and the prose disagreeing). Literary fixes wait for revision.
+      READER CHECKPOINTS at the opening, about 25%, about 50% and before the final movement: a
+      fresh-context blind reader who sees only a reader persona, the previous chapter's last page and the
+      chapter (no plan, no scores) reports, with exact quotes, where they would stop, what confused them and
+      what they remember. Run each checkpoint when drafting reaches it, before the next chapter. Every five
+      chapters, run a factual continuity check against the ledger.
 
   - id: audit
     role: code-review
     desc: >-
-      Independent adversarial audit (structure, pacing, gaps, orphan chapters, throughline breaks) —
-      blocks weak output. Run a continuity-reconciliation pass against the ledger: every open
-      propagation debt must be closed and no chapter may contradict a canonical fact (timeline,
-      character knowledge, defined terms).
+      Independent, read-only adversarial audit of the whole manuscript, before anything is scored. First,
+      the brief-contract check: compare the intake premise, reader promise, point of view and time window
+      with every chapter and the ledger, even when the ledger is internally consistent. Then structure,
+      pacing, gaps, orphan chapters, throughline breaks, and whether the central question is carried
+      through evidence, choice and consequence. Run a continuity-reconciliation pass against the ledger:
+      every open propagation debt must be closed and no chapter may contradict a canonical fact (timeline,
+      character knowledge, defined terms). Every finding is a ticket that quotes the passage. End with one
+      verdict line, `audit: pass | revise | major-rewrite`; pass only with no open high-severity ticket.
+      A strong reader checkpoint never overrides the audit.
+
+  - id: revision
+    role: author
+    desc: >-
+      Bounded revision loop, at most 3 passes. Plan each pass as tickets in priority order (high-severity
+      audit tickets, then defects two or more blind readers share, then the lowest gate criteria), each
+      with its quoted passage, the smallest change that can fix it, and a preserve list of what readers
+      remembered. Fix a missing payoff at scene level, not by polishing sentences; correct a factual error
+      together with every passage that depends on it; never change approved canon just to erase a finding.
+      The reviser sees tickets and passages, never scores or targets, and writes each rewrite beside the
+      accepted chapter, never over it. Keep a creative rewrite only when fresh blind readers, shown both
+      versions unlabeled and in counterbalanced order, prefer it; otherwise keep the accepted text and
+      record why. Any accepted change invalidates earlier reads and scores for that chapter, and a ticket
+      closes only on a fresh check of the current text. If a pass makes no progress, try one materially
+      different strategy before declaring a plateau. After 3 passes with a gate still unmet, record exactly
+      what is missing and continue; never relabel an unmet gate as passed.
 
   - id: score
     role: score
-    desc: "Score vs rubric (Genesis-style), floor principle; flag any criterion below floor."
+    desc: >-
+      Score vs rubric (Genesis-style), after the audit and revision, never before; floor principle; flag
+      any criterion below floor or not assessed. The scorer gets the manuscript and the criteria only, not
+      the floor, earlier scores or revision notes. Report completeness (every planned chapter exists,
+      length within the plan) separately from the quality gates: a complete book can still have gates not
+      met. Write what was measured; never call the book ready for publication without a human decision.
 
   - id: editorial
     role: author

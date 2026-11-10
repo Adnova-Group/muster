@@ -17,18 +17,30 @@ export function calibrateScores(scores, offsets = {}, { min = 0, max = 3 } = {})
 }
 
 // Book-genesis floor principle: weakest dimension must clear `floor` AND total must clear `pass_total`.
+//
+// Incomplete rubric (book-genesis-studio's Genesis Score, 5.x): a criterion the scorer could not
+// assess is written as `null` ("not assessed"), never as an invented number. A `null` score, or a
+// criterion named in `gate.criteria` that has no score at all, makes the rubric incomplete: it is
+// listed under `incomplete` and the gate does not pass, however high the scored criteria are. The
+// `incomplete` key appears only when something is missing, so complete results keep their shape.
 export function scoreArtifact(scores, gate = {}) {
   const entries = Object.entries(scores || {});
   for (const [c, v] of entries) {
+    if (v === null) continue;
     if (typeof v !== "number" || !Number.isFinite(v))
-      throw new Error(`scoreArtifact: score for "${c}" must be a finite number, got ${v}`);
+      throw new Error(`scoreArtifact: score for "${c}" must be a finite number, got ${v} (write null for a criterion not assessed)`);
   }
-  const total = entries.reduce((s, [, v]) => s + v, 0);
-  let weakest = { criterion: null, value: entries.length ? Infinity : 0 };
+  const assessed = entries.filter(([, v]) => v !== null);
+  const incomplete = entries.filter(([, v]) => v === null).map(([c]) => c);
+  for (const c of Array.isArray(gate?.criteria) ? gate.criteria : [])
+    if (!Object.prototype.hasOwnProperty.call(scores || {}, c)) incomplete.push(c);
+  const total = assessed.reduce((s, [, v]) => s + v, 0);
+  let weakest = { criterion: null, value: assessed.length ? Infinity : 0 };
   // Strict `<` means ties are broken by insertion order: the first criterion
   // with the lowest score wins and stays `weakest` (later equal values don't
   // replace it). Deterministic given Object.entries' insertion-order iteration.
-  for (const [c, v] of entries) if (v < weakest.value) weakest = { criterion: c, value: v };
-  const passing = entries.length > 0 && weakest.value >= (gate.floor ?? 0) && total >= (gate.pass_total ?? 0);
-  return { total, weakest, passing };
+  for (const [c, v] of assessed) if (v < weakest.value) weakest = { criterion: c, value: v };
+  const passing = assessed.length > 0 && incomplete.length === 0
+    && weakest.value >= (gate?.floor ?? 0) && total >= (gate?.pass_total ?? 0);
+  return incomplete.length ? { total, weakest, passing, incomplete } : { total, weakest, passing };
 }

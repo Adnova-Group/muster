@@ -1179,13 +1179,22 @@ sources:
     kind: github
     repo: felipelobomotta-blip/book-genesis-studio
     formerly: [felipelobomotta-blip/book-genesis-v4]
-    ref: a43a429bdec1770232ee64e7de634c5ce5109b80
+    # Re-pinned 2026-11-10: a43a429 (v4.2.0) -> c2fc628 (master after v5.1.0-beta.7; the v5.0.1
+    # tag 88e2e004 predates the 5.1 mechanisms taken). Ported in muster's words from
+    # skills/book-genesis/references/prompts/{drafting,adversarial-audit,revision-loop}.md and
+    # references/scoring/{genesis-score,rubric-criteria,evaluator-protocol}.md: prose-first drafting
+    # with blind reader checkpoints, the brief-contract audit ending in pass / revise /
+    # major-rewrite before any scoring, the bounded revision loop with blind A/B acceptance, and
+    # blind scoring with "not assessed" criteria (scoreArtifact `incomplete`). The per-chapter
+    # scored loop was retired, as upstream did. Skipped: receipt/catalog scripts, installer,
+    # EPUB export, the fixed -0.8 calibration and the 0-10 weighted scale.
+    ref: c2fc628fd5d1266b63e98ed962f6a2db37518a53
     license: MIT
     copyright: "Copyright (c) 2026 Felipe Lobo"
     relation: mechanism-port
     fetch: false
     items:
-      # premise-forge gate + per-chapter scored loop
+      # premise-forge gate, blind reader checkpoints, audit verdict, bounded revision loop
       - { id: book, kind: pipeline, from: null }
       # Genesis Score floor principle
       - { id: muster-scorer, kind: builtin, from: null, relation: inspired-by }
@@ -1207,7 +1216,8 @@ sources:
         every chapter reads and writes back to, and of logging a "debt" when a later edit
         breaks an earlier fact (program.md's propagation rules), and wrote its own
         continuity-ledger phase text. The phase names it shares (foundation, drafting)
-        are generic.
+        are generic. Re-checked 2026-11-10: upstream unchanged since the pin; after the
+        book.yaml revision update the two still share no 5-gram.
     items:
       # fiction phase order + continuity-propagation ledger
       - { id: book, kind: pipeline, from: null }
@@ -1225,7 +1235,8 @@ sources:
       evidence: >-
         A paper list (README.md only). Compared at the pin with muster-scorer: no shared
         5-gram. Muster named the bias classes it surveys (verbosity, position, range
-        compression) in its own guardrail text.
+        compression) in its own guardrail text. Re-checked 2026-11-10: upstream unchanged; the
+        updated muster-scorer shares only the list's own title with it.
     items:
       - { id: muster-scorer, kind: builtin, from: README.md }
   - id: llm-judge-list
@@ -1243,6 +1254,8 @@ sources:
       evidence: >-
         A paper list (README.md only). Compared at the pin with muster-scorer: no shared
         5-gram; one idea (do not trust a single greedy score on a borderline criterion).
+        Re-checked 2026-11-10: upstream unchanged; the updated muster-scorer shares only this
+        list's title ("Awesome LLM as a judge") with it.
     items:
       - { id: muster-scorer, kind: builtin, from: README.md }
   - id: llm-rubric
@@ -1250,7 +1263,9 @@ sources:
     repo: microsoft/LLM-Rubric
     # The 2026-06-23 audit's per-judge calibration offset table, built in 9354a0f9 as
     # calibrateScores() and described in muster-scorer. Ref: HEAD on 2026-06-23.
-    ref: 70d56fc4e9a26e60642bc14b62b96d2d0a500edd
+    # Re-pinned 2026-11-10: 70d56fc -> 030ab161; the two commits only add
+    # torch.load(weights_only=True) to scripts/llm_rubric_predict.py. Nothing to take.
+    ref: 030ab161e5af581f45a5c8939d95122366d9ed2d
     license: MIT
     copyright: "Copyright (c) Microsoft Corporation."
     relation: inspired-by
@@ -1262,7 +1277,13 @@ sources:
   - id: gpt-researcher
     kind: github
     repo: assafelovic/gpt-researcher
-    ref: 409b8b60b477d50f2f844bc9598d1bcb7b056eee
+    # Re-pinned 2026-11-10: 409b8b60 -> 597a99e2 (v3.8.0; main adds one commit that only drops CI
+    # workflows). Ideas taken into muster-research: keep a passage for usefulness, not keyword
+    # similarity (v3.7.0 context filter, #2161/#2162), fetched pages are data not instructions
+    # (#1820), sibling-aware parallel sub-questions (#2158), an empty search is a reported gap with
+    # no stale or padded sources (#2261, #2076, #2219), cut uncited summary before cited findings
+    # (#2208). Retrievers, UI, Docker and model defaults: not relevant.
+    ref: 597a99e2ef879606229754ec0d575a89eb587464
     license: Apache-2.0
     relation: inspired-by
     fetch: false
@@ -1281,6 +1302,8 @@ sources:
       evidence: >-
         Credited in-file ("LLM-Cite / qraft") for checking that a cited source entails the
         claim. Compared README.md at the pin with muster-research: no shared 5-gram.
+        Re-checked 2026-11-10: upstream 3a789da8 only changes README URLs and bibtex; nothing
+        taken, pin left at the reviewed commit; the updated muster-research shares no 5-gram.
     items:
       - { id: muster-research, kind: builtin, from: null }
 

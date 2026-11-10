@@ -311,3 +311,24 @@
   keywords: [property-based, properties, hypothesis, fast-check, proptest, fuzz, invariants]
   description: "Write, review and triage property-based tests (Hypothesis, fast-check, proptest, Echidna): roundtrip, invariant and oracle properties."
   provenance: { license: CC-BY-SA-4.0, upstream: [trailofbits/skills] }
+- id: mp-codebase-design
+  kind: builtin
+  roles: [refactor, architecture-review]
+  rank: 45
+  keywords: [deep-module, modules, interface, seam, depth, testability]
+  description: "Deep-module design vocabulary (module, interface, depth, seam, adapter, leverage, locality) for designing or reshaping a module's interface."
+  provenance: { license: MIT, upstream: [mattpocock/skills] }
+- id: mp-improve-codebase-architecture
+  kind: builtin
+  roles: [refactor, tech-debt, architecture-review]
+  rank: 44
+  keywords: [architecture, deepening, restructure, hotspots, shallow]
+  description: "Opt-in architecture review: find deepening opportunities in recently changed code, report them as HTML, then grill the chosen one."
+  provenance: { license: MIT, upstream: [mattpocock/skills] }
+- id: mp-domain-modeling
+  kind: builtin
+  roles: [plan, architecture-review]
+  rank: 43
+  keywords: [domain, ddd, glossary, ubiquitous-language, terminology, adr]
+  description: "Sharpen a project's domain language as you design: challenge terms, keep GLOSSARY.md current, and record hard-to-reverse decisions as ADRs."
+  provenance: { license: MIT, upstream: [mattpocock/skills] }

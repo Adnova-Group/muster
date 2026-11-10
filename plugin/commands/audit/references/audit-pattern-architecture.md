@@ -1,7 +1,12 @@
 ---
 name: audit-pattern-architecture
 description: Hunt-list pattern skill for muster's architecture audit dimension -- where to look for boundary, coupling, and receipt-grammar drift in muster's own repo. Loaded by the audit orchestrator as a REQUIRED SKILLS binding on the architecture-review dimension task; read on demand, never dispatched standalone.
-upstream: []
+upstream:
+  - repo: mattpocock/skills
+    ref: 4ae2317ddb22b046e26455e4f9c9b3aaaf62212d
+    path: null
+    license: MIT
+    relation: inspired-by
 ---
 
 <!-- prompt-lint-disable ANTH-ROLE-001: reference hunt-list loaded ON DEMAND into an already
@@ -42,6 +47,17 @@ file does not duplicate docs/architecture.md or docs/binding-interface.md, it po
   through `chosen(caps, role)`/`modelFor(caps, role)` (`src/crew.js`) silently forks the
   capability-resolution boundary. `grep -rn "modelForRole\|chosen(caps" src/*.js` and check every
   crew-building function goes through `makeStage`.
+
+**Specialist depth** (read only when the scope calls for it; each is a builtin under
+`<plugin root>/builtins/<id>/SKILL.md`, cited by id):
+
+- `mp-codebase-design`: name boundary findings in its deep-module terms (module, interface, seam,
+  depth) and apply its deletion test before calling a module a pass-through.
+- `mp-improve-codebase-architecture`: when the audit should propose restructuring rather than
+  list violations; scope it to recently changed hot spots, as it does, and file each deepening
+  candidate as one finding.
+- `mp-domain-modeling`: when findings turn on naming (one concept under two names, or two under
+  one); check the project's glossary and ADRs first, and do not re-file a decision an ADR records.
 
 ## Repo-specific conventions to enforce
 

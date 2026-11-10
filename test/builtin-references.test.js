@@ -33,6 +33,7 @@ const PROJECT_ROOT_FILES = {
 // Per builtin: project paths it reads or writes, and example names for deliverables it writes.
 const deliverable = "example name of the deliverable the skill writes into the user's working directory";
 const tokens = "the project's design-token file (upstream ships no assets/ directory; the scripts read and write it at the project root)";
+const glossary = "the project's domain glossary at its repository root, read and written by the mp-* skills";
 const PROJECT_FILES = {
   "intent-articulate": { "copy-larkspur-refills.md": deliverable },
   "intent-evaluate": { "evaluation-larkspur-refills.md": deliverable },
@@ -53,6 +54,9 @@ const PROJECT_FILES = {
   "uupm-slides": { "assets/design-tokens.json": tokens },
   "uupm-ui-styling": { "assets/design-tokens.json": tokens },
   // Complementary skills: files in the repository under review or the project being designed.
+  "mp-codebase-design": { "GLOSSARY.md": glossary },
+  "mp-improve-codebase-architecture": { "GLOSSARY.md": glossary },
+  "mp-domain-modeling": { "GLOSSARY.md": glossary, "GLOSSARY-MAP.md": "the project's map of per-context glossaries in a multi-context repository" },
   "tob-supply-chain-risk-auditor": { "report.md": "the report its render.py writes into an output directory outside the audited repository" },
   "sentry-gha-security-review": Object.fromEntries(["CLAUDE.md", "AGENTS.md"].map(f => [f, "an agent-instruction file in the reviewed repository that its workflows load (a prompt-injection surface)"]))
 };

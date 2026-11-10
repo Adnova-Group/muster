@@ -12,6 +12,22 @@ Per-item detail (upstream path, ref, relation) is in each item's `upstream:` fie
   Copyright (c) 2025 Jesse Vincent
 - wshobson/agents @ 9c61ab243def98f72da12abd41cfcf5bcd91af9d, 2de74ac1c8f6669821dcef13153332c3168033c1, 511f8345cf42f84676e0ad56ddfdee33c90a666f (MIT)
   Copyright (c) 2024 Seth Hobson
+- anthropics/skills @ 2c5958ecac7cee2b583967a2c4981d0f4a75c579 (Apache-2.0)
+  Copyright 2026 Anthropic, PBC
+- Leonxlnx/taste-skill-classics @ 5e08c9383dc4ad7fc0df70e1ac8cfa09ec356305 (MIT)
+  Copyright (c) 2026 Leonxlnx
+- addyosmani/agent-skills @ 301b02b12bff98e4688e6984af6556802322bbde (MIT)
+  Copyright (c) 2025 Addy Osmani
+- emilkowalski/skills @ 715c1807e08c497cfd1dc4feb450a2a3300ef2a9 (MIT)
+  Copyright (c) 2026 Emil Kowalski
+- nutlope/hallmark @ 407fa689f4a276f2fd389208d271d0fef08f5058 (MIT)
+  Copyright (c) 2026 Hallmark contributors
+- greensock/gsap-skills @ aed9cfd3277740755f6bfc1155c7aa645403b760 (MIT)
+  Copyright (c) 2026 GreenSock
+- elayadesign/ai-design-skills @ 456d9e0d3e2d84c748bb143c6ca3d90c45e16213 (MIT)
+  Copyright (c) 2026 Elaya
+- jakubkrehel/skills @ 72bdd6121cd595f47fd21c9f23e374028c9cbacd (MIT)
+  Copyright (c) 2026 Jakub Krehel
 - open-gsd/gsd-core @ 9385f4618b52ef68ed8a5e8bdd93cfb25bd87765, 1c352d1ea37b010e99b8353905eb5def4f784100 (MIT)
   Copyright (c) 2026 Open GSD
 - nextlevelbuilder/ui-ux-pro-max-skill @ 4f2dbb67e64969a9a30ab00742f2d55d66ddec2b (MIT)

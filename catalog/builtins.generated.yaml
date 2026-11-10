@@ -62,6 +62,466 @@
     license: MIT
     upstream:
       - obra/superpowers
+- id: anthropic-frontend-design
+  kind: builtin
+  roles:
+    - frontend
+  rank: 42
+  provenance:
+    license: Apache-2.0
+    upstream:
+      - anthropics/skills
+  description: "Supporting visual-direction pass (Anthropic): commit to a distinctive, subject-grounded aesthetic for palette, type and hero instead of templated defaults."
+- id: anthropic-canvas-design
+  kind: builtin
+  roles:
+    - frontend
+  rank: 30
+  provenance:
+    license: Apache-2.0
+    upstream:
+      - anthropics/skills
+  description: Create original static visual art (posters, PNG or PDF canvases) from a written design philosophy; not for product UI.
+- id: taste-high-end-visual-design
+  kind: builtin
+  roles:
+    - frontend
+  rank: 30
+  provenance:
+    license: MIT
+    upstream:
+      - Leonxlnx/taste-skill-classics
+  description: "Opt-in classic taste style, use only when named: a calm premium look with soft contrast, generous whitespace and spring motion."
+- id: taste-minimalist-ui
+  kind: builtin
+  roles:
+    - frontend
+  rank: 30
+  provenance:
+    license: MIT
+    upstream:
+      - Leonxlnx/taste-skill-classics
+  description: "Opt-in classic taste style, use only when named: editorial minimalist product UI with a warm monochrome palette and flat bento grids."
+- id: taste-industrial-brutalist-ui
+  kind: builtin
+  roles:
+    - frontend
+  rank: 30
+  provenance:
+    license: MIT
+    upstream:
+      - Leonxlnx/taste-skill-classics
+  description: "Opt-in classic taste style, use only when named: industrial brutalism with Swiss type, rigid grids and extreme scale contrast."
+- id: taste-stitch-design-taste
+  kind: builtin
+  roles:
+    - frontend
+  rank: 30
+  provenance:
+    license: MIT
+    upstream:
+      - Leonxlnx/taste-skill-classics
+  description: "Opt-in classic, use only when named: write a Google Stitch export file with strict type, colour and layout rules; a project's canonical DESIGN.md wins."
+- id: addy-frontend-ui-engineering
+  kind: builtin
+  roles:
+    - frontend
+  rank: 42
+  provenance:
+    license: MIT
+    upstream:
+      - addyosmani/agent-skills
+  description: "Frontend engineering discipline: production-quality components, state, responsive layout and WCAG-ready markup without the generic AI look."
+- id: addy-browser-testing-with-devtools
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - addyosmani/agent-skills
+  description: "Verify UI in a real browser through the Chrome DevTools MCP: DOM, console errors, network requests, performance traces and screenshots."
+- id: emil-design-eng
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - emilkowalski/skills
+  description: "Emil Kowalski's design-engineering craft: the invisible details of UI polish, component feel and when motion earns its place."
+- id: emil-apple-design
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - emilkowalski/skills
+  description: "Apple-style fluid interfaces for the web: springs, gestures, interruptible transitions, materials, depth and optical typography."
+- id: emil-improve-animations
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - emilkowalski/skills
+  description: "Read-only motion audit of a codebase: prioritized animation findings plus self-contained fix plans for other agents to execute."
+- id: emil-animate
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - emilkowalski/skills
+  description: "Build a web animation from scratch: whether to animate, purpose, tool, properties, easing, duration, interruption and exit."
+- id: emil-animate-expo
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - emilkowalski/skills
+  description: Build React Native and Expo animations with Reanimated, Gesture Handler, Expo Router and haptics, tuned to feel right on device.
+- id: emil-animation-vocabulary
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - emilkowalski/skills
+  description: Glossary that names a vaguely described motion effect (pop in, rubber-banding, stagger) so it can be prompted precisely.
+- id: emil-review-animations
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - emilkowalski/skills
+  description: "Strict review of animation and motion code against Emil Kowalski's craft bar: easing, duration, springs, interruption, reduced motion."
+- id: emil-find-animation-opportunities
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - emilkowalski/skills
+  description: Read-only scan for places that should animate, and the many that should not, proposing motion with exact values.
+- id: emil-animation-performance
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - emilkowalski/skills
+  description: "Keep web animations in the frame budget: composite-only properties, CSS vs WAAPI vs rAF, will-change, and diagnosing jank."
+- id: emil-remove-animations
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - emilkowalski/skills
+  description: Subtract motion an interface does not need (keyboard actions, high-frequency surfaces, decoration) when it feels slow or over-animated.
+- id: emil-choreograph
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - emilkowalski/skills
+  description: "Choreograph a multi-element animation: staggered lists, sequencing, overlap, crossfades, and the hero or list entrance."
+- id: emil-mobile-native
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - emilkowalski/skills
+  description: "Make a mobile web app feel native: tap highlight, sticky hover, 100vh, input zoom, safe areas, overscroll and touch details."
+- id: emil-break-ui
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - emilkowalski/skills
+  description: Stress-test a UI with worst-case data (long names, empty, huge counts, non-Latin text) behind a demo toggle and report every break.
+- id: emil-prototype
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - emilkowalski/skills
+  description: Prototype several genuinely different versions of a UI piece behind a live picker; runs only when explicitly invoked.
+- id: emil-pick-ui-library
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - emilkowalski/skills
+  description: Pick an opinionated frontend library for a task (charts, OTP, command menu, toasts, drag and drop); runs only when explicitly invoked.
+- id: hallmark
+  kind: builtin
+  roles:
+    - frontend
+  rank: 42
+  provenance:
+    license: MIT
+    upstream:
+      - nutlope/hallmark
+  description: "Hallmark anti-slop page builder: dealt themes, a hard design floor and sloplint checks for new websites; existing designs only when Hallmark is named."
+- id: gsap-core
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - greensock/gsap-skills
+  description: "Official GSAP core API: gsap.to, from and fromTo, easing, stagger, defaults and matchMedia for responsive or reduced-motion animation."
+- id: gsap-frameworks
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - greensock/gsap-skills
+  description: "Official GSAP in Vue, Nuxt, Svelte and SvelteKit: lifecycle hooks, scoped selectors and cleanup on unmount."
+- id: gsap-performance
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - greensock/gsap-skills
+  description: "Official GSAP performance: transforms over layout properties, batching, will-change and avoiding jank for smooth 60fps."
+- id: gsap-plugins
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - greensock/gsap-skills
+  description: "Official GSAP plugins: Flip, Draggable, ScrollSmoother, SplitText, SVG drawing, CustomEase and plugin registration."
+- id: gsap-react
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - greensock/gsap-skills
+  description: "Official GSAP in React and Next.js: the useGSAP hook, refs, gsap.context() and cleanup."
+- id: gsap-scrolltrigger
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - greensock/gsap-skills
+  description: "Official GSAP ScrollTrigger: scroll-linked animation, pinning, scrub, parallax and trigger configuration."
+- id: gsap-timeline
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - greensock/gsap-skills
+  description: "Official GSAP timelines: gsap.timeline(), the position parameter, nesting and playback control for sequenced animation."
+- id: gsap-utils
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - greensock/gsap-skills
+  description: "Official gsap.utils helpers: clamp, mapRange, normalize, interpolate, random, snap, toArray, wrap and pipe."
+- id: elaya-landing-page-design
+  kind: builtin
+  roles:
+    - frontend
+  rank: 42
+  provenance:
+    license: MIT
+    upstream:
+      - elayadesign/ai-design-skills
+  description: "Landing page system: intake, section structure, conversion copy, SEO and strict visual rules for high-converting marketing pages."
+- id: elaya-figma-designer
+  kind: builtin
+  roles:
+    - frontend
+  rank: 42
+  provenance:
+    license: MIT
+    upstream:
+      - elayadesign/ai-design-skills
+  description: Design inside Figma through the Figma MCP with real variables, text styles, auto layout, components and token rules.
+- id: jk-better-ui
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - jakubkrehel/skills
+  description: "UI polish with exact values: border radius, optical alignment, shadows, icon states and micro-animation."
+- id: jk-better-colors
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - jakubkrehel/skills
+  description: "Colour systems: generate OKLCH palettes, name semantic tokens, convert formats and measure contrast."
+- id: jk-better-typography
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - jakubkrehel/skills
+  description: "Text rendering: type scale, spacing, font features, wrapping, truncation and punctuation."
+- id: jk-better-interface
+  kind: builtin
+  roles:
+    - frontend
+  rank: 44
+  provenance:
+    license: MIT
+    upstream:
+      - jakubkrehel/skills
+  description: Whole-interface review that runs the better-* domain skills and returns one ranked report across accessibility, layout, copy, type, colour and polish.
+- id: jk-better-accessibility
+  kind: builtin
+  roles:
+    - frontend
+  rank: 46
+  provenance:
+    license: MIT
+    upstream:
+      - jakubkrehel/skills
+  description: "Accessibility audit and fixes against WCAG 2.2: keyboard focus, ARIA, accessible names, form labels and errors, screen reader announcements, motion and zoom."
+- id: jk-better-layout
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - jakubkrehel/skills
+  description: "Layout structure: grouping, alignment, reading order, responsive behaviour and room for translated or mirrored (RTL) text."
+- id: jk-better-writing
+  kind: builtin
+  roles:
+    - frontend
+  rank: 44
+  provenance:
+    license: MIT
+    upstream:
+      - jakubkrehel/skills
+  description: "UX writing for interface copy: rewrite labels, button text, error messages, empty state copy and confirmations in the product's voice."
+- id: jk-interface-review
+  kind: builtin
+  roles:
+    - frontend
+  rank: 44
+  provenance:
+    license: MIT
+    upstream:
+      - jakubkrehel/skills
+  description: "Change-scoped interface review of a branch, pull request or uncommitted diff: UI problems it introduced or regressed."
+- id: jk-variant
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - jakubkrehel/skills
+  description: Build several variants of the component in progress on its real page and iterate to pick one; runs only when explicitly invoked.
+- id: jk-break
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - jakubkrehel/skills
+  description: Render one component under every reachable scenario on a temporary page to stress test it; runs only when explicitly invoked.
+- id: jk-build-design
+  kind: builtin
+  roles:
+    - frontend
+  rank: 42
+  provenance:
+    license: MIT
+    upstream:
+      - jakubkrehel/skills
+  description: Build UI from a Figma file or a design image so it matches, using the project's existing tokens and components.
+- id: jk-state-machine
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - jakubkrehel/skills
+  description: Render every state of a component on a throwaway page with mock data and a keyboard switcher; runs only when explicitly invoked.
 - id: wsh-stride-analysis-patterns
   kind: builtin
   roles:

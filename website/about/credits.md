@@ -38,6 +38,14 @@ Every non-vendored source, generated from the manifest. Each row lists the items
 | [pbakaus/impeccable](https://github.com/pbakaus/impeccable) @ `32930818a109` | Apache-2.0 | `design`, `audit-pattern-design-ux` | inspired-by |
 | [obra/superpowers](https://github.com/obra/superpowers) @ `22f0b463e7a5` | MIT | 21 vendored builtins and agents | adapted, vendored |
 | [wshobson/agents](https://github.com/wshobson/agents) @ `9c61ab243def` | MIT | 88 vendored builtins and agents | adapted, vendored |
+| [anthropics/skills](https://github.com/anthropics/skills) @ `2c5958ecac7c` | Apache-2.0 | 4 vendored builtins and agents | adapted, vendored |
+| [Leonxlnx/taste-skill-classics](https://github.com/Leonxlnx/taste-skill-classics) @ `5e08c9383dc4` | MIT | 4 vendored builtins and agents | vendored |
+| [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills) @ `301b02b12bff` | MIT | 3 vendored builtins and agents | adapted, vendored |
+| [emilkowalski/skills](https://github.com/emilkowalski/skills) @ `715c1807e08c` | MIT | 23 vendored builtins and agents | vendored |
+| [nutlope/hallmark](https://github.com/nutlope/hallmark) @ `407fa689f4a2` | MIT | 109 vendored builtins and agents | adapted, vendored |
+| [greensock/gsap-skills](https://github.com/greensock/gsap-skills) @ `aed9cfd32777` | MIT | 8 vendored builtins and agents | vendored |
+| [elayadesign/ai-design-skills](https://github.com/elayadesign/ai-design-skills) @ `456d9e0d3e2d` | MIT | 2 vendored builtins and agents | vendored |
+| [jakubkrehel/skills](https://github.com/jakubkrehel/skills) @ `72bdd6121cd5` | MIT | 46 vendored builtins and agents | vendored |
 | [open-gsd/gsd-core](https://github.com/open-gsd/gsd-core) @ `9385f4618b52` | MIT | 40 vendored builtins and agents | adapted, vendored |
 | [nextlevelbuilder/ui-ux-pro-max-skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) @ `4f2dbb67e649` | MIT | 144 vendored builtins and agents | vendored, inspired-by, adapted |
 | [ghaida/intent](https://github.com/ghaida/intent) @ `1806110106a4` | CC0-1.0 | 42 vendored builtins and agents | vendored, inspired-by, adapted |

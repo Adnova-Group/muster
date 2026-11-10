@@ -40,7 +40,7 @@ test("Claude orchestration surface remains byte-identical outside release metada
     hash.update(await readFile(join(root, path)));
     hash.update("\0");
   }
-  assert.equal(paths.length, 151); // 0.7.0 retired the run/autopilot/sprint command files; 2026-11-09 removed five always-on hook files; stage 1 removed references/kimi-dispatch.md.
+  assert.equal(paths.length, 154); // 0.7.0 retired the run/autopilot/sprint command files; 2026-11-09 removed five always-on hook files; stage 1 removed references/kimi-dispatch.md; stage 2 adds plugin/workflows (plan, build, backlog, schemas) and gsd-derived agents (planner, plan-checker, verifier, executor replacing builder).
   // Previous 159-file surface +1: audit-pattern-batch2's new
   // plugin/skills/audit-pattern-documentation/SKILL.md (the 10th pattern skill, approved via the
   // second improver batch, composed onto readability + design-ux). The batch also appended 19
@@ -1508,5 +1508,13 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // field from vendor/manifest.yaml (adapted_from / inspired_by retired), checked by
   // test/provenance.test.js. Owner decisions in docs/strategy/2026-11-revival-review.md.
   // Deliberate, not drift.
-  assert.equal(hash.digest("hex"), "8a253eae9b51d79ff66d33f58403642b29a307ccd540448a87feedd53ce28569");
+  // Re-pin 2026-11-09d (revival stage 2a, 151 -> 154 files): plugin/workflows/ adds the plan,
+  // build and backlog Workflow scripts with their result schemas; muster-planner,
+  // muster-plan-checker and muster-verifier are adapted from gsd-core v1.20.1 and muster-executor
+  // replaces muster-builder, with gsd's measured protocol text kept verbatim and marked; the
+  // muster-reviewer body becomes gsd's code reviewer; ten wsh-* agents move to the model the
+  // generator writes; and the humanizer, PRD/epic pipeline and audit-pattern quotes are rewritten
+  // clean-room, with every item's upstream: block regenerated from vendor/manifest.yaml.
+  // Contracts: docs/strategy/stage-2-contracts.md. Deliberate, not drift.
+  assert.equal(hash.digest("hex"), "633efebe1d85180383883d7c508f99f856e524bad552fcef20eec081c980ee6d");
 });

@@ -53,6 +53,7 @@ const PROJECT_FILES = {
   "intent-measure": { "metrics-larkspur-refills.md": deliverable },
   "intent-strategize": { "brief-larkspur-refills.md": deliverable },
   "intent-transpose": { "adaptation-larkspur-mobile.md": deliverable },
+  "mkt-copy-editing": { "product-marketing-context.md": "the legacy name of the project's product-marketing context file, read from the user's repo when present" },
   // "Thinking Style Variants (Future)": named as planned upstream variants; no such files exist in
   // ghaida/intent at the pin (18061101), so there is nothing to vendor.
   "intent-philosopher": Object.fromEntries(["inward.md", "connective.md", "empathic.md", "architectural.md"].map(f => [f, "a planned upstream variant, absent at the pin"])),

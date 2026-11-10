@@ -499,3 +499,10 @@
   keywords: [requirements, threats, compliance, abuse, acceptance]
   description: "Derive security requirements from threat models and business context. Use when translating threats into actionable requirements, creating security user stories, or building security test cases."
   provenance: { license: MIT, upstream: [wshobson/agents] }
+- id: mkt-copy-editing
+  kind: builtin
+  roles: [author]
+  rank: 41
+  keywords: [copyediting, proofread, proofreading, tighten, refresh, sweeps]
+  description: "Edit existing copy without rewriting it: seven focused sweeps, point edits for single lines, AI-tell removal and a content-refresh checklist."
+  provenance: { license: MIT, upstream: [coreyhaines31/marketingskills] }

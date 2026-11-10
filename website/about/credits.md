@@ -101,7 +101,7 @@ Every non-vendored source, generated from the manifest. Each row lists the items
 | [gcamilo/management-consulting](https://github.com/gcamilo/management-consulting) @ `dd2d099dc390` | MIT | `executive-summary` | inspired-by |
 | [reasoncommons/issuetrees](https://github.com/reasoncommons/issuetrees) @ `56ad78e0ce78` | NONE | `executive-summary` | inspired-by |
 | [cdeust/ai-prd-generator](https://github.com/cdeust/ai-prd-generator) @ `4189d41b102d` | LicenseRef-proprietary | `prd` | inspired-by |
-| [coreyhaines31/marketingskills](https://github.com/coreyhaines31/marketingskills) @ `8a3bde8083bd` | MIT | `competitive-battlecard`, `lead-magnet`, `case-study`, `newsletter` | inspired-by |
+| [coreyhaines31/marketingskills](https://github.com/coreyhaines31/marketingskills) @ `8a3bde8083bd` | MIT | 8 vendored builtins and agents | inspired-by |
 | [CosmoBlk/email-marketing-bible](https://github.com/CosmoBlk/email-marketing-bible) @ `962648c1b147` | MIT | `competitive-battlecard`, `lead-magnet`, `case-study`, `newsletter` | inspired-by |
 | [AgriciDaniel/claude-email](https://github.com/AgriciDaniel/claude-email) @ `182270a0bbcd` | MIT | `competitive-battlecard`, `lead-magnet`, `case-study`, `newsletter` | inspired-by |
 | [SkeltonThatcher/run-book-template](https://github.com/SkeltonThatcher/run-book-template) @ `7014714b6021` | NONE | `runbook` | inspired-by |

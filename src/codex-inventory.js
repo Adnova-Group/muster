@@ -31,7 +31,8 @@ export const CODEX_FROZEN_OUT_COMPLEMENTS = Object.freeze(new Set([
   "kdense-market-research-reports", "kdense-literature-review",
   "kwp-knowledge-synthesis", "kwp-validate-data",
   "wsh-slo-implementation", "wsh-postmortem-writing", "wsh-incident-runbook-templates",
-  "wsh-security-requirement-extraction", "wsh-changelog-automation"
+  "wsh-security-requirement-extraction", "wsh-changelog-automation",
+  "mkt-copy-editing"
 ]));
 // Every builtin the frozen Codex bundle leaves out: the UX family and the complements.
 export const isCodexExcludedBuiltin = name => isCodexFrozenOutBuiltin(name) || CODEX_FROZEN_OUT_COMPLEMENTS.has(name);

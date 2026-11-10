@@ -2627,16 +2627,33 @@ sources:
     # interpretation) and skills/sales-enablement's "why we win needs evidence, else a
     # hypothesis" and "say where we lose"; lead-magnet gets skills/lead-magnets' buyer-stage
     # match and fewest-form-fields rule.
+    # Merge-tracked since 2026-11-10 (owner-approved complements): skills/copy-editing is vendored
+    # as mkt-copy-editing at this same pin (v2.14.9-5; copy-editing's files are byte-identical at
+    # the newer HEAD 9d6d7ce read that day, so the pin stays and the pipeline items keep theirs),
+    # with byte-exact base copies in vendor/upstream/marketingskills/; `muster vendor update
+    # marketingskills` 3-way merges them. The four pipelines stay inspired-by items. The shared
+    # &marketing-group anchor moved to email-marketing-bible so the vendored item is credited
+    # to this source alone.
+    # Kept muster divergence: the SKILL.md frontmatter swap (name kept, one-line description,
+    # muster_builtin, SPDX license, generated upstream:; metadata dropped), a prompt-lint-disable
+    # comment after the H1 and the packaging-only header on each reference. evals/evals.json is not
+    # carried. Its pointers to the copywriting skill and to the project's product-marketing
+    # context file name things muster does not ship (the latter lives in the user's repo).
+    # Wired into muster-author's edit pass.
     ref: 8a3bde8083bd121971f61cba4bdbe5fd8c0eee7d
+    tag: v2.14.9-5-g8a3bde8
     license: MIT
     copyright: "Copyright (c) 2025 Corey Haines"
     relation: inspired-by
-    fetch: false
-    items: &marketing-group
+    items:
       - { id: competitive-battlecard, kind: pipeline, from: null }
       - { id: lead-magnet, kind: pipeline, from: null }
       - { id: case-study, kind: pipeline, from: null }
       - { id: newsletter, kind: pipeline, from: null }
+      - { id: mkt-copy-editing, kind: builtin, from: skills/copy-editing/SKILL.md, to: plugin/builtins/mkt-copy-editing/SKILL.md, mode: adapted, baseBlob: 2065709be9c2571fc34ad79a0f453fb040d8c1c0 }
+      - { from: skills/copy-editing/references/checklist.md, to: plugin/builtins/mkt-copy-editing/references/checklist.md, mode: adapted, baseBlob: 1f33b2100a1d49db4858987e4b6bcbbd783d5b79 }
+      - { from: skills/copy-editing/references/content-refresh.md, to: plugin/builtins/mkt-copy-editing/references/content-refresh.md, mode: adapted, baseBlob: 5def44f806c36e66b1d69400c33ec63a4e0d024d }
+      - { from: skills/copy-editing/references/plain-english-alternatives.md, to: plugin/builtins/mkt-copy-editing/references/plain-english-alternatives.md, mode: adapted, baseBlob: 2fc323557dabdee6ee9f0a52e2a4c24f473fc775 }
   - id: email-marketing-bible
     kind: github
     repo: CosmoBlk/email-marketing-bible
@@ -2650,7 +2667,11 @@ sources:
     copyright: "Copyright (c) 2026 George Hartley"
     relation: inspired-by
     fetch: false
-    items: *marketing-group
+    items: &marketing-group
+      - { id: competitive-battlecard, kind: pipeline, from: null }
+      - { id: lead-magnet, kind: pipeline, from: null }
+      - { id: case-study, kind: pipeline, from: null }
+      - { id: newsletter, kind: pipeline, from: null }
   - id: claude-email
     kind: github
     repo: AgriciDaniel/claude-email

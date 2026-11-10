@@ -4,17 +4,17 @@ title: Lead Magnet
 match: [lead magnet, content upgrade, opt-in, gated content, ebook]
 upstream:
   - repo: coreyhaines31/marketingskills
-    ref: null
+    ref: 8a3bde8083bd121971f61cba4bdbe5fd8c0eee7d
     path: null
     license: MIT
     relation: inspired-by
   - repo: CosmoBlk/email-marketing-bible
-    ref: null
+    ref: 962648c1b147652244c4e4953e96c65421a79e70
     path: null
     license: MIT
     relation: inspired-by
   - repo: AgriciDaniel/claude-email
-    ref: null
+    ref: 182270a0bbcd9c710713cbff4b7ce8475f5964f9
     path: null
     license: MIT
     relation: inspired-by
@@ -41,13 +41,13 @@ upstream:
     url: null
     relation: inspired-by
 phases:
-  - { id: intake,           role: brainstorm,    desc: "ICP, pain, promise, format (checklist/ebook/template), conversion goal" }
+  - { id: intake,           role: brainstorm,    desc: "ICP, pain, promise, buyer stage (awareness / consideration / decision; the format follows the stage), format (checklist/ebook/template), conversion goal" }
   - { id: research,         role: docs-research, desc: "audience evidence, competitor magnets, proof points" }
   - { id: hook-and-promise, role: author,        desc: "headline via PAS or BAB: name pain, agitate, promise transformation; validate vs ICP" }
   - { id: outline,          role: author,        desc: "value outline: quick win + depth; lead-capture placement" }
   - { id: draft,            role: author,        desc: "draft the asset; actionable, skimmable, on-brand" }
   - { id: design-brief,     role: author,        desc: "layout/design brief + CTA + landing-page copy" }
-  - { id: conversion-copy,  role: author,        desc: "landing page headline (AIDA), opt-in micro-copy, thank-you upsell CTA; spam-trigger check on follow-up email" }
+  - { id: conversion-copy,  role: author,        desc: "landing page headline (AIDA), opt-in micro-copy (ask for the fewest fields the offer justifies; email only unless qualification needs more), thank-you upsell CTA; spam-trigger check on follow-up email" }
   - { id: review,           role: code-review,   desc: "adversarial review gate" }
   - { id: score,            role: score,         desc: "score vs rubric, apply floor principle" }
   - { id: humanize, role: humanize,     desc: "final pass: strip AI tells (em-dashes, banned words, robotic cadence) for human delivery" }

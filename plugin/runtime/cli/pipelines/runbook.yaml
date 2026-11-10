@@ -9,12 +9,12 @@ upstream:
     license: NONE
     relation: inspired-by
   - repo: dastergon/awesome-sre
-    ref: null
+    ref: e91ef69aa52129662164e54cc22272bc90e9b636
     path: null
     license: CC0-1.0
     relation: inspired-by
   - repo: runbear-io/awesome-runbook
-    ref: null
+    ref: d83a294e4eb650a62b4afce3dfee29f837f8c041
     path: null
     license: CC0-1.0
     relation: inspired-by

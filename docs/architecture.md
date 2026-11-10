@@ -88,7 +88,7 @@ Muster exposes seven entry points as slash commands under the `muster:` namespac
 | Go | `/muster:go <outcome \| backlog ref>` | Plan, build in isolated worktrees, review, verify, then the merge decision |
 | Diagnose | `/muster:diagnose <symptom>` | Failure-first single-bug fix |
 | Audit | `/muster:audit [path]` | Breadth-first whole-codebase review and fix |
-| Design | `/muster:design <action>` | Canonical design-context resolution, digest/write gates, and 23 design workflows |
+| Design | `/muster:design <action>` | Canonical design-context resolution, digest/write gates, and 24 design workflows |
 | Capture | `/muster:capture [hint]` | Conversation-to-backlog generator: mines the session's discussion into approval-gated backlog items, then stops -- no crew, no waves |
 | Init | `/muster:init [dir]` | Prepare deterministic project state, coordinate native instruction handoff, and finalize from positive evidence or an acknowledged unavailable handoff |
 

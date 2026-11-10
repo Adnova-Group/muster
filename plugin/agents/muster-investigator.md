@@ -6,7 +6,7 @@ model: haiku
 maxTurns: 15
 upstream:
   - repo: damusix/atomic-claude
-    ref: null
+    ref: b4ca195cae6022464b0cc5c07273b3fa9602da17
     path: null
     license: MIT
     relation: inspired-by

@@ -85,7 +85,7 @@ ChatGPT Work is a private/local, proof-gated plugin lane: it does not inherit Co
 | Go | `/muster:go <outcome \| backlog ref>` | Hands-off: plans, builds each wave in isolated worktrees, reviews and verifies, merges the waves through `muster merge-wave`, then stops for the merge decision. |
 | Diagnose | `/muster:diagnose <symptom>` | Failure-first bug fix: reproduce, find root cause, fix, add a regression test, verify. No symptom-patching. |
 | Audit | `/muster:audit [path]` | Breadth-first whole-codebase review and fix across six dimensions (seven when the project builds prompts or agents), then fixes everything with tests and verifies. |
-| Design | `/muster:design <action>` | Resolve canonical `DESIGN.md` context and digest receipts, initialize it with an attended hold, inspect bounded design evidence/provider state, or run one of 23 pinned design workflows. |
+| Design | `/muster:design <action>` | Resolve canonical `DESIGN.md` context and digest receipts, initialize it with an attended hold, inspect bounded design evidence/provider state, or run one of 24 pinned design workflows. |
 | Capture | `/muster:capture [hint]` | Conversation-to-backlog generator: mines the session's discussion (findings, decisions, review residuals, an explicit directive) into backlog items, gated by your approval before anything is written. Writes only `.muster/backlog.md` -- it never runs work itself. |
 | Init | `/muster:init [dir]` | Prepare a repository profile and receipt, hand native instruction work to the active runtime, and finalize only after positive evidence or an acknowledged unavailable handoff. |
 

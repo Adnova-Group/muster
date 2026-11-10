@@ -32,7 +32,7 @@ upstream:
 phases:
   - { id: intake,   role: brainstorm,  desc: "platform, audience, goal, one core idea, CTA; resolve the target audience to a named profile in docs/profiles/AUDIENCES.md (create/extend the profile on first use)" }
   - { id: angle,    role: author,      desc: "choose an angle + framework (AIDA / PAS / BAB / QUEST)" }
-  - { id: variants, role: author,      desc: "write 3+ hook/post variants; calibrate jargon, depth, and altitude to the resolved audience profile; resolve the voice profile in docs/profiles/VOICE.md and layer its register, rhythm, and anti-patterns on top (audience owns depth/jargon/altitude, voice owns register/rhythm/anti-patterns); tournament-judge the strongest" }
+  - { id: variants, role: author,      desc: "write 3+ hook/post variants; calibrate jargon, depth, and altitude to the resolved audience profile; resolve the voice profile in docs/profiles/VOICE.md and layer its register, rhythm, and anti-patterns on top (audience owns depth/jargon/altitude, voice owns register/rhythm/anti-patterns); pick the strongest by best-of-N (a fresh-context judge scores each, `muster pick` ranks the scored rows)" }
   - { id: review,   role: code-review, desc: "adversarial review + platform-fit check" }
   - { id: score,    role: score,       desc: "score vs rubric, apply floor principle" }
   - { id: humanize, role: humanize,     desc: "final pass: strip AI tells (em-dashes, banned words, robotic cadence) for human delivery" }

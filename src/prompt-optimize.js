@@ -30,6 +30,8 @@ const TRANSFORMS = {
     apply: (p) => `${p}\n\n<example>\n<input>EXAMPLE INPUT</input>\n<output>IDEAL OUTPUT</output>\n</example>` },
   "ANTH-POS-001": { technique: "positive-framing",
     apply: (p) => `${p}\n\n(Express the constraints above as positive instructions — state what to do.)` },
+  "LINT-LOOP-004": { technique: "add-loop-budget",
+    apply: (p) => `${p}\n\nMake at most 3 attempts at any retry or loop above, then stop and report what failed.` },
   "LINT-STOP-002": { technique: "add-stop-conditions",
     apply: (p) => `${p}\n\nStop once the task is complete or after a reasonable number of attempts.` },
   "GUARD-IDK-001": { technique: "allow-idk",
@@ -44,18 +46,27 @@ export function proposeVariations(prompt, ctx = {}) {
   const seen = new Set();
   const applied = [];
 
+  // A variation byte-identical to the baseline or to one already proposed costs an eval and
+  // can never win on merit (gepa skips merges identical to an existing candidate for the
+  // same reason), so it is dropped before scoring.
+  const texts = new Set([prompt]);
+
   for (const f of findings) {
     const t = TRANSFORMS[f.id];
     if (!t || seen.has(t.technique)) continue;
     seen.add(t.technique);
+    const next = t.apply(prompt);
+    if (texts.has(next)) continue;
+    texts.add(next);
     applied.push(t);
-    variations.push({ id: t.technique, technique: t.technique, prompt: t.apply(prompt), addresses: f.id });
+    variations.push({ id: t.technique, technique: t.technique, prompt: next, addresses: f.id });
   }
 
   // A combined variation that applies every technique — often the strongest candidate.
   if (applied.length > 1) {
     const combined = applied.reduce((p, t) => t.apply(p), prompt);
-    variations.push({ id: "all-improvements", technique: "all-improvements", prompt: combined });
+    if (!texts.has(combined))
+      variations.push({ id: "all-improvements", technique: "all-improvements", prompt: combined });
   }
   return variations;
 }

@@ -644,7 +644,7 @@ test("tools/call: muster_design exposes pinned workflows and canonical context r
   ]);
   const workflows = JSON.parse(r[2].result.content[0].text);
   const packet = JSON.parse(r[3].result.content[0].text);
-  assert.equal(workflows.workflows.length, 23);
+  assert.equal(workflows.workflows.length, 24);
   assert.equal(packet.workflow, "polish");
   assert.match(packet.context.digest, /^[a-f0-9]{64}$/);
 });

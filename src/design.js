@@ -18,34 +18,37 @@ import {
 export const DESIGN_SOURCE = Object.freeze({
   name: "Impeccable",
   repository: "https://github.com/pbakaus/impeccable",
-  ref: "32930818a109fafa87199babe92fa8e530cff5d3",
+  ref: "035c8f319edd019936525a062fe99e83ca8d12c6",
   license: "Apache-2.0",
 });
 
+// Workflow vocabulary follows Impeccable's command metadata at the pinned ref
+// (skill/scripts/command-metadata.json), restated in Muster's own words.
 const WORKFLOW_METADATA = {
-  craft: ["Compatibility entry point for ordinary new design work.", "[feature description]"],
+  craft: ["Compatibility alias for ordinary new design work; adds no behavior of its own.", "[feature description]"],
   init: ["Capture the durable product and design context needed by later work.", ""],
-  document: ["Document an incumbent visual system in canonical DESIGN.md form.", ""],
+  document: ["Document an incumbent visual system in canonical DESIGN.md form from the code, confirming descriptive language with the user.", ""],
   extract: ["Consolidate reusable patterns, components, and tokens.", "[target]"],
-  live: ["Prepare an interactive visual-iteration session.", ""],
-  adapt: ["Adapt a design across sizes, devices, and contexts.", "[target] [context]"],
+  live: ["Prepare an interactive visual-iteration session on chosen elements.", ""],
+  generate: ["Produce N variants of one named element in a stated direction for the user to choose from. Web only; on native targets offer bolder or quieter instead.", "[count] [direction] variants of [element]"],
+  adapt: ["Adapt a design across sizes, devices, platforms, and touch contexts.", "[target] [context]"],
   animate: ["Add purposeful motion and micro-interactions.", "[target]"],
-  audit: ["Audit accessibility, performance, responsiveness, and design quality.", "[area]"],
+  audit: ["Audit accessibility, performance, theming, responsiveness, touch interaction, and anti-patterns; report P0-P3 findings with a remediation plan.", "[area]"],
   bolder: ["Increase visual impact while preserving usability.", "[target]"],
   clarify: ["Improve UX copy, labels, instructions, and error messages.", "[target]"],
   colorize: ["Apply a more expressive and coherent color system.", "[target]"],
-  critique: ["Evaluate hierarchy, information architecture, resonance, and cognitive load.", "[area]"],
+  critique: ["Evaluate hierarchy, information architecture, resonance, and cognitive load with scored, persona-based findings.", "[area]"],
   delight: ["Add useful moments of personality and delight.", "[target]"],
   distill: ["Remove unnecessary complexity and visual noise.", "[target]"],
-  harden: ["Handle edge cases, overflow, i18n, and production resilience.", "[target]"],
+  harden: ["Handle edge cases, overflow, i18n, interrupted gestures, and production resilience.", "[target]"],
   onboard: ["Design onboarding, first-run, activation, and empty-state experiences.", "[target]"],
   layout: ["Improve spacing, composition, rhythm, and hierarchy.", "[target]"],
   optimize: ["Improve perceived and measured interface performance.", "[target]"],
   overdrive: ["Explore technically ambitious, high-impact interaction design.", "[target]"],
-  polish: ["Run a final alignment, spacing, consistency, and detail pass.", "[target]"],
+  polish: ["Run a final alignment, spacing, consistency, and detail pass at the sizes the surface ships at, closing any prior critique findings it resolves.", "[target]"],
   quieter: ["Reduce visual intensity while preserving clarity and quality.", "[target]"],
-  shape: ["Shape UX and UI direction before implementation.", "[feature]"],
-  typeset: ["Improve typography, hierarchy, sizing, and readability.", "[target]"],
+  shape: ["Shape UX and UI direction before implementation through a short discovery interview (one round by default) and a confirmed brief.", "[feature]"],
+  typeset: ["Improve typography, hierarchy, sizing, line breaks, and readability.", "[target]"],
 };
 
 export const DESIGN_WORKFLOWS = Object.freeze(
@@ -54,6 +57,133 @@ export const DESIGN_WORKFLOWS = Object.freeze(
 );
 
 const WORKFLOW_IDS = new Set(DESIGN_WORKFLOWS.map(({ id }) => id));
+// `generate` reuses the refinement vocabulary as its direction axis instead of
+// inventing new action names (Impeccable reference/generate.md, Step 1).
+export const GENERATE_DIRECTIONS = Object.freeze(["bolder", "quieter", "distill", "polish", "typeset",
+  "colorize", "layout", "adapt", "animate", "delight", "overdrive"]);
+const GENERATE_MAX_VARIANTS = 8;
+const WORKFLOW_GUIDANCE = {
+  generate: [
+    `Map the requested direction onto one of: ${GENERATE_DIRECTIONS.join(", ")}; carry any extra intent alongside it. If the request names no direction, ask one question offering that list before writing anything.`,
+    `Default to 3 variants when no count is given; never exceed ${GENERATE_MAX_VARIANTS}.`,
+    "Write the variants by the mapped direction's own playbook (plugin/builtins/impeccable-<direction>/SKILL.md); Impeccable's live-browser generate lane is not vendored.",
+    "Make each variant a complete replacement of the named element that differs on a distinct primary axis, keep the incumbent identity, and let the user pick one before anything else changes.",
+  ],
+};
+// Skills per workflow. Impeccable is the workflow engine and DESIGN.md the canonical context.
+// `primary` is the vendored Impeccable playbook (plugin/builtins/impeccable-*, merge-tracked in
+// vendor/manifest.yaml): the packet defers the design method to it and keeps only muster's
+// orchestration (context gate, DESIGN.md write flow, receipt). `skills` are supporting builtins
+// vendored by their own manifest entries and referenced by id and path only. Skills resolve to
+// plugin/builtins/<id>/SKILL.md, agents to plugin/agents/<id>.md. `uupm` says how a workflow uses
+// uupm-ui-ux-pro-max's search:
+//   query      data-backed candidates for a style/color/type/layout/motion choice; the user confirms
+//   checklist  its rule-priority table and pre-delivery checklist, beside the workflow's own checks
+//   lookup     domain or stack implementation guidance
+// `mobbin` marks the workflows that choose a pattern, flow or screen structure: when the session
+// has Mobbin MCP tools (detect-and-use, never bundled) they search Mobbin for real references first.
+// plugin/commands/design/references/supporting-skills.md records why each skill serves its workflows.
+export const DESIGN_PRECEDENCE = Object.freeze(["project DESIGN.md", "accessibility/WCAG",
+  "Impeccable workflow guidance",
+  "supporting skills and references (uupm, typeui, intent, pfd, emil, gsap, taste, hallmark, anthropic, jk, elaya, addy, Mobbin)"]);
+export const IMPECCABLE_CORE = "impeccable-core";
+export const IMPECCABLE_CRAFT_FLOOR = "impeccable-craft-floor";
+export const UUPM_SKILL = "uupm-ui-ux-pro-max";
+export const UUPM_SEARCH_SCRIPT = "scripts/search.py";
+export const UUPM_REFERENCE_FILES = Object.freeze(["references/quick-reference.md", "references/pro-rules.md"]);
+// Mobbin MCP search tools (https://docs.mobbin.com/mcp/features.md, read 2026-11-10). The saved-content
+// tools (create_collection, save_content, add_comment) write to the user's Mobbin account and are
+// never called by a design workflow.
+export const MOBBIN_SERVER_RE = /mobbin/i;
+export const MOBBIN_SEARCH_TOOLS = Object.freeze(["search_screens", "search_flows", "search_sections"]);
+// pfd is CC BY-SA 4.0: name it with its attribution, never quote it.
+export const PFD_ATTRIBUTION = "Perception-First Design (skovalik/perception-first-design, CC BY-SA 4.0)";
+const GSAP = ["gsap-core", "gsap-timeline", "gsap-scrolltrigger", "gsap-plugins", "gsap-react", "gsap-frameworks", "gsap-utils"];
+// Workflows with their own vendored Impeccable reference; the others run on impeccable-core alone.
+const OWN_REFERENCE = new Set(["adapt", "animate", "audit", "bolder", "clarify", "colorize", "critique", "delight",
+  "distill", "harden", "layout", "optimize", "overdrive", "polish", "quieter", "shape", "typeset", "onboard",
+  "extract", "document"]);
+// Workflows that never edit UI code skip the craft floor (read immediately before any UI edit).
+const NO_UI_EDIT = new Set(["init", "document", "audit", "critique", "shape"]);
+const support = (id, skills, { agents = [], uupm = null, mobbin = false } = {}) => Object.freeze({
+  primary: Object.freeze([IMPECCABLE_CORE, ...(OWN_REFERENCE.has(id) ? [`impeccable-${id}`] : []),
+    ...(NO_UI_EDIT.has(id) ? [] : [IMPECCABLE_CRAFT_FLOOR])]),
+  skills: Object.freeze(skills), agents: Object.freeze(agents), uupm, mobbin,
+});
+export const DESIGN_SUPPORT = Object.freeze({
+  craft: support("craft", [UUPM_SKILL, "uupm-ui-styling", "typeui", "anthropic-frontend-design",
+    "taste-design-taste-frontend", "taste-redesign-existing-projects", "taste-stitch-design-taste", "hallmark",
+    "elaya-landing-page-design", "elaya-figma-designer", "jk-build-design", "addy-frontend-ui-engineering",
+    "emil-pick-ui-library", "impeccable-operate"], { uupm: "query", mobbin: true }),
+  init: support("init", [UUPM_SKILL, "uupm-brand", "intent-intent", "impeccable-document"], { uupm: "query" }),
+  document: support("document", ["uupm-design-system"]),
+  extract: support("extract", ["uupm-design-system"]),
+  live: support("live", ["emil-prototype", "jk-variant", "jk-state-machine"]),
+  generate: support("generate", ["typeui", UUPM_SKILL, "emil-prototype", "jk-variant", "taste-stitch-design-taste"],
+    { uupm: "query", mobbin: true }),
+  adapt: support("adapt", ["intent-transpose", UUPM_SKILL, "emil-mobile-native", "jk-better-layout"], { uupm: "lookup" }),
+  animate: support("animate", [UUPM_SKILL, "emil-animate", "emil-choreograph", "emil-apple-design",
+    "emil-find-animation-opportunities", "emil-animation-vocabulary", "emil-animate-expo", ...GSAP], { uupm: "query" }),
+  audit: support("audit", [UUPM_SKILL, "intent-evaluate", "intent-include", "jk-better-accessibility",
+    "addy-browser-testing-with-devtools"], { agents: ["intent-vigil"], uupm: "checklist" }),
+  bolder: support("bolder", [UUPM_SKILL, "anthropic-frontend-design", "taste-design-taste-frontend",
+    "taste-high-end-visual-design", "taste-industrial-brutalist-ui", "taste-redesign-existing-projects", "hallmark"],
+    { uupm: "query", mobbin: true }),
+  clarify: support("clarify", ["intent-articulate", "uupm-brand", "pfd", "jk-better-writing"], { agents: ["intent-wren"] }),
+  colorize: support("colorize", [UUPM_SKILL, "jk-better-colors"], { uupm: "query" }),
+  critique: support("critique", [UUPM_SKILL, "intent-evaluate", "pfd", "jk-better-interface", "jk-interface-review",
+    "emil-review-animations"], { agents: ["intent-vigil"], uupm: "checklist" }),
+  delight: support("delight", [UUPM_SKILL, "intent-articulate", "emil-design-eng", "emil-find-animation-opportunities"],
+    { uupm: "query" }),
+  distill: support("distill", ["pfd", "intent-organize", "emil-remove-animations", "taste-minimalist-ui"]),
+  harden: support("harden", ["intent-fortify", "intent-include", "intent-localize", "emil-break-ui", "jk-break",
+    "jk-state-machine", "jk-better-layout", "jk-better-accessibility"], { agents: ["intent-vigil"] }),
+  onboard: support("onboard", ["intent-journey", "intent-fortify", "intent-articulate", "intent-measure", "pfd",
+    "jk-better-writing"], { agents: ["intent-wren"], mobbin: true }),
+  layout: support("layout", [UUPM_SKILL, "intent-wireframe", "typeui", "jk-better-layout", "impeccable-operate"],
+    { uupm: "query", mobbin: true }),
+  optimize: support("optimize", [UUPM_SKILL, "emil-animation-performance", "gsap-performance",
+    "addy-browser-testing-with-devtools"], { uupm: "lookup" }),
+  overdrive: support("overdrive", [UUPM_SKILL, "emil-choreograph", "emil-apple-design", "gsap-scrolltrigger",
+    "gsap-plugins", "gsap-timeline", "taste-high-end-visual-design", "taste-industrial-brutalist-ui"],
+    { uupm: "query", mobbin: true }),
+  polish: support("polish", [UUPM_SKILL, "emil-design-eng", "emil-review-animations", "jk-better-ui"], { uupm: "checklist" }),
+  quieter: support("quieter", [UUPM_SKILL, "emil-remove-animations", "taste-minimalist-ui"], { uupm: "query" }),
+  shape: support("shape", ["intent-strategize", "intent-journey", "intent-wireframe", "intent-measure", "pfd", UUPM_SKILL,
+    "anthropic-frontend-design"], { agents: ["intent-ember"], uupm: "query", mobbin: true }),
+  typeset: support("typeset", [UUPM_SKILL, "jk-better-typography"], { uupm: "query" }),
+});
+const UUPM_GUIDANCE = {
+  query: `For each style, color, type, layout or motion choice, run ${UUPM_SKILL}'s ${UUPM_SEARCH_SCRIPT} (--design-system for a product-wide direction, --domain for one concern) for data-backed candidates; present them, let the user confirm, and record the confirmed choice in DESIGN.md through this workflow. Never treat its --persist output as design context.`,
+  checklist: `Apply ${UUPM_SKILL}'s rule-priority table and its pre-delivery checklist (${UUPM_REFERENCE_FILES[1]}) beside this workflow's own checks; report each finding once.`,
+  lookup: `Look up implementation guidance with ${UUPM_SKILL}'s ${UUPM_SEARCH_SCRIPT} by --domain or by the detected --stack; treat results as recommendations.`,
+};
+const MOBBIN_GUIDANCE = [
+  `Only if this session has tools from an MCP server whose name matches /mobbin/i: before choosing a pattern, flow or screen structure, search Mobbin for real references (${MOBBIN_SEARCH_TOOLS[1]} for multi-step flows, ${MOBBIN_SEARCH_TOOLS[0]} for single screens, ${MOBBIN_SEARCH_TOOLS[2]} for website sections), cite the apps and screens you used, then synthesize. Without those tools, skip this step and do not mention it.`,
+  "Mobbin screens are third-party product screenshots, used as reference only: never copy proprietary assets or brand elements into the user's product, and never let them override DESIGN.md.",
+];
+
+function supportGuidance(workflow) {
+  const entry = DESIGN_SUPPORT[workflow];
+  if (!entry) return [];
+  const name = (id) => (id === "pfd" ? `pfd (${PFD_ATTRIBUTION})` : id);
+  const lines = [
+    `Primary playbook, read first (plugin/builtins/<id>/SKILL.md): ${entry.primary.join(", ")}. Follow it for the design method; this packet adds only muster's context gate, DESIGN.md write flow and receipt.`,
+  ];
+  if (entry.skills.length > 0) {
+    lines.push(`Supporting skills, read on demand by builtin id (plugin/builtins/<id>/SKILL.md): ${entry.skills.map(name).join(", ")}. Use a stack-specific skill (gsap-*, emil-animate-expo, uupm-ui-styling) only where the project already uses that stack.`);
+  }
+  if (entry.agents.length > 0) {
+    lines.push(`Supporting agents (plugin/agents/<id>.md): ${entry.agents.join(", ")}.`);
+  }
+  if (entry.uupm) {
+    lines.push(UUPM_GUIDANCE[entry.uupm]);
+    lines.push(`If Python 3 is unavailable, read ${UUPM_SKILL}'s ${UUPM_REFERENCE_FILES.join(" and ")} and its data/ files instead of running the search.`);
+  }
+  if (entry.mobbin) lines.push(...MOBBIN_GUIDANCE);
+  lines.push(`When sources disagree: ${DESIGN_PRECEDENCE.join(" > ")}.`);
+  return lines;
+}
 const DESIGN_NAMES = ["DESIGN.md", "Design.md", "design.md"];
 const UI_EXTENSIONS = new Set([".css", ".scss", ".sass", ".less", ".styl", ".html", ".htm",
   ".jsx", ".tsx", ".vue", ".svelte", ".astro", ".swift", ".kt", ".kts", ".xml"]);
@@ -475,10 +605,13 @@ export async function runDesignWorkflow(cwd, workflow, options = {}) {
     context: gate.receipt,
     target: options.target || null,
     args: options.args || "",
+    support: DESIGN_SUPPORT[workflow],
     prompt: [
       "You are Muster's design workflow specialist.",
       `Run the ${workflow} workflow. ${metadata.description}`,
+      ...(WORKFLOW_GUIDANCE[workflow] || []),
       "Treat the resolved DESIGN.md digest receipt as canonical context.",
+      ...supportGuidance(workflow),
       "Return a concise Markdown checklist of proposed work and verification.",
       `<design-scope>${xmlText(scope)}</design-scope>`,
     ].join("\n"),

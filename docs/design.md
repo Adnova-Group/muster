@@ -1,6 +1,6 @@
 # Design mode
 
-Muster Design gives human-facing work one canonical context and one digest receipt before implementation. It is inspired by the workflow vocabulary in [Impeccable](https://github.com/pbakaus/impeccable), pinned at commit `32930818a109fafa87199babe92fa8e530cff5d3` under Apache-2.0. Muster does not silently import or overwrite upstream content.
+Muster Design gives human-facing work one canonical context and one digest receipt before implementation. Its workflows run on [Impeccable](https://github.com/pbakaus/impeccable)'s own skill and references, vendored as `impeccable-*` builtins from commit `035c8f319edd019936525a062fe99e83ca8d12c6` (skill-v4.8.2) under Apache-2.0 and merge-tracked in `vendor/manifest.yaml`; each workflow names supporting skills from other vendored families as well. Muster does not silently import or overwrite upstream content: an upstream update is a reviewed 3-way merge.
 
 ## Establish context
 
@@ -35,8 +35,20 @@ muster design provider check .
 muster design provider install .
 ```
 
-Run a workflow with `muster design run <workflow> [dir] --target <path>`, or use the harness shortcut `/muster:design <workflow> [target]`. The 23 pinned workflow names are:
+Run a workflow with `muster design run <workflow> [dir] --target <path>`, or use the harness shortcut `/muster:design <workflow> [target]`. The 24 pinned workflow names are:
 
-`craft`, `init`, `document`, `extract`, `live`, `adapt`, `animate`, `audit`, `bolder`, `clarify`, `colorize`, `critique`, `delight`, `distill`, `harden`, `onboard`, `layout`, `optimize`, `overdrive`, `polish`, `quieter`, `shape`, and `typeset`.
+`craft`, `init`, `document`, `extract`, `live`, `generate`, `adapt`, `animate`, `audit`, `bolder`, `clarify`, `colorize`, `critique`, `delight`, `distill`, `harden`, `onboard`, `layout`, `optimize`, `overdrive`, `polish`, `quieter`, `shape`, and `typeset`.
+
+`generate` turns one request ("3 bolder variants of the pricing cards") into a set of complete variants of a named element for the user to choose from. Its direction must map onto an existing refinement workflow (`bolder`, `quieter`, `distill`, `polish`, `typeset`, `colorize`, `layout`, `adapt`, `animate`, `delight`, `overdrive`); it defaults to 3 variants, caps at 8, and is web-only.
 
 Every workflow packet carries its resolved `DESIGN.md` digest, target scope, provider, and pinned source reference. The same contract is available through `muster_design` in MCP-only runtimes.
+
+## Optional: Mobbin MCP
+
+Muster never bundles Mobbin. If your session already has the Mobbin MCP server, the workflows that choose a pattern, flow or screen structure (`craft`, `generate`, `bolder`, `onboard`, `layout`, `overdrive`, `shape`) search it for real app references first and cite the apps and screens they used. Without it they skip that step silently. Mobbin's MCP server needs a paid Mobbin Pro, Team or Enterprise plan. Set it up from [Mobbin's Claude guide](https://docs.mobbin.com/mcp/clients/claude-desktop-web), or from the CLI:
+
+```sh
+claude mcp add mobbin --scope user --transport http https://api.mobbin.com/mcp
+```
+
+Then run `/mcp` and authenticate. Mobbin screens are third-party product screenshots, used as reference only: never copy their proprietary assets or brand elements into your product.

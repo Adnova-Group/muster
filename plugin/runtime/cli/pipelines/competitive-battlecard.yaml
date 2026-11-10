@@ -4,17 +4,17 @@ title: Competitive Battlecard
 match: [battlecard, competitive battlecard, competitor comparison, win-loss, objection handling, competitive intelligence, displacement]
 upstream:
   - repo: coreyhaines31/marketingskills
-    ref: null
+    ref: 8a3bde8083bd121971f61cba4bdbe5fd8c0eee7d
     path: null
     license: MIT
     relation: inspired-by
   - repo: CosmoBlk/email-marketing-bible
-    ref: null
+    ref: 962648c1b147652244c4e4953e96c65421a79e70
     path: null
     license: MIT
     relation: inspired-by
   - repo: AgriciDaniel/claude-email
-    ref: null
+    ref: 182270a0bbcd9c710713cbff4b7ce8475f5964f9
     path: null
     license: MIT
     relation: inspired-by
@@ -35,9 +35,9 @@ upstream:
     relation: inspired-by
 phases:
   - { id: intake,    role: brainstorm,    desc: "competitor, segment, deal context" }
-  - { id: research,  role: docs-research, desc: "competitor facts, pricing, strengths/weaknesses (cited)" }
+  - { id: research,  role: docs-research, desc: "competitor facts, pricing, strengths/weaknesses (cited); date every competitor fact ('as of'); 'not listed on their pricing page' is not 'they lack it' unless their docs or a trial confirm it; state what changed, never a guessed motive; keep their claims, your interpretation and your recommendation apart" }
   - { id: win-loss,  role: docs-research, desc: "pull 3-5 recent win/loss notes; extract verbatim objections + deal factors" }
-  - { id: positioning, role: author,      desc: "differentiation, landmines, trap-setting discovery questions (Know/Say/Show), why-we-win proof points" }
+  - { id: positioning, role: author,      desc: "differentiation, landmines, trap-setting discovery questions (Know/Say/Show), why-we-win proof points; a why-we-win claim without win/loss, call or customer evidence is written as a hypothesis for reps to test; say where we lose and when the competitor is the better fit" }
   - { id: objections,  role: author,      desc: "objection handling + proof points" }
   - { id: review,    role: code-review,   desc: "adversarial review + accuracy check" }
   - { id: score,     role: score,         desc: "score vs rubric, floor principle" }

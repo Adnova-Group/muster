@@ -9,7 +9,7 @@ upstream:
     license: CC-BY-NC-SA-4.0
     relation: inspired-by
   - repo: adr/madr
-    ref: 8cb64d7e8a85699ed090661ca3224c8889e2a224
+    ref: ba75bb1b20d42af5746b246ad348c202419ae681
     path: null
     license: MIT OR CC0-1.0
     relation: inspired-by

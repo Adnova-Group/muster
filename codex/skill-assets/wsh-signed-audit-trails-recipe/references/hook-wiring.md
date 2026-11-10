@@ -1,3 +1,5 @@
+<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001: upstream wshobson/agents reference loaded inside its parent wsh-* builtin, which supplies the role and output format; merge-tracked in vendor/manifest.yaml. -->
+
 # Hook wiring for the signed audit trail recipe
 
 The `protect-mcp` plugin registers both hooks for Step 1 of the recipe in its

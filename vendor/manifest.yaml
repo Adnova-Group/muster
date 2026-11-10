@@ -571,7 +571,7 @@ sources:
         as: agent
         description: "Customer support experience: ticketing, support content and CX."
       # references/ split (upstream 13703c9): file items mapping each upstream reference onto the
-      # file shipped beside its builtin. Carried verbatim today; merged like any adapted file.
+      # file shipped beside its builtin: upstream text plus a leading prompt-lint directive.
       - { from: plugins/developer-essentials/skills/code-review-excellence/references/review-patterns.md, to: plugin/builtins/wsh-code-review-excellence/references/review-patterns.md, mode: adapted, baseBlob: 29fecc5581fd84045120c50e9be31780ea17a6b3 }
       - { from: plugins/developer-essentials/skills/code-review-excellence/references/review-techniques.md, to: plugin/builtins/wsh-code-review-excellence/references/review-techniques.md, mode: adapted, baseBlob: 67932abf9c28d092b640924676e4e67ea77a349a }
       - { from: plugins/developer-essentials/skills/debugging-strategies/references/tools-and-techniques.md, to: plugin/builtins/wsh-debugging-strategies/references/tools-and-techniques.md, mode: adapted, baseBlob: 602ca4b64b8a51868ab382e3b33ec02249484a29 }

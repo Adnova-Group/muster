@@ -1,3 +1,5 @@
+<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001, GUARD-IDK-001: upstream wshobson/agents reference loaded inside its parent wsh-* builtin, which supplies the role and output format; merge-tracked in vendor/manifest.yaml. -->
+
 ## Review Techniques
 
 ### Technique 1: The Checklist Method

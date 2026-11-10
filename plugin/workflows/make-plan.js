@@ -59,15 +59,42 @@ function seat(cfg, name) {
   return o
 }
 
-async function call(prompt, opts) {
+// Turn limits (findings F15; build.js's call() has the full note). An agent() result carries
+// no stop reason: a subagent stopped at its maxTurns throws (it never called StructuredOutput)
+// or returns a schema-valid partial result. Either is {status:'error', reason:'max_turns'},
+// never done or PASS, and is retried once: these agents work in place, so a rerun of the same
+// idempotent brief continues the work.
+const TURN_LIMIT_RE = /without calling StructuredOutput|max(imum)?[ _-]?turns|turn limit/i
+const filled = (v) => (Array.isArray(v) ? v.length > 0 : typeof v === 'string' ? v.trim() !== '' : v != null)
+const gapOf = (r, keys, claim) => {
+  const empty = keys.filter((k) => !filled(r[k]))
+  return empty.length ? `${claim} without ${empty.join(', ')}` : ''
+}
+const EVIDENCE = new Map([
+  [PLAN_RESULT, (r) => (r.status !== 'done' ? '' : !filled(r.planPath) ? 'done without planPath' : r.taskCount > 0 ? '' : 'done with no tasks')],
+])
+
+async function attempt(prompt, opts, gap) {
   try {
     const r = await agent(prompt, opts)
-    if (r && typeof r === 'object') return r
-    return { status: 'error', error: `${opts.label}: agent returned no result` }
+    if (!r || typeof r !== 'object') return { status: 'error', reason: 'no_result', error: `${opts.label}: agent returned no result` }
+    const why = gap ? gap(r) : ''
+    if (!why) return r
+    log(`${opts.label}: ${why}; read as a turn-limited partial result`)
+    return { status: 'error', reason: 'max_turns', error: `${opts.label}: ${why} (max_turns: partial result)` }
   } catch (e) {
-    log(`${opts.label} failed: ${(e && e.message) || e}`)
-    return { status: 'error', error: `${opts.label}: ${(e && e.message) || e}` }
+    const msg = (e && e.message) || String(e)
+    log(`${opts.label} failed: ${msg}`)
+    const turns = TURN_LIMIT_RE.test(msg)
+    return { status: 'error', reason: turns ? 'max_turns' : 'agent_error', error: `${opts.label}: ${msg}${turns ? ' (max_turns: raise the agent\'s maxTurns or split the work)' : ''}` }
   }
+}
+
+async function call(prompt, opts, gap = EVIDENCE.get(opts.schema)) {
+  const r = await attempt(prompt, opts, gap)
+  if (r.reason !== 'max_turns') return r
+  log(`${opts.label}: turn limit; retrying once`)
+  return attempt(prompt, { ...opts, label: `${opts.label} retry` }, gap)
 }
 
 // `muster` is not on PATH in a user's project, and CLAUDE_PLUGIN_ROOT may be unset in an agent's
@@ -147,7 +174,7 @@ const planOpts = (r) => ({ label: `plan r${r}`, phase: 'Plan', schema: PLAN_RESU
 // locked decision. That is the user's call, not a planner error.
 const plannerFailure = (p, revisions, issues) => /^REVISION_CONFLICT\b/.test(String(p.summary || ''))
   ? result('ISSUES', revisions, issues, 'conflict', { conflict: p.summary })
-  : result('ERROR', revisions, issues, 'planner', { error: p.error || p.summary })
+  : result('ERROR', revisions, issues, 'planner', { error: p.error || p.summary, ...(p.reason ? { reason: p.reason } : {}) })
 let plan = await call(planBrief(cfg, planPath, null, 0), planOpts(0))
 if (plan.status !== 'done') return plannerFailure(plan, 0, [])
 
@@ -160,7 +187,7 @@ for (;;) {
   const check = await call(checkBrief(cfg, planPath), {
     label: `check r${revisions}`, phase: 'Check', schema: CHECK_RESULT, agentType: 'muster:muster-plan-checker', ...seat(cfg, 'checker'),
   })
-  if (check.status === 'error') return result('ERROR', revisions, [], 'checker', { error: check.error })
+  if (check.status === 'error') return result('ERROR', revisions, [], 'checker', { error: check.error, reason: check.reason })
   const issues = Array.isArray(check.issues) ? check.issues : []
   const open = binding(issues)
   if (check.verdict === 'PASS' || !open.length) return result('PASS', revisions, issues, null)

@@ -54,7 +54,17 @@ action fence reads, and `.claude/worktrees/`.
   stages, inlined, because Workflow nesting is one level only.
 
 Every `agent()` call:
-- is wrapped so that one schema failure records `{status:"error"}` rather than killing the run;
+- is wrapped so that one schema failure records `{status:"error"}` rather than killing the run,
+  with a `reason`: `max_turns`, `agent_error` or `no_result`;
+- never reads a turn-limited agent as done or PASS (findings F15). The platform gives the script
+  no turn-limit signal: `agent({schema})` returns only the validated object, `null` for a
+  skipped agent or terminal API error, and throws `subagent completed without calling
+  StructuredOutput` when the subagent stops first (2.1.319 runtime; 2.1.246's "marked as
+  partial" note reaches Agent-tool callers, not scripts). So that throw, or a done/PASS claim
+  with empty evidence (a commit sha, branch, worktree, files and tests for a build; the
+  reviewed commit and tests for a review; evidence on every truth for a verify), becomes
+  `{status:"error", reason:"max_turns"}`. An agent that works in place is retried once; an
+  isolated builder is not. Whether a claimed commit exists is `merge-wave`'s check;
 - sets `model` / `effort` from args (the tier map is computed by the CLI);
 - has an idempotent builder brief: check git state before acting.
 

@@ -105,15 +105,48 @@ function seat(cfg, name) {
 
 // One schema failure (agent() throws after its retry cap) or a skipped/dead agent
 // (agent() returns null) becomes {status:'error'} instead of killing the run.
-async function call(prompt, opts) {
+//
+// Turn limits (findings F15). An agent() result carries no stop reason or turn-limit marker:
+// with a schema it is the validated StructuredOutput object, null for a skipped agent or a
+// terminal API error, and a throw when the subagent ends without calling StructuredOutput,
+// which is how one stopped at its maxTurns surfaces (Claude Code 2.1.319). So a throw of that
+// shape, or a done/PASS claim whose evidence is empty (EVIDENCE), is {status:'error',
+// reason:'max_turns'}: never done, never PASS. An agent that works in place is retried once;
+// an isolated builder is not, since it would start over in a fresh worktree under the same
+// cap. Whether a claimed commit exists is merge-wave's check: it can run git, this cannot.
+const TURN_LIMIT_RE = /without calling StructuredOutput|max(imum)?[ _-]?turns|turn limit/i
+const SHA_RE = /^[0-9a-f]{7,64}$/i
+const filled = (v) => (Array.isArray(v) ? v.length > 0 : typeof v === 'string' ? v.trim() !== '' : v != null)
+const gapOf = (r, keys, claim) => {
+  const empty = keys.filter((k) => !filled(r[k]))
+  return empty.length ? `${claim} without ${empty.join(', ')}` : ''
+}
+const execGap = (r) => (r.status !== 'done' ? '' : SHA_RE.test(String(r.commit || '')) ? gapOf(r, ['branch', 'worktree', 'filesChanged', 'testsRun'], 'done') : 'done without a commit sha')
+const reviewGap = (r) => (r.verdict === 'PASS' ? gapOf(r, ['commitReviewed', 'testsRun'], 'PASS') : '')
+const verifyGap = (r) => (r.verdict !== 'PASS' ? '' : !filled(r.truths) ? 'PASS without truths' : r.truths.some((x) => !x || !filled(x.evidence)) ? 'PASS with a truth that has no evidence' : '')
+const EVIDENCE = new Map([[EXEC_RESULT, execGap], [REVIEW_RESULT, reviewGap], [VERIFY_RESULT, verifyGap]])
+
+async function attempt(prompt, opts, gap) {
   try {
     const r = await agent(prompt, opts)
-    if (r && typeof r === 'object') return r
-    return { status: 'error', error: `${opts.label}: agent returned no result` }
+    if (!r || typeof r !== 'object') return { status: 'error', reason: 'no_result', error: `${opts.label}: agent returned no result` }
+    const why = gap ? gap(r) : ''
+    if (!why) return r
+    log(`${opts.label}: ${why}; read as a turn-limited partial result`)
+    return { status: 'error', reason: 'max_turns', error: `${opts.label}: ${why} (max_turns: partial result)` }
   } catch (e) {
-    log(`${opts.label} failed: ${(e && e.message) || e}`)
-    return { status: 'error', error: `${opts.label}: ${(e && e.message) || e}` }
+    const msg = (e && e.message) || String(e)
+    log(`${opts.label} failed: ${msg}`)
+    const turns = TURN_LIMIT_RE.test(msg)
+    return { status: 'error', reason: turns ? 'max_turns' : 'agent_error', error: `${opts.label}: ${msg}${turns ? ' (max_turns: raise the agent\'s maxTurns or split the task)' : ''}` }
   }
+}
+
+async function call(prompt, opts, gap = EVIDENCE.get(opts.schema)) {
+  const r = await attempt(prompt, opts, gap)
+  if (r.reason !== 'max_turns' || opts.isolation) return r
+  log(`${opts.label}: turn limit; retrying once`)
+  return attempt(prompt, { ...opts, label: `${opts.label} retry` }, gap)
 }
 
 const list = (xs) => (Array.isArray(xs) ? xs : xs ? [xs] : [])
@@ -276,7 +309,7 @@ async function finishTask(cfg, t, w, ex, prior) {
   const proven = new Set(list(ex && ex.skillsApplied).filter((u) => u && u.how).map((u) => u.id))
   const missing = boundSkills(t).map((k) => k.id).filter((id) => !proven.has(id))
   if (missing.length) base.skillsMissing = missing
-  if (!ex || ex.status === 'error') return { ...emptyExec(t, 'error', (ex && ex.error) || 'executor failed'), ...base, review: null }
+  if (!ex || ex.status === 'error') return { ...emptyExec(t, 'error', (ex && ex.error) || 'executor failed'), reason: (ex && ex.reason) || 'no_result', ...base, review: null }
   if (ex.status !== 'done' || ex.selfCheck !== 'PASSED') return { ...ex, taskId: t.taskId, ...base, review: null }
   const { current, reviews } = await reviewLoop(cfg, t, ex, prior)
   return { ...current, ...base, review: reviews[reviews.length - 1], reviewRounds: reviews.length, fixRounds: reviews.length - 1 }
@@ -320,7 +353,7 @@ async function runBuild(cfg) {
     verification = await call(verifyBrief(cfg, tasks), {
       label: `${pre}verify ${cfg.runId}`, phase: 'Verify', schema: VERIFY_RESULT, agentType: 'muster:muster-verifier', ...seat(cfg, 'verifier'),
     })
-    if (verification.status === 'error') verification = { verdict: 'ABSTAIN', truths: [], gaps: [verification.error], status: 'error' }
+    if (verification.status === 'error') verification = { verdict: 'ABSTAIN', truths: [], gaps: [verification.error], status: 'error', reason: verification.reason }
   }
   return { runId: cfg.runId, base: cfg.base || null, tasks, verification, halted }
 }

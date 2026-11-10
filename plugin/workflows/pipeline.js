@@ -78,15 +78,43 @@ function seat(cfg, name) {
   return o
 }
 
-async function call(prompt, opts) {
+// Turn limits (findings F15; build.js's call() has the full note). An agent() result carries
+// no stop reason: a subagent stopped at its maxTurns throws (it never called StructuredOutput)
+// or returns a schema-valid partial result. Either is {status:'error', reason:'max_turns'},
+// never done or PASS, and is retried once: these agents work in place, so a rerun of the same
+// idempotent brief continues the work.
+const TURN_LIMIT_RE = /without calling StructuredOutput|max(imum)?[ _-]?turns|turn limit/i
+const filled = (v) => (Array.isArray(v) ? v.length > 0 : typeof v === 'string' ? v.trim() !== '' : v != null)
+const gapOf = (r, keys, claim) => {
+  const empty = keys.filter((k) => !filled(r[k]))
+  return empty.length ? `${claim} without ${empty.join(', ')}` : ''
+}
+const EVIDENCE = new Map([
+  [PHASE_RESULT, (r) => (r.status === 'done' ? gapOf(r, ['wrote'], 'done') : '')],
+  [SCORE_RESULT, (r) => (!filled(r.scores) ? 'scores empty' : r.scores.some((x) => !x || !filled(x.evidence)) ? 'a score without evidence' : '')],
+])
+
+async function attempt(prompt, opts, gap) {
   try {
     const r = await agent(prompt, opts)
-    if (r && typeof r === 'object') return r
-    return { status: 'error', error: `${opts.label}: agent returned no result` }
+    if (!r || typeof r !== 'object') return { status: 'error', reason: 'no_result', error: `${opts.label}: agent returned no result` }
+    const why = gap ? gap(r) : ''
+    if (!why) return r
+    log(`${opts.label}: ${why}; read as a turn-limited partial result`)
+    return { status: 'error', reason: 'max_turns', error: `${opts.label}: ${why} (max_turns: partial result)` }
   } catch (e) {
-    log(`${opts.label} failed: ${(e && e.message) || e}`)
-    return { status: 'error', error: `${opts.label}: ${(e && e.message) || e}` }
+    const msg = (e && e.message) || String(e)
+    log(`${opts.label} failed: ${msg}`)
+    const turns = TURN_LIMIT_RE.test(msg)
+    return { status: 'error', reason: turns ? 'max_turns' : 'agent_error', error: `${opts.label}: ${msg}${turns ? ' (max_turns: raise the agent\'s maxTurns or split the work)' : ''}` }
   }
+}
+
+async function call(prompt, opts, gap = EVIDENCE.get(opts.schema)) {
+  const r = await attempt(prompt, opts, gap)
+  if (r.reason !== 'max_turns') return r
+  log(`${opts.label}: turn limit; retrying once`)
+  return attempt(prompt, { ...opts, label: `${opts.label} retry` }, gap)
 }
 
 const list = (xs) => (Array.isArray(xs) ? xs : xs ? [xs] : [])
@@ -193,7 +221,7 @@ async function runPhase(i, feedback, round) {
   const r = await call(phaseBrief(cfg, i, ph, earlier.slice(), feedback), {
     label: `${ph.id}${round ? ` r${round}` : ''}`, phase: i < gateStart ? 'Draft' : 'Finish', schema: PHASE_RESULT, ...seat(cfg, 'executor'),
   })
-  record.push({ id: ph.id, round: round || 0, status: r.status, summary: r.summary || r.error || '', skillsApplied: list(r.skillsApplied) })
+  record.push({ id: ph.id, round: round || 0, status: r.status, ...(r.reason ? { reason: r.reason } : {}), summary: r.summary || r.error || '', skillsApplied: list(r.skillsApplied) })
   if (r.status !== 'done') halted = `phase ${ph.id}: ${r.status}${r.error ? ` (${r.error})` : ''}`
   else if (!round) earlier.push(notesPath(cfg, i, ph))
   return r

@@ -68,13 +68,14 @@ test("every plugin/agents/*.md has a catalog entry and every agent entry has a f
   for (const id of fileIds) assert.ok(agentIds.has(id), `orphan agent file ${id}.md has no catalog entry`);
 });
 
+// Revival stage 2b: this pins the frozen Codex lane input; the Claude command/skill moved to the Workflow core.
 test("orchestrator + go dispatch by chosen.kind and apply the role model", async () => {
-  const orch = await readFile(new URL("../plugin/skills/orchestrator/SKILL.md", import.meta.url), "utf8");
+  const orch = await readFile(new URL("../codex/frozen/skills/orchestrator/SKILL.md", import.meta.url), "utf8");
   assert.match(orch, /chosen\.kind/, "orchestrator must dispatch by chosen.kind");
   assert.match(orch, /subagent_type|agentType/, "orchestrator must dispatch agents as the subagent type");
   assert.match(orch, /model.*override|override.*model/i, "orchestrator must pass the role model as an override");
   // go.md is the canonical hands-off runner; the autopilot.md alias was retired
   // in 0.7.0.
-  const go = await readFile(new URL("../plugin/commands/go.md", import.meta.url), "utf8");
+  const go = await readFile(new URL("../codex/frozen/commands/go.md", import.meta.url), "utf8");
   assert.match(go, /chosen\.kind|provider kind/, "go must note provider-kind dispatch");
 });

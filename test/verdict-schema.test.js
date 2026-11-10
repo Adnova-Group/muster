@@ -1,4 +1,4 @@
-// Coverage for plugin/skills/review-gate/verdict.schema.json + src/verdict-schema.js
+// Coverage for src/verdict.schema.json + src/verdict-schema.js
 // (backlog item structured-output-binding). Two things are pinned:
 //
 // 1. Schema<->code coherence: every array this schema calls valid is accepted by
@@ -19,7 +19,7 @@ test("the schema file exists, parses, and is an array schema with the two docume
   const schema = await loadVerdictSchema();
   assert.equal(schema.type, "array");
   assert.equal(schema.items.oneOf.length, 2, "schema must define exactly the findings-entry and status-entry branches");
-  assert.ok(VERDICT_SCHEMA_PATH.endsWith("plugin/skills/review-gate/verdict.schema.json"));
+  assert.ok(VERDICT_SCHEMA_PATH.endsWith("src/verdict.schema.json"));
 });
 
 // ── 1. schema<->code coherence (schema-valid -> tallyReview accepts it) ──────────

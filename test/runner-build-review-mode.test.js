@@ -6,7 +6,8 @@ import { generateCodexProfiles, profileToml } from "../src/codex-release.js";
 import { selectedPluginRoot } from "../test-support/codex-helpers.js";
 
 const repoRoot = new URL("../", import.meta.url).pathname;
-const runnerAgentPath = join(repoRoot, "plugin", "agents", "muster-runner.md");
+// muster-runner left the Claude plugin in revival stage 2b; the frozen Codex lane keeps it.
+const runnerAgentPath = join(repoRoot, "codex", "frozen", "agents", "muster-runner.md");
 
 test("runner source contract defines a side-effect-free build-review-only mode", async () => {
   const source = await readFile(runnerAgentPath, "utf8");
@@ -45,11 +46,10 @@ test("generated Codex runner profile preserves the build-review-only contract", 
   }
 });
 
-test("scheduled Claude and Cowork legs select build-review-only, then disposition after the barrier", async () => {
-  const goBacklog = await readFile(join(repoRoot, "plugin", "commands", "go-backlog.md"), "utf8");
+test("scheduled Cowork legs select build-review-only, then disposition after the barrier", async () => {
   const cowork = await readFile(join(repoRoot, "cowork", "sprint-protocol.md"), "utf8");
 
-  for (const [label, source] of [["go-backlog", goBacklog], ["Cowork", cowork]]) {
+  for (const [label, source] of [["Cowork", cowork]]) {
     const wave = source.slice(source.indexOf("**Wave mode**") >= 0
       ? source.indexOf("**Wave mode**")
       : source.indexOf("**Wave path"));
@@ -68,21 +68,5 @@ test("scheduled Claude and Cowork legs select build-review-only, then dispositio
     for (const disposition of ["pr", "keep", "merge-local", "merge-push"]) {
       assert.match(wave, new RegExp(`\\b${disposition}\\b`), `${label} must map ${disposition}`);
     }
-  }
-});
-
-test("ordinary runner command remains full-lifecycle on source and generated Codex skill surfaces", async () => {
-  const sourceCommand = await readFile(join(repoRoot, "plugin", "commands", "runner.md"), "utf8");
-  const generatedCommand = await readFile(join(selectedPluginRoot, "commands", "runner.md"), "utf8");
-  const generatedSkill = await readFile(join(selectedPluginRoot, "skills", "muster-runner", "SKILL.md"), "utf8");
-
-  for (const [label, source] of [
-    ["source command", sourceCommand],
-    ["generated command", generatedCommand],
-    ["generated skill", generatedSkill],
-  ]) {
-    assert.match(source, /full-lifecycle/, `${label} must select ordinary runner behavior`);
-    assert.match(source, /push.*(?:PR|pull request)|(?:PR|pull request).*push/is,
-      `${label} must retain the PR disposition lifecycle`);
   }
 });

@@ -38,7 +38,7 @@ test("every agent catalog entry has a searchable description", async () => {
 });
 
 test("router skill + README document specialist matching", async () => {
-  const router = await readFile(new URL("../plugin/skills/router/SKILL.md", import.meta.url), "utf8");
+  const router = await readFile(new URL("../codex/frozen/skills/router/SKILL.md", import.meta.url), "utf8");
   assert.match(router, /muster match/, "router must use muster match");
   // public docs: README + architecture deep-dive document specialist/description-search
   const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");

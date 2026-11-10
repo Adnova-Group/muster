@@ -9,7 +9,7 @@ import { publishCodexPlugin, resolveCodexPlugin } from "../src/codex-release.js"
 
 const execFile = promisify(execFileCb);
 const repoRoot = new URL("../", import.meta.url).pathname;
-const primary = ["muster-plan", "muster-go", "muster-plan-backlog", "muster-go-backlog", "muster-diagnose", "muster-audit", "muster-runner", "muster-capture"];
+const primary = ["muster-plan", "muster-go", "muster-diagnose", "muster-audit", "muster-capture"];
 
 function mcpSmoke(entry, cwd, env) {
   return new Promise((resolvePromise, reject) => {

@@ -50,7 +50,7 @@ test("router eval run passes the accuracy bar on the goldens", async () => {
 });
 
 test("router skill still documents the required `model` crew field (guards the eval fix)", async () => {
-  const skill = await read("plugin/skills/router/SKILL.md");
+  const skill = await read("codex/frozen/skills/router/SKILL.md"); // frozen Codex lane input since revival stage 2b
   // The crew-shape spec line must include the model field, else the router regresses to
   // emitting manifests that fail validation (the defect this eval originally caught).
   const crewShape = skill.split("\n").find(l => l.includes('"crew"') && l.includes('"stage"'));

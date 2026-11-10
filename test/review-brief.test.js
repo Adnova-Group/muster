@@ -122,7 +122,7 @@ test("regex sanity: each exported trigger regex actually matches its documented 
 //     branch disabled, this suite observed failing loud, then the file restored
 //     byte-identical -- see this item's PR body for the pasted evidence).
 test("criterion 2 static proof: the light brief's real on-disk content still names a representative small-diff security-defect class (path traversal / unsanitized input to a file/shell/network call) -- a content-presence check, not a live-LLM mutant demonstration", async () => {
-  const brief = await read("plugin/skills/review-gate/fast-path-brief.md");
+  const brief = await read("codex/frozen/skills/review-gate/fast-path-brief.md"); // frozen Codex lane input since revival stage 2b
   assert.match(
     brief,
     /path traversal/i,

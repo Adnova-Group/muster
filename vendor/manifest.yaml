@@ -44,7 +44,7 @@ sources:
     fetch: false
     items:
       - { id: design, kind: command, from: null }
-      - { id: audit-pattern-design-ux, kind: skill, from: null }
+      - { id: audit-pattern-design-ux, kind: audit-pattern, from: null }
   - id: superpowers
     kind: github
     repo: obra/superpowers
@@ -99,9 +99,6 @@ sources:
         id: sp-brainstorm
         relation: adapted
         roles: [brainstorm]
-      - from: skills/writing-plans/SKILL.md
-        id: sp-plan
-        roles: [plan]
       - from: skills/test-driven-development/SKILL.md
         id: sp-tdd
         roles: [test-author]
@@ -120,10 +117,6 @@ sources:
       - from: skills/verification-before-completion/SKILL.md
         id: sp-verify
         roles: [test-author]
-      - from: skills/subagent-driven-development/SKILL.md
-        id: sp-subagents
-        relation: adapted
-        roles: [plan]
       - from: skills/dispatching-parallel-agents/SKILL.md
         id: sp-parallel
         relation: adapted
@@ -261,87 +254,107 @@ sources:
         id: wsh-backend-architect
         roles: [architecture-review]
         as: agent
+        description: "Backend architecture: API design, service boundaries, resilience and observability."
       - from: plugins/code-documentation/agents/code-reviewer.md
         id: wsh-code-reviewer
         roles: [code-review]
         as: agent
+        description: Code review for quality, security and production reliability.
       - from: plugins/debugging-toolkit/agents/debugger.md
         id: wsh-debugger
         relation: adapted
         roles: [debug]
         as: agent
+        description: Debugging errors, test failures and unexpected behavior.
       - from: plugins/backend-development/agents/security-auditor.md
         id: wsh-security-auditor
         roles: [security-review]
         as: agent
+        description: "Security review: OWASP Top 10, auth flaws and compliance."
       - from: plugins/frontend-mobile-development/agents/frontend-developer.md
         id: wsh-frontend-developer
         roles: [frontend]
         as: agent
+        description: "Frontend work: React components, layouts, state, performance and accessibility."
       - from: plugins/backend-development/agents/test-automator.md
         id: wsh-test-automator
         roles: [test-author]
         as: agent
+        description: "Test suites: unit, integration and E2E, with TDD/BDD support."
       - from: plugins/framework-migration/agents/legacy-modernizer.md
         id: wsh-legacy-modernizer
         roles: [refactor, tech-debt]
         as: agent
+        description: Legacy refactoring, framework migrations and gradual modernization.
       - from: plugins/code-documentation/agents/docs-architect.md
         id: wsh-docs-architect
         roles: [architecture-review]
         as: agent
+        description: Long-form technical documentation from an existing codebase.
       # === Broadened roster (more-specialists): software + knowledge-work breadth ===
       # software
       - from: plugins/machine-learning-ops/agents/data-scientist.md
         id: wsh-data-scientist
         roles: [research]
         as: agent
+        description: Analytics, statistical modeling and machine-learning analysis.
       - from: plugins/data-engineering/agents/data-engineer.md
         id: wsh-data-engineer
         roles: [research]
         as: agent
+        description: Data pipelines, warehouses and streaming (Spark, dbt, Airflow).
       - from: plugins/cicd-automation/agents/devops-troubleshooter.md
         id: wsh-devops-troubleshooter
         roles: [implement]
         as: agent
+        description: Incident response and debugging with logs, traces and Kubernetes.
       - from: plugins/cloud-infrastructure/agents/cloud-architect.md
         id: wsh-cloud-architect
         roles: [architecture-review]
         as: agent
+        description: "Cloud architecture on AWS, Azure and GCP: IaC, cost, security and disaster recovery."
       - from: plugins/database-cloud-optimization/agents/database-optimizer.md
         id: wsh-database-optimizer
         roles: [performance]
         as: agent
+        description: "Database performance: query tuning, indexing, caching and migrations."
       - from: plugins/documentation-generation/agents/api-documenter.md
         id: wsh-api-documenter
         roles: [docs-research]
         as: agent
+        description: "API documentation: OpenAPI 3.1, developer portals and SDK docs."
       - from: plugins/machine-learning-ops/agents/ml-engineer.md
         id: wsh-ml-engineer
         roles: [implement]
         as: agent
+        description: "Production ML systems: model serving, feature pipelines and monitoring."
       - from: plugins/llm-application-dev/agents/prompt-engineer.md
         id: wsh-prompt-engineer
         relation: adapted
         roles: [implement]
         as: agent
+        description: Prompt engineering for LLM features, agents and system prompts.
       # knowledge-work (PM/business/content)
       - from: plugins/business-analytics/agents/business-analyst.md
         id: wsh-business-analyst
         roles: [research]
         as: agent
+        description: "Business analysis: KPI frameworks, dashboards and data-driven recommendations."
       - from: plugins/content-marketing/agents/content-marketer.md
         id: wsh-content-marketer
         roles: [author]
         as: agent
+        description: "Content marketing: strategy, SEO, distribution and performance."
       - from: plugins/documentation-generation/agents/tutorial-engineer.md
         id: wsh-tutorial-engineer
         roles: [docs-research]
         as: agent
+        description: Step-by-step tutorials and onboarding guides from code.
       - from: plugins/customer-sales-automation/agents/customer-support.md
         id: wsh-customer-support
         roles: [author]
         as: agent
+        description: "Customer support experience: ticketing, support content and CX."
   - id: gsd
     kind: github
     repo: open-gsd/gsd-core
@@ -721,7 +734,7 @@ sources:
     relation: mechanism-port
     fetch: false
     items:
-      - { id: muster-runner, kind: agent, from: null }
+      - { id: muster-runner, kind: codex-frozen-agent, from: null }
   - id: wshobson-lifecycle
     kind: github
     repo: wshobson/agents
@@ -731,7 +744,7 @@ sources:
     relation: mechanism-port
     fetch: false
     items:
-      - { id: muster-runner, kind: agent, from: null }
+      - { id: muster-runner, kind: codex-frozen-agent, from: null }
   - id: voltagent-subagents
     kind: github
     repo: VoltAgent/awesome-claude-code-subagents
@@ -741,7 +754,7 @@ sources:
     relation: mechanism-port
     fetch: false
     items:
-      - { id: muster-runner, kind: agent, from: null }
+      - { id: muster-runner, kind: codex-frozen-agent, from: null }
   - id: twelve-factor-agents
     kind: github
     repo: humanlayer/12-factor-agents
@@ -751,7 +764,7 @@ sources:
     relation: mechanism-port
     fetch: false
     items:
-      - { id: muster-runner, kind: agent, from: null }
+      - { id: muster-runner, kind: codex-frozen-agent, from: null }
   - id: contains-studio-agents
     kind: github
     repo: contains-studio/agents
@@ -768,7 +781,7 @@ sources:
         docs/research/lifecycle-agent-patterns.md (trigger examples in the description;
         per-agent constraints and success measures) and wrote its own text.
     items:
-      - { id: muster-runner, kind: agent, from: null }
+      - { id: muster-runner, kind: codex-frozen-agent, from: null }
   - id: infinite-agentic-loop
     kind: github
     repo: disler/infinite-agentic-loop
@@ -784,7 +797,7 @@ sources:
         with muster-runner and runner.md: zero shared 5-grams. Mechanisms only (derive
         progress from the filesystem; a fixed dispatch-prompt shape; capped waves).
     items:
-      - { id: muster-runner, kind: agent, from: null }
+      - { id: muster-runner, kind: codex-frozen-agent, from: null }
   - id: awesome-claude-code
     kind: github
     repo: hesreallyhim/awesome-claude-code
@@ -802,7 +815,7 @@ sources:
         only shared 6-grams are two URLs it links to (code.claude.com docs and Anthropic's
         "Building effective agents"). Used as an index; nothing derived from its text.
     items:
-      - { id: muster-runner, kind: agent, from: null }
+      - { id: muster-runner, kind: codex-frozen-agent, from: null }
 
   # --- Research-grounded pipelines (2026-06-08 pipeline research note) ---
   # The note (recoverable with `git show b122ed9:docs/pipeline-research-2026-06-08.md`)
@@ -1110,10 +1123,7 @@ sources:
     relation: inspired-by
     fetch: false
     items:
-      - { id: coordination, kind: skill, from: null }
-      - { id: go-backlog, kind: command, from: null }
-      - { id: runner, kind: command, from: null }
-      - { id: review-gate, kind: skill, from: null }
+      - { id: review-gate, kind: codex-frozen-skill, from: null }
       - { id: muster-humanizer, kind: builtin, from: null }
       - { id: muster-image, kind: builtin, from: null }
       - { id: muster-research, kind: builtin, from: null }
@@ -1132,7 +1142,7 @@ sources:
     relation: inspired-by
     fetch: false
     items:
-      - { id: muster-runner, kind: agent, from: null }
+      - { id: muster-runner, kind: codex-frozen-agent, from: null }
   - id: claude-code-subagents-docs
     kind: article
     title: "Create custom subagents (Claude Code docs)"
@@ -1141,7 +1151,7 @@ sources:
     relation: inspired-by
     fetch: false
     items:
-      - { id: muster-runner, kind: agent, from: null }
+      - { id: muster-runner, kind: codex-frozen-agent, from: null }
   - id: llm-blender
     kind: paper
     title: "LLM-Blender: Ensembling Large Language Models with Pairwise Ranking and Generative Fusion"
@@ -1150,7 +1160,7 @@ sources:
     relation: inspired-by
     fetch: false
     items:
-      - { id: tournament, kind: skill, from: null }
+      - { id: tournament, kind: codex-frozen-skill, from: null }
 
   # --- prompt engineering (muster-prompt-smith; rule sources cited in src/prompt-lint.js) ---
   - id: claude-prompting-best-practices
@@ -1623,7 +1633,7 @@ sources:
     relation: inspired-by
     fetch: false
     items:
-      - { id: audit-pattern-design-ux, kind: skill, from: null }
+      - { id: audit-pattern-design-ux, kind: audit-pattern, from: null }
   - id: google-timeless-documentation
     kind: article
     title: "Timeless documentation (Google developer documentation style guide)"
@@ -1632,7 +1642,7 @@ sources:
     relation: inspired-by
     fetch: false
     items:
-      - { id: audit-pattern-documentation, kind: skill, from: null }
+      - { id: audit-pattern-documentation, kind: audit-pattern, from: null }
   - id: diataxis
     kind: article
     title: "Diátaxis"
@@ -1641,7 +1651,7 @@ sources:
     relation: inspired-by
     fetch: false
     items:
-      - { id: audit-pattern-documentation, kind: skill, from: null }
+      - { id: audit-pattern-documentation, kind: audit-pattern, from: null }
   - id: cognitive-complexity
     kind: article
     title: "Cognitive Complexity, Because Testability != Understandability"
@@ -1650,7 +1660,7 @@ sources:
     relation: inspired-by
     fetch: false
     items:
-      - { id: audit-pattern-readability, kind: skill, from: null }
+      - { id: audit-pattern-readability, kind: audit-pattern, from: null }
   - id: owasp-top-10-a08
     kind: standard
     title: "OWASP Top 10:2021 A08, Software and Data Integrity Failures"
@@ -1659,7 +1669,7 @@ sources:
     relation: inspired-by
     fetch: false
     items:
-      - { id: audit-pattern-security, kind: skill, from: null }
+      - { id: audit-pattern-security, kind: audit-pattern, from: null }
 
 # Decided exceptions for repositories whose terms give Muster no right to reuse text
 # (NONE, NonCommercial, NoDerivatives, proprietary) yet whose text Muster carries

@@ -44,7 +44,14 @@ export const ITEM_PATHS = Object.freeze({
   command: id => `plugin/commands/${id}.md`,
   "output-style": id => `plugin/output-styles/${id}.md`,
   pipeline: id => `pipelines/${id}.yaml`,
-  "codex-fallback": id => `codex/fallback-skills/${id}/SKILL.md`
+  "codex-fallback": id => `codex/fallback-skills/${id}/SKILL.md`,
+  // Audit hunt lists, read by path from audit.md (not skills, so never listed per session).
+  "audit-pattern": id => `plugin/commands/audit/references/${id}.md`,
+  // Frozen Codex-only inputs (scripts/build-codex.mjs): pre-revival prose the Claude
+  // plugin no longer ships, kept so the frozen Codex lane builds unchanged.
+  "codex-frozen-agent": id => `codex/frozen/agents/${id}.md`,
+  "codex-frozen-skill": id => `codex/frozen/skills/${id}/SKILL.md`,
+  "codex-frozen-command": id => `codex/frozen/commands/${id}.md`
 });
 
 export const isFetchedSource = source => source?.fetch !== false;
@@ -174,6 +181,10 @@ export async function discoverItems(root) {
   await fileItems("output-style", "plugin/output-styles", ".md");
   await fileItems("pipeline", "pipelines", ".yaml");
   await dirItems("codex-fallback", "codex/fallback-skills");
+  await fileItems("audit-pattern", "plugin/commands/audit/references", ".md");
+  await fileItems("codex-frozen-agent", "codex/frozen/agents", ".md");
+  await dirItems("codex-frozen-skill", "codex/frozen/skills");
+  await fileItems("codex-frozen-command", "codex/frozen/commands", ".md");
   return items.map(item => ({ ...item, path: ITEM_PATHS[item.kind](item.id) }))
     .sort((a, b) => a.path.localeCompare(b.path));
 }

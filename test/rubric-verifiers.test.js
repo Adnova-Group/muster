@@ -23,9 +23,10 @@ import { readFile } from "node:fs/promises";
 const root = new URL("../", import.meta.url);
 const read = (p) => readFile(new URL(p, root), "utf8");
 
-const REVIEW_GATE = "plugin/skills/review-gate/SKILL.md";
-const TOURNAMENT = "plugin/skills/tournament/SKILL.md";
-const FAST_PATH_BRIEF = "plugin/skills/review-gate/fast-path-brief.md";
+// Revival stage 2b: these rubric contracts follow the frozen Codex lane inputs (codex/frozen/).
+const REVIEW_GATE = "codex/frozen/skills/review-gate/SKILL.md";
+const TOURNAMENT = "codex/frozen/skills/tournament/SKILL.md";
+const FAST_PATH_BRIEF = "codex/frozen/skills/review-gate/fast-path-brief.md";
 
 // ── Canonical policy: review-gate/SKILL.md ───────────────────────────────────
 

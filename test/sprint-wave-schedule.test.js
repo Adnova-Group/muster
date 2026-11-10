@@ -175,23 +175,3 @@ test("schedule applies the documented default and hard ceiling to build concurre
   assert.equal(computeSprintWaves(backlog, { parallelLimit: "invalid" }).schedule.buildReview.maxConcurrency, 5);
   assert.equal(computeSprintWaves(backlog, { parallelLimit: 99 }).schedule.buildReview.maxConcurrency, 10);
 });
-
-test("go-backlog contract dispatches every ready disposition before the barrier and disposes every item afterward", async () => {
-  const text = await readFile(join(repoRoot, "plugin", "commands", "go-backlog.md"), "utf8");
-  const waveMode = text.slice(text.indexOf("**Wave mode**"), text.indexOf("**Unattended (Routine) mode**"));
-
-  assert.match(waveMode, /every ready item regardless of disposition/i);
-  assert.match(waveMode, /build \+ review barrier/i);
-  assert.match(waveMode, /build-review-only/i);
-  assert.match(waveMode, /`pr`\/`keep`\/`merge-local`\/`merge-push`.*integration/i);
-  assert.doesNotMatch(waveMode, /\(a\) `pr`\/`keep` items/);
-  assert.match(waveMode, /cannot dispatch parallel runners.*same build\/review schedule sequentially/i);
-  assert.match(waveMode, /failed.*omit.*disposition.*integration/i);
-  assert.match(waveMode, /preserv(?:e|ing).*emitted order/i);
-  // Aligned 2026-08-04 with self-healing-backlog-recovery's reviewed semantics: dependents
-  // wait during recoverable predecessor correction/replan; only a truthful terminal state
-  // blocks them, still without building or forking the partial tip.
-  assert.match(waveMode, /predecessor.*correction\/replan.*dependents remain waiting/is);
-  assert.match(waveMode, /truthful terminal state.*terminally blocked without creating a\s+worktree/is);
-  assert.doesNotMatch(text.slice(0, text.indexOf("**Wave mode**")), /full go lifecycle sequentially over every item/i);
-});

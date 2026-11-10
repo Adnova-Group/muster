@@ -15,12 +15,11 @@ test("the ralph loop drives orchestration until done or the cap escalates", () =
   assert.deepEqual(loopState({ iteration: 25, maxIterations: 25, done: false }), { continue: false, reason: "max-iterations" });
 });
 
+// Revival stage 2b: this pins the frozen Codex lane input; the Claude command/skill moved to the Workflow core.
 test("orchestration surfaces wire the ralph loop primitive by name", async () => {
   const surfaces = [
-    new URL("../plugin/skills/orchestrator/SKILL.md", import.meta.url),
-    // go.md is the canonical hands-off runner; the autopilot.md alias was retired
-    // in 0.7.0.
-    new URL("../plugin/commands/go.md", import.meta.url)
+    new URL("../codex/frozen/skills/orchestrator/SKILL.md", import.meta.url),
+    new URL("../codex/frozen/commands/go.md", import.meta.url)
   ];
   for (const url of surfaces) {
     const text = await readFile(url, "utf8");

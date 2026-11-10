@@ -488,7 +488,7 @@ test("build-anchor-audit: rewording review-gate/SKILL.md's reviewer-selection pr
   // regex this audit item's OTHER review-gate anchors were given the identical posture for) --
   // proving one of those siblings actually catches an equivalent rewording, not just that it
   // compiles.
-  const reviewGateSkillPath = join(checkout, "plugin", "skills", "review-gate", "SKILL.md");
+  const reviewGateSkillPath = join(checkout, "codex", "frozen", "skills", "review-gate", "SKILL.md");
   const original = await readFile(reviewGateSkillPath, "utf8");
   const anchorOpening = "1. **Select reviewers, scaled by diff size.**";
   assert.ok(original.includes(anchorOpening), "sanity: the fixture carries the pre-reword anchor text");

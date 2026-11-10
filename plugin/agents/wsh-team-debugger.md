@@ -4,6 +4,7 @@ description: "Tests one bug hypothesis with cited evidence."
 model: sonnet
 effort: high
 maxTurns: 25
+omitClaudeMd: true
 tools: Read, Glob, Grep, Bash
 muster_builtin: true
 license: MIT

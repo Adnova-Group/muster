@@ -5,6 +5,7 @@ tools: Read, Write, Bash, Grep, Glob
 model: sonnet
 effort: high
 maxTurns: 35
+omitClaudeMd: true
 upstream:
   - repo: open-gsd/gsd-core
     ref: 9385f4618b52ef68ed8a5e8bdd93cfb25bd87765

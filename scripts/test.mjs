@@ -38,7 +38,11 @@ try {
     && process.allowedNodeEnvironmentFlags.has("--experimental-websocket")
     ? ["--experimental-websocket"]
     : [];
-  const child = spawn(process.execPath, [...runtimeFlags, "--test", ...args], {
+  // A per-test ceiling turns a hang into a named failure instead of a stalled run (a full-suite-only
+  // hang in codex-release.test.js once spun a worker for 29 minutes). The slowest legitimate test
+  // is ~90 s; override with MUSTER_TEST_TIMEOUT_MS.
+  const timeoutMs = Number(process.env.MUSTER_TEST_TIMEOUT_MS) > 0 ? Number(process.env.MUSTER_TEST_TIMEOUT_MS) : 180_000;
+  const child = spawn(process.execPath, [...runtimeFlags, "--test", `--test-timeout=${timeoutMs}`, ...args], {
     env: { ...process.env, CODEX_HOME: testCodexHome },
     stdio: "inherit"
   });

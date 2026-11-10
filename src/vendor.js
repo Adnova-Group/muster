@@ -11,7 +11,7 @@ import { isContainedLexical } from "./fs-safe.js";
 import { modelForRole, maxTier, floorAtCore, normalizeTier } from "./model.js";
 import { claudeModelForTier, claudeProfileForAgentId } from "./claude.js";
 import { matchFrontmatter } from "./frontmatter.js";
-import { isSyncItem, isSyncSource, validateSyncItem, validateSyncSource } from "./vendor-sync.js";
+import { isSyncItem, isSyncSource, validateSyncItem, validateSyncSource, syncCatalogEntries } from "./vendor-sync.js";
 import {
   RELATIONS, ITEM_PATHS, WAIVER_STATUSES, WORK_KINDS, LICENSE_REVIEW_FINDINGS, isWorkSource,
   isValidLicense, isVendoredItem, isFetchedSource,
@@ -432,9 +432,18 @@ export async function runVendor({ home = homedir(), repoRoot = process.cwd(), ma
   const warnings = [];
   const builtinEntries = [];
   const agentEntries = [];
+  // Entries produced by fetching (the overwrite guards below count only these).
+  let vendoredBuiltins = 0, vendoredAgents = 0;
   for (const source of manifest.sources) {
-    // Attribution-only sources are recorded (NOTICE, `upstream:`) but never fetched;
-    // merge-tracked sources are only touched by `muster vendor update`.
+    // Merge-tracked sources are only touched by `muster vendor update`; their builtin/agent
+    // items with roles stay registered in the generated catalogs, in manifest order.
+    if (isSyncSource(source)) {
+      const tracked = syncCatalogEntries(source);
+      builtinEntries.push(...tracked.builtins);
+      agentEntries.push(...tracked.agents);
+      continue;
+    }
+    // Attribution-only sources are recorded (NOTICE, `upstream:`) but never fetched.
     if (!isFetchedSource(source) || !source.items.some(it => isVendoredItem(source, it))) continue;
     const { root, error, cleanup } = await fetchSourceRoot(source, home);
     if (!root) {
@@ -466,23 +475,24 @@ export async function runVendor({ home = homedir(), repoRoot = process.cwd(), ma
         }
         await atomicPublish(outputRoot, path, content);
         (isAgent ? agentEntries : builtinEntries).push(catalogEntry);
+        if (isAgent) vendoredAgents++; else vendoredBuiltins++;
       }
     } finally {
       await cleanup?.();
     }
   }
-  const allEntries = [...builtinEntries, ...agentEntries];
-  if (allEntries.length === 0) {
+  const vendored = vendoredBuiltins + vendoredAgents;
+  if (vendored === 0) {
     return { count: 0, warnings: [...warnings, "no items vendored — refusing to overwrite NOTICE/builtins.generated.yaml"] };
   }
   // Only overwrite a generated catalog when we actually produced entries of that kind,
   // so a partial/agent-only re-vendor can't clobber the other file on fetch failure.
-  if (builtinEntries.length > 0)
+  if (vendoredBuiltins > 0)
     await atomicPublish(outputRoot, "catalog/builtins.generated.yaml", YAML_BANNER + stringify(builtinEntries, { lineWidth: 0 }));
-  if (agentEntries.length > 0)
+  if (vendoredAgents > 0)
     await atomicPublish(outputRoot, "catalog/agents.generated.yaml", YAML_BANNER + stringify(agentEntries, { lineWidth: 0 }));
   // cowork/NOTICE ships in the Cowork bundle and must stay byte-identical to NOTICE.
   const notice = generateNotice(manifest);
   for (const path of NOTICE_PATHS) await atomicPublish(outputRoot, path, notice);
-  return { count: allEntries.length, builtins: builtinEntries.length, agents: agentEntries.length, warnings };
+  return { count: vendored, builtins: vendoredBuiltins, agents: vendoredAgents, tracked: builtinEntries.length + agentEntries.length - vendored, warnings };
 }

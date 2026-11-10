@@ -196,3 +196,19 @@ branches with `branch -d` only.
     declined the branch switch, the CONTEXT.md write and the Workflow call before any tool ran,
     citing plan mode. `/muster:plan` therefore leaves plan mode first (ExitPlanMode) instead of
     presenting the finished plan through it.
+17. **Dev-team topologies** (`docs/strategy/dev-team-topologies.md`). `plugin/workflows/team.js`
+    takes build's args plus `topology: {testFirst: auto|all|off, seats: auto|off, maxSeats,
+    integrate: auto|all|off, escalate, seatRules}` and task fields `tdd` (set by `build-args` from
+    `tdd="true"` or `type="tdd"`) and `reviewSeats`, and returns build's result plus per task
+    `red`, `seats`, `integrationFix` and per run `topology` and `integration[]`, so `merge-wave`
+    reads it unchanged (red commits are ancestors of the task commit on the same branch). Extra
+    seats in `args.models`: `testWriter`, `integrator`, `escalate`. New schemas in `schemas.js`:
+    RedResult, IntegrationResult, HypothesesResult, HypothesisResult. Its `<build-shared>` block is
+    build.js's `<shared>` slice up to `reviewLoop`, byte for byte (tested); build.js is unchanged.
+    `plugin/workflows/debug.js` takes `{symptom, repro?, context?, hypotheses?, maxHypotheses?,
+    models.investigator}` and returns `{verdict: ROOT_CAUSE|COMPOUND|INCONCLUSIVE|ERROR,
+    rootCause, contributing, ranking, hypotheses, investigations, challenges, next}`; it is
+    read-only. `muster-test-writer` and `muster-integration-checker` are workflow seats in
+    `src/specialists.js`, and the integration checker and `wsh-team-debugger` are `readOnly`,
+    so no `agent_hint` builds with them. `wsh-code-reviewer` left the Claude plugin for
+    `codex/frozen/agents/`.

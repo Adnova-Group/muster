@@ -38,7 +38,7 @@ worker guesses instead of escalating.
 
 1. **Receive the escalation.** The response carries `question`/`context`/`decisionType`, not a
    deliverable. Write `advisor-escalation: <decisionType> at iteration <n>` to STATE.
-2. **Validate the request.** Run `$MUSTER_CLI advise .muster/advice-request.json` → `{ advisorModel,
+2. **Validate the request.** Run `sh "${CLAUDE_PLUGIN_ROOT}/runtime/muster.sh" advise .muster/advice-request.json` → `{ advisorModel,
    request }`. On failure (non-zero exit), append `advisor-validate-failed` to STATE, proceed
    best-effort, no advice.
 3. **Check the consult budget.** Track consults per task in STATE (`advisor-consults[<taskId>]: <n>`);

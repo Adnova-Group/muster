@@ -44,6 +44,7 @@ sources:
     fetch: false
     items:
       - { id: design, kind: command, from: null }
+      - { id: design, kind: codex-frozen-command, from: null }
       - { id: audit-pattern-design-ux, kind: audit-pattern, from: null }
   - id: superpowers
     kind: github

@@ -1021,16 +1021,21 @@ export function lintPlan(rawText, options = {}) {
   const executable = tasks.filter(t => t.kind !== "checkpoint");
   if (!tracerOptOut && executable.length > 0) {
     const tracers = executable.filter(t => t.type === "tracer");
-    const req = "The plan leads with exactly one `type=\"tracer\"` task that every expansion task follows (or sets `tracer: false`)";
+    const req = "The plan leads with exactly one `type=\"tracer\"` task and no task runs in an earlier wave (or sets `tracer: false`)";
     if (tracers.length === 0) {
       add(DIMENSIONS.TRACER, SEVERITY.WARNING, req, "no task has type=\"tracer\"; set `tracer: false` in frontmatter to opt out deliberately");
     } else {
       if (tracers.length > 1) add(DIMENSIONS.TRACER, SEVERITY.WARNING, req, `${tracers.length} tracer tasks (${tracers.map(label).join(", ")}); a plan has one`);
       const tracer = tracers[0];
       if (executable[0] !== tracer) add(DIMENSIONS.TRACER, SEVERITY.WARNING, req, `${label(tracer)} is the tracer but ${label(executable[0])} comes first`);
+      // A task in the tracer's own wave is independent of it: it cannot depend on the tracer
+      // (dependency_correctness) or share a file with it (same-wave overlap is a blocker). Forcing
+      // it a wave later serialized small plans of independent tasks (live e2e 2026-11-10: two
+      // helpers a locked decision declared independent ran in two waves, so the integration
+      // check never ran). Only a task that runs BEFORE the tracer is out of order.
       if (tracer.wave !== null) {
-        const early = executable.filter(t => t !== tracer && t.wave !== null && t.wave <= tracer.wave);
-        if (early.length > 0) add(DIMENSIONS.TRACER, SEVERITY.WARNING, req, `${early.map(label).join(", ")} run${early.length === 1 ? "s" : ""} no later than the tracer (wave ${tracer.wave}), before the slice is proven`);
+        const early = executable.filter(t => t !== tracer && t.wave !== null && t.wave < tracer.wave);
+        if (early.length > 0) add(DIMENSIONS.TRACER, SEVERITY.WARNING, req, `${early.map(label).join(", ")} run${early.length === 1 ? "s" : ""} before the tracer (wave ${tracer.wave}), before the slice is proven`);
       }
     }
   }

@@ -650,8 +650,21 @@ describe("tracer-first", () => {
     assert.deepEqual(lint([tracer, autoTask("02", 2, ' depends_on="01"')]), []);
   });
 
-  test("no tracer, a late tracer, or an expansion alongside the tracer warns", () => {
-    for (const tasks of [[autoTask("01", 1)], [autoTask("02", 1), tracer.replace('id="01"', 'id="03"').replace("src/01.js", "src/03.js")], [tracer, autoTask("02", 1)]]) {
+  test("an independent task in the tracer's wave passes (live e2e 2026-11-10: small plans ran strictly sequential)", () => {
+    // No depends_on and no shared file: it cannot need the tracer, so it shares wave 1 and the
+    // wave gets an integration check instead of waiting a whole wave for nothing.
+    assert.deepEqual(lint([tracer, autoTask("02", 1)]), []);
+    assert.deepEqual(lint([tracer, autoTask("02", 1), autoTask("03", 2, ' depends_on="01"')]), []);
+  });
+
+  test("a task that runs before the tracer warns", () => {
+    const lateTracer = autoTask("01", 2).replace('type="auto"', 'type="tracer"');
+    const found = lint([lateTracer, autoTask("02", 1)]).filter(i => i.dimension === DIMENSIONS.TRACER);
+    assert.ok(found.some(i => /before the tracer \(wave 2\)/.test(i.summary)), JSON.stringify(found));
+  });
+
+  test("no tracer or a late tracer warns", () => {
+    for (const tasks of [[autoTask("01", 1)], [autoTask("02", 1), tracer.replace('id="01"', 'id="03"').replace("src/01.js", "src/03.js")]]) {
       const found = lint(tasks).filter(i => i.dimension === DIMENSIONS.TRACER);
       assert.ok(found.length > 0 && found.every(i => i.severity === "warning"), JSON.stringify(found));
     }

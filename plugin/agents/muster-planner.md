@@ -152,7 +152,9 @@ Every task has four required fields:
 
 ## Tracer-First Decomposition (default)
 
-**Every run's plan LEADS with one `type="tracer"` task**: the thinnest path through every layer the run modifies, wired end-to-end with a real `<verify>`, so a dead-end shows after one commit, not ten. Production-quality: stubs only where later fillable without an architectural change. `tracer: false` only when the architecture is proven; every other task sits in a later wave.
+**Every run's plan LEADS with one `type="tracer"` task**: the thinnest path through every layer the run modifies, wired end-to-end with a real `<verify>`, so a dead-end shows after one commit, not ten. Production-quality: stubs only where later fillable without an architectural change. `tracer: false` only when the architecture is proven.
+
+**Waves follow real dependencies, not the tracer.** A task that builds on the tracer (uses what it creates, or edits its files) sits in a later wave with `depends_on`. A task that is independent of it, because a locked D-NN declares the pieces independent or because it shares no `<files>` and needs nothing the tracer creates, shares the tracer's wave. Never add a `depends_on` only to sequence after the tracer. When every task is independent of every other, there is nothing for a tracer to prove: set `tracer: false` and put them all in wave 1. Parallel tasks are built in separate worktrees and checked together by the integration checker.
 
 <!-- verbatim: gsd agents/gsd-planner.md:261-273 -->
 **Tracer task shape:**

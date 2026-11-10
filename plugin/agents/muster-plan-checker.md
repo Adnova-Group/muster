@@ -99,7 +99,7 @@ Build a table (item | tasks | status). Any truth, prohibition or decision with n
 | `tdd="true"` | Required | `<behavior>` + action | Test commands | Expected outcomes |
 | `checkpoint:*` | N/A | N/A | N/A | N/A |
 
-Every task also needs `id` and `wave`. Red flags: a vague `<action>` ("implement auth"), empty `<files>`, a fenced code block inside `<action>`. A plan whose first task is not `type="tracer"` is a WARNING unless CONTEXT.md opts out.
+Every task also needs `id` and `wave`. Red flags: a vague `<action>` ("implement auth"), empty `<files>`, a fenced code block inside `<action>`. A plan whose first task is not `type="tracer"` is a WARNING unless CONTEXT.md or `tracer: false` opts out. Independent tasks (no shared `<files>`, neither uses what the other creates, or a locked D-NN says so) in the tracer's wave, or a `tracer: false` plan of independent tasks in one wave, are correct: never flag them, and never ask for a `depends_on` that only sequences.
 
 ## Dimension 3: Dependency Correctness
 

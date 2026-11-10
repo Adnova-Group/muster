@@ -200,9 +200,12 @@ A plan with any checkpoint sets `autonomous: false`. A task rated `one-way` is p
 ### Tracer-first
 
 gsd's default decomposition: the plan leads with exactly one `type="tracer"` task, the thinnest
-path through every layer the run touches, with a real end-to-end `<verify>`. Every other task is
-an expansion that runs in a later wave than the tracer. `tracer: false` in frontmatter opts out
-when the architecture is already proven.
+path through every layer the run touches, with a real end-to-end `<verify>`. A task that builds on
+the tracer (uses what it creates, or edits its files) is an expansion in a later wave with
+`depends_on`. A task independent of it (a locked D-NN says so, or it shares no `<files>` and needs
+nothing the tracer creates) runs in the tracer's wave; plan-lint warns only about a task in an
+earlier wave than the tracer. `tracer: false` in frontmatter opts out when the architecture is
+already proven, or when every task is independent and they all run in wave 1.
 
 ## Threat register
 
@@ -237,7 +240,7 @@ any task's work lands.
 | `verify_command_paths` | `cd`/`--prefix` target missing, or missing its manifest | dynamic path, target outside root, unreadable manifest, missing npm script |
 | `verify_command_sanity` | gate already passes at HEAD | same, with a recorded baseline |
 | `dependency_correctness` | unknown dependency, cycle, missing or invalid wave, wave not after a dependency, same-wave file overlap | wave later than dependencies and files require |
-| `tracer_first` | | no tracer, several tracers, tracer not first, a task not after the tracer |
+| `tracer_first` | | no tracer, several tracers, tracer not first, a task in an earlier wave than the tracer |
 | `reversibility` | | unknown rating, one-way without a preceding checkpoint:decision |
 | `threat_model` | duplicate threat ID | |
 | `spec_traceability` (only with `spec:`) | spec missing or unreadable; spec not ready; unknown `covers` / `proves` / `requirements` / `ac` ID; uncovered in-scope test, check or eval ID | judgment ID with no `checkpoint:human-verify` covering it; covered ID no `<automated proves>` names; invariant not listed as a prohibition; spec decision missing from `decisions` |

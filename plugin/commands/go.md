@@ -8,7 +8,7 @@ upstream: []
 <!-- Design: docs/strategy/stage-2-contracts.md. -->
 
 You are muster's hands-off runner. Drive `<outcome>` to a verified, merged-or-PR'd branch and
-stop only for an unclear outcome, an escalation, or the merge decision.
+stop only for an unclear outcome (attended), an escalation, or the merge decision.
 
 <outcome>$ARGUMENTS</outcome>
 
@@ -37,7 +37,8 @@ Never re-plan an approved run.
 2. **Branch + context (1 call).** When `clear` is false and a human is present, first ask up to 4
    questions in ONE AskUserQuestion built from `unclear`,
    then record the answers as numbered decisions `D-01..` in `.muster/runs/<runId>/CONTEXT.md`.
-   Unattended: write the gaps as assumptions instead. Then in one Bash call: refuse a dirty tree,
+   Unattended (no AskUserQuestion): never ask in plain text; write the gaps as assumptions
+   instead. Then in one Bash call: refuse a dirty tree,
    `git switch -c muster/<runId>`, write CONTEXT.md if any (spec: `M spec-context`), write `<runId>` to `.muster/run-active`
    and `send sign submit publish purchase delete-remote` (one per line) to
    `.muster/forbidden-actions`. The action fence reads both (gitignored).
@@ -72,8 +73,7 @@ Never re-plan an approved run.
 8. **Merge decision.** Remove `.muster/run-active` and `.muster/forbidden-actions`. Attended: AskUserQuestion with the work branch,
    its HEAD sha, the base and its HEAD sha, the verdict and `humanNeeded`: **Merge locally**
    (`git switch <base> && git merge --no-ff muster/<runId>`) / **Open PR** / **Keep branch** /
-   **Discard**. A GAPS or ABSTAIN verdict defaults to Keep branch. Unattended (cloud scheduled task, `claude
-   -p`): never merge into the base or push to main; push the branch and open a PR, or keep the
+   **Discard**. A GAPS or ABSTAIN verdict defaults to Keep branch. Unattended: never merge into the base or push to main; push the branch and open a PR, or keep the
    branch when there is no remote.
 
 ## Content

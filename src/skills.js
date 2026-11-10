@@ -122,9 +122,20 @@ export function groupBuiltins(inventory, filter = null) {
 function renderList(groups, total, filter) {
   const shown = groups.reduce((n, g) => n + g.skills.length, 0);
   const lines = [`muster builtins: ${shown}${filter ? ` matching "${filter}"` : ""} of ${total}, as role: source · license: ids (details: muster skills show <id>)`];
+  if (!filter) {
+    // Unfiltered: one line per role naming its sources, so the list stays small however many
+    // builtins are vendored (its output is model context). `list <role>` gives the ids.
+    lines[0] = `muster builtins: ${total}, by role: sources (ids: muster skills list <role>; details: muster skills show <id>)`;
+    for (const g of groups) {
+      const sources = [...new Set(g.skills.map((b) => sourceLabel(b.upstream)))];
+      const note = g.role === UNROUTED ? "; not in the catalog, so the planner never binds these" : "";
+      lines.push(`${g.role} (${g.skills.length}): ${sources.join(", ")}${note}`);
+    }
+    return lines.join("\n") + "\n";
+  }
   for (const g of groups) {
     lines.push(`${g.role} (${g.skills.length})${g.role === UNROUTED ? ": not in the catalog, so the planner never binds these" : ""}`);
-    // One line per source and license keeps the full list near 5 KB.
+    // One line per source and license keeps a role's list short.
     const bySource = new Map();
     for (const b of g.skills) {
       const key = `${sourceLabel(b.upstream)} · ${b.license}`;

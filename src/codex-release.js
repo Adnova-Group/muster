@@ -406,6 +406,8 @@ export async function generateCodexProfiles(root) {
   const agents = assertAgentMapping(mapping.agents);
   const files = new Map();
   for (const [id, config] of Object.entries(agents)) {
+    // Claude-only agents (added after the Codex freeze) get no Codex profile.
+    if (config?.codex === false) continue;
     if (!ID_TOKEN_RE.test(id)) throw new Error(`Codex agent mapping id is not a safe token: ${JSON.stringify(id)}`);
     if (typeof config.source !== "string" || !config.source) throw new Error(`Codex agent mapping entry ${id} has no source`);
     // resolve() honors an absolute source as-is (so it escapes root and is

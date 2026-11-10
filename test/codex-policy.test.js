@@ -82,7 +82,8 @@ test("Codex role profiles use the evidence-backed lanes and preserve sandbox pol
     "wsh-cloud-architect": { tier: "prime", model: "gpt-5.6-sol", effort: "high", readOnly: false },
     "wsh-security-auditor": { tier: "prime", model: "gpt-5.6-sol", effort: "xhigh", readOnly: true }
   };
-  assert.equal(Object.keys(mapping.agents).length, Object.keys(expected).length, "all 27 Codex roles are classified");
+  const codexAgents = Object.keys(mapping.agents).filter(id => mapping.agents[id].codex !== false);
+  assert.equal(codexAgents.length, Object.keys(expected).length, "all 27 Codex roles are classified (Claude-only codex:false entries excluded)");
   for (const [id, policy] of Object.entries(expected)) {
     const config = mapping.agents[id];
     assert.equal(config.tier, policy.tier, `${id} must retain its model tier`);

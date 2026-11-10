@@ -84,7 +84,8 @@ export function codexProfileForConfig(config) {
 // Resolve an agent id (a `capabilities --codex` chosen.id) to its Codex
 // {model, effort}. Returns null for an id with no manifest profile (a non-agent
 // provider — skill/mcp/inline — has no .codex/agents TOML to dispatch on).
+// A Claude-only entry ("codex": false) has no Codex profile either.
 export function codexProfileForAgentId(id) {
   const config = agentProfiles()[id];
-  return config ? codexProfileForConfig(config) : null;
+  return config && config.codex !== false ? codexProfileForConfig(config) : null;
 }

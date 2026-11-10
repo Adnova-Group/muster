@@ -43,14 +43,54 @@ sources:
   - id: impeccable
     kind: github
     repo: pbakaus/impeccable
-    ref: 32930818a109fafa87199babe92fa8e530cff5d3
+    # Re-pinned 2026-11-10: 32930818 (2026-07-30) -> 035c8f31, the skill-v4.8.2 tag commit
+    # (2026-11-09); main's later commits are engine/CLI plumbing with no command change.
+    # Merge-tracked since 2026-11-10 (every impeccable-* item has a `mode`): the skill and 22 of
+    # its reference files are vendored as impeccable-* builtins, each an adapted copy (muster
+    # frontmatter, one adaptation note, links to vendored references pointed at their builtins;
+    # the upstream body is otherwise byte-exact). Byte-exact base copies live in
+    # vendor/upstream/impeccable/. Not vendored: craft.md (a deprecated alias), init.md (writes
+    # PRODUCT.md; muster's init writes DESIGN.md), generate.md / live.md / live-setup.md (live-browser
+    # plumbing), new-work.md / visualize.md / region-map.md / component-review.md (gated on the
+    # engine's concept-seed / build-phase / comp-spec verbs), routing / hooks / doctor, the mode-*
+    # notes, degraded/*, and the native ios.md / android.md / *.native.md (upstream NOTICE.md credits
+    # ehmo/platform-design-skills, MIT, for ios.md and android.md only, so it does not pertain here).
+    # The `design` command and the design-ux audit pattern stay muster's own text (inspired-by):
+    # src/design.js / vendor/impeccable.json carry the 24-workflow vocabulary, incl. `generate`.
+    # Upstream tags are product-prefixed (skill-v*, engine-v*, ext-v*), none in the plain
+    # vMAJOR.MINOR.PATCH form `muster vendor` fetches by, so the pin is the commit alone:
+    # 035c8f31 is the skill-v4.8.2 tag commit.
+    ref: 035c8f319edd019936525a062fe99e83ca8d12c6
+    tag: null
     license: Apache-2.0
     copyright: "Copyright 2025 Paul Bakaus"
-    relation: inspired-by
-    fetch: false
+    relation: adapted
     items:
-      - { id: design, kind: command, from: null }
-      - { id: audit-pattern-design-ux, kind: audit-pattern, from: null }
+      - { id: design, kind: command, from: null, relation: inspired-by }
+      - { id: audit-pattern-design-ux, kind: audit-pattern, from: null, relation: inspired-by }
+      - { id: impeccable-core, kind: builtin, from: plugin/skills/impeccable/SKILL.md, to: plugin/builtins/impeccable-core/SKILL.md, mode: adapted, baseBlob: 083a800e6e58b4a3899b8ef1181550a70bf7c739 }
+      - { id: impeccable-adapt, kind: builtin, from: plugin/skills/impeccable/reference/adapt.md, to: plugin/builtins/impeccable-adapt/SKILL.md, mode: adapted, baseBlob: cabc0fde53348f032a2fc6e26d526e90fa6c2ed2 }
+      - { id: impeccable-animate, kind: builtin, from: plugin/skills/impeccable/reference/animate.md, to: plugin/builtins/impeccable-animate/SKILL.md, mode: adapted, baseBlob: 4ae4cc5fcd7ae4341f4f130ab67a7d9b03c00562 }
+      - { id: impeccable-audit, kind: builtin, from: plugin/skills/impeccable/reference/audit.md, to: plugin/builtins/impeccable-audit/SKILL.md, mode: adapted, baseBlob: b082c5a63777c200c51ff08ccb58cbaf318c72d7 }
+      - { id: impeccable-bolder, kind: builtin, from: plugin/skills/impeccable/reference/bolder.md, to: plugin/builtins/impeccable-bolder/SKILL.md, mode: adapted, baseBlob: d90e62d0d90f6872b5895158017ac25644e15cb9 }
+      - { id: impeccable-clarify, kind: builtin, from: plugin/skills/impeccable/reference/clarify.md, to: plugin/builtins/impeccable-clarify/SKILL.md, mode: adapted, baseBlob: 3047a9d82b9cfa31b392e35c643d82bcdb50250a }
+      - { id: impeccable-colorize, kind: builtin, from: plugin/skills/impeccable/reference/colorize.md, to: plugin/builtins/impeccable-colorize/SKILL.md, mode: adapted, baseBlob: dc45f88c5f81c61355a915c6ea1391b1a36c9ba8 }
+      - { id: impeccable-critique, kind: builtin, from: plugin/skills/impeccable/reference/critique.md, to: plugin/builtins/impeccable-critique/SKILL.md, mode: adapted, baseBlob: 2e00cbf02255009a7d5417d0aac350a06cfb218a }
+      - { id: impeccable-delight, kind: builtin, from: plugin/skills/impeccable/reference/delight.md, to: plugin/builtins/impeccable-delight/SKILL.md, mode: adapted, baseBlob: 798c43a5b735a5b75b67484c516821f1355dfbd6 }
+      - { id: impeccable-distill, kind: builtin, from: plugin/skills/impeccable/reference/distill.md, to: plugin/builtins/impeccable-distill/SKILL.md, mode: adapted, baseBlob: d7c525d922900a051d0eacc8a50df70c693369f0 }
+      - { id: impeccable-harden, kind: builtin, from: plugin/skills/impeccable/reference/harden.md, to: plugin/builtins/impeccable-harden/SKILL.md, mode: adapted, baseBlob: e7183cfab285807bfad71dfbf6409e00b6ce5da1 }
+      - { id: impeccable-layout, kind: builtin, from: plugin/skills/impeccable/reference/layout.md, to: plugin/builtins/impeccable-layout/SKILL.md, mode: adapted, baseBlob: 7c13be125c644cee234884a06edb2f87e0b87048 }
+      - { id: impeccable-optimize, kind: builtin, from: plugin/skills/impeccable/reference/optimize.md, to: plugin/builtins/impeccable-optimize/SKILL.md, mode: adapted, baseBlob: 3f3fc7c33e21b029d5888112a566a547f30a3520 }
+      - { id: impeccable-overdrive, kind: builtin, from: plugin/skills/impeccable/reference/overdrive.md, to: plugin/builtins/impeccable-overdrive/SKILL.md, mode: adapted, baseBlob: 01a1cb131f7bfda4e438dc7a8ff4b7530c07f7f9 }
+      - { id: impeccable-polish, kind: builtin, from: plugin/skills/impeccable/reference/polish.md, to: plugin/builtins/impeccable-polish/SKILL.md, mode: adapted, baseBlob: ea300b3997247461ca0e159f8bbf8fa6c3d05662 }
+      - { id: impeccable-quieter, kind: builtin, from: plugin/skills/impeccable/reference/quieter.md, to: plugin/builtins/impeccable-quieter/SKILL.md, mode: adapted, baseBlob: bcd4f8a6948f741996777b156f3706955cc802ff }
+      - { id: impeccable-shape, kind: builtin, from: plugin/skills/impeccable/reference/shape.md, to: plugin/builtins/impeccable-shape/SKILL.md, mode: adapted, baseBlob: 90a74ae813331cbce8fff6beb498ced77970fadf }
+      - { id: impeccable-typeset, kind: builtin, from: plugin/skills/impeccable/reference/typeset.md, to: plugin/builtins/impeccable-typeset/SKILL.md, mode: adapted, baseBlob: 013ddbae367cd476842241154b0dd084f4e2b6d0 }
+      - { id: impeccable-onboard, kind: builtin, from: plugin/skills/impeccable/reference/onboard.md, to: plugin/builtins/impeccable-onboard/SKILL.md, mode: adapted, baseBlob: 464ae5516e2623ef4be8260a33968548b33ae697 }
+      - { id: impeccable-extract, kind: builtin, from: plugin/skills/impeccable/reference/extract.md, to: plugin/builtins/impeccable-extract/SKILL.md, mode: adapted, baseBlob: 4c6255cf2430048b90391ade163ebd2dce88492a }
+      - { id: impeccable-document, kind: builtin, from: plugin/skills/impeccable/reference/document.md, to: plugin/builtins/impeccable-document/SKILL.md, mode: adapted, baseBlob: 879ba4e86e3a8d37d0452d1c8053b49456f781b8 }
+      - { id: impeccable-craft-floor, kind: builtin, from: plugin/skills/impeccable/reference/craft-floor.md, to: plugin/builtins/impeccable-craft-floor/SKILL.md, mode: adapted, baseBlob: 1f2bb82a2a58c3e90189efcb7884eb3c028bc6cc }
+      - { id: impeccable-operate, kind: builtin, from: plugin/skills/impeccable/reference/operate.md, to: plugin/builtins/impeccable-operate/SKILL.md, mode: adapted, baseBlob: 524f2c3ae9fa497284e9699f3ca5320cce5d05cf }
   - id: superpowers
     kind: github
     repo: obra/superpowers
@@ -1043,10 +1083,15 @@ sources:
   - id: blader-humanizer
     kind: github
     repo: blader/humanizer
-    # No v2.8.2 tag exists upstream. SKILL.md `version: 2.8.2` first appears at this
-    # commit (2026-06-29), which was the default-branch HEAD on the 2026-07-13 survey
-    # date recorded in codex/upstreams.json.
-    ref: 1b48564898e999219882660237fde01bf4843a0f
+    # Re-pinned 2026-11-10: 1b48564 (SKILL.md 2.8.2, 2026-06-29) -> b48c832 (v4.0.0 release
+    # merge). Adapted into muster-humanizer (upstream path SKILL.md): the planted-instruction
+    # guard (#317), whole-file read with a coverage report (#326/#327), the facts-first draft
+    # check, strongest-first ordering with "weak alone", patterns 2-5, 7, 9, 10, 14, 16, 23-26,
+    # the spaced ` -- ` dash with its code/URL exemption (8), meticulous / interplay / quietly /
+    # garner. Skipped: 4.0.0's allowance to add true details (muster keeps claims fixed because
+    # the humanizer runs after review) and the writer's sample overriding the dash ban.
+    # codex/upstreams.json (frozen Codex lane, researched 2026-07-13) keeps the old pin.
+    ref: b48c832f0f809c1b5658edbb838c2521b72f2413
     license: MIT
     copyright: "Copyright (c) 2025 Siqi Chen"
     relation: adapted
@@ -1056,7 +1101,11 @@ sources:
   - id: stealthhumanizer
     kind: github
     repo: rudra496/StealthHumanizer
-    ref: 1aacbda6e2f66afbdcb6714a85347307068373e9
+    # Re-pinned 2026-11-10: 1aacbda -> 8b0e908 (master, 2026-11-09; past v2.4.2). Adapted from
+    # lib/prompts.ts (rule 7, 33ea2db) and CHANGELOG.md: never add pronouns or filler the source
+    # lacked, no contractions in academic or technical text, vary sentence length without
+    # fragments. Its detector weights and transform engine are detector-evasion code: not taken.
+    ref: 8b0e90874c6137c68476d5f4a7139e0ef30e198f
     license: MIT
     copyright: "Copyright (c) 2025-2026 Rudra Sarker"
     relation: adapted
@@ -1066,7 +1115,15 @@ sources:
   - id: avoid-ai-writing
     kind: github
     repo: conorbronsdon/avoid-ai-writing
-    ref: 500ff59006f19c27120c5ddbd9b56fc3d937b6bf
+    # Re-pinned 2026-11-10: 500ff59 -> 30971f1 (main, after v3.38.0 f9f626b, which predates the
+    # detector/patterns.js lists taken). Adapted from SKILL.md, references/patterns.md and
+    # detector/patterns.js: Tier 1/2 placement (harness, foster, elevate, facilitate, multifaceted
+    # to Tier 2; vibrant, nestled, enduring to Tier 1; quietly to Tier 2), the exact Tier 3 density
+    # rule, curly quotes weak alone, protected content, the no-op rule, "never inject", and in
+    # src/humanizer-score.js the masking of code, URLs, blockquotes and quoted spans plus the
+    # cutoff-disclaimer, hedge-stack, generic-conclusion and tier2-cluster checks. Skipped: the
+    # em-dash rate guideline (muster's dash ban is a house rule) and the 54-type stylometrics.
+    ref: 30971f1c50c6412a0c414e8c7b15032a32b21939
     license: MIT
     copyright: "Copyright (c) 2026 Conor Bronsdon"
     relation: adapted
@@ -1093,13 +1150,23 @@ sources:
         licensed source. muster-humanizer was rewritten clean-room on 2026-11-09: every
         list entry now traces to blader/humanizer or conorbronsdon/avoid-ai-writing (MIT),
         "Indeed" and "Overall" left the opener list and "as an AI" left the scorer.
+        Corrections and re-check 2026-11-10: "as an AI (language) model" is in avoid-ai-writing's
+        MIT detector (CUTOFF_DISCLAIMERS) already at 500ff59, so the scorer carries it again
+        under that attribution; "unlock", "essential", "various", "vital" and "needless to say"
+        trace to aaaronmiller/humanize-writing's references/ai-vocabulary-list.md (MIT), and
+        "unlock" and "happy to help" left the scorer because no MIT source lists them as tells.
+        Upstream is unchanged since the pin; after the 2026-11-10 humanizer update the item and
+        src/humanizer-score.js share no 7-gram with it, and the only shared 5-grams are its own
+        path in the upstream: block and the stock frame "not just X but Y", which blader lists.
     items:
       - { id: muster-humanizer, kind: builtin, from: skills/anti-ai-slop-writing }
   - id: humanize-writing
     kind: github
     repo: aaaronmiller/humanize-writing
     # No recorded pin: default-branch HEAD on 2026-06-23 (the humanizer enrichment).
-    # Still the upstream HEAD on 2026-11-09.
+    # Still the upstream HEAD on 2026-11-10 (checked): nothing new to take. The Tier 3 words
+    # unlock / essential / various / vital and "needless to say" come from its
+    # references/ai-vocabulary-list.md.
     ref: c07a2a8dab1f6033ad0da713766df43d0dc374b9
     license: MIT
     copyright: "Copyright (c) 2025 Aaron Miller"
@@ -1122,16 +1189,55 @@ sources:
       evidence: >-
         Compared prompts/Humanizer Pro.md at the pin with muster-humanizer: no shared
         5-gram. Muster took two ideas (calibrate to the author's samples; ask one question
-        when intent is unclear) and states them in its own words.
+        when intent is unclear) and states them in its own words. Re-checked 2026-11-10:
+        upstream unchanged since the pin; the updated muster-humanizer still shares no 5-gram.
     items:
       - { id: muster-humanizer, kind: builtin, from: prompts/Humanizer Pro.md }
+  - id: stop-slop
+    kind: github
+    repo: hardikpandya/stop-slop
+    # 2026-11-10 (main HEAD): muster-humanizer takes, in its own words, negation countdowns,
+    # throat-clearing and meta-commentary frames, vague declaratives and false agency
+    # (references/structures.md, references/phrases.md), plus two humanize-score signposting
+    # phrases ("let me be clear", "the uncomfortable truth is"). Skipped: "kill all adverbs",
+    # the blanket passive ban, rewriting universals (changes claims), adding "you" (injects a
+    # pronoun the source lacked), and its 1-10 self-score (muster has humanize-score).
+    ref: 8da1f030185bdfe8471220585162991eaeb970e9
+    license: MIT
+    copyright: "Copyright (c) 2025 Hardik Pandya"
+    relation: adapted
+    fetch: false
+    items:
+      - { id: muster-humanizer, kind: builtin, from: SKILL.md }
+  - id: no-ai-slop
+    kind: github
+    repo: petergyang/no-ai-slop
+    # 2026-11-10 (main HEAD): muster-humanizer takes, in its own words, the detect-only mode, the
+    # minimum-effective-edit voice rules, faux-insight setups, colon reveals, interpretive
+    # metadiscourse, fake-profound kickers, recap endings, the portability test, empty adverbs
+    # (weak alone) and direct verbs (skills/no-ai-slop/SKILL.md, eval.md), plus three
+    # humanize-score signposting phrases. Skipped: its em-dash allowance (muster's dash ban is
+    # a house rule) and its banned-word list (muster's tiers cover it).
+    ref: 000650b156983f5159695b441477f4e63b25dc85
+    license: MIT
+    copyright: "Copyright (c) 2026 Peter Yang"
+    relation: adapted
+    fetch: false
+    items:
+      - { id: muster-humanizer, kind: builtin, from: skills/no-ai-slop/SKILL.md }
 
   # --- muster-prompt-smith: lint rule taxonomy and eval/optimizer patterns ---
   - id: lintlang
     kind: github
     repo: hermes-labs-ai/lintlang
     # No recorded pin: default-branch HEAD on 2026-06-18 (the structural prompt linter).
-    ref: dd17238643817f3d7fd3ece69e6fdbafe8676a98
+    # Re-pinned 2026-11-10: dd172386 -> 645f5787, the v0.8.3 tag (main 5e5fefb differs only in
+    # docs and tests; src/ is identical). Re-implemented from H2 in src/lintlang/patterns.py:
+    # LINT-LOOP-004 (an unbounded retry/loop instruction with no numeric budget; negated and
+    # code-sample forms exempt; condition-bounded "loop until" deliberately not flagged) and
+    # LINT-STOP-002 accepting an explicit numeric budget. Skipped: the H4.5 dangling-path check
+    # (needs the filesystem), the H1 tool-description detector, preflight/SARIF/autofix tooling.
+    ref: 645f57879ff5dbe3bbff37e9696834fb00371194
     license: Apache-2.0
     copyright: "Copyright 2026 Hermes Labs"
     relation: mechanism-port
@@ -1141,7 +1247,11 @@ sources:
   - id: promptfoo
     kind: github
     repo: promptfoo/promptfoo
-    ref: 3901d3949df32c087465bce39626c460d8590034
+    # Re-pinned 2026-11-10: 3901d394 (0.121.18) -> 8569e72e (0.125.1). Took the idea of repeat
+    # stability (0.125.0, #11416): `prompt eval` groups runs by `case` and reports pass rate, a 95%
+    # Wilson interval and unstable cases; own code. Skipped reference-based assertions
+    # (ROUGE/BLEU/RAG/trace), red-team, provider and UI changes.
+    ref: 8569e72ed6cf7737082a6042be8d925e40f9739d
     license: MIT
     copyright: "Copyright (c) Promptfoo 2025"
     relation: inspired-by
@@ -1153,7 +1263,7 @@ sources:
     repo: shobrook/promptimal
     # Owner confirmed with gh on 2026-11-09 (muster only ever wrote "promptimal").
     # No recorded pin: the upstream has had no commits since 2025-01-05, so this HEAD
-    # is the only version that could have been read on 2026-06-18.
+    # is the only version that could have been read on 2026-06-18. Still HEAD on 2026-11-10.
     ref: e03cbc1db19c7ec6c310605a9819e35c2baed023
     license: MIT
     copyright: "Copyright (c) 2024 Jonathan Shobrook"
@@ -1165,8 +1275,12 @@ sources:
     kind: github
     repo: gepa-ai/gepa
     # b7dd4d90 (2026-06-23) credits it in-file: feed lint/eval failure reasons back into
-    # the next variation round. Ref: default-branch HEAD on 2026-06-23.
-    ref: 92dadfffbe98c8ecf508179a1cab09c1bb85cd32
+    # the next variation round. Re-pinned 2026-11-10: 92dadfff -> ce5b0d6e (main; the ideas
+    # below post-date v0.1.4): drop variations identical to an existing candidate before
+    # evaluation (061676a, e60faaf) in proposeVariations, and as SKILL.md guidance one
+    # reflection feeding several parallel proposals per round (8b0ce6c, bb1c947) and rejecting
+    # empty or cut-off proposals (d771eb2, d7918ba). Checkpoint/resume/cache work: not taken.
+    ref: ce5b0d6e3d6af6c6dbec6de2c54536bbb961d309
     license: MIT
     copyright: "Copyright © 2025 Lakshya A Agrawal"
     relation: inspired-by
@@ -1179,13 +1293,22 @@ sources:
     kind: github
     repo: felipelobomotta-blip/book-genesis-studio
     formerly: [felipelobomotta-blip/book-genesis-v4]
-    ref: a43a429bdec1770232ee64e7de634c5ce5109b80
+    # Re-pinned 2026-11-10: a43a429 (v4.2.0) -> c2fc628 (master after v5.1.0-beta.7; the v5.0.1
+    # tag 88e2e004 predates the 5.1 mechanisms taken). Ported in muster's words from
+    # skills/book-genesis/references/prompts/{drafting,adversarial-audit,revision-loop}.md and
+    # references/scoring/{genesis-score,rubric-criteria,evaluator-protocol}.md: prose-first drafting
+    # with blind reader checkpoints, the brief-contract audit ending in pass / revise /
+    # major-rewrite before any scoring, the bounded revision loop with blind A/B acceptance, and
+    # blind scoring with "not assessed" criteria (scoreArtifact `incomplete`). The per-chapter
+    # scored loop was retired, as upstream did. Skipped: receipt/catalog scripts, installer,
+    # EPUB export, the fixed -0.8 calibration and the 0-10 weighted scale.
+    ref: c2fc628fd5d1266b63e98ed962f6a2db37518a53
     license: MIT
     copyright: "Copyright (c) 2026 Felipe Lobo"
     relation: mechanism-port
     fetch: false
     items:
-      # premise-forge gate + per-chapter scored loop
+      # premise-forge gate, blind reader checkpoints, audit verdict, bounded revision loop
       - { id: book, kind: pipeline, from: null }
       # Genesis Score floor principle
       - { id: muster-scorer, kind: builtin, from: null, relation: inspired-by }
@@ -1207,7 +1330,8 @@ sources:
         every chapter reads and writes back to, and of logging a "debt" when a later edit
         breaks an earlier fact (program.md's propagation rules), and wrote its own
         continuity-ledger phase text. The phase names it shares (foundation, drafting)
-        are generic.
+        are generic. Re-checked 2026-11-10: upstream unchanged since the pin; after the
+        book.yaml revision update the two still share no 5-gram.
     items:
       # fiction phase order + continuity-propagation ledger
       - { id: book, kind: pipeline, from: null }
@@ -1225,7 +1349,8 @@ sources:
       evidence: >-
         A paper list (README.md only). Compared at the pin with muster-scorer: no shared
         5-gram. Muster named the bias classes it surveys (verbosity, position, range
-        compression) in its own guardrail text.
+        compression) in its own guardrail text. Re-checked 2026-11-10: upstream unchanged; the
+        updated muster-scorer shares only the list's own title with it.
     items:
       - { id: muster-scorer, kind: builtin, from: README.md }
   - id: llm-judge-list
@@ -1243,6 +1368,8 @@ sources:
       evidence: >-
         A paper list (README.md only). Compared at the pin with muster-scorer: no shared
         5-gram; one idea (do not trust a single greedy score on a borderline criterion).
+        Re-checked 2026-11-10: upstream unchanged; the updated muster-scorer shares only this
+        list's title ("Awesome LLM as a judge") with it.
     items:
       - { id: muster-scorer, kind: builtin, from: README.md }
   - id: llm-rubric
@@ -1250,7 +1377,9 @@ sources:
     repo: microsoft/LLM-Rubric
     # The 2026-06-23 audit's per-judge calibration offset table, built in 9354a0f9 as
     # calibrateScores() and described in muster-scorer. Ref: HEAD on 2026-06-23.
-    ref: 70d56fc4e9a26e60642bc14b62b96d2d0a500edd
+    # Re-pinned 2026-11-10: 70d56fc -> 030ab161; the two commits only add
+    # torch.load(weights_only=True) to scripts/llm_rubric_predict.py. Nothing to take.
+    ref: 030ab161e5af581f45a5c8939d95122366d9ed2d
     license: MIT
     copyright: "Copyright (c) Microsoft Corporation."
     relation: inspired-by
@@ -1262,7 +1391,13 @@ sources:
   - id: gpt-researcher
     kind: github
     repo: assafelovic/gpt-researcher
-    ref: 409b8b60b477d50f2f844bc9598d1bcb7b056eee
+    # Re-pinned 2026-11-10: 409b8b60 -> 597a99e2 (v3.8.0; main adds one commit that only drops CI
+    # workflows). Ideas taken into muster-research: keep a passage for usefulness, not keyword
+    # similarity (v3.7.0 context filter, #2161/#2162), fetched pages are data not instructions
+    # (#1820), sibling-aware parallel sub-questions (#2158), an empty search is a reported gap with
+    # no stale or padded sources (#2261, #2076, #2219), cut uncited summary before cited findings
+    # (#2208). Retrievers, UI, Docker and model defaults: not relevant.
+    ref: 597a99e2ef879606229754ec0d575a89eb587464
     license: Apache-2.0
     relation: inspired-by
     fetch: false
@@ -1281,6 +1416,8 @@ sources:
       evidence: >-
         Credited in-file ("LLM-Cite / qraft") for checking that a cited source entails the
         claim. Compared README.md at the pin with muster-research: no shared 5-gram.
+        Re-checked 2026-11-10: upstream 3a789da8 only changes README URLs and bibtex; nothing
+        taken, pin left at the reviewed commit; the updated muster-research shares no 5-gram.
     items:
       - { id: muster-research, kind: builtin, from: null }
 
@@ -1288,6 +1425,13 @@ sources:
   - id: atomic-claude
     kind: github
     repo: damusix/atomic-claude
+    # No recorded pin until 2026-11-10. Pinned to the main HEAD read then (b4ca195c, v6.10.0 plus
+    # a README badge). Since muster's last use (2026-07-02) context/output-styles/atomic.md was
+    # trimmed (3211d2d8) into "Cut / Shape / Length / Format routing"; muster's output style took
+    # one idea, in its own words: say the fact a stock phrase was decorating (literal over
+    # mannered). The agents (context/agents/atomic-*) gained loop/gate plumbing for atomic's own
+    # verbs; muster's role agents are clean-room and took nothing from it.
+    ref: b4ca195cae6022464b0cc5c07273b3fa9602da17
     license: MIT
     copyright: "Copyright (c) 2026 Danilo Alonso"
     relation: inspired-by
@@ -1329,6 +1473,8 @@ sources:
   - id: voltagent-subagents
     kind: github
     repo: VoltAgent/awesome-claude-code-subagents
+    # Checked 2026-11-10: upstream 51 commits ahead (new agent files). muster-runner is a byte-frozen Codex
+    # input (codex/frozen/agents/muster-runner.md) and cannot take changes, so the pin stays.
     ref: 14bbcf5d984c8ce61a0aa17f897b7d8e63739783
     license: MIT
     copyright: "Copyright (c) 2025 VoltAgent"
@@ -1339,6 +1485,7 @@ sources:
   - id: twelve-factor-agents
     kind: github
     repo: humanlayer/12-factor-agents
+    # Checked 2026-11-10: still upstream HEAD.
     ref: d20c728368bf9c189d6d7aab704744decb6ec0cc
     # Code Apache-2.0; content (the twelve factors) CC BY-SA 4.0, per the upstream README.
     license: Apache-2.0 AND CC-BY-SA-4.0
@@ -1360,7 +1507,8 @@ sources:
         Compared all 38 Markdown files at the pin with plugin/agents/muster-runner.md and
         plugin/commands/runner.md: zero shared 5-grams. Muster took two mechanisms named in
         docs/research/lifecycle-agent-patterns.md (trigger examples in the description;
-        per-agent constraints and success measures) and wrote its own text.
+        per-agent constraints and success measures) and wrote its own text. Re-checked
+        2026-11-10: upstream unchanged; muster-runner is frozen and unchanged.
     items:
       - { id: muster-runner, kind: codex-frozen-agent, from: null }
   - id: infinite-agentic-loop
@@ -1377,6 +1525,7 @@ sources:
         Compared .claude/commands/infinite.md, prime.md, CLAUDE.md and README.md at the pin
         with muster-runner and runner.md: zero shared 5-grams. Mechanisms only (derive
         progress from the filesystem; a fixed dispatch-prompt shape; capped waves).
+        Re-checked 2026-11-10: upstream unchanged; muster-runner is frozen and unchanged.
     items:
       - { id: muster-runner, kind: codex-frozen-agent, from: null }
   - id: awesome-claude-code
@@ -1395,6 +1544,8 @@ sources:
         with muster-runner, runner.md and docs/research/lifecycle-agent-patterns.md: the
         only shared 6-grams are two URLs it links to (code.claude.com docs and Anthropic's
         "Building effective agents"). Used as an index; nothing derived from its text.
+        Re-checked 2026-11-10: upstream 1,164 commits ahead (list entries), licence still
+        CC BY-NC-ND 4.0; muster-runner is frozen and unchanged, so nothing new is derived.
     items:
       - { id: muster-runner, kind: codex-frozen-agent, from: null }
 
@@ -1419,7 +1570,10 @@ sources:
         prompts/jobs-to-be-done.md, proto-persona-profile.md, backlog-epic-hypothesis.md
         and the user-story prompts at the pin with every PM pipeline: no shared 4-gram
         beyond framework names ("jobs to be done"). Its epic hypothesis uses an
-        "If we / for / Then we will" form muster never used.
+        "If we / for / Then we will" form muster never used. Re-checked 2026-11-10: upstream 39
+        commits ahead, licence still CC BY-NC-SA 4.0, nothing taken; after the prd.yaml update
+        the shared 4-grams are still only framework names and the title of Richard Lawrence's
+        story-splitting guide.
     items:
       - { id: prd, kind: pipeline, from: null }
       - { id: epic, kind: pipeline, from: null }
@@ -1445,7 +1599,9 @@ sources:
         anthropics/knowledge-work-plugins' write-spec structure, Apache-2.0; epic from the
         Lean UX hypothesis slots). No other shared 4-gram beyond framework names
         ("As a / I want / So that", "break out a spike", which both take from their
-        originators).
+        originators). Re-checked 2026-11-10: upstream 56 commits ahead, licence still
+        CC BY-NC-SA 4.0, nothing taken; after the prd.yaml update the shared 4-grams are only
+        framework names, work titles and upstream: block paths.
     items:
       - { id: prd, kind: pipeline, from: skills/prd-development/SKILL.md }
       - { id: epic, kind: pipeline, from: skills/epic-hypothesis/SKILL.md }
@@ -1454,7 +1610,13 @@ sources:
   - id: pm-skills-phuryn
     kind: github
     repo: phuryn/pm-skills
-    ref: d384f0c9eb81fe74656a4f6da168587836939edb
+    # Re-pinned 2026-11-10: d384f0c -> 9af7bfd (v2.3.0). Taken into prd.yaml's draft, in muster's
+    # words, from pm-execution/skills/create-prd/SKILL.md (v2.2.0 "lean create-prd"): lean by
+    # default, no TBD placeholders, unknowns go to open questions, a research finding enters only if
+    # it changes a decision, two or three segments at most for a first version, say what was skipped.
+    # Skipped: the 6-part JTBD value-proposition template (prd.yaml's framing phase already does
+    # JTBD), pm-ai-shipping (moved out), live-qa / live-polls / survey-design (no muster item).
+    ref: 9af7bfd0bc47fdad43c2eaa7a43cd13918e7aaef
     license: MIT
     copyright: "Copyright (c) 2026 Pawel Huryn"
     relation: inspired-by
@@ -1467,7 +1629,9 @@ sources:
   - id: knowledge-work-plugins
     kind: github
     repo: anthropics/knowledge-work-plugins
-    ref: ca4618669075c133a8f437310775428a5c664e09
+    # Re-pinned 2026-11-10: ca461866 -> e605d8dd (main). product-management/skills/write-spec/
+    # SKILL.md is byte-identical at both (blob 183cf053); nothing new to take.
+    ref: e605d8ddbfb688da57dfaaceebd93f12a64ef1d3
     license: Apache-2.0
     relation: inspired-by
     fetch: false
@@ -1489,7 +1653,8 @@ sources:
         Compared README.md at the pin with okrs.yaml: the only shared 4-gram is the phrase
         "objectives and key results". The "Verb + Metric from X to Y by Date" formula does
         not appear upstream; output-versus-outcome and stretch grading are the general OKR
-        method (Grove, Doerr), named in muster's own words.
+        method (Grove, Doerr), named in muster's own words. Re-checked 2026-11-10: upstream
+        unchanged since the pin.
     items:
       - { id: okrs, kind: pipeline, from: null }
   - id: adr
@@ -1506,14 +1671,18 @@ sources:
       evidence: >-
         ai-implementation-spec names ADR section headings only. Since 48ae2918
         (2026-06-23) those headings follow MADR 4.0 (adr/madr, MIT OR CC0-1.0), recorded
-        separately. No sentence from this repository appears in any item.
+        separately. No sentence from this repository appears in any item. Re-checked
+        2026-11-10: upstream 170 commits ahead, licence unchanged; ai-implementation-spec is
+        unchanged and takes nothing from it.
     items:
       - { id: ai-implementation-spec, kind: pipeline, from: null }
   - id: madr
     kind: github
     repo: adr/madr
     # 48ae2918: ADR phase -> MADR 4.0. Ref: default-branch HEAD on 2026-06-23.
-    ref: 8cb64d7e8a85699ed090661ca3224c8889e2a224
+    # Re-pinned 2026-11-10: 8cb64d7e -> ba75bb1b (develop); the 9 commits are typo, link and CI
+    # fixes. MADR 4.0.0 is still the template release; nothing to take.
+    ref: ba75bb1b20d42af5746b246ad348c202419ae681
     license: MIT OR CC0-1.0
     copyright: "Copyright (c) 2017-2022 Oliver Kopp, Olaf Zimmermann"
     relation: inspired-by
@@ -1525,7 +1694,12 @@ sources:
     repo: olivierlacan/keep-a-changelog
     # The note cites keepachangelog.com; this is its source. Ref: HEAD on 2026-06-15,
     # the last commit before the note's categories were last edited (8425e131).
-    ref: 37364f7ae516f0bb1309c4f3f6a7f7fbd4778af4
+    # Re-pinned 2026-11-10: 37364f7a -> 08d0df5a (main). Taken into release-notes.yaml from the
+    # 2.0.0 spec page (source/en/2.0.0/index.html.md), in muster's words: change types ordered by
+    # urgency (Security, Removed, Changed, Deprecated, Fixed, Added) with empty ones omitted, a
+    # Security entry as a short summary linking the advisory, an optional area prefix per entry.
+    # Skipped: the site's version/language picker work and the merge-conflict FAQ.
+    ref: 08d0df5a7e93b71d902def8be0f0d40025b56289
     license: MIT
     copyright: "Copyright (c) 2014 Olivier Lacan"
     relation: inspired-by
@@ -1536,6 +1710,7 @@ sources:
     kind: github
     repo: gcamilo/management-consulting
     # b7dd4d90: Fact / Inference / Assumption labels in executive-summary. Ref: HEAD on 2026-06-23.
+    # Still upstream HEAD on 2026-11-10.
     ref: dd2d099dc390811015c16ecac306415d62b31008
     license: MIT
     copyright: "Copyright (c) 2026"
@@ -1558,7 +1733,8 @@ sources:
       evidence: >-
         Compared README.md at the pin with executive-summary.yaml: no shared 5-gram. One
         idea (decompose the question into an issue tree before answering), itself from
-        Minto's Pyramid Principle.
+        Minto's Pyramid Principle. Re-checked 2026-11-10: upstream 20 commits ahead (a tree
+        viewer/editor and its tooling), still no licence; executive-summary is unchanged.
     items:
       - { id: executive-summary, kind: pipeline, from: null }
   - id: ai-prd-generator
@@ -1577,11 +1753,19 @@ sources:
         Compared README.md at the pin with prd.yaml: no shared 5-gram. Two ideas (keep
         clarifying until confident before drafting; give every claim a confidence flag
         and flag the unsupported ones) in muster's own words; no code or prompt text.
+        Re-checked 2026-11-10: upstream unchanged; the updated prd.yaml shares no 5-gram.
     items:
       - { id: prd, kind: pipeline, from: null }
   - id: marketingskills
     kind: github
     repo: coreyhaines31/marketingskills
+    # No recorded pin until 2026-11-10; pinned to the main HEAD read then (v2.14.9 line). Taken,
+    # in muster's words: competitive-battlecard gets skills/competitors' evidence discipline
+    # (date competitor facts; "not listed" is not "lacks"; no guessed motives; fact apart from
+    # interpretation) and skills/sales-enablement's "why we win needs evidence, else a
+    # hypothesis" and "say where we lose"; lead-magnet gets skills/lead-magnets' buyer-stage
+    # match and fewest-form-fields rule.
+    ref: 8a3bde8083bd121971f61cba4bdbe5fd8c0eee7d
     license: MIT
     copyright: "Copyright (c) 2025 Corey Haines"
     relation: inspired-by
@@ -1594,6 +1778,12 @@ sources:
   - id: email-marketing-bible
     kind: github
     repo: CosmoBlk/email-marketing-bible
+    # No recorded pin until 2026-11-10; pinned to the main HEAD read then (v2.8.2). Taken into
+    # newsletter's deliverability preflight from skills/email-marketing-bible/SKILL.md, in
+    # muster's words: SPF/DKIM/DMARC aligned, RFC 8058 one-click unsubscribe plus a physical
+    # address, preview text that adds information, offer facts identical in email and landing
+    # page, and holding a broad send at a complaint rate of 0.1% or more.
+    ref: 962648c1b147652244c4e4953e96c65421a79e70
     license: MIT
     copyright: "Copyright (c) 2026 George Hartley"
     relation: inspired-by
@@ -1602,6 +1792,9 @@ sources:
   - id: claude-email
     kind: github
     repo: AgriciDaniel/claude-email
+    # No recorded pin until 2026-11-10; pinned to the main HEAD read then (v1.0.0, unchanged since
+    # 2026-04-10). Its skills are inbox triage and campaign tooling; nothing new to take.
+    ref: 182270a0bbcd9c710713cbff4b7ce8475f5964f9
     license: MIT
     copyright: "Copyright (c) 2026 Daniel Agrici"
     relation: inspired-by
@@ -1622,12 +1815,14 @@ sources:
         4-gram outside the upstream: block. The template is a system operation manual
         (service overview, hours of operation, backup and restore ...); runbook.yaml's
         phases (preconditions, triage, steps, observability, validation, rollback,
-        escalation, cleanup) do not follow it.
+        escalation, cleanup) do not follow it. Re-checked 2026-11-10: upstream unchanged.
     items:
       - { id: runbook, kind: pipeline, from: null }
   - id: awesome-sre
     kind: github
     repo: dastergon/awesome-sre
+    # No recorded pin until 2026-11-10: master HEAD, unchanged since 2022-10-08 (before the item).
+    ref: e91ef69aa52129662164e54cc22272bc90e9b636
     license: CC0-1.0
     relation: inspired-by
     fetch: false
@@ -1636,6 +1831,8 @@ sources:
   - id: awesome-runbook
     kind: github
     repo: runbear-io/awesome-runbook
+    # No recorded pin until 2026-11-10: main HEAD, unchanged since 2024-08-07 (before the item).
+    ref: d83a294e4eb650a62b4afce3dfee29f837f8c041
     license: CC0-1.0
     relation: inspired-by
     fetch: false
@@ -1645,6 +1842,7 @@ sources:
     kind: github
     repo: Scoutflo/Scoutflo-SRE-Playbooks
     # b7dd4d90: events-first triage keyed off the failure signature. Ref: HEAD on 2026-06-23.
+    # Still upstream HEAD on 2026-11-10.
     ref: acc55da0224fda5eda580939a15bc60990e8e69f
     license: MIT
     copyright: "Copyright (c) 2026 Scoutflo"
@@ -1668,13 +1866,16 @@ sources:
         Compared README.md at the pin with muster-author: the only shared 5-grams are
         framework expansions ("Attention, Interest, Desire, Action"; "Qualify, Understand,
         Educate, Stimulate, Transition") that name the formulas, not text from it.
+        Re-checked 2026-11-10: upstream unchanged; the updated muster-author shares only those.
     items:
       - { id: muster-author, kind: builtin, from: null }
   - id: boraoztunc-skills
     kind: github
     repo: boraoztunc/skills
     # The 2026-06-23 audit's "dedicated de-slop pass"; b7dd4d90 adopted it in muster-author.
-    ref: c5c5dea7cebaaf801a90a04e1f15123d29de61c1
+    # Re-pinned 2026-11-10: c5c5dea7 -> 1209fb6b (main). stop-slop, the de-slop pass muster-author
+    # follows, is unchanged; the five commits only add design skills vendored from other repos.
+    ref: 1209fb6b07b8acc54ec5b1fcb0f1326df0e668f1
     license: Apache-2.0
     relation: inspired-by
     fetch: false

@@ -4,17 +4,17 @@ title: Email Newsletter
 match: [newsletter, email newsletter, email digest, weekly roundup, broadcast email]
 upstream:
   - repo: coreyhaines31/marketingskills
-    ref: null
+    ref: 8a3bde8083bd121971f61cba4bdbe5fd8c0eee7d
     path: null
     license: MIT
     relation: inspired-by
   - repo: CosmoBlk/email-marketing-bible
-    ref: null
+    ref: 962648c1b147652244c4e4953e96c65421a79e70
     path: null
     license: MIT
     relation: inspired-by
   - repo: AgriciDaniel/claude-email
-    ref: null
+    ref: 182270a0bbcd9c710713cbff4b7ce8475f5964f9
     path: null
     license: MIT
     relation: inspired-by
@@ -43,8 +43,8 @@ phases:
   - { id: intake,                  role: brainstorm,    desc: "audience, goal, one theme, CTA; resolve the target audience to a named profile in docs/profiles/AUDIENCES.md (create/extend the profile on first use)" }
   - { id: curate,                  role: docs-research, desc: "gather items, links, and insights worth sending; cross-run diff: load persisted baseline at docs/newsletter/signal-baseline.md (create-on-first-run if absent); report ONLY new or materially-changed signals vs baseline — unchanged signals get one summary count line, not re-reporting; append this run's reported signals with dates to the baseline file" }
   - { id: draft,                   role: author,        desc: "draft: strong open, scannable body, single clear CTA; resolve the voice profile in docs/profiles/VOICE.md and layer its register/rhythm on top of the audience profile's depth/jargon (the two compose)" }
-  - { id: subject-lines,           role: author,        desc: "5+ subject lines: vary length (<=50 chars mobile), casing, curiosity type (number/question/personal); preview text <=37 chars; spam-trigger check; tournament-judge top 2" }
-  - { id: deliverability-preflight, role: author,       desc: "no ALL-CAPS/multi-! subject; no spam words (FREE, ACT NOW, $$$); plain-text version; unsubscribe link; consistent from-name; inbox-placement note" }
+  - { id: subject-lines,           role: author,        desc: "5+ subject lines: vary length (<=50 chars mobile), casing, curiosity type (number/question/personal); preview text <=37 chars; spam-trigger check; keep the top 2 by best-of-N (a fresh-context judge scores each, `muster pick` ranks the scored rows)" }
+  - { id: deliverability-preflight, role: author,       desc: "no ALL-CAPS/multi-! subject; no spam words (FREE, ACT NOW, $$$); plain-text version; unsubscribe link; consistent from-name; SPF, DKIM and DMARC aligned; RFC 8058 one-click unsubscribe plus a physical address; preview text adds information rather than repeating the subject; offer facts (price, deadline, code) identical in email and landing page; hold a broad send while the complaint rate is at or above 0.1%; inbox-placement note" }
   - { id: review,                  role: code-review,   desc: "adversarial review + deliverability check" }
   - { id: score,                   role: score,         desc: "score vs rubric, apply floor principle" }
   - { id: humanize, role: humanize,     desc: "final pass: strip AI tells (em-dashes, banned words, robotic cadence) for human delivery" }

@@ -34,11 +34,16 @@ upstream:
     path: prompts/Humanizer Pro.md
     license: NONE
     relation: inspired-by
-  - repo: ibelick/ui-skills
-    ref: 97dea9e747ea94d5671ef1468cbb8f9bd5f32542
-    path: skills/improve-ui/SKILL.md
+  - repo: hardikpandya/stop-slop
+    ref: 8da1f030185bdfe8471220585162991eaeb970e9
+    path: SKILL.md
     license: MIT
-    relation: inspired-by
+    relation: adapted
+  - repo: petergyang/no-ai-slop
+    ref: 000650b156983f5159695b441477f4e63b25dc85
+    path: skills/no-ai-slop/SKILL.md
+    license: MIT
+    relation: adapted
   - kind: person
     title: "Unlock AI: Open Engine and Open Skills"
     author: Nate B. Jones

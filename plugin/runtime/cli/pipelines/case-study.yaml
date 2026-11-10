@@ -4,17 +4,17 @@ title: Customer Case Study
 match: [case study, customer story, success story, testimonial]
 upstream:
   - repo: coreyhaines31/marketingskills
-    ref: null
+    ref: 8a3bde8083bd121971f61cba4bdbe5fd8c0eee7d
     path: null
     license: MIT
     relation: inspired-by
   - repo: CosmoBlk/email-marketing-bible
-    ref: null
+    ref: 962648c1b147652244c4e4953e96c65421a79e70
     path: null
     license: MIT
     relation: inspired-by
   - repo: AgriciDaniel/claude-email
-    ref: null
+    ref: 182270a0bbcd9c710713cbff4b7ce8475f5964f9
     path: null
     license: MIT
     relation: inspired-by

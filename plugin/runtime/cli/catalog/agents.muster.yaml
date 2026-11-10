@@ -50,14 +50,14 @@
 - id: intent-wren
   kind: agent
   roles: [frontend]
-  rank: 46
+  rank: 38
   keywords: [flows, wireframing, microcopy, ia]
   description: "Experience design: flows, IA, screens and UI copy."
   provenance: { license: CC0-1.0, upstream: [ghaida/intent] }
 - id: intent-vigil
   kind: agent
   roles: [frontend]
-  rank: 45
+  rank: 37
   keywords: [evaluation, heuristic, wcag, resilience]
   description: "UX evaluation: heuristics, edge cases, WCAG 2.2."
   provenance: { license: CC0-1.0, upstream: [ghaida/intent] }
@@ -85,7 +85,7 @@
 - id: intent-noor
   kind: agent
   roles: [plan, frontend]
-  rank: 26
+  rank: 23
   keywords: [ethics, darkpattern, engagement, orientation]
   description: "UX engagement lead: context, ethics and routing."
   provenance: { license: CC0-1.0, upstream: [ghaida/intent] }

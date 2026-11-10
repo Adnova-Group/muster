@@ -35,7 +35,7 @@ Every non-vendored source, generated from the manifest. Each row lists the items
 
 | Source | License | Basis for | Relation |
 | --- | --- | --- | --- |
-| [pbakaus/impeccable](https://github.com/pbakaus/impeccable) @ `32930818a109` | Apache-2.0 | `design`, `audit-pattern-design-ux` | inspired-by |
+| [pbakaus/impeccable](https://github.com/pbakaus/impeccable) @ `035c8f319edd` | Apache-2.0 | 25 vendored builtins and agents | inspired-by, adapted |
 | [obra/superpowers](https://github.com/obra/superpowers) @ `22f0b463e7a5` | MIT | 21 vendored builtins and agents | adapted, vendored |
 | [wshobson/agents](https://github.com/wshobson/agents) @ `9c61ab243def` | MIT | 88 vendored builtins and agents | adapted, vendored |
 | [open-gsd/gsd-core](https://github.com/open-gsd/gsd-core) @ `9385f4618b52` | MIT | 40 vendored builtins and agents | adapted, vendored |
@@ -45,24 +45,26 @@ Every non-vendored source, generated from the manifest. Each row lists the items
 | [skovalik/perception-first-design](https://github.com/skovalik/perception-first-design) @ `1704ff61c188` | CC-BY-SA-4.0 | 40 vendored builtins and agents | vendored, adapted |
 | [open-gsd/gsd-core](https://github.com/open-gsd/gsd-core) @ `1c352d1ea37b` | MIT | `muster-gsd-plan-phase`, `muster-gsd-execute-phase`, `muster-gsd-verify-work` | mechanism-port |
 | [wshobson/agents](https://github.com/wshobson/agents) @ `2de74ac1c8f6` | MIT | `wsh-signed-audit-trails-recipe` | mechanism-port |
-| [blader/humanizer](https://github.com/blader/humanizer) @ `1b48564898e9` | MIT | `muster-humanizer` | adapted |
-| [rudra496/StealthHumanizer](https://github.com/rudra496/StealthHumanizer) @ `1aacbda6e2f6` | MIT | `muster-humanizer` | adapted |
-| [conorbronsdon/avoid-ai-writing](https://github.com/conorbronsdon/avoid-ai-writing) @ `500ff59006f1` | MIT | `muster-humanizer` | adapted |
+| [blader/humanizer](https://github.com/blader/humanizer) @ `b48c832f0f80` | MIT | `muster-humanizer` | adapted |
+| [rudra496/StealthHumanizer](https://github.com/rudra496/StealthHumanizer) @ `8b0e90874c61` | MIT | `muster-humanizer` | adapted |
+| [conorbronsdon/avoid-ai-writing](https://github.com/conorbronsdon/avoid-ai-writing) @ `30971f1c50c6` | MIT | `muster-humanizer` | adapted |
 | [jalaalrd/anti-ai-slop-writing](https://github.com/jalaalrd/anti-ai-slop-writing) @ `63255f9bbb75` | NONE | `muster-humanizer` | inspired-by |
 | [aaaronmiller/humanize-writing](https://github.com/aaaronmiller/humanize-writing) @ `c07a2a8dab1f` | MIT | `muster-humanizer` | adapted |
 | [linexjlin/GPTs](https://github.com/linexjlin/GPTs) @ `3adfb7b38423` | NONE | `muster-humanizer` | inspired-by |
-| [hermes-labs-ai/lintlang](https://github.com/hermes-labs-ai/lintlang) @ `dd1723864381` | Apache-2.0 | `muster-prompt-smith` | mechanism-port |
-| [promptfoo/promptfoo](https://github.com/promptfoo/promptfoo) @ `3901d3949df3` | MIT | `muster-prompt-smith` | inspired-by |
+| [hardikpandya/stop-slop](https://github.com/hardikpandya/stop-slop) @ `8da1f030185b` | MIT | `muster-humanizer` | adapted |
+| [petergyang/no-ai-slop](https://github.com/petergyang/no-ai-slop) @ `000650b15698` | MIT | `muster-humanizer` | adapted |
+| [hermes-labs-ai/lintlang](https://github.com/hermes-labs-ai/lintlang) @ `645f57879ff5` | Apache-2.0 | `muster-prompt-smith` | mechanism-port |
+| [promptfoo/promptfoo](https://github.com/promptfoo/promptfoo) @ `8569e72ed6cf` | MIT | `muster-prompt-smith` | inspired-by |
 | [shobrook/promptimal](https://github.com/shobrook/promptimal) @ `e03cbc1db19c` | MIT | `muster-prompt-smith` | inspired-by |
-| [gepa-ai/gepa](https://github.com/gepa-ai/gepa) @ `92dadfffbe98` | MIT | `muster-prompt-smith` | inspired-by |
-| [felipelobomotta-blip/book-genesis-studio](https://github.com/felipelobomotta-blip/book-genesis-studio) @ `a43a429bdec1` | MIT | `book`, `muster-scorer` | mechanism-port, inspired-by |
+| [gepa-ai/gepa](https://github.com/gepa-ai/gepa) @ `ce5b0d6e3d6a` | MIT | `muster-prompt-smith` | inspired-by |
+| [felipelobomotta-blip/book-genesis-studio](https://github.com/felipelobomotta-blip/book-genesis-studio) @ `c2fc628fd5d1` | MIT | `book`, `muster-scorer` | mechanism-port, inspired-by |
 | [NousResearch/autonovel](https://github.com/NousResearch/autonovel) @ `d165f267a0ff` | NONE | `book` | inspired-by |
 | [CSHaitao/Awesome-LLMs-as-Judges](https://github.com/CSHaitao/Awesome-LLMs-as-Judges) @ `d89ed4241b81` | NONE | `muster-scorer` | inspired-by |
 | [llm-as-a-judge/Awesome-LLM-as-a-judge](https://github.com/llm-as-a-judge/Awesome-LLM-as-a-judge) @ `ad3b4ce1d869` | NONE | `muster-scorer` | inspired-by |
-| [microsoft/LLM-Rubric](https://github.com/microsoft/LLM-Rubric) @ `70d56fc4e9a2` | MIT | `muster-scorer` | inspired-by |
-| [assafelovic/gpt-researcher](https://github.com/assafelovic/gpt-researcher) @ `409b8b60b477` | Apache-2.0 | `muster-research` | inspired-by |
+| [microsoft/LLM-Rubric](https://github.com/microsoft/LLM-Rubric) @ `030ab161e5af` | MIT | `muster-scorer` | inspired-by |
+| [assafelovic/gpt-researcher](https://github.com/assafelovic/gpt-researcher) @ `597a99e2ef87` | Apache-2.0 | `muster-research` | inspired-by |
 | [mbzuai-nlp/qraft](https://github.com/mbzuai-nlp/qraft) @ `3bbea66c832d` | NONE | `muster-research` | inspired-by |
-| [damusix/atomic-claude](https://github.com/damusix/atomic-claude) | MIT | `muster-surgeon`, `muster-reviewer`, `muster-investigator`, `muster-strategist`, `muster-improver`, `improve`, `muster` | inspired-by |
+| [damusix/atomic-claude](https://github.com/damusix/atomic-claude) @ `b4ca195cae60` | MIT | `muster-surgeon`, `muster-reviewer`, `muster-investigator`, `muster-strategist`, `muster-improver`, `improve`, `muster` | inspired-by |
 | [obra/superpowers](https://github.com/obra/superpowers) @ `d884ae04edeb` | MIT | `muster-runner` | mechanism-port |
 | [wshobson/agents](https://github.com/wshobson/agents) @ `511f8345cf42` | MIT | `muster-runner` | mechanism-port |
 | [VoltAgent/awesome-claude-code-subagents](https://github.com/VoltAgent/awesome-claude-code-subagents) @ `14bbcf5d984c` | MIT | `muster-runner` | mechanism-port |
@@ -72,24 +74,24 @@ Every non-vendored source, generated from the manifest. Each row lists the items
 | [hesreallyhim/awesome-claude-code](https://github.com/hesreallyhim/awesome-claude-code) @ `957922fca4cc` | CC-BY-NC-ND-4.0 | `muster-runner` | inspired-by |
 | [deanpeters/product-manager-prompts](https://github.com/deanpeters/product-manager-prompts) @ `418049a64858` | CC-BY-NC-SA-4.0 | `prd`, `epic` | inspired-by |
 | [deanpeters/Product-Manager-Skills](https://github.com/deanpeters/Product-Manager-Skills) @ `70fb6c4e4163` | CC-BY-NC-SA-4.0 | `prd`, `epic`, `user-story`, `launch-plan` | inspired-by |
-| [phuryn/pm-skills](https://github.com/phuryn/pm-skills) @ `d384f0c9eb81` | MIT | `user-story`, `launch-plan`, `prd` | inspired-by |
-| [anthropics/knowledge-work-plugins](https://github.com/anthropics/knowledge-work-plugins) @ `ca4618669075` | Apache-2.0 | `prd` | inspired-by |
+| [phuryn/pm-skills](https://github.com/phuryn/pm-skills) @ `9af7bfd0bc47` | MIT | `user-story`, `launch-plan`, `prd` | inspired-by |
+| [anthropics/knowledge-work-plugins](https://github.com/anthropics/knowledge-work-plugins) @ `e605d8ddbfb6` | Apache-2.0 | `prd` | inspired-by |
 | [joelparkerhenderson/objectives-and-key-results](https://github.com/joelparkerhenderson/objectives-and-key-results) @ `f7269521672a` | NONE | `okrs` | inspired-by |
 | [architecture-decision-record/architecture-decision-record](https://github.com/architecture-decision-record/architecture-decision-record) @ `a36c53f49517` | CC-BY-NC-SA-4.0 | `ai-implementation-spec` | inspired-by |
-| [adr/madr](https://github.com/adr/madr) @ `8cb64d7e8a85` | MIT OR CC0-1.0 | `ai-implementation-spec` | inspired-by |
-| [olivierlacan/keep-a-changelog](https://github.com/olivierlacan/keep-a-changelog) @ `37364f7ae516` | MIT | `release-notes` | inspired-by |
+| [adr/madr](https://github.com/adr/madr) @ `ba75bb1b20d4` | MIT OR CC0-1.0 | `ai-implementation-spec` | inspired-by |
+| [olivierlacan/keep-a-changelog](https://github.com/olivierlacan/keep-a-changelog) @ `08d0df5a7e93` | MIT | `release-notes` | inspired-by |
 | [gcamilo/management-consulting](https://github.com/gcamilo/management-consulting) @ `dd2d099dc390` | MIT | `executive-summary` | inspired-by |
 | [reasoncommons/issuetrees](https://github.com/reasoncommons/issuetrees) @ `56ad78e0ce78` | NONE | `executive-summary` | inspired-by |
 | [cdeust/ai-prd-generator](https://github.com/cdeust/ai-prd-generator) @ `4189d41b102d` | LicenseRef-proprietary | `prd` | inspired-by |
-| [coreyhaines31/marketingskills](https://github.com/coreyhaines31/marketingskills) | MIT | `competitive-battlecard`, `lead-magnet`, `case-study`, `newsletter` | inspired-by |
-| [CosmoBlk/email-marketing-bible](https://github.com/CosmoBlk/email-marketing-bible) | MIT | `competitive-battlecard`, `lead-magnet`, `case-study`, `newsletter` | inspired-by |
-| [AgriciDaniel/claude-email](https://github.com/AgriciDaniel/claude-email) | MIT | `competitive-battlecard`, `lead-magnet`, `case-study`, `newsletter` | inspired-by |
+| [coreyhaines31/marketingskills](https://github.com/coreyhaines31/marketingskills) @ `8a3bde8083bd` | MIT | `competitive-battlecard`, `lead-magnet`, `case-study`, `newsletter` | inspired-by |
+| [CosmoBlk/email-marketing-bible](https://github.com/CosmoBlk/email-marketing-bible) @ `962648c1b147` | MIT | `competitive-battlecard`, `lead-magnet`, `case-study`, `newsletter` | inspired-by |
+| [AgriciDaniel/claude-email](https://github.com/AgriciDaniel/claude-email) @ `182270a0bbcd` | MIT | `competitive-battlecard`, `lead-magnet`, `case-study`, `newsletter` | inspired-by |
 | [SkeltonThatcher/run-book-template](https://github.com/SkeltonThatcher/run-book-template) @ `7014714b6021` | NONE | `runbook` | inspired-by |
-| [dastergon/awesome-sre](https://github.com/dastergon/awesome-sre) | CC0-1.0 | `runbook` | inspired-by |
-| [runbear-io/awesome-runbook](https://github.com/runbear-io/awesome-runbook) | CC0-1.0 | `runbook` | inspired-by |
+| [dastergon/awesome-sre](https://github.com/dastergon/awesome-sre) @ `e91ef69aa521` | CC0-1.0 | `runbook` | inspired-by |
+| [runbear-io/awesome-runbook](https://github.com/runbear-io/awesome-runbook) @ `d83a294e4eb6` | CC0-1.0 | `runbook` | inspired-by |
 | [Scoutflo/Scoutflo-SRE-Playbooks](https://github.com/Scoutflo/Scoutflo-SRE-Playbooks) @ `acc55da0224f` | MIT | `runbook` | inspired-by |
 | [WynterJones/CoppieGPT](https://github.com/WynterJones/CoppieGPT) @ `96fc78149f03` | NONE | `muster-author` | inspired-by |
-| [boraoztunc/skills](https://github.com/boraoztunc/skills) @ `c5c5dea7ceba` | Apache-2.0 | `muster-author` | inspired-by |
+| [boraoztunc/skills](https://github.com/boraoztunc/skills) @ `1209fb6b07b8` | Apache-2.0 | `muster-author` | inspired-by |
 
 ### Works
 

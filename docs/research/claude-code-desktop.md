@@ -11,6 +11,11 @@ code.claude.com (Claude Code docs moved off docs.claude.com to a dedicated host;
 the Mintlify-generated tree serves raw markdown at `/docs/en/<page>.md` and an index
 at `/docs/llms.txt`) [src: llms-index]. [OBSERVED]
 
+Currency (2026-11-10): §1–§11 were read on 2026-07-16. **§12 refreshes the Code tab
+through Desktop v4.23118.1 (2026-11-09, bundled Claude Code 2.1.321)**, covering the new
+Code tab, the host-fed plan box, background-only subagents, and "Plugins: not available
+in WSL sessions". Where §12 contradicts an earlier section, §12 wins.
+
 ## 1. Surface map: one engine, many shells
 
 Anthropic's own framing: "Claude Code runs the same underlying engine everywhere, but
@@ -211,7 +216,9 @@ Each cloud session has a claude.ai transcript URL derivable from
   [src: desktop]. [DOCUMENTED]
 - `ultraplan` hands a planning task from the CLI to a web session in plan mode, with
   section-level commenting in the browser and a choice to execute remotely or send
-  the plan back to the terminal [src: ultraplan]. [DOCUMENTED]
+  the plan back to the terminal [src: ultraplan]. [DOCUMENTED] **SUPERSEDED
+  (§12):** Claude Code 2.1.222 "Removed ultraplan feature"; the ultraplan page now
+  says "Anthropic has removed the Ultraplan research preview."
 
 ## 4. Shared agent loop, enumerated divergences
 
@@ -225,7 +232,7 @@ their fixes are the same across the CLI, desktop, and web" [src: desktop].
 |---|---|---|---|
 | Permission modes | all incl. `dontAsk` (CLI-only) | Manual/Accept edits/Plan/Auto; Bypass behind a Settings toggle (Pro/Max) or org policy | Accept edits/Plan/Auto; no Manual label (edits pre-approved), no Bypass (VM already sandboxed) [src: permission-modes] |
 | Mode switching | `Shift+Tab` cycle | mode selector next to send button; per-folder memory overrides `defaultMode` | dropdown on claude.ai; prompts surface in the web UI [src: permission-modes] |
-| Plan mode | terminal plan flow | plan pane; Plan choice is session-only, not remembered per folder | plan mode sessions; ultraplan review surface [src: ultraplan] |
+| Plan mode | terminal plan flow | plan pane; Plan choice is session-only, not remembered per folder; since v2.42304.0 a pinned plan box fed by the host's `mcp__ccd_turn__update_plan` (§12.2) | plan mode sessions (ultraplan removed in 2.1.222, §12) [src: ultraplan] |
 | Verbosity | `--verbose` flag | Normal/Verbose/Summary transcript view modes (`Ctrl+O`) | web transcript UI [src: desktop] |
 | Scripting | `--print`, `--output-format`, Agent SDK | "Not available. Desktop is interactive only." | no headless entry; API trigger only via routines [src: desktop] [src: routines] |
 | Terminal-dialog commands | full | `/permissions` replies "isn't available in this environment"; `/config` opens Settings GUI and ignores arguments | `/clear` unavailable; `/model`, `/effort`, `/rename` take argument forms instead of pickers [src: desktop] [src: web] |
@@ -404,7 +411,10 @@ tighten policy [src: settings]. [DOCUMENTED]
   settings note and changelog phrasing [src: settings] [src: changelog]. [GAP]
 - **Desktop data-at-rest**: `~/.claude` application data is documented for the CLI
   only; Desktop Code-tab session storage location, retention, and encryption (beyond
-  the "encrypted" env editor) are undocumented [src: claude-dir]. [GAP]
+  the "encrypted" env editor) are undocumented [src: claude-dir]. [GAP] Partly
+  filled 2026-11-10 (§12.2): a local Windows Code-tab session wrote its transcript to
+  `%USERPROFILE%\.claude\projects\<slug>\<session>.jsonl`, the CLI layout, with
+  `entrypoint: "claude-desktop"`. [OBSERVED]
 - **Web UI internals**: claude.ai/code's client is undocumented; only the VM
   environment, proxies, and lifecycle are specified [src: web]. [GAP]
 - **Dispatch internals** live in support-center articles, not the developer docs
@@ -412,7 +422,10 @@ tighten policy [src: settings]. [DOCUMENTED]
 - **Versioning**: Desktop feature gates cite two different version schemes
   ("Claude Desktop v1.2581.0" for panes, "desktop app version 1.13576.0" for
   artifacts), neither aligned with CLI 2.1.x — no published Desktop changelog maps
-  them [src: desktop] [src: artifacts]. [OBSERVED]
+  them [src: desktop] [src: artifacts]. [OBSERVED] **RESOLVED (§12):** the Desktop
+  changelog at claude.com/docs/cowork/changelog now heads each release with
+  "Bundled Claude Code version: 2.1.x" (v4.23118.1, 2026-11-09: 2.1.321), and
+  `/status` in a local session shows the Code tab's Claude Code version.
 - **No headless Desktop**: scripting/automation is explicitly CLI-only; there is no
   documented programmatic way to drive Desktop or claude.ai/code sessions other
   than routines' API trigger [src: desktop] [src: routines]. [DOCUMENTED]
@@ -438,6 +451,180 @@ surface including cloud VMs [src: web]. [DOCUMENTED]
 | claude.ai connectors + org tool policy | external-tool access with central auth | muster capability-detection should probe `/mcp` state rather than assume `.mcp.json` is the world; respect `ask`/`blocked` verdicts [src: mcp] | org per-tool `ask`/`blocked` is hard enforcement (survives bypass mode) | connectors vanish whenever API-key/gateway auth is active; in cloud they arrive host-injected and client kill-switches don't apply [src: mcp] |
 | `--cloud` / `--teleport` / Continue-in | moving work between placements | muster dispositions can offload long runs cloudward and teleport results back into the local review flow [src: web] | advisory workflow | CLI→web is one-way except via Desktop's Continue-in; teleport demands clean tree, pushed branch, same account [src: web] [src: desktop] |
 | `ide` MCP bridge pattern | shell capabilities as MCP tools | precedent for muster tooling: expose orchestration state via MCP, keep UI RPC off the model's tool list [src: vscode] | pattern, not a hook point (server name `ide` and `Claude Preview`/`Claude Browser` are reserved) [src: changelog] | loopback `ws://` + lock-file auth; hidden from `/mcp`; PreToolUse hooks still see `mcp__ide__*` calls [src: vscode] |
+
+## 12. Code tab refresh: v2.42304.0 to v4.23118.1 (2026-10-15 to 2026-11-09)
+
+Added 2026-11-10. Sources: the Desktop changelog (raw markdown at
+`claude.com/docs/cowork/changelog.md`), and `code.claude.com/docs/en/desktop.md` and
+`desktop-wsl.md`, all fetched 2026-11-10. One local Code-tab session transcript was
+inspected read-only on 2026-11-10. Quotes are verbatim. Where these sources say
+nothing, this section writes "not stated in docs". The CLI-side changes live in
+claude-code-cli.md §13. [src: desktop-changelog] [src: desktop] [src: desktop-wsl]
+
+### 12.1 Version map
+
+Each Desktop release now names its bundled engine, which closes the §10 versioning gap:
+
+| Desktop | Date | "Bundled Claude Code version" |
+|---|---|---|
+| v4.23118.1 | 2026-11-09 | 2.1.321 |
+| v4.23118.0 | 2026-11-05 | 2.1.317 |
+| v4.16336.0 | 2026-11-03 | 2.1.317 |
+| v4.4212.0 | 2026-10-29 | 2.1.309 |
+| v4.29.0 | 2026-10-27 | 2.1.309 |
+| v3.6556.1 / v3.6556.2 | 2026-10-22 | 2.1.308 |
+| v3.1623.4 | 2026-10-22 | 2.1.308 |
+| v3.1623.1 | 2026-10-21 | 2.1.304 |
+| v3.1623.0 | 2026-10-20 | 2.1.304 |
+| v2.42304.0 | 2026-10-15 | 2.1.299 |
+
+desktop.md: "To see which version of Claude Code a session runs, type `/status` in a
+local session in the **Code** tab and read the **Claude Code** row". A Desktop session
+can therefore trail the CLI by a release or two (2.1.321 bundled vs 2.1.322 latest on
+2026-11-10). [DOCUMENTED] [src: desktop-changelog] [src: desktop]
+
+### 12.2 The new Code tab and Claude's plan box
+
+- **First-party, v2.42304.0 (2026-10-15)**, every item marked "(not yet in third-party
+  deployments)". It added: "a session rail to the right of the conversation, with cards
+  including the session's environment, context, connectors, outputs, changes, servers,
+  and background tasks"; environments ("save a folder, SSH host, cloud environment, or
+  Remote Control machine"); "nested sessions in local and SSH sessions: Claude can start
+  a task in a separate session, which appears under the original session in the
+  sidebar and reports back to it"; and "a box at the end of the conversation in local
+  and SSH sessions that shows Claude's plan while it works. When a turn ends, the box
+  can show a short recap with buttons for what to do next". It also changed `/btw` to
+  open a side-chat pane and moved permission requests and questions into the
+  conversation. [DOCUMENTED] [src: desktop-changelog]
+- **Third-party, v3.1623.0 (2026-10-20)**, under its **3P** heading: "Added the new
+  Code tab", "Added to Code tab sessions Claude's plan and a next-step box at the end
+  of a turn", nested sessions, and "Changed subagents in Code tab sessions to run in the
+  background even when Claude asks for the foreground, so they keep running after Stop;
+  Claude can also now start a fork of the conversation as a subagent". [DOCUMENTED]
+  [src: desktop-changelog]
+- **How the plan box is fed: not stated in docs** (desktop.md does not mention it). The
+  inspected transcript answers it. [OBSERVED] [src: desktop-transcript-2026-11-10]
+  - The session ran with `entrypoint: "claude-desktop"`, `version: "2.1.321"`, model
+    `claude-fable-5-2`.
+  - The host injects two MCP servers into the engine. `ccd_turn` carries
+    `update_plan` and `wrap_up`; `ccd_session` carries `dismiss_task`,
+    `hand_off_to_session`, `mark_chapter` and `read_widget_context`.
+  - The model made six `mcp__ccd_turn__update_plan` calls and one
+    `mcp__ccd_turn__wrap_up` call. It made no TaskCreate or TodoWrite calls, and the
+    tool definitions it received contained no Task tools.
+  - `update_plan`'s description opens "Keep the task list the app shows under your
+    latest message while you work. Every request that edits files or runs more than one
+    command gets one (implement-and-test, investigate-then-fix, anything the user
+    listed); only a single-command answer or pure conversation does not." It tells the
+    model to send the call "IN THE SAME MESSAGE as another tool call (in parallel), so
+    it costs no extra round trip", and adds: "Do not also write the plan as a numbered
+    list in your message: the pinned list is the plan."
+  - `wrap_up` will "Fill the \"next step\" box the app shows at the end of your turn"
+    with a `recap`, an optional `ask` and `actions` buttons, and "also checks off the
+    task list".
+  - This is the same shell-capabilities-as-MCP pattern as the reserved
+    `Claude Preview`/`Claude Browser` servers (§2.4). [INFERRED]
+- **Consequence for task tracking.** Claude Code 2.1.268 offers TaskCreate/TodoWrite by
+  default only on Opus 4.7, Sonnet 4.6, Haiku 4.5 and earlier (claude-code-cli.md §13.6).
+  So on Opus 5.5, Sonnet 5.5 or Fable 5.2, the checklist a Desktop user sees in a local
+  or SSH session is this host list, not the engine's task board. It exists only where
+  Desktop injects `ccd_turn`. Whether WSL sessions get it is not stated in docs; the
+  changelog names local and SSH sessions only. [DOCUMENTED/OBSERVED]
+
+### 12.3 Background work and subagents
+
+- desktop.md: "The tasks pane shows the background work running inside the current
+  session: subagents, background shell commands, and dynamic workflows. Once the
+  session has background work, open the pane with **Background tasks** in the title
+  bar's **⋮** menu." Earlier, v1.12603.1 (2026-06-11): "Added a running-tasks button to
+  the activity indicator that opens the Tasks panel". [DOCUMENTED] [src: desktop]
+  [src: desktop-changelog]
+- Claude Code 2.1.302: "Changed the desktop app and VS Code to always run the main
+  conversation's subagents in the background, as the terminal does, rather than let
+  Claude choose; a subagent's own Agent calls in `claude -p`, the Agent SDK, the
+  desktop app and VS Code now run in the foreground by default". A muster flow that
+  dispatches Agent calls in Desktop must therefore expect completion notifications,
+  not inline results. [DOCUMENTED/INFERRED] [src: changelog]
+- Workflows run in Desktop. docs/workflows: "In the Desktop app, an approval card
+  shows the workflow name, the phase list, and a token-usage caution, with **Once**,
+  **Always**, and **Deny** actions. The progress view appears in the Background tasks
+  side pane." desktop.md, for SSH: "Desktop checks each new workflow before it starts,
+  so while Desktop is disconnected a new one waits up to 10 minutes and then fails".
+  [DOCUMENTED] [src: desktop]
+- v4.16336.0 (2026-11-03): "Fixed local and WSL Code sessions that stopped when the app
+  quit or restarted for an update. When you return to one within a day, the app sends
+  one automatic message, shown as yours, asking Claude to continue." [DOCUMENTED]
+  [src: desktop-changelog]
+- Agent teams are still CLI-only. desktop.md: "For multi-agent work inside one session,
+  use dynamic workflows, which run in Desktop". [DOCUMENTED] [src: desktop]
+
+### 12.4 Plugins, and their absence in WSL sessions
+
+- desktop-wsl.md, under "What works in a WSL session": "**Plugins**: not available in
+  WSL sessions". Same page: the terminal and connectors may also be missing, and with a
+  third-party provider "WSL sessions don't get the terminal or connectors". §2.3
+  already listed plugins among the WSL gaps, but for muster this is now the gap that
+  matters most. A Desktop WSL session loads no plugin skills, commands, hooks, agents
+  or workflows, so `/muster:*` does not exist there. [DOCUMENTED] [src: desktop-wsl]
+- Plugins do load in local and SSH sessions. desktop.md: "In a local session or an SSH
+  session, click **+** next to the prompt box and select **Add plugins**". For SSH,
+  Desktop copies them: `~/.claude/remote/plugins/` holds "Plugins that Desktop copies
+  from the user's computer". The plugin browser "is not available in cloud sessions,
+  and plugins you install from the desktop app aren't available for cloud sessions".
+  [DOCUMENTED] [src: desktop]
+- v4.23118.0 (2026-11-05): "Added a confirmation before you add, upload or turn on a
+  plugin that your organization didn't provide." v3.6556.1 (2026-10-22) fixed
+  marketplace-folder plugins "having no Settings tab on their page in Customize, so
+  Code tab sessions ran them without the values they ask for". That Settings tab is
+  where Desktop keeps plugin `userConfig` values. [DOCUMENTED] [src: desktop-changelog]
+- v4.23118.1 (2026-11-09): "Changed tool calls made by a plugin's own code (a mod),
+  rather than by Claude, to never show an approval card." [DOCUMENTED]
+  [src: desktop-changelog]
+
+### 12.5 Hooks on Windows without Git for Windows
+
+- v2.42304.0 (3P): "Changed what a failed `PreToolUse` hook does on Windows computers
+  without Git for Windows: if it sets none of `shell`, `args`, or `onFailure`, it now
+  blocks the tool call." [DOCUMENTED] [src: desktop-changelog]
+- v4.16336.0: "Changed a `PreToolUse` or `PermissionRequest` hook whose command is only
+  a quoted path or string, with no `shell`, `args` or `"onFailure": "continue"`, to
+  block calls on PCs without Git for Windows." v4.29.0 does the same for
+  `"shell": "powershell"` hooks "unless it sets `args` or `"onFailure": "continue"`".
+  [DOCUMENTED] [src: desktop-changelog]
+- Claude Code 2.1.299 states the engine side: "Fixed PreToolUse and PermissionRequest
+  hooks that set no shell failing open when Git for Windows isn't installed; a guard
+  that fails now blocks the call." So a shell-form plugin hook is not fail-open on such
+  a PC. Exec form (`args`) runs without a shell. [DOCUMENTED] [src: changelog]
+
+### 12.6 Other Code-tab changes that touch muster
+
+- Worktrees, v4.16336.0: "Claude Desktop no longer runs git's `post-checkout` hook when
+  it makes a worktree; Claude Code's own worktrees run none either. `pre-commit` and
+  other hooks still run for commits there." v4.23118.1 fixed project "skills, commands
+  and agents that a worktree lacks, such as files git does not track, disappearing from
+  the menu after Claude entered that worktree". [DOCUMENTED] [src: desktop-changelog]
+- Skills and sandbox, v4.23118.1: "Changed skills in a subfolder's `.claude/skills`
+  folder to no longer load during a session when Claude Code's sandbox is on."
+  [DOCUMENTED] [src: desktop-changelog]
+- Cross-session work. desktop.md: "Claude can list your other Code tab sessions, read
+  what each has been doing, and send messages between them". It sees "only the sessions
+  the desktop app runs itself: local, SSH, and WSL sessions in the Code tab", and "By
+  default it sees the 20 most recently active sessions". [DOCUMENTED] [src: desktop]
+- Environment passing, v4.29.0: SSH and WSL sessions take most `CLAUDE_*`,
+  `ANTHROPIC_*` and `DISABLE_*` "settings, on/off values and numbers" from the
+  computer's environment, while "most other text … goes only if saved under
+  Environment variables". [DOCUMENTED] [src: desktop-changelog]
+- Managed settings: v4.23118.0 added `disableDesktopLocalSessions` ("turns off Code
+  sessions that run on the device, WSL included") and `disableWslSessions` (MDM only).
+  [DOCUMENTED] [src: desktop-changelog]
+
+### 12.7 Updates to §11 (augmentation surfaces)
+
+| Native primitive | How muster can ride it | Caveat |
+|---|---|---|
+| Desktop plan box (`mcp__ccd_turn__update_plan` / `wrap_up`) | In a Desktop local or SSH session the host already asks the main thread to keep a pinned step list. muster's run stages (preflight, plan, approval, build, merge, verify) can be those items, so the visible checklist matches the run directory. | Host-specific tool names. Absent in the CLI and cloud sessions; for WSL sessions, not stated. Never required: `muster next --run` stays the record. |
+| Background-only subagents | Workflow scripts are unaffected because the script awaits its own agents. The prose fallback must treat Agent results as asynchronous. | Desktop ignores a foreground request. |
+| Plugins in WSL sessions | None: muster is unavailable there. Recommend a local or SSH session, or the CLI inside WSL. | Documented limitation; the docs give no workaround. |
 
 ## Sources
 
@@ -465,3 +652,5 @@ surface including cloud VMs [src: web]. [DOCUMENTED]
 - ultraplan: [Plan in the cloud with ultraplan](https://code.claude.com/docs/en/ultraplan) — CLI hands planning to a web session in plan mode; section-level browser comments; execute remotely or return to terminal.
 - corporate-launcher: [Run Claude Code behind a corporate launcher](https://code.claude.com/docs/en/corporate-launcher) — processes started from the Claude Code binary, "including the background service and every agent view session", can be routed through `CLAUDE_CODE_PROCESS_WRAPPER`/`processWrapper`.
 - changelog: [Claude Code changelog](https://code.claude.com/docs/en/changelog) — "SDK hosts (e.g. Claude Desktop)"; reserved "Claude Browser"/"Claude Preview" MCP server names for the Desktop pane; VS Code `claudeCode.claudeProcessWrapper`; Manual-mode rename across surfaces; desktop/Remote-Control fixes evidencing shared engine plumbing.
+- desktop-changelog: [Claude Desktop changelog](https://claude.com/docs/cowork/changelog), fetched 2026-11-10 as raw markdown (`/docs/cowork/changelog.md`); newest v4.23118.1 (2026-11-09, "Bundled Claude Code version: 2.1.321"); v2.42304.0 new Code tab and plan box; v3.1623.0 3P parity and background subagents; v4.16336.0 / v4.29.0 / v2.42304.0 Windows hook-failure changes.
+- desktop-transcript-2026-11-10: read-only inspection of one Desktop Code-tab local session transcript on Windows (`%USERPROFILE%\.claude\projects\<slug>\<session>.jsonl`), 2026-11-10: `entrypoint: "claude-desktop"`, `version: "2.1.321"`, model `claude-fable-5-2`; host MCP servers `ccd_turn` and `ccd_session`; six `update_plan` calls, one `wrap_up`, no Task tools. Project content not reproduced.

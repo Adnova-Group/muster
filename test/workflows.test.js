@@ -339,6 +339,25 @@ test("make-plan: escalates when the issue count stops falling", async () => {
   assert.equal(result.issues.length, 2);
 });
 
+test("make-plan: a same-size set of issues in new dimensions is progress, not a stall", async () => {
+  // Live e2e 2026-11-10: r0 one warning (verify_command_sanity), r1 one different warning
+  // (malicious_implementer). The first was fixed; counting alone escalated a sound plan.
+  const warn = (dimension) => ({ verdict: "ISSUES", issues: [{ dimension, severity: "warning", summary: dimension }] });
+  const rounds = [warn("verify_command_sanity"), warn("malicious_implementer")];
+  const { result, calls } = await run("make-plan.js", { runId: "p9", outcome: "x" }, (label) => {
+    if (label.startsWith("plan")) return planned;
+    return rounds.shift() || { verdict: "PASS", issues: [] };
+  });
+  assert.equal(result.verdict, "PASS");
+  assert.equal(result.revisions, 2);
+  assert.match(calls.find((c) => c.opts.label === "plan r2").prompt, /malicious_implementer/);
+  // The same dimension coming back at the same count is still a stall.
+  const again = [warn("malicious_implementer"), warn("malicious_implementer")];
+  const { result: stalled } = await run("make-plan.js", { runId: "p10", outcome: "x" }, (label) => (label.startsWith("plan") ? planned : again.shift()));
+  assert.equal(stalled.escalated, "stall");
+  assert.equal(stalled.revisions, 1);
+});
+
 test("make-plan: escalates at the revision cap of 3", async () => {
   const counts = [9, 7, 5, 3];
   const { result, calls } = await run("make-plan.js", { runId: "p4", outcome: "x" }, (label) => (label.startsWith("plan") ? planned : checkIssues(counts.shift())));

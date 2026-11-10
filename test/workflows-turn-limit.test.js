@@ -82,8 +82,18 @@ for (const name of ["build.js", "team.js"]) {
     assert.equal(result.verification.verdict, "ABSTAIN");
   });
 
+  test(`${name}: a verification-only task (done, real commit, no files changed) is reviewed, not read as max_turns`, async () => {
+    // Live e2e 2026-11-10: a task covering only an invariant committed --allow-empty with
+    // filesChanged [] and was wiped as a turn-limited partial result, halting the wave.
+    const { result, labels } = await run(name, { runId: "r1", waves: [[task("A")]] }, (label, prompt, opts) => (label === "build A" ? exec("A", 1, { filesChanged: [] }) : happy(label, prompt, opts)));
+    const a = result.tasks[0];
+    assert.equal(a.status, "done");
+    assert.notEqual(a.reason, "max_turns");
+    assert.ok(labels.some((l) => l.startsWith("review")), "the task is reviewed");
+  });
+
   test(`${name}: a schema-valid "done" with empty evidence (a partial result) is never reviewed or passed`, async () => {
-    for (const over of [{ commit: "" }, { commit: "HEAD" }, { testsRun: [] }, { filesChanged: [] }, { branch: "" }, { worktree: " " }]) {
+    for (const over of [{ commit: "" }, { commit: "HEAD" }, { testsRun: [] }, { branch: "" }, { worktree: " " }]) {
       const { result, labels } = await run(name, { runId: "r1", waves: [[task("A")]] }, (label, prompt, opts) => (label === "build A" ? exec("A", 1, over) : happy(label, prompt, opts)));
       const a = result.tasks[0];
       assert.equal(a.status, "error", JSON.stringify(over));

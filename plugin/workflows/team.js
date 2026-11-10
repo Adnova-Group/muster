@@ -118,7 +118,8 @@ function seat(cfg, name) {
 // shape, or a done/PASS claim whose evidence is empty (EVIDENCE), is {status:'error',
 // reason:'max_turns'}: never done, never PASS. An agent that works in place is retried once;
 // an isolated builder is not, since it would start over in a fresh worktree under the same
-// cap. Whether a claimed commit exists is merge-wave's check: it can run git, this cannot.
+// cap. Whether a claimed commit exists is merge-wave's check: it can run git, this cannot. An
+// empty filesChanged is not a gap: a verification-only task commits --allow-empty (live e2e).
 const TURN_LIMIT_RE = /without calling StructuredOutput|max(imum)?[ _-]?turns|turn limit/i
 const SHA_RE = /^[0-9a-f]{7,64}$/i
 const filled = (v) => (Array.isArray(v) ? v.length > 0 : typeof v === 'string' ? v.trim() !== '' : v != null)
@@ -126,7 +127,7 @@ const gapOf = (r, keys, claim) => {
   const empty = keys.filter((k) => !filled(r[k]))
   return empty.length ? `${claim} without ${empty.join(', ')}` : ''
 }
-const execGap = (r) => (r.status !== 'done' ? '' : SHA_RE.test(String(r.commit || '')) ? gapOf(r, ['branch', 'worktree', 'filesChanged', 'testsRun'], 'done') : 'done without a commit sha')
+const execGap = (r) => (r.status !== 'done' ? '' : SHA_RE.test(String(r.commit || '')) ? gapOf(r, ['branch', 'worktree', 'testsRun'], 'done') : 'done without a commit sha')
 const reviewGap = (r) => (r.verdict === 'PASS' ? gapOf(r, ['commitReviewed', 'testsRun'], 'PASS') : '')
 // HUMAN_NEEDED (gsd's human_needed: zero gaps, items only a human can sign off) carries the
 // same evidence burden as PASS, plus the items themselves.

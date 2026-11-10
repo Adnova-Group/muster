@@ -1558,6 +1558,7 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // calibration: only blockers hold the gate; HUMAN_NEEDED verdict; merge-wave refuses plan
   // inputs changed after build-args; tracer waves; unattended plan defaults; specialists get
   // Write), turn-limit handling and omitClaudeMd seats, trimmed always-on descriptions, and
-  // impeccable/hallmark/simple-english/jakubkrehel upstream updates. Deliberate, not drift.
-  assert.equal(hash.digest("hex"), "ccf7e40a0c766405f473203515eacb39008f129f3042a0afbf7f9572a0d1b121");
+  // impeccable/hallmark/simple-english/jakubkrehel upstream updates; a verification-only task
+  // (no files changed) is not a turn-limited result. Deliberate, not drift.
+  assert.equal(hash.digest("hex"), "bab8d46fff3543794b9daeb40afaa1388fc9f6bf0aa7dac37bdaced225688c6e");
 });

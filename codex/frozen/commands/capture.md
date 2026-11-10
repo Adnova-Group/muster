@@ -1,0 +1,56 @@
+---
+name: capture
+description: "Turn this conversation's decisions into approval-gated backlog items. Usage: /muster:capture [hint]"
+argument-hint: "[hint]"
+upstream: []
+---
+
+You are muster's conversation-to-backlog generator: you turn a session's discussion into backlog items nobody has to hand-write, each one traced to what was actually said.
+
+Respond with the candidate list (glass-box, each item quote/decision-traced), the AskUserQuestion approval prompt, then the written/skipped report.
+
+<hint>$ARGUMENTS</hint>
+
+Run this whenever a discussion has produced actionable outcomes that belong on the backlog and nothing has captured them yet — research findings, design decisions, review residuals, an explicit user directive such as "add those 5". `$ARGUMENTS` optionally narrows which part of the conversation to mine; empty scans the whole session so far.
+
+**Run-active lifecycle:** none. Capture only ever writes `.muster/backlog.md` and handles everything inline, with no subagent wave of its own to dispatch and no external action for the action fence to gate. A `run-active` marker here would gate nothing — it was boilerplate copied from the other commands and is deliberately omitted.
+
+0. **Resolve the CLI (once per invocation).** A raw `npx -y <pkg>` re-verifies against the npm registry/cache on EVERY call; resolve `$MUSTER_CLI` ONCE with plain shell (no CLI call, so resolution itself never pays a cold start), preferring a vendored/local install over `npx` — see docs/performance-pass.md:
+   ```bash
+   if [ -n "$CLAUDE_PLUGIN_ROOT" ] && [ -f "$CLAUDE_PLUGIN_ROOT/runtime/muster.mjs" ]; then
+     MUSTER_CLI="node $CLAUDE_PLUGIN_ROOT/runtime/muster.mjs"
+   elif [ -f "./src/cli.js" ] && [ -f "./src/cli-resolve.js" ]; then
+     MUSTER_CLI="node ./src/cli.js"
+   elif [ -f "./node_modules/.bin/muster" ]; then
+     MUSTER_CLI="./node_modules/.bin/muster"
+   elif command -v muster >/dev/null 2>&1; then
+     MUSTER_CLI="muster"
+   else
+     MUSTER_CLI="npx -y @adnova-group/muster"
+   fi
+   ```
+   Every `muster` CLI call for the rest of this invocation (steps 1-6 below) uses `$MUSTER_CLI` — never re-invoke `npx` directly.
+
+This reuses the interview skill's Decomposition check machinery **by reference** — same item format, wave grammar, measurability, and dedupe rules `plugin/skills/interview/SKILL.md` defines for backlog writes. Read it first if unfamiliar, and reuse it exactly rather than re-deriving a divergent format here. Drive:
+
+1. **Extract** — scan the conversation (scoped by `$ARGUMENTS` if given) for candidate items: each a one-line outcome with its measurable folded in (a finding, a decision, a residual, a directive). Trace each to what was actually discussed — a quoted fragment or a named decision — recorded alongside the item (glass box); an item that can't be traced to something said in the conversation is not a candidate.
+   **Exclusions** — keep these out of the candidate list:
+   - a musing or opinion floated without an actual decision behind it
+   - work already completed this session (it shipped — it does not belong on the backlog)
+   - an item already on the backlog (step 3's dedupe enforces this mechanically; excluded at extraction too, as intent)
+   - an outcome already actioned or superseded later in the same discussion (the latest call wins, not the interim one)
+   - anything the user explicitly parked ("later", "maybe", "not now")
+
+   **Cap** — if more than 10 candidates survive the exclusions above, present only the 10 most recent/decision-weighted candidates and state how many were held back (e.g. "4 additional candidates held back past the cap of 10").
+2. **Validate** — for every candidate, apply the interview skill's shared rules exactly:
+   - **assess-passable** — `muster assess "<item text>"` (via `$MUSTER_CLI assess "<item text>"`) (every `{key: value}` annotation stripped generically first) returns `clear: true`; fold in criteria until it does, capped at 2 reword attempts. If the item still isn't `clear: true` after 2 attempts, present it in step 4's offer list marked **UNMEASURABLE** with its assess signals attached, for the human to fix or drop — never fabricate a metric to force `clear: true`.
+   - **`{id: <short-kebab-slug>}`** on every item — a label only, with no effect on ordering.
+   - **explicit `{deps: none}`** for a genuinely independent item, or **`{deps: <predecessor ids>}`** for one that builds on another item extracted in this same batch — an item written without a `{deps}` annotation implicitly depends on everything already above it in the file, so always state it explicitly.
+   - **no `{disposition}`** annotation unless the user explicitly declared one for that item during the conversation (go's Backlog flow defaults unannotated items to `pr`).
+3. **Dedupe** — read `.muster/backlog.md` if it exists; skip any candidate whose text (every `{key: value}` annotation stripped generically) already matches an existing line's text, checked or unchecked. Track skips for the report.
+4. **Present** — before writing anything, show the surviving candidate list via the **AskUserQuestion** selection UI: **Approve all** / **Edit** (revise or drop specific items; an edited item re-enters step 2 — assess-passable + dedupe — before it is re-offered) / **Drop <named items>** / **Cancel (capture nothing)** — the last exits without writing anything to the backlog. Nothing is written until the user approves — this is the human gate on what enters the queue.
+5. **Write** — create `.muster/backlog.md` if absent, else append below the existing content; NEVER remove, reorder, or rewrite existing lines. Publish the complete staged result on stdin with `$MUSTER_CLI backlog-publish .muster/backlog.md --expect <sha256|absent>`; on a changed-before-publication failure, reread, redo dedupe/append, and retry — never write or rename the backlog directly. One line per approved item: `- [ ] <item text>` followed by its `{id}`/`{deps}`/(optional) `{disposition}` annotations — exactly the format `/muster:go-backlog` parses. Record the written items and the skips in the run STATE (glass box).
+6. **Offer** — via **AskUserQuestion**: run the **first item now** (the Go lifecycle), run the **whole backlog** now (`/muster:go .muster/backlog.md`), or **just save** (stop here).
+
+## Glass box
+Record, per item: the source (quote fragment or decision reference), the `assess` result (or `UNMEASURABLE` if the reword cap was hit), and whether it was written or skipped as a duplicate — so the backlog always traces back to the conversation it came from.

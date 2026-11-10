@@ -322,15 +322,20 @@ test("native Work proof schema stays paired with its probe", async () => {
   assert.doesNotMatch(schema, /verified-absent/);
 });
 
-test("current Cowork research uses the live MCP tool count and phase-3-gated dispatch contract", async () => {
-  const manifest = JSON.parse(await read("cowork/manifest.json"));
+test("current Cowork research uses the live MCP tool count and the phase-3-gated model-override contract", async () => {
+  // The served tool count, as the Cowork README's tool table declares it (the MCPB
+  // manifest that used to carry it is retired; test/cowork.test.js pins the table to
+  // tools/list).
+  const readme = await read("cowork/README.md");
+  const table = readme.slice(readme.indexOf("| Tool | Does |"), readme.indexOf("The instructions carry muster's principles"));
+  const toolCount = new Set([...table.matchAll(/`(muster_[a-z_]+)`/g)].map((m) => m[1])).size;
   for (const path of [
     "docs/research/claude-cowork.md",
     "docs/research/reference-harness-design.md",
     "docs/strategy/native-delegation.md",
   ]) {
     const text = await read(path);
-    assert.match(text, new RegExp(`${manifest.tools.length}-tool MCP server`), `${path} must state the live Cowork tool count`);
+    assert.match(text, new RegExp(`${toolCount}-tool MCP server`), `${path} must state the live Cowork tool count`);
     assert.doesNotMatch(text, /\b21-tool MCP server\b|all twenty-one tools/i, `${path} must not present the retired count as current`);
     assert.doesNotMatch(
       text,

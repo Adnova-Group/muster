@@ -45,7 +45,7 @@ Output: [Artifacts created]
 
 <tasks>
 
-<task id="01" type="tracer" wave="1" agent_hint="wsh-backend-architect">
+<task id="01" type="tracer" wave="1" agent_hint="wsh-backend-architect" skills="wsh-nodejs-backend-patterns">
   <name>End-to-end "log in" through one path only</name>
   <files>src/routes/login.js, src/auth/session.js, test/login.e2e.test.js</files>
   <action>Wire POST /login through the session store to a signed cookie. One entry point, no
@@ -108,12 +108,18 @@ Output: [Artifacts created]
 | `autonomous` | yes | `false` when the plan has any `checkpoint:*` task. |
 | `must_haves` | yes | Goal-backward criteria: `truths`, `artifacts`, `key_links`, and optionally `prohibitions`. |
 | `tracer` | no | `false` opts out of tracer-first. Absent means tracer-first applies. |
-| `decisions` | no | `D-NN` IDs from the run's CONTEXT.md that this plan implements. Replaces gsd's `requirements`. |
+| `decisions` | no | `D-NN` IDs from the run's CONTEXT.md that this plan implements. |
+| `spec` | no | The SPEC.md this plan builds: a repo-relative path, optionally `#REF-02` (or `#REF-02,REF-03`) to scope it to some requirements. Turns on plan-lint's `spec_traceability`. See "Planning from a spec". |
+| `requirements` | no | With `spec`: the in-scope requirement IDs (`CAT-NN`) the plan delivers. gsd's field, now carrying spec IDs. |
 | `user_setup` | no | gsd's format, unchanged. |
 
 Dropped from gsd's frontmatter: `phase`, `plan` (replaced by `run`), `wave`, `depends_on`,
-`files_modified`, `agent_hint` (moved onto tasks), `requirements` (replaced by `decisions`),
-`estimate` (muster computes cost from the tier map, not a calibration file).
+`files_modified`, `agent_hint` (moved onto tasks), `estimate` (muster computes cost from the
+tier map, not a calibration file). `requirements` stays, but only for a plan built from a spec.
+
+`must_haves.truths` and `must_haves.prohibitions` entries may be strings or objects
+(`{statement, verification, ac}`); `ac` lists the spec IDs the entry stands for
+(`ac: [REF-01.1]`, `ac: [INV-01]`).
 
 ## Tasks
 
@@ -127,8 +133,10 @@ Each `<task>` is one executor dispatch in its own worktree.
 | `type` | no | `auto` (default when absent), `tracer`, `tdd`, or `checkpoint:human-verify` / `checkpoint:decision` / `checkpoint:human-action`. |
 | `wave` | yes | Integer ≥ 1. Tasks in one wave run in parallel. |
 | `depends_on` | no | Comma- or space-separated task ids. Every dependency sits in an earlier wave. |
-| `agent_hint` | no | One agent id for the executor (gsd's `agent_hint`, per task). Absent means the default executor. |
+| `agent_hint` | no | One plugin agent id from the catalog (gsd's `agent_hint`, per task), e.g. `wsh-debugger`. Absent means the default executor. A dispatchable agent (not a workflow seat, not read-only, has Bash) builds the task itself: `build-args` resolves it to the Workflow `agentType` (`muster:<frontmatter name>`, so `wsh-debugger` runs as `muster:debugging-toolkit-debugger`) and the build brief carries the executor contract. Any other id stays a domain lens in the default executor's brief. |
+| `skills` | no | Comma- or space-separated builtin skill ids (`plugin/builtins/<id>/`), e.g. `skills="sp-tdd, sp-debug"`. The builder Reads each `SKILL.md` before working and returns `skillsApplied: [{id, how, quote}]`; the reviewer checks the diff against the same skills, and not following one is a FAIL finding. `skills=""` records that the planner considered preflight's candidates and declined them. Project pins (`.muster/config`, `muster skills pin`) are appended by `build-args` to every matching task even when the plan leaves them out. |
 | `tdd` | no | `"true"` for a test-first task; pair it with `<behavior>`. |
+| `covers` | no | With frontmatter `spec`: the spec IDs this task delivers in full, space- or comma-separated (`covers="REF-01.2 INV-01"`). A requirement ID stands for each of its criteria. |
 
 ### Wave rules
 
@@ -171,6 +179,10 @@ Copied from gsd `references/failing-direction.md` and `planner-verify-command-gr
   change from it.
 - `MISSING — <test> must be created first` is gsd's Wave-0 sentinel. muster's merge step re-runs
   every verify command, so a sentinel must be replaced before its task merges; plan-lint flags it.
+- A change-set or diff gate (`git diff --name-only`, `git status --porcelain`) excludes
+  `.muster/`: the run's own PLAN.md, CONTEXT.md and build-args.json are committed on the branch.
+- `<automated proves="REF-01.2">` names the spec IDs the command proves (plans with `spec:`).
+  The attribute changes nothing else: the command and its `<fails_when>` bind as before.
 
 ### Checkpoint tasks
 
@@ -209,6 +221,10 @@ required_property, summary}]}`. Any issue makes the verdict `ISSUES`. The exit c
 issue is a blocker, 1 when at least one is, and 2 when the plan was not evaluated (missing or
 unreadable file, bad usage). Treat any exit other than 0 or 1 as "not evaluated", never as a pass.
 
+The CLI checks `agent_hint` and `skills` against the plugin catalog (`src/specialists.js`) and
+reads `preflight.json` from the PLAN.md's directory for the skill-candidate warning; `lintPlan()`
+called without `catalog` / `skillCandidates` options checks only the id shapes.
+
 `--root` (default: the current directory) anchors the filesystem probes. plan-lint is a
 pre-execution gate: it compares gates against the tree as it is when you run it, so run it before
 any task's work lands.
@@ -216,7 +232,7 @@ any task's work lands.
 | Dimension | Blocker | Warning |
 |---|---|---|
 | `plan_structure` | missing/invalid frontmatter, missing required field, truncated file, unclosed fence or `<task>`, no tasks | unknown task type |
-| `task_completeness` | missing id/name/action/verify/files, empty `<files>`, duplicate id, checkpoint fields, checkpoints with `autonomous` not false | missing `<done>`, malformed `agent_hint` |
+| `task_completeness` | missing id/name/action/verify/files, empty `<files>`, duplicate id, checkpoint fields, checkpoints with `autonomous` not false, a `skills` id that is malformed or not a builtin | missing `<done>`, malformed `agent_hint`, an `agent_hint` that is not a catalog agent or cannot execute (read-only, workflow seat), a task with no `skills` attribute when a preflight skill candidate scored ≥ 4 and matches the task's name and action |
 | `nyquist_compliance` | `<verify>` with no `<automated>`; command with missing, blank or placeholder `<fails_when>` | orphan `<fails_when>`, MISSING sentinel |
 | `verify_command_paths` | `cd`/`--prefix` target missing, or missing its manifest | dynamic path, target outside root, unreadable manifest, missing npm script |
 | `verify_command_sanity` | gate already passes at HEAD | same, with a recorded baseline |
@@ -224,7 +240,59 @@ any task's work lands.
 | `tracer_first` | | no tracer, several tracers, tracer not first, a task not after the tracer |
 | `reversibility` | | unknown rating, one-way without a preceding checkpoint:decision |
 | `threat_model` | duplicate threat ID | |
+| `spec_traceability` (only with `spec:`) | spec missing or unreadable; spec not ready; unknown `covers` / `proves` / `requirements` / `ac` ID; uncovered in-scope test, check or eval ID | judgment ID with no `checkpoint:human-verify` covering it; covered ID no `<automated proves>` names; invariant not listed as a prohibition; spec decision missing from `decisions` |
+
+`spec_traceability` also reports needs-runtime IDs as info. A plan without `spec:` never gets
+this dimension, so it lints exactly as before.
 
 plan-lint never executes plan text. The already-passing probe only evaluates commands it can
 decide by reading files (`test -f|-e|-d|-s`, `[ -f … ]`, and `grep`/`rg` of a literal pattern in
 named files); anything else is left to the checker.
+
+## Planning from a spec
+
+A run can build a SPEC.md (`docs/spec-format.md`): `/muster:plan docs/specs/<slug>/SPEC.md`,
+`…/SPEC.md#REF-02` for one requirement, or a backlog item carrying `{spec: <path>#REF-02}`.
+The design is `docs/strategy/2026-11-pm-domain-design.md` ("Plan integration").
+
+1. **Preflight** detects the spec, runs spec-lint in the same call and returns
+   `spec: {path, anchor, status, ready, acs, invariants, evals, decisions, openQuestions}`. A
+   ready spec (status `ready` or later and no spec-lint blocker) skips the interview. One that is
+   not ready gets a single question round over its blocking open questions and clarification
+   markers; `muster spec-clarify` writes the answers back under a dated `## Clarifications`
+   session and promotes a draft that now passes to `ready`.
+2. **CONTEXT.md**: `muster spec-context <runId>` copies the spec's `D-NN` decisions verbatim and
+   LOCKED, and its non-goals as Deferred Ideas, with the spec's path and sha256. The command
+   never hand-writes it.
+3. **Scope**: with no anchor, every criterion, invariant and EV row is in scope. An anchor
+   scopes the criteria to the named requirements (or criteria); every invariant stays in scope,
+   and an EV row is in scope when it is anchored or cites an in-scope requirement or criterion.
+4. **The plan** (`make-plan.js` `specPath`): frontmatter `spec:` and `requirements:`; every in-scope
+   AC, INV and EV ID in some task's `covers`; each test/check/eval ID named by an
+   `<automated proves>`; each invariant a `must_haves.prohibitions` entry (`ac: [INV-NN]`);
+   each EV row an eval command; each `judgment` criterion a `checkpoint:human-verify` task that
+   covers it; every spec decision in `decisions`. A task never covers an ID it does not deliver
+   in full; the plan-checker reads each covered ID against the task.
+5. **Verification**: the verifier adds an `## Acceptance` table to VERIFICATION.md,
+   `| ID | Verify | Status | Evidence |`, one row per in-scope ID: VERIFIED or FAILED (test,
+   check, eval), NEEDS-HUMAN (judgment), NEEDS-RUNTIME (needs-runtime, never VERIFIED), ORPHANED
+   (no task covers it).
+6. **Traceability**: `muster spec-trace <runId>` regenerates the spec's `## Traceability` block
+   from `covers`, `proves` and the Acceptance table, keeps rows for IDs outside the run's scope,
+   and sets `status: shipped` once every ID is VERIFIED or explicitly accepted (`--accept`).
+   `--coverage` prints one line per requirement for the approval stop.
+
+```xml
+<task id="02" type="auto" wave="2" depends_on="01" covers="REF-01.2 INV-01">
+  <name>Refuse refunds outside the window, keep admin partial refunds</name>
+  <files>src/window.js, test/window.test.js, test/admin-partial.test.js</files>
+  <action>Refuse an order delivered more than 30 days ago with reason outside_window.</action>
+  <verify>
+    <automated proves="REF-01.2">node --test test/window.test.js</automated>
+    <fails_when>non-zero exit</fails_when>
+    <automated proves="INV-01">node --test test/admin-partial.test.js</automated>
+    <fails_when>non-zero exit</fails_when>
+  </verify>
+  <done>Late orders are refused; admin partial refunds still settle.</done>
+</task>
+```

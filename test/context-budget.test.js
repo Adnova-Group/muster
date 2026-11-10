@@ -16,7 +16,15 @@ const KB = 1024;
 const COMMAND_BUDGET = 8 * KB;
 const ORCHESTRATOR_BUDGET = 18 * KB;
 // Measured 3,670 bytes at revival stage 2b (18,116 before it); the result sits ~8% under the budget.
-const DESCRIPTION_BUDGET = 4_000;
+// +102 at revival stage 3 for exactly the three prt-* pr-review-toolkit agent descriptions
+// (41 + 33 + 28 bytes), kept minimal because they are always-on.
+// +84: /muster:skills (skill discovery follow-up, 2026-11-10) adds exactly its description's bytes.
+// +428 on 2026-11-10 for book runs, exactly the bytes they added: the write-book command (134) and
+// the five Workflow-only book-* agents (294), whose descriptions are already minimal.
+// PM domain stages C-D (2026-11-10): +124 for /muster:pm's description, -83 and -73 for the
+// retired prd-pipeline and roadmap-prioritization skills (the latter now the muster-roadmap
+// builtin, read by path), net -32.
+const DESCRIPTION_BUDGET = 4_582;
 
 function frontmatter(text) {
   const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);

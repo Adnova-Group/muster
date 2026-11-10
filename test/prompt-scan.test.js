@@ -13,13 +13,15 @@ import {
   mkdirSync, writeFileSync, chmodSync, rmSync, symlinkSync,
   linkSync, renameSync, unlinkSync,
 } from "node:fs";
-import { lstat, writeFile } from "node:fs/promises";
+import { lstat, readFile, writeFile } from "node:fs/promises";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { trackedMkdtempSync as mkdtempSync } from "../test-support/helpers.js";
 import { readNoFollowRegular } from "../src/fs-safe.js";
+import { gitBlobSha, isSyncItem, isWholeFileVerbatim } from "../src/vendor-sync.js";
 import {
   collectScanFiles,
   scanRepoPrompts,
@@ -536,10 +538,16 @@ test("C2c: collectScanFiles excludes files inside .agents (codex build-staging m
 // (not a synthetic fixture) since the deliverable is specifically "the live tree scans
 // clean", not "the scanner mechanism works on fixtures" (already covered by C2/C3/C5/C7
 // above).
+// Third-party prompt text carried under merge tracking is handled by the scanner itself, so this
+// test and `node src/cli.js prompt scan .` (the ship-checklist gate) agree exactly: a whole-file
+// verbatim item of vendor/manifest.yaml (a byte-exact upstream copy that cannot carry a muster
+// directive, e.g. the CC BY-SA references of sentry-security-review) is exempt while its bytes
+// match the recorded baseBlob; every adapted vendored file stays in scope and carries a
+// `prompt-lint-disable` directive. Muster-authored prompts and the adapted gsd seats stay in scope.
 test("repo-wide prompt-lint backlog is clean: scanRepoPrompts(repoRoot) reports zero failing files", async () => {
   const repoRoot = fileURLToPath(new URL("../", import.meta.url));
   const result = await scanRepoPrompts(repoRoot);
-  const failing = result.prompts.filter((p) => !p.passing);
+  const failing = result.prompts.filter((p) => !p.passing && !p.exempt);
   assert.deepEqual(
     failing.map((f) => f.file),
     [],
@@ -549,4 +557,41 @@ test("repo-wide prompt-lint backlog is clean: scanRepoPrompts(repoRoot) reports 
       2,
     )}`,
   );
+  assert.equal(result.failing, 0, "the CLI's failing count must agree with the per-file list");
+  // Every exemption is a whole-file verbatim manifest item, never an adapted file.
+  const manifest = parseYaml(await readFile(path.join(repoRoot, "vendor", "manifest.yaml"), "utf8"));
+  const verbatim = new Set(manifest.sources.flatMap((s) => {
+    const items = (s.items || []).filter(isSyncItem);
+    return items.filter((i) => isWholeFileVerbatim(i, items)).map((i) => i.to);
+  }));
+  for (const p of result.prompts.filter((r) => r.exempt)) {
+    assert.ok(verbatim.has(p.file.split(path.sep).join("/")), `${p.file} is exempt but is not a whole-file verbatim item`);
+  }
+});
+
+test("prompt scan exempts a byte-exact whole-file verbatim upstream copy, and lints it again once edited", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "muster-scan-upstream-"));
+  try {
+    const rel = "plugin/builtins/x-up/references/notes.md";
+    // A prompt doc that fails the lint (no role, no format, a stack of prohibitions).
+    const body = "# Notes\n\nNever do A. Never do B. Do not do C. Don't do D. Avoid E. Never F.\n";
+    mkdirSync(path.join(dir, path.dirname(rel)), { recursive: true });
+    mkdirSync(path.join(dir, "vendor"), { recursive: true });
+    writeFileSync(path.join(dir, rel), body);
+    const manifest = { sources: [{ id: "x", items: [{ from: "notes.md", to: rel, mode: "verbatim", baseBlob: gitBlobSha(body) }] }] };
+    writeFileSync(path.join(dir, "vendor", "manifest.yaml"), stringifyYaml(manifest));
+    const linted = (await scanRepoPrompts(dir)).prompts.find((p) => p.file.split(path.sep).join("/") === rel);
+    assert.ok(linted, "fixture prompt must be discovered");
+    assert.equal(linted.passing, false, "fixture prompt must fail the lint on its own merits");
+    let result = await scanRepoPrompts(dir);
+    assert.equal(result.failing, 0);
+    assert.equal(result.exemptUpstream, 1);
+    // An edited copy is no longer byte-exact: it is linted like muster's own text.
+    writeFileSync(path.join(dir, rel), body + "\nExtra muster line.\n");
+    result = await scanRepoPrompts(dir);
+    assert.equal(result.failing, 1);
+    assert.equal(result.exemptUpstream, 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

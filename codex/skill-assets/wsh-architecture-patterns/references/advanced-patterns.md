@@ -1,4 +1,4 @@
-<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001, ANTH-POS-001, GUARD-IDK-001, GUARD-CITE-002, ANTH-XML-001, GUARD-SEP-003: Pinned upstream supporting asset loaded inside its parent skill; the parent supplies role, output, evidence, and input boundaries. -->
+<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001, GUARD-IDK-001: upstream wshobson/agents reference loaded inside its parent wsh-* builtin, which supplies the role and output format; merge-tracked in vendor/manifest.yaml. -->
 
 # Advanced Architecture Patterns — Reference
 
@@ -340,8 +340,17 @@ class PostgresOutboxPublisher:
 
 
 # use_cases/place_order.py — aggregate saves, events are extracted and stored
+# For the outbox, the repository port takes the open connection:
+#   async def save(self, order: Order, conn) -> None
+# so the order row and the outbox rows commit in the same transaction.
 class PlaceOrderUseCase:
-    def __init__(self, order_repo: OrderRepository, event_publisher: PostgresOutboxPublisher):
+    def __init__(
+        self,
+        db: Database,
+        order_repo: OrderRepository,
+        event_publisher: PostgresOutboxPublisher,
+    ):
+        self.db = db
         self.orders = order_repo
         self.publisher = event_publisher
 

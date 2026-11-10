@@ -15,7 +15,7 @@ with the release receipt.
    agrees with it.
 
    ```sh
-   node -e 'const fs=require("fs"); const target=process.env.TARGET_VERSION; const files=["package.json","package-lock.json","plugin.json","plugin/.claude-plugin/plugin.json","cowork/manifest.json"]; for (const file of files) { const value=JSON.parse(fs.readFileSync(file,"utf8")); if (value.version!==target) throw new Error(`${file}: ${value.version} != ${target}`); } if (JSON.parse(fs.readFileSync("package-lock.json","utf8")).packages[""].version!==target) throw new Error("package-lock root version does not match TARGET_VERSION");'
+   node -e 'const fs=require("fs"); const target=process.env.TARGET_VERSION; const files=["package.json","package-lock.json","plugin.json","plugin/.claude-plugin/plugin.json"]; for (const file of files) { const value=JSON.parse(fs.readFileSync(file,"utf8")); if (value.version!==target) throw new Error(`${file}: ${value.version} != ${target}`); } if (JSON.parse(fs.readFileSync("package-lock.json","utf8")).packages[""].version!==target) throw new Error("package-lock root version does not match TARGET_VERSION");'
    ```
 
 2. **Changelog gate**: `CHANGELOG.md` has a dated heading and comparison link for
@@ -26,11 +26,20 @@ with the release receipt.
    grep -Eq "^\\[${TARGET_VERSION//./\\.}\\]: https://github.com/Adnova-Group/muster/compare/v" CHANGELOG.md
    ```
 
-3. **npm-before-plugin gate**: the Claude plugin's `runtime/muster.sh` runs
-   `npx -y @adnova-group/muster@<plugin version>` whenever no source checkout sits beside it,
-   which is every marketplace install. So `@adnova-group/muster@${TARGET_VERSION}` must be on npm
-   before the release commit reaches the marketplace branch, or every installed `/muster:plan` and
-   `/muster:go` fails at its first CLI call.
+3. **Plugin runtime gate**: every marketplace install runs the CLI bundled at
+   `plugin/runtime/cli/` (built by `scripts/build-plugin-runtime.mjs`), so the committed bundle
+   must be rebuilt after the version bump and match its sources byte for byte. `npm test` and
+   `prepublishOnly` run the same check; a stale bundle names the paths that differ.
+
+   ```sh
+   npm run build:plugin
+   npm run check:plugin
+   node -e 'const v=require("./plugin/runtime/cli/package.json").version; if (v!==process.env.TARGET_VERSION) throw new Error(`plugin runtime ${v} != ${process.env.TARGET_VERSION}`)'
+   ```
+
+   `runtime/muster.sh` falls back to `npx -y @adnova-group/muster@<plugin version>` only for a
+   plugin copy without the bundle, so publish `@adnova-group/muster@${TARGET_VERSION}` to npm
+   before the release commit reaches the marketplace branch as well:
 
    ```sh
    npm view "@adnova-group/muster@${TARGET_VERSION}" version

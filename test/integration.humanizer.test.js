@@ -7,11 +7,11 @@ import { resolveCapabilities } from "../src/capabilities.js";
 // Humanizer domain: human-facing output passes through the humanizer filter;
 // machine-facing artifacts do not (preserve technical precision).
 const HUMAN_FACING = new Set([
-  "prd", "business-case", "epic", "user-story", "launch-plan", "release-notes",
+  "prd", "business-case", "epic", "launch-plan", "release-notes",
   "executive-summary", "okrs", "competitive-battlecard", "blog-post", "social-post",
   "lead-magnet", "newsletter", "case-study", "runbook", "book"
 ]);
-const MACHINE_FACING = new Set(["ai-implementation-spec", "ai-test-plan"]);
+const MACHINE_FACING = new Set(["design", "ai-test-plan"]);
 
 test("every human-facing pipeline ends with a humanize phase", async () => {
   const ps = await loadPipelines(new URL("../pipelines/", import.meta.url));

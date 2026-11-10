@@ -1,15 +1,16 @@
 {
   "name": "Impeccable",
   "repository": "https://github.com/pbakaus/impeccable",
-  "ref": "32930818a109fafa87199babe92fa8e530cff5d3",
+  "ref": "035c8f319edd019936525a062fe99e83ca8d12c6",
   "license": "Apache-2.0",
-  "use": "Design workflow vocabulary, context-resolution behavior, and bounded detector inspiration",
+  "use": "Design workflow vocabulary and context-resolution behavior; the skill and its references are vendored as impeccable-* builtins (vendor/manifest.yaml) and each workflow follows its impeccable-* playbook",
   "workflows": [
     "craft",
     "init",
     "document",
     "extract",
     "live",
+    "generate",
     "adapt",
     "animate",
     "audit",

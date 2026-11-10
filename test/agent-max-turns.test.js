@@ -49,12 +49,20 @@ const CLASS_MAP = {
     "wsh-data-scientist",
     "wsh-database-optimizer",
     "wsh-debugger",
+    "wsh-team-debugger",
+    "muster-test-writer",
     "wsh-devops-troubleshooter",
     "wsh-frontend-developer",
     "wsh-legacy-modernizer",
     "wsh-ml-engineer",
     "wsh-prompt-engineer",
     "wsh-test-automator",
+    // intent UX agents that produce artifacts: experience design and the build handoff.
+    "intent-wren",
+    "intent-rune",
+    // book workflow seats that write: chapter drafts and fixes, in-place line edits.
+    "book-writer",
+    "book-line-editor",
   ],
   // review/strategy -- gates other work (verdicts, architecture, retrospectives);
   // needs headroom for a deep re-read plus re-verification, coherent with Codex's
@@ -66,10 +74,23 @@ const CLASS_MAP = {
     "muster-verifier",
     "muster-strategist",
     "muster-improver",
-    "wsh-code-reviewer",
+    "muster-integration-checker",
     "wsh-backend-architect",
     "wsh-cloud-architect",
     "wsh-docs-architect",
+    // intent UX agents that frame, evaluate or route (strategy, evaluation, orientation, brainstorming).
+    "intent-ember",
+    "intent-noor",
+    "intent-vigil",
+    "intent-sage",
+    // pr-review-toolkit specialist reviewers (read-only verdict-style reviews).
+    "prt-silent-failure-hunter",
+    "prt-type-design-analyzer",
+    "prt-pr-test-analyzer",
+    // book workflow seats that judge a whole chapter or manuscript (read-only, deep re-reads).
+    "book-continuity-checker",
+    "book-developmental-editor",
+    "book-beta-reader",
   ],
   // security -- the one rare, high-consequence xhigh lane, coherent with Codex's
   // own 14-heartbeat wsh-security-auditor-specific extension ceiling (PR #83).

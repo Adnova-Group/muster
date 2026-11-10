@@ -16,7 +16,7 @@ test("AI-slop text scores low and fails", () => {
   assert.equal(r.passing, false);
   const cats = r.findings.map(f => f.category);
   assert.ok(cats.includes("tier1-vocab"));
-  assert.ok(cats.includes("em/en-dash-or-curly-quote"));
+  assert.ok(cats.includes("em/en-dash"));
   assert.ok(cats.includes("banned-opener"));
 });
 
@@ -62,4 +62,67 @@ test("emoji detector ignores typographic dingbats but catches flag emoji (audit 
     "checkmark/star dingbats are not emoji tells");
   const flag = scoreHumanness("Shipped to the US market 🇺🇸");
   assert.ok(flag.findings.some(f => f.category === "emoji"), "flag emoji should be detected");
+});
+
+// --- 2026-11 upstream re-pin (blader/humanizer v4.0.0, avoid-ai-writing v3.38.0+) -------------
+
+test("curly quotes are a weak tell, scored apart from dashes; in-word apostrophes do not count", () => {
+  const r = scoreHumanness("He said “ship it” and we did. It didn’t break.");
+  const curly = r.findings.find(f => f.category === "curly-quote");
+  assert.equal(curly.count, 2, "two curly double quotes; the apostrophe in didn’t is not counted");
+  assert.equal(curly.penalty, 4);
+  assert.equal(r.findings.find(f => f.category === "em/en-dash"), undefined);
+});
+
+test("code, URLs, blockquotes and double-quoted examples are masked before scoring", () => {
+  const doc = [
+    "Avoid stock phrases such as \"I hope this helps\" and \"let's dive in\".",
+    "",
+    "> Moreover, we leverage a robust tapestry.",
+    "",
+    "Run `delve --robust` or see https://example.com/leverage-the-realm for details.",
+    "",
+    "```",
+    "Certainly — this leverages a seamless paradigm.",
+    "```",
+  ].join("\n");
+  const r = scoreHumanness(doc);
+  assert.equal(r.score, 100, JSON.stringify(r.findings));
+});
+
+test("unquoted tells outside protected regions still count", () => {
+  const r = scoreHumanness("I hope this helps. We leverage the realm — see `code`.");
+  const cats = r.findings.map(f => f.category);
+  for (const c of ["sycophancy", "tier1-vocab", "em/en-dash"]) assert.ok(cats.includes(c), c);
+});
+
+test("tier-2 words count only when two distinct ones share a paragraph", () => {
+  assert.equal(scoreHumanness("A crucial fix.\n\nAn essential step.").findings.find(f => f.category === "tier2-cluster"), undefined);
+  const r = scoreHumanness("A crucial fix and an essential step.\n\nWe navigate the myriad options.");
+  const hit = r.findings.find(f => f.category === "tier2-cluster");
+  assert.equal(hit.count, 2, "one hit per qualifying paragraph");
+});
+
+test("words moved to tier 2 no longer count alone", () => {
+  for (const w of ["harness", "foster", "elevate", "facilitate", "multifaceted"]) {
+    assert.equal(scoreHumanness(`We ${w} it.`).score, 100, w);
+  }
+  assert.equal(scoreHumanness("A meticulous, vibrant interplay.").findings.find(f => f.category === "tier1-vocab").count, 3);
+});
+
+test("cutoff disclaimers, hedge stacks and generic conclusions are detected", () => {
+  const r = scoreHumanness("As of my last update, the plan could potentially work. The future looks bright.");
+  const cats = r.findings.map(f => f.category);
+  for (const c of ["cutoff-disclaimer", "hedge-stack", "generic-conclusion"]) assert.ok(cats.includes(c), c);
+});
+
+test("new staged-run-up signposts are detected", () => {
+  const r = scoreHumanness("Here's the thing: without further ado, let's explore the data.");
+  assert.equal(r.findings.find(f => f.category === "signposting").count, 3);
+});
+
+test("faux-insight and throat-clearing setups count as signposting (stop-slop, no-ai-slop)", () => {
+  const r = scoreHumanness("Let me be clear. Here's what nobody tells you: what most people get wrong is the part everyone misses. The uncomfortable truth is simple.");
+  assert.equal(r.findings.find(f => f.category === "signposting").count, 5);
+  assert.equal(scoreHumanness("Most people get the setup right on the first try.").score, 100);
 });

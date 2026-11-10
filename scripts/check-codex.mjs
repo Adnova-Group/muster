@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { parse as parseYaml } from "yaml";
 import { CODEX_MODEL_POLICY, codexProfileForConfig } from "../src/codex.js";
 import { CODEX_COUNTS } from "../src/codex-inventory.js";
+import { isCodexFrozenOutBuiltin } from "../src/codex-inventory.js";
 import { resolveCodexPlugin } from "../src/codex-release.js";
 import { parseHookCommand } from "../src/shell-command.js";
 
@@ -39,7 +40,9 @@ if (marketplace.name !== "muster" || codexMarketplaceEntry?.source?.path !== "./
 if (manifest.name !== "muster" || manifest.version !== pkg.version) fail("plugin manifest version is not package version");
 if (manifest.version !== selected.packageVersion) fail("resolved Codex plugin package version does not match package.json");
 if (!manifest.skills || !manifest.mcpServers || manifest.hooks !== undefined) fail("plugin manifest must expose skills and MCP without advertising inert plugin-bundled hooks");
-if (Object.keys(mapping.agents || {}).length !== CODEX_COUNTS.agents) fail("mapping does not contain all agent profiles");
+// Claude-only entries ("codex": false: the post-freeze intent-* agents) ship no Codex profile.
+const codexAgents = Object.fromEntries(Object.entries(mapping.agents || {}).filter(([, config]) => config?.codex !== false));
+if (Object.keys(codexAgents).length !== CODEX_COUNTS.agents) fail("mapping does not contain all agent profiles");
 for (const family of ["superpowers", "wshobson-agents", "gsd-core", "atomic-codex", "book-genesis-codex", "humanizer-sources", "stealthhumanizer", "promptfoo", "muster"]) {
   if (!upstreams.families?.some(item => item.id === family && item.repository && item.codex && item.musterStrategy)) fail(`missing researched Codex upstream ${family}`);
 }
@@ -55,7 +58,7 @@ const legacyProfiles = await files(join(root, "codex", "agents")).catch(error =>
   throw error;
 });
 if (legacyProfiles.some(name => name.endsWith(".toml"))) fail("deprecated static codex/agents profiles must not coexist with generated release profiles");
-for (const [id, config] of Object.entries(mapping.agents)) {
+for (const [id, config] of Object.entries(codexAgents)) {
   if (!CODEX_MODEL_POLICY.tiers[config.tier]) fail(`${id} has an unknown model tier`);
   // Kept in exact parity with src/codex-release.js's profileToml effort
   // accept-list -- see test/codex-check.test.js's parity test, which parses both
@@ -82,7 +85,7 @@ for (const name of ["muster-plan-backlog", "muster-go-backlog", "muster-runner"]
 for (const name of modes) if (!skills.has(name)) fail(`missing mode skill ${name}`);
 for (const name of ["run", "autopilot", "sprint"]) if (skills.has(name)) fail(`retired alias skill ${name} must not ship`);
 const native = await dirs(join(root, "plugin/skills"));
-const builtins = await dirs(join(root, "plugin/builtins"));
+const builtins = (await dirs(join(root, "plugin/builtins"))).filter(name => !isCodexFrozenOutBuiltin(name));
 const codexSkillId = name => name.startsWith("gsd-") ? `muster-${name}` : name;
 for (const name of [...native, ...builtins].map(codexSkillId)) if (!internalSkills.has(name)) fail(`missing internal workflow ${name}`);
 const ported = new Set([...native, ...builtins].map(codexSkillId));

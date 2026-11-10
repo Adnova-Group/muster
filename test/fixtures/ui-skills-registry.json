@@ -1,0 +1,162 @@
+{
+ "registry": [
+  {
+   "slug": "ui-skills-root",
+   "user": "ibelick",
+   "repo": "ui-skills",
+   "rawUrl": "https://raw.githubusercontent.com/ibelick/ui-skills/main/skills/ui-skills-root/SKILL.md",
+   "githubUrl": "https://github.com/ibelick/ui-skills/blob/main/skills/ui-skills-root/SKILL.md",
+   "name": "ui-skills-root",
+   "topics": [
+    "systems",
+    "tooling",
+    "architecture"
+   ],
+   "description": "Use when the user needs UI help and you must route by topic, stack, and intent to the smallest useful set of UI skills.",
+   "pathSlug": "ibelick/ui-skills-root",
+   "sourceKey": "ibelick",
+   "sourceLabel": "ibelick"
+  },
+  {
+   "slug": "design-first-ui-prompting",
+   "user": "MengTo",
+   "repo": "Skills",
+   "rawUrl": "https://raw.githubusercontent.com/MengTo/Skills/main/agent-skills/ui/design-first-ui-prompting/SKILL.md",
+   "githubUrl": "https://github.com/MengTo/Skills/blob/main/agent-skills/ui/design-first-ui-prompting/SKILL.md",
+   "files": [
+    "ARTICLE.md",
+    "REFERENCES.md"
+   ],
+   "name": "design-first-ui-prompting",
+   "topics": [
+    "visual",
+    "systems",
+    "frontend"
+   ],
+   "description": "Use when you want to turn a product goal into a design-first UI prompt with clear layout, type, color, and constraint choices.",
+   "pathSlug": "mengto/design-first-ui-prompting",
+   "sourceKey": "mengto",
+   "sourceLabel": "MengTo"
+  },
+  {
+   "slug": "animation-performance",
+   "user": "emilkowalski",
+   "repo": "skills",
+   "rawUrl": "https://raw.githubusercontent.com/emilkowalski/skills/main/skills/animation-performance/SKILL.md",
+   "githubUrl": "https://github.com/emilkowalski/skills/blob/main/skills/animation-performance/SKILL.md",
+   "name": "animation-performance",
+   "topics": [
+    "motion",
+    "performance",
+    "frontend"
+   ],
+   "description": "Keep web animations inside the frame budget — animate composite-only properties, keep motion off the main thread when the page is busy, and find the cause when an animation drops frames. Covers the layout/paint/composite pipeline, cheaper property swaps, CSS vs WAAPI vs requestAnimationFrame, Framer Motion's hardware-accelerated path, React re-rendering per frame, inherited CSS variable recalculation, blur cost, and when `will-change` actually helps. Use when an animation is janky, choppy, stutters, or drops frames; when choosing which property to animate; when deciding between CSS and JS animation on performance grounds; or when reaching for `will-change` or GPU layers. For choosing easing, duration, or whether to animate at all use animate; for reviewing motion as a whole use review-animations.",
+   "pathSlug": "emilkowalski/animation-performance",
+   "sourceKey": "emilkowalski",
+   "sourceLabel": "emilkowalski"
+  },
+  {
+   "slug": "rams",
+   "user": "rams-design",
+   "repo": "rams-plugin",
+   "rawUrl": "https://www.rams.ai/rams.md",
+   "githubUrl": "https://github.com/rams-design/rams-plugin/blob/master/skills/rams/SKILL.md",
+   "name": "rams",
+   "topics": [
+    "craft",
+    "accessibility",
+    "visual",
+    "code-quality"
+   ],
+   "description": "Design review for UI code. Reviews React, Vue, Svelte, CSS, and SwiftUI for accessibility, typography, spacing, color, and component quality, with severity-rated findings, concrete fixes, and a 0-100 score.",
+   "pathSlug": "rams-design/rams",
+   "sourceKey": "rams-design",
+   "sourceLabel": "rams-design"
+  },
+  {
+   "slug": "motion-ad",
+   "user": "danny",
+   "repo": "danny-md",
+   "rawUrl": "https://www.danny.md/skills/motion-ad/raw",
+   "githubUrl": "https://www.danny.md/skills/motion-ad",
+   "name": "motion-ad",
+   "topics": [
+    "video",
+    "motion",
+    "frontend"
+   ],
+   "description": "Produce short motion-graphics video ads for any product as rendered MP4s, with GSAP-driven HTML beats and frame-by-frame capture.",
+   "pathSlug": "danny/motion-ad",
+   "sourceKey": "danny",
+   "sourceLabel": "danny"
+  },
+  {
+   "slug": "threejs-animation",
+   "user": "cloudai-x",
+   "repo": "threejs-skills",
+   "rawUrl": "https://raw.githubusercontent.com/CloudAI-X/threejs-skills/main/skills/threejs-animation/SKILL.md",
+   "githubUrl": "https://github.com/CloudAI-X/threejs-skills/blob/main/skills/threejs-animation/SKILL.md",
+   "name": "threejs-animation",
+   "topics": [
+    "threejs",
+    "motion",
+    "frontend"
+   ],
+   "description": "Three.js animation guidance for keyframes, skeletal animation, morph targets, and animation blending.",
+   "pathSlug": "cloudai-x/threejs-animation",
+   "sourceKey": "cloudai-x",
+   "sourceLabel": "cloudai-x"
+  },
+  {
+   "slug": "react-native-best-practices",
+   "user": "callstackincubator",
+   "repo": "agent-skills",
+   "rawUrl": "https://raw.githubusercontent.com/callstackincubator/agent-skills/main/skills/react-native-best-practices/SKILL.md",
+   "githubUrl": "https://github.com/callstackincubator/agent-skills/blob/main/skills/react-native-best-practices/SKILL.md",
+   "files": [
+    "POWER.md"
+   ],
+   "name": "react-native-best-practices",
+   "topics": [
+    "react-native",
+    "performance",
+    "frontend"
+   ],
+   "description": "React Native performance optimization guidelines for FPS, TTI, bundle size, memory leaks, re-renders, and animations.",
+   "pathSlug": "callstackincubator/react-native-best-practices",
+   "sourceKey": "callstackincubator",
+   "sourceLabel": "callstackincubator"
+  },
+  {
+   "slug": "react-component-performance",
+   "user": "dimillian",
+   "repo": "skills",
+   "rawUrl": "https://raw.githubusercontent.com/dimillian/skills/main/react-component-performance/SKILL.md",
+   "githubUrl": "https://github.com/dimillian/skills/blob/main/react-component-performance/SKILL.md",
+   "name": "react-component-performance",
+   "topics": [
+    "performance",
+    "frontend",
+    "craft"
+   ],
+   "description": "Analyze and optimize React component performance issues (slow renders, re-render thrash, laggy lists, expensive computations). Use when asked to profile or improve a React component, reduce re-renders, or speed up UI updates in React apps.",
+   "pathSlug": "dimillian/react-component-performance",
+   "sourceKey": "dimillian",
+   "sourceLabel": "dimillian"
+  }
+ ],
+ "topics": [
+  {
+   "slug": "accessibility",
+   "label": "Accessibility",
+   "description": "Inclusive UI patterns, WCAG audits, and remediation workflows.",
+   "isDesignCore": true
+  },
+  {
+   "slug": "motion",
+   "label": "Motion",
+   "description": "Animation systems, transitions, and interaction timing.",
+   "isDesignCore": true
+  }
+ ]
+}

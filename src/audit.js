@@ -91,7 +91,7 @@ export const PATTERN_SKILL = Object.freeze({
   "design-ux": [
     {
       id: "audit-pattern-design-ux",
-      rationale: "Hunt-list for the UX/design audit dimension: points into the pinned Impeccable audit/critique workflows and `muster design gate` (single-source; read on demand, not duplicated here)."
+      rationale: "Hunt-list for the UX/design audit dimension: leads with the vendored impeccable-critique and impeccable-audit skills, then the uupm-ui-ux-pro-max priority table and pre-delivery checklist, and `muster design gate` (single-source; read on demand, not duplicated here)."
     },
     {
       id: "audit-pattern-documentation",

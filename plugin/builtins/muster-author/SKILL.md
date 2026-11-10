@@ -10,7 +10,7 @@ upstream:
     license: NONE
     relation: inspired-by
   - repo: boraoztunc/skills
-    ref: c5c5dea7cebaaf801a90a04e1f15123d29de61c1
+    ref: 1209fb6b07b8acc54ec5b1fcb0f1326df0e668f1
     path: null
     license: Apache-2.0
     relation: inspired-by
@@ -72,9 +72,14 @@ Draft the artifact for the current phase, anchored to the outcome + audience.
 - **Non-fiction / business:** demonstrate E-E-A-T (experience, expertise, authority, trust) — cite
   evidence, show the throughline, make it actionable.
 - **Scannable + tight.** Short sentences, clear structure/headings, no jargon padding. One clear CTA.
-- **Variants when it matters.** For hooks/headlines/subject lines, write 3+ and let the tournament judge pick.
-  When the angle itself is uncertain, draft one version per candidate framework (e.g. a PAS cut and a BAB cut)
-  and let the tournament choose — variety across frameworks, not just across wording.
+- **Variants when it matters.** For hooks/headlines/subject lines, write 3+ and pick best-of-N: a fresh-context
+  judge ([[muster-scorer]]) scores each against the brief and rubric, then `<cli> pick <candidates.json>` (`<cli>`: the muster CLI prefix your brief gives; rows of
+  `{ id, total, passing }`) returns the highest-scoring passing variant, or escalates when none passes. When the
+  angle itself is uncertain, draft one version per candidate framework (e.g. a PAS cut and a BAB cut) and pick the
+  same way — variety across frameworks, not just across wording.
+- **Editing copy that already exists.** When the phase revises, tightens or refreshes a draft instead of
+  writing one, edit with [[mkt-copy-editing]]: pick its mode first, keep a one-line request a point edit
+  to that line, and run the full sweeps only on a rebuild or a voice restore.
 - **De-slop before handing off.** Run the [[muster-humanizer]] tells over your own draft — strip em-dash
   tics, hedging, and "in today's world" filler — so the humanize phase polishes rather than salvages.
 

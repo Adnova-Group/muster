@@ -1,0 +1,26 @@
+id: release-notes
+domain: pm
+title: Release Briefing
+match: [release notes, changelog, what's new, patch notes, release briefing]
+upstream:
+  - repo: olivierlacan/keep-a-changelog
+    ref: 08d0df5a7e93b71d902def8be0f0d40025b56289
+    path: null
+    license: MIT
+    relation: inspired-by
+  - kind: standard
+    title: Semantic Versioning 2.0.0
+    author: Tom Preston-Werner
+    url: https://semver.org/
+    relation: inspired-by
+phases:
+  - { id: intake,   role: brainstorm,    desc: "release scope; identify the three audiences: developers (technical changelog), users (briefing), public (announcement)" }
+  - { id: facts,    role: docs-research, desc: "extract fact rows from the release diff/changelog: change description + source (commit/PR ref) + date per entry, plus the requirement IDs it delivers when a shipped SPEC's Traceability block or the commit/PR names them (REF-01.2, EV-03); no analysis, no framing, no categorization; read Conventional Commit types, scopes and breaking-change markers as wsh-changelog-automation describes" }
+  - { id: draft,    role: author,        desc: "produce THREE audience-split artifacts in one pass: (1) TECHNICAL CHANGELOG - classify each fact row into Keep a Changelog categories, listed in order of urgency (Security, Removed, Changed, Deprecated, Fixed, Added) and omitting empty ones; a Security entry is a short summary that links the advisory, not the advisory itself; an entry may name the area it touches (`CLI: ...`) when that tells the reader something; every entry keeps its source commit/PR ref + date, and may cite the requirement IDs from its fact row (never invent one); note semver bump (wsh-changelog-automation for the Keep a Changelog layout and the version bump); (2) USER BRIEFING - what changed, why it matters, upgrade notes; benefit-framed, zero internal-only jargon; (3) ANNOUNCEMENT POST - short, benefit-led; standardized 'Title: Subtitle' header format" }
+  - { id: review,   role: code-review,   desc: "adversarial review gate across all three artifacts: verify changelog source refs, briefing plain language, announcement format" }
+  - { id: score,    role: score,         desc: "score vs rubric, floor principle" }
+  - { id: humanize, role: humanize,      desc: "final pass: strip AI tells (em-dashes, banned words, robotic cadence) for human delivery, across all three artifacts" }
+gate:
+  criteria: [source-refs, no-internal-jargon, title-subtitle-format, clarity, completeness, structure]
+  floor: 2
+  pass_total: 14

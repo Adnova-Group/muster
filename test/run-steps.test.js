@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { trackedMkdtemp } from "../test-support/helpers.js";
 import { mergeWave, isClaudeWorktree } from "../src/merge-wave.js";
@@ -60,6 +60,7 @@ const NOW = () => new Date("2026-11-09T12:00:00Z");
 
 test("merge-wave: merges --no-ff in plan order, re-runs planned verify, removes worktrees and branches", async () => {
   const { root, base, result } = await repoWithTasks();
+  Object.assign(result.tasks[0], { agentType: "muster:backend-development-test-automator", skillsApplied: [{ id: "sp-tdd", how: "test first", quote: "q" }], skillsMissing: ["sp-debug"] });
   result.tasks.reverse(); // the build result's order is not trusted; the build args decide
   const report = await mergeWave({ cwd: root, runId: "r1", result, now: NOW });
   assert.equal(report.ok, true, JSON.stringify(report.problems));
@@ -72,7 +73,18 @@ test("merge-wave: merges --no-ff in plan order, re-runs planned verify, removes 
   assert.deepEqual(report.notes, []);
   const state = await readFile(join(root, ".muster/runs/r1/STATE.md"), "utf8");
   assert.match(state, /## Log\n- 2026-11-09T12:00:00.000Z merge-wave: merged A [0-9a-f]{10} as [0-9a-f]{10}; verify 1\/1 passed\n- .* merged B /);
-  assert.match(await readFile(join(root, ".muster/runs/r1/SUMMARY-A.md"), "utf8"), /Recorded by `muster merge-wave`[\s\S]*verify `grep -q A A.txt`: exit 0/);
+  const summaryA = await readFile(join(root, ".muster/runs/r1/SUMMARY-A.md"), "utf8");
+  assert.match(summaryA, /Recorded by `muster merge-wave`[\s\S]*verify `grep -q A A.txt`: exit 0/);
+  // Stage 3: the builder and the skill evidence reach the durable run record.
+  assert.match(summaryA, /- builder: muster:backend-development-test-automator\n- skill sp-tdd: test first\n- skills without evidence: sp-debug/);
+  assert.doesNotMatch(await readFile(join(root, ".muster/runs/r1/SUMMARY-B.md"), "utf8"), /builder:|skill/);
+});
+
+test("merge-wave: accepts the Workflow tool's {summary, agentCount, logs, result} envelope", async () => {
+  const { root, result } = await repoWithTasks();
+  const report = await mergeWave({ cwd: root, runId: "r1", result: { summary: "build", agentCount: 5, logs: [], result }, now: NOW });
+  assert.equal(report.ok, true, JSON.stringify(report.problems));
+  assert.deepEqual(report.merged.map((m) => m.taskId), ["A", "B"]);
 });
 
 test("merge-wave: agent-reported testsRun and verify are never executed", async () => {
@@ -214,6 +226,7 @@ test("next --run derives the position from the run files", async () => {
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, "CONTEXT.md"), "# ctx\n");
   assert.equal(await step(), "discussed");
+  assert.match((await nextForRun({ cwd, runId: "r9" })).next, /Workflow\(\{name:"muster:make-plan"/, "the planning workflow, never the /muster:plan command's name");
   await writeFile(join(dir, "PLAN.md"), '<task id="T1">a</task>\n<task id="T2">b</task>\n');
   assert.equal(await step(), "planned");
   await writeFile(join(dir, "build-result.json"), JSON.stringify({ runId: "r9", tasks: [{ taskId: "T1" }, { taskId: "T2" }] }));
@@ -274,6 +287,16 @@ test("preflight: compact summary under 2 KB, full detail on disk, gsd detected",
   assert.deepEqual(Object.keys(s.models), ["planner", "checker", "executor", "reviewer", "verifier"]);
   for (const m of Object.values(s.models)) assert.ok(m.model && m.effort);
   assert.equal(s.detail, ".muster/runs/pf1/preflight.json");
+  // The CLI prefix agents run: absolute, so it resolves from a subagent shell without
+  // CLAUDE_PLUGIN_ROOT and without muster on PATH.
+  assert.match(s.cli, /^sh "(.+)\/runtime\/muster\.sh"$/);
+  assert.ok(existsSync(s.cli.match(/^sh "(.+)"$/)[1]), s.cli);
+  if (process.platform !== "win32") {
+    const env = { ...process.env, PATH: "/usr/bin:/bin", CLAUDE_PLUGIN_ROOT: "" };
+    const lint = spawnSync("sh", ["-c", `${s.cli} plan-lint missing-PLAN.md --json`], { cwd, encoding: "utf8", env: { ...env, PATH: `${dirname(process.execPath)}:${env.PATH}` } });
+    assert.ok([1, 2].includes(lint.status), `the prefix reaches the CLI: ${lint.stderr}`);
+    assert.doesNotMatch(lint.stderr, /not found/);
+  }
 
   const detail = JSON.parse(await readFile(join(cwd, s.detail), "utf8"));
   assert.equal(detail.outcome, outcome);

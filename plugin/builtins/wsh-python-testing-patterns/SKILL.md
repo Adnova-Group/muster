@@ -5,7 +5,7 @@ muster_builtin: true
 license: MIT
 upstream:
   - repo: wshobson/agents
-    ref: cf6059d030bf4fe96623ae2e596d2f31e35fedc0
+    ref: 9c61ab243def98f72da12abd41cfcf5bcd91af9d
     path: plugins/python-development/skills/python-testing-patterns/SKILL.md
     license: MIT
     relation: vendored
@@ -285,4 +285,4 @@ pytest --cov=myapp --cov-fail-under=80 tests/
 pytest --cov=myapp --cov-report=term-missing tests/
 ```
 
-For advanced patterns (async testing, monkeypatching, property-based testing, database testing, CI/CD integration, and configuration), see the [pinned upstream advanced-patterns.md](https://github.com/wshobson/agents/blob/cf6059d030bf4fe96623ae2e596d2f31e35fedc0/plugins/python-development/skills/python-testing-patterns/references/advanced-patterns.md)
+For advanced patterns (async testing, monkeypatching, property-based testing, database testing, CI/CD integration, and configuration), see [references/advanced-patterns.md](references/advanced-patterns.md)

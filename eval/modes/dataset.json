@@ -356,7 +356,7 @@
 
     {
       "id": "prd-pipeline-shape-matches-real-yaml",
-      "mode": "prd-pipeline",
+      "mode": "prd",
       "outcome": "The real pipelines/prd.yaml pipeline (phases + gate) validates against validatePipeline -- a drift guard (test/mode-evals.test.js) pins this fixture against the live file.",
       "check": "prd-pipeline-shape",
       "artifact": "fixtures/skills/prd-pipeline/pipeline-shape.json",
@@ -364,7 +364,7 @@
     },
     {
       "id": "prd-gate-floor-met-but-total-insufficient",
-      "mode": "prd-pipeline",
+      "mode": "prd",
       "outcome": "Every gate criterion sits exactly at the floor (2): the floor alone is not sufficient -- the total (14) misses pass_total (16), so the gate is not passing.",
       "check": "prd-gate-achievability",
       "artifact": "fixtures/skills/prd-pipeline/gate-floor-insufficient.json",
@@ -372,7 +372,7 @@
     },
     {
       "id": "prd-gate-passing-floor-and-total-met",
-      "mode": "prd-pipeline",
+      "mode": "prd",
       "outcome": "Scores clearing both the floor (every criterion >= 2) and pass_total (total = 16): the gate passes.",
       "check": "prd-gate-achievability",
       "artifact": "fixtures/skills/prd-pipeline/gate-passing.json",
@@ -380,7 +380,7 @@
     },
     {
       "id": "prd-gate-weakest-below-floor-overrides-high-total",
-      "mode": "prd-pipeline",
+      "mode": "prd",
       "outcome": "A high total (19, well above pass_total) with one criterion (evidence) below the floor: the book-genesis floor principle overrides the total -- still not passing.",
       "check": "prd-gate-achievability",
       "artifact": "fixtures/skills/prd-pipeline/gate-weakest-below-floor.json",
@@ -389,7 +389,7 @@
 
     {
       "id": "roadmap-rice-rank-order-real-math",
-      "mode": "roadmap-prioritization",
+      "mode": "muster-roadmap",
       "outcome": "Three initiatives with distinct RICE factors: prioritizeRICE computes (reach*impact*confidence)/effort per item and ranks them highest-score-first -- code does the math, not the model.",
       "check": "roadmap-rice",
       "artifact": "fixtures/skills/roadmap-prioritization/rice-rank-order.json",
@@ -397,7 +397,7 @@
     },
     {
       "id": "roadmap-rice-tie-break-alphabetical",
-      "mode": "roadmap-prioritization",
+      "mode": "muster-roadmap",
       "outcome": "Two initiatives that compute to an identical RICE score: the deterministic tie-break is ascending name, not arrival order or a coin flip.",
       "check": "roadmap-rice",
       "artifact": "fixtures/skills/roadmap-prioritization/rice-tie-break.json",
@@ -405,7 +405,7 @@
     },
     {
       "id": "roadmap-rice-zero-effort-throws",
-      "mode": "roadmap-prioritization",
+      "mode": "muster-roadmap",
       "outcome": "An initiative with effort=0: prioritizeRICE fails loud (divide-by-zero guard) rather than silently ranking it infinitely valuable.",
       "check": "roadmap-rice",
       "artifact": "fixtures/skills/roadmap-prioritization/rice-zero-effort.json",
@@ -774,6 +774,22 @@
       "artifact": "fixtures/builtins/muster-author/draft-missing-framework-multiple-ctas.md",
       "expect": { "framework": null, "ctaCount": 2 }
     },
+    {
+      "id": "muster-pm-spec-from-template-passes-spec-lint",
+      "mode": "muster-pm",
+      "outcome": "muster-pm's stated contract: a lite-mode spec written from templates/SPEC.md (EARS-tagged criteria, one verify type each, numbered EV pass rules, refusal and injection rows) passes the REAL lintSpec with zero issues.",
+      "check": "pm-spec-lint",
+      "artifact": "fixtures/builtins/muster-pm/spec-lite-ready.md",
+      "expect": { "verdict": "PASS", "blocks": false }
+    },
+    {
+      "id": "muster-pm-spec-marked-ready-too-early-blocked",
+      "mode": "muster-pm",
+      "outcome": "The corrupt twin: status ready with clarification markers left in and a criterion with no verify type -- exactly what \"ready needs zero markers\" and \"exactly one verify type\" forbid.",
+      "check": "pm-spec-lint",
+      "artifact": "fixtures/builtins/muster-pm/spec-ready-too-early.md",
+      "expect": { "verdict": "ISSUES", "blocks": true, "dimensions": ["readiness", "acceptance_criteria"] }
+    },
 
     {
       "id": "epic-gate-achievability-passing",
@@ -886,27 +902,27 @@
       "expect": { "formatValid": false }
     },
     {
-      "id": "ai-implementation-spec-gate-achievability-passing",
-      "mode": "ai-implementation-spec",
-      "outcome": "Scores clearing both the floor and pass_total for the real ai-implementation-spec.yaml gate.",
+      "id": "design-gate-achievability-passing",
+      "mode": "design",
+      "outcome": "Scores clearing both the floor and pass_total for the real design.yaml gate (formerly ai-implementation-spec.yaml).",
       "check": "gate-achievability",
-      "artifact": "fixtures/pipelines/ai-implementation-spec/gate-passing.json",
+      "artifact": "fixtures/pipelines/design/gate-passing.json",
       "expect": { "total": 16, "weakestCriterion": "feasibility", "passing": true }
     },
     {
-      "id": "ai-implementation-spec-adr-status-lifecycle-valid",
-      "mode": "ai-implementation-spec",
-      "outcome": "ai-implementation-spec.yaml's adr phase (MADR 4.0): a status lifecycle of proposed|accepted|deprecated|superseded-by ADR-XXXX.",
+      "id": "design-adr-status-lifecycle-valid",
+      "mode": "design",
+      "outcome": "design.yaml's adr phase (formerly ai-implementation-spec.yaml) (MADR 4.0): a status lifecycle of proposed|accepted|deprecated|superseded-by ADR-XXXX.",
       "check": "adr-status-lifecycle",
-      "artifact": "fixtures/pipelines/ai-implementation-spec/adr-status-lifecycle-clean.md",
+      "artifact": "fixtures/pipelines/design/adr-status-lifecycle-clean.md",
       "expect": { "formatValid": true }
     },
     {
-      "id": "ai-implementation-spec-adr-status-invalid-caught",
-      "mode": "ai-implementation-spec",
+      "id": "design-adr-status-invalid-caught",
+      "mode": "design",
       "outcome": "The corrupt twin: an ADR carrying an undocumented status (\"in-review\") outside the lifecycle enum.",
       "check": "adr-status-lifecycle",
-      "artifact": "fixtures/pipelines/ai-implementation-spec/adr-status-invalid.md",
+      "artifact": "fixtures/pipelines/design/adr-status-invalid.md",
       "expect": { "formatValid": false }
     },
     {
@@ -936,39 +952,15 @@
     {
       "id": "roadmap-rice-scorer-ranks-initiatives",
       "mode": "roadmap",
-      "outcome": "roadmap.yaml's prioritize phase: \"run the deterministic RICE scorer (muster prioritize)\" -- the same real prioritizeRICE the roadmap-prioritization skill layer already reuses, parameterized over this pipeline's own initiatives.",
+      "outcome": "roadmap.yaml's prioritize phase: \"run the deterministic RICE scorer (muster prioritize)\" -- the same real prioritizeRICE the muster-roadmap builtin layer (formerly the roadmap-prioritization skill) already reuses, parameterized over this pipeline's own initiatives.",
       "check": "roadmap-rice",
       "artifact": "fixtures/pipelines/roadmap/rice-rank-order.json",
       "expect": { "rankOrder": ["onboarding-flow", "dark-mode"] }
     },
     {
-      "id": "user-story-gate-achievability-passing",
-      "mode": "user-story",
-      "outcome": "Scores clearing both the floor and pass_total for the real user-story.yaml gate.",
-      "check": "gate-achievability",
-      "artifact": "fixtures/pipelines/user-story/gate-passing.json",
-      "expect": { "total": 14, "weakestCriterion": "acceptance-criteria", "passing": true }
-    },
-    {
-      "id": "user-story-gherkin-scenarios-well-formed",
-      "mode": "user-story",
-      "outcome": "user-story.yaml's acceptance phase: Given/When/Then (Gherkin) scenarios, happy path + 2 edge/negative.",
-      "check": "user-story-gherkin-shape",
-      "artifact": "fixtures/pipelines/user-story/acceptance-gherkin-scenarios.md",
-      "expect": { "scenariosWellFormed": true, "minScenarios": 3 }
-    },
-    {
-      "id": "user-story-gherkin-missing-then-flagged",
-      "mode": "user-story",
-      "outcome": "The corrupt twin: a scenario with a Given/When but no Then.",
-      "check": "user-story-gherkin-shape",
-      "artifact": "fixtures/pipelines/user-story/acceptance-gherkin-missing-then.md",
-      "expect": { "scenariosWellFormed": false }
-    },
-    {
       "id": "prd-gate-achievability-passing-content-pipeline-layer",
       "mode": "prd",
-      "outcome": "Scores clearing both the floor and pass_total for the real prd.yaml gate, parameterized the same way the content-pipeline layer's other 11 knowledge pipelines are (distinct from the skill-protocol layer's own \"prd-pipeline\" mode cases above, which grade the same gate via a different dispatch).",
+      "outcome": "Scores clearing both the floor and pass_total for the real prd.yaml gate, parameterized the same way the content-pipeline layer's other knowledge pipelines are (beside the prd-gate-achievability cases above, kept from the retired prd-pipeline skill layer, which grade the same gate via a different dispatch).",
       "check": "gate-achievability",
       "artifact": "fixtures/pipelines/prd/gate-passing.json",
       "expect": { "total": 16, "weakestCriterion": "evidence", "passing": true }

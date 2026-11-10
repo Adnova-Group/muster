@@ -47,11 +47,11 @@ const CATALOG_ARTIFACTS = [
   "builtins.generated.yaml", "builtins.muster.yaml", "software.yaml",
 ].map(path => `catalog/${path}`);
 const PIPELINE_ARTIFACTS = [
-  "ai-implementation-spec.yaml", "ai-test-plan.yaml", "blog-post.yaml", "book.yaml",
-  "business-case.yaml", "case-study.yaml", "competitive-battlecard.yaml", "epic.yaml",
+  "ai-test-plan.yaml", "blog-post.yaml", "book.yaml",
+  "business-case.yaml", "case-study.yaml", "competitive-battlecard.yaml", "design.yaml", "epic.yaml",
   "executive-summary.yaml", "launch-plan.yaml", "lead-magnet.yaml", "newsletter.yaml",
   "okrs.yaml", "prd.yaml", "release-notes.yaml", "roadmap.yaml", "runbook.yaml",
-  "social-post.yaml", "user-story.yaml", "video-content.yaml",
+  "social-post.yaml", "video-content.yaml",
 ].map(path => `pipelines/${path}`);
 const GIT_REPOSITORY_OVERRIDES = [
   "GIT_DIR",

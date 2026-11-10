@@ -7,6 +7,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { CODEX_COUNTS } from "../src/codex-inventory.js";
+import { isCodexFrozenOutBuiltin } from "../src/codex-inventory.js";
 import { codexFallbackSkillId } from "../src/codex-catalog.js";
 import { execFile, repoRoot, selectedPluginRoot } from "../test-support/codex-helpers.js";
 
@@ -371,7 +372,8 @@ test("generated Codex muster-init delegates to the guarded authoritative workflo
 
 test("all ported skills declare and load the Codex harness binding", async () => {
   const native = (await readdir(join(repoRoot, "plugin", "skills"), { withFileTypes: true })).filter(entry => entry.isDirectory()).map(entry => entry.name);
-  const builtins = (await readdir(join(repoRoot, "plugin", "builtins"), { withFileTypes: true })).filter(entry => entry.isDirectory()).map(entry => entry.name);
+  // Post-freeze builtins (the merge-tracked UX family and the 2026-11-10 complements) are Claude-plugin only.
+  const builtins = (await readdir(join(repoRoot, "plugin", "builtins"), { withFileTypes: true })).filter(entry => entry.isDirectory() && !isCodexFrozenOutBuiltin(entry.name)).map(entry => entry.name);
   for (const name of new Set([...native, ...builtins])) {
     const id = codexFallbackSkillId(name);
     const skill = await readFile(join(selectedPluginRoot, "internal-skills", id, "SKILL.md"), "utf8");

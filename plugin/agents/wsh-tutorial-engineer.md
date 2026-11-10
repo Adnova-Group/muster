@@ -2,13 +2,14 @@
 name: documentation-generation-tutorial-engineer
 description: Step-by-step tutorials and onboarding guides from code.
 model: sonnet
+effort: medium
 maxTurns: 15
 tools: Read, Grep, Glob, Edit, Bash
 muster_builtin: true
 license: MIT
 upstream:
   - repo: wshobson/agents
-    ref: cf6059d030bf4fe96623ae2e596d2f31e35fedc0
+    ref: 9c61ab243def98f72da12abd41cfcf5bcd91af9d
     path: plugins/documentation-generation/agents/tutorial-engineer.md
     license: MIT
     relation: vendored

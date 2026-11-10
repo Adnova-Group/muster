@@ -104,7 +104,11 @@ async function restoreRetiredLock(path, retirement, expected, waitForVacancy = f
   // not mutable record bytes. A legitimate replacement owner can still be
   // finishing its initial write while a stale reclaimer moves that inode.
   if (!sameInode(current, expected.stat)) return false;
+  const started = Date.now();
   for (;;) {
+    if (Date.now() - started >= 30_000) {
+      throw new Error(`timed out restoring quarantined Codex transaction lock: ${path} (kept at ${retirement.path})`);
+    }
     try { await link(retirement.path, path); break; }
     catch (error) {
       // An acquirer that passed its pre-open gate check just before this
@@ -333,10 +337,10 @@ async function beginTransition(path) {
       token: randomUUID()
     });
     if (gate) return gate;
-    if (!await transitionIsActive(path)) continue;
     if (Date.now() - started >= 30_000) {
       throw new Error(`timed out waiting for Codex transaction lock transition: ${path}`);
     }
+    if (!await transitionIsActive(path)) continue;
     await pause(5);
   }
 }
@@ -448,7 +452,10 @@ async function withPinnedCodexFileLock(path, callback, {
   const acquisitionOwner = Buffer.from(`${process.pid}\0${processIdentity ?? ""}`).toString("base64url");
   const started = Date.now();
   let acquisitionsReconciled = false;
-  for (;;) {
+  for (let attempt = 0; ; attempt++) {
+    // Every path through this loop is bounded by timeoutMs, including the
+    // immediate retry after a reclaim that found the lock already gone.
+    if (attempt > 0 && Date.now() - started >= timeoutMs) throw new Error(`timed out waiting for Codex transaction lock: ${path}`);
     if (await transitionIsActive(path, beforeOpen)) {
       if (Date.now() - started >= timeoutMs) throw new Error(`timed out waiting for Codex transaction lock: ${path}`);
       await pause(Math.min(25, 5 + Math.floor((Date.now() - started) / 100)));
@@ -470,7 +477,10 @@ async function withPinnedCodexFileLock(path, callback, {
     let acquisitionExpected;
     let published = false;
     try {
-      acquisitionPath = join(dirname(path), `${basename(path)}.acquire-${acquisitionOwner}.${token}`);
+      // A fresh stage name per attempt: a prior attempt's stage file that its
+      // cleanup could not remove must never make this open fail with EEXIST,
+      // which the catch below would misread as lock contention.
+      acquisitionPath = join(dirname(path), `${basename(path)}.acquire-${acquisitionOwner}.${token}-${attempt}`);
       handle = await open(acquisitionPath, "wx", 0o600);
       acquisitionExpected = { record: null, stat: await handle.stat(), bytes: Buffer.alloc(0) };
       if (__afterAcquireOpenHook) await __afterAcquireOpenHook({ path, acquisitionPath });

@@ -9,12 +9,12 @@ upstream:
     license: NONE
     relation: inspired-by
   - repo: dastergon/awesome-sre
-    ref: null
+    ref: e91ef69aa52129662164e54cc22272bc90e9b636
     path: null
     license: CC0-1.0
     relation: inspired-by
   - repo: runbear-io/awesome-runbook
-    ref: null
+    ref: d83a294e4eb650a62b4afce3dfee29f837f8c041
     path: null
     license: CC0-1.0
     relation: inspired-by
@@ -48,13 +48,13 @@ phases:
   - { id: intake,         role: brainstorm,  desc: "scope, trigger, owners, prerequisites" }
   - { id: preconditions,  role: author,      desc: "required access, environment, blast-radius scope, idempotency declaration, tool dependencies" }
   - { id: triage,         role: author,      desc: "diagnosis decision tree keyed off failure signature (oom / 5xx / latency / saturation) — events-first: check recent deploys/config changes BEFORE deep diagnosis (Google SRE)" }
-  - { id: steps,          role: author,      desc: "numbered, copy-pasteable steps; expected output for each" }
-  - { id: observability,  role: author,      desc: "alert links, dashboard URLs, SLO thresholds, key signals; numeric success criteria (latency, error rate, saturation)" }
+  - { id: steps,          role: author,      desc: "numbered, copy-pasteable steps; expected output for each; follow the wsh-incident-runbook-templates structure (severity, detection, triage, mitigation, verification, communication); write each step in simple-english procedural style (imperative, one instruction per sentence, condition before command, warnings first)" }
+  - { id: observability,  role: author,      desc: "alert links, dashboard URLs, SLO thresholds, key signals; numeric success criteria (latency, error rate, saturation); take SLO thresholds and burn-rate alerts from the service SLOs, or define them with wsh-slo-implementation" }
   - { id: validation,     role: author,      desc: "verification checks + success criteria per step" }
   - { id: rollback,       role: author,      desc: "rollback / abort procedure + safety notes" }
   - { id: escalation,     role: author,      desc: "escalation levels + owners, trigger conditions (severity x elapsed time), required context fields, on-call rotation link; incident-comms — who updates stakeholders, on what cadence, and where (status channel)" }
-  - { id: cleanup,        role: author,      desc: "revert temp hotfixes, restore flags, postmortem trigger (SEV-1: 48h, SEV-2: 5d), update last-tested date" }
-  - { id: review,         role: code-review, desc: "adversarial review + dry-run check" }
+  - { id: cleanup,        role: author,      desc: "revert temp hotfixes, restore flags, postmortem trigger (SEV-1: 48h, SEV-2: 5d), update last-tested date; the postmortem itself follows wsh-postmortem-writing (blameless, sourced timeline, owned actions)" }
+  - { id: review,         role: code-review, desc: "adversarial review + dry-run check; run simple-english CHECK mode over the steps, warnings and escalation text" }
   - { id: score,          role: score,       desc: "score vs rubric, apply floor principle" }
   - { id: humanize, role: humanize,     desc: "final pass: strip AI tells (em-dashes, banned words, robotic cadence) for human delivery" }
 gate:

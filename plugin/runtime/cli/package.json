@@ -1,0 +1,7 @@
+{
+  "name": "@adnova-group/muster-plugin-runtime",
+  "private": true,
+  "version": "0.7.1",
+  "sourceDigest": "7597dedebcff41b1c9fc9aa3c6bcbdcecc3712cd43165ac160de19f51d71bcf5",
+  "generatedBy": "scripts/build-plugin-runtime.mjs"
+}

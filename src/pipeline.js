@@ -16,7 +16,35 @@ export function validatePipeline(p) {
   });
   if (!p.gate || !Array.isArray(p.gate.criteria) || typeof p.gate.floor !== "number" || typeof p.gate.pass_total !== "number")
     errors.push("pipeline: gate.{criteria,floor,pass_total} required");
+  // Optional per-phase builtin bindings, read by path on top of the role's ROLE_SKILLS
+  // (src/pipeline-args.js).
+  const allPhases = [...(Array.isArray(p.phases) ? p.phases : []), ...(Array.isArray(p.optional_phases) ? p.optional_phases : [])];
+  allPhases.forEach((ph, i) => {
+    if (ph && ph.skills !== undefined && (!Array.isArray(ph.skills) || !ph.skills.every(s => typeof s === "string" && /^[a-z0-9][a-z0-9-]*$/.test(s))))
+      errors.push(`pipeline.phases[${i}].skills: must be a list of builtin ids`);
+  });
+  if (p.id && Object.hasOwn(PIPELINE_ALIASES, p.id)) errors.push(`pipeline: id ${p.id} is a retired alias (PIPELINE_ALIASES)`);
   return { ok: errors.length === 0, errors };
+}
+
+// Old pipeline ids keep resolving (PM domain stage D, docs/strategy/2026-11-pm-domain-design.md).
+// `to` is the pipeline that replaced the id; a null `to` retires it and `use` names the surface
+// that took over its job. Ids only: keyword routing (`match`) never sees these.
+export const PIPELINE_ALIASES = Object.freeze({
+  "ai-implementation-spec": Object.freeze({ to: "design", use: null }),
+  "user-story": Object.freeze({ to: null, use: "/muster:pm tickets <docs/specs/<slug>/SPEC.md>" }),
+});
+
+// Resolve a pipeline id, or a retired alias, against the loaded pipelines. Returns
+// { pipeline, id, alias, retired }: `pipeline` is null when the id is unknown or retired, and
+// `retired` then names the replacement surface.
+export function resolvePipeline(pipelines, id) {
+  const direct = pipelines.find(p => p.id === id);
+  if (direct) return { pipeline: direct, id, alias: null, retired: null };
+  const alias = Object.hasOwn(PIPELINE_ALIASES, id) ? PIPELINE_ALIASES[id] : null;
+  if (!alias) return { pipeline: null, id, alias: null, retired: null };
+  if (!alias.to) return { pipeline: null, id, alias: id, retired: alias.use };
+  return { pipeline: pipelines.find(p => p.id === alias.to) || null, id: alias.to, alias: id, retired: null };
 }
 
 export async function loadPipelines(dir) {

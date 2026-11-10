@@ -9,6 +9,8 @@ import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { readNoFollowRegular } from "./fs-safe.js";
 import { lintPrompt } from "./prompt-lint.js";
 import { discoverPrompts } from "./prompt-discover.js";
+import { parse as parseYaml } from "yaml";
+import { gitBlobSha, wholeFileVerbatimBlobs } from "./vendor-sync.js";
 
 export const SCAN_SKIP_DIRS = new Set(["node_modules", ".git", "dist", "build", "coverage",
   ".next", ".nuxt", ".worktrees", ".muster", ".claude", ".agents", "vendor", "__pycache__"]);
@@ -203,8 +205,31 @@ export async function collectScanFiles(root, io) {
   return files;
 }
 
+// Byte-exact upstream copies named by `<root>/vendor/manifest.yaml` (whole-file verbatim items)
+// are third-party prompt text muster may not edit, so they cannot carry a prompt-lint-disable
+// directive; they are exempt from the failing count while their bytes still match the recorded
+// baseBlob (an edited copy is linted like any other file). Adapted vendored files stay in scope
+// and carry their directive. A tree without a readable manifest exempts nothing.
+async function byteExactUpstreamFiles(root, files) {
+  let manifest;
+  try {
+    const { bytes } = await readNoFollowRegular(join(resolve(root), "vendor", "manifest.yaml"), { maxBytes: 4 * 1024 * 1024, label: "vendor manifest" });
+    manifest = parseYaml(bytes.toString("utf8"));
+  } catch { return new Set(); }
+  const blobs = wholeFileVerbatimBlobs(manifest);
+  const exact = new Set();
+  for (const { path, content } of files) {
+    const rel = path.split(sep).join("/");
+    const blob = blobs.get(rel);
+    // A Windows checkout may convert line endings of a file .gitattributes does not pin.
+    if (blob && (gitBlobSha(content) === blob || gitBlobSha(content.replace(/\r\n/g, "\n")) === blob)) exact.add(rel);
+  }
+  return exact;
+}
+
 export async function scanRepoPrompts(root, io) {
   const { files, incompleteEvidence, incompleteEvidenceTruncated } = await collectScanEvidence(root, io);
+  const upstream = await byteExactUpstreamFiles(root, files);
   const reviewed = discoverPrompts(files).map((p) => {
     // Discovered prompt docs and system/instruction code-prompts are the system genre;
     // dedicated prompt files (.prompt/.tmpl/templates) are task prompts.
@@ -216,15 +241,18 @@ export async function scanRepoPrompts(root, io) {
       file: p.file, kind: p.kind, identifier: p.identifier, genre, passing, total,
       weakest: weakest?.criterion ?? null,
       findings: findings.map(f => ({ id: f.id, severity: f.severity, fix: f.fix })),
+      ...(upstream.has(p.file.split(sep).join("/")) ? { exempt: "byte-exact upstream copy" } : {}),
     };
   });
-  const failing = reviewed.filter(r => !r.passing);
+  const failing = reviewed.filter(r => !r.passing && !r.exempt);
+  const exemptUpstream = reviewed.filter(r => !r.passing && r.exempt);
   const complete = incompleteEvidence.length === 0;
   return {
     scannedFiles: files.length,
     promptCount: reviewed.length,
-    passing: reviewed.length - failing.length,
+    passing: reviewed.filter(r => r.passing).length,
     failing: failing.length,
+    exemptUpstream: exemptUpstream.length,
     complete,
     clean: complete && failing.length === 0,
     truncated: incompleteEvidence.some(({ reason }) => reason === "file-limit"),

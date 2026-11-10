@@ -1,4 +1,4 @@
-<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001, ANTH-POS-001, GUARD-IDK-001, GUARD-CITE-002, ANTH-XML-001, GUARD-SEP-003: Pinned upstream supporting asset loaded inside its parent skill; the parent supplies role, output, evidence, and input boundaries. -->
+<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001: upstream wshobson/agents reference loaded inside its parent wsh-* builtin, which supplies the role and output format; merge-tracked in vendor/manifest.yaml. -->
 
 # nodejs-backend-patterns — detailed patterns and worked examples
 
@@ -289,7 +289,7 @@ export class UserRepository {
 
 ### Pattern 2: Dependency Injection
 
-Use a DI container to wire up repositories, services, and controllers. For a full container implementation, see [references/advanced-patterns.md](references/advanced-patterns.md).
+Use a DI container to wire up repositories, services, and controllers. For a full container implementation, see [references/advanced-patterns.md](./advanced-patterns.md).
 
 ## Middleware Patterns
 
@@ -583,19 +583,19 @@ export const asyncHandler = (
 
 Node.js supports both SQL and NoSQL databases. Use connection pooling for all production databases.
 
-Key patterns covered in [references/advanced-patterns.md](references/advanced-patterns.md):
+Key patterns covered in [references/advanced-patterns.md](./advanced-patterns.md):
 - **PostgreSQL with connection pool** — `pg` Pool configuration and graceful shutdown
 - **MongoDB with Mongoose** — connection management and schema definition
 - **Transaction pattern** — `BEGIN`/`COMMIT`/`ROLLBACK` with `pg` client
 
 ## Authentication & Authorization
 
-JWT-based auth with access tokens (short-lived, 15m) and refresh tokens (7d). Full `AuthService` implementation with `bcrypt` password comparison in [references/advanced-patterns.md](references/advanced-patterns.md).
+JWT-based auth with access tokens (short-lived, 15m) and refresh tokens (7d). Full `AuthService` implementation with `bcrypt` password comparison in [references/advanced-patterns.md](./advanced-patterns.md).
 
 ## Caching Strategies
 
-Redis-backed `CacheService` with get/set/delete/invalidatePattern, plus a `@Cacheable` decorator for method-level caching. See [references/advanced-patterns.md](references/advanced-patterns.md).
+Redis-backed `CacheService` with get/set/delete/invalidatePattern, plus a `@Cacheable` decorator for method-level caching. See [references/advanced-patterns.md](./advanced-patterns.md).
 
 ## API Response Format
 
-Standardized `ApiResponse` helper with `success`, `error`, and `paginated` static methods. See [references/advanced-patterns.md](references/advanced-patterns.md).
+Standardized `ApiResponse` helper with `success`, `error`, and `paginated` static methods. See [references/advanced-patterns.md](./advanced-patterns.md).

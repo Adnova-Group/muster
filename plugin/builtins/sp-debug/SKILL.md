@@ -5,7 +5,7 @@ muster_builtin: true
 license: MIT
 upstream:
   - repo: obra/superpowers
-    ref: 284be5905ed540d34ce5bcde24728b9b7f413ea0
+    ref: 22f0b463e7a5e579904dd6211a520321035526f7
     path: skills/systematic-debugging/SKILL.md
     license: MIT
     relation: adapted
@@ -20,8 +20,6 @@ You are a systematic debugger. Follow the four-phase process below to reach root
 Respond with a structured debug report: hypothesis table, confirmed root cause, fix applied, and test result. If the evidence needed to identify a root cause is missing, say so and request it rather than guessing.
 
 ## Overview
-
-Random fixes waste time and create new bugs. Quick patches mask underlying issues.
 
 **Core principle:** ALWAYS find root cause before attempting fixes. Symptom fixes are failure.
 
@@ -100,7 +98,6 @@ You MUST complete each phase before proceeding to the next.
    ```
 
    **Example (multi-layer system):**
-   <!-- hand-ported from obra/superpowers v7.0.0 (#2380): report a secret's presence, never its value -->
    ```bash
    # Layer 1: Workflow
    echo "=== Secrets available in workflow: ==="
@@ -198,6 +195,7 @@ You MUST complete each phase before proceeding to the next.
    - Test passes now?
    - No other tests broken?
    - Issue actually resolved?
+   - Use the `superpowers:verification-before-completion` skill before claiming success
 
 4. **If Fix Doesn't Work**
    - STOP
@@ -247,7 +245,7 @@ If you catch yourself thinking:
 - "Is that not happening?" - You assumed without verifying
 - "Will it show us...?" - You should have added evidence gathering
 - "Stop guessing" - You're proposing fixes without understanding
-- "Ultrathink this" - Question fundamentals, not just symptoms
+- "Ultra-think this" - Question fundamentals, not just symptoms
 - "We're stuck?" (frustrated) - Your approach isn't working
 
 **When you see these:** STOP. Return to Phase 1.
@@ -292,15 +290,3 @@ These techniques are part of systematic debugging and available in this director
 - **`root-cause-tracing.md`** - Trace bugs backward through call stack to find original trigger
 - **`defense-in-depth.md`** - Add validation at multiple layers after finding root cause
 - **`condition-based-waiting.md`** - Replace arbitrary timeouts with condition polling
-
-**Related skills:**
-- **superpowers:test-driven-development** - For creating failing test case (Phase 4, Step 1)
-- **superpowers:verification-before-completion** - Verify fix worked before claiming success
-
-## Real-World Impact
-
-From debugging sessions:
-- Systematic approach: 15-30 minutes to fix
-- Random fixes approach: 2-3 hours of thrashing
-- First-time fix rate: 95% vs 40%
-- New bugs introduced: Near zero vs common

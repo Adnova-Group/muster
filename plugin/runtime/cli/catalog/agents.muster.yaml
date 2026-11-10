@@ -1,0 +1,135 @@
+# Muster-authored agent definitions (role specialists), plus the merge-tracked Intent agents at the
+# end (vendored, not clean-room). Muster's own: inspired by atomic's
+# role taxonomy, authored fresh for muster. Discovered by Claude Code from plugin/agents/.
+# rank 55 sits just above the rank-50 vendored skills so a muster agent is preferred over a
+# bare skill for the same role (capabilities sorts by rank descending).
+# Convention: roles[0] is the PRIMARY role for each agent — it drives the modelForRole
+# policy assertion in test/agents.muster.test.js.  Place a new agent's governing role first.
+- id: muster-surgeon
+  kind: agent
+  roles: [implement]
+  rank: 55
+  description: "Surgical 1-2 file edits: typos, one-function rewrites, mechanical renames; refuses 3+ files."
+  provenance: { license: Apache-2.0, upstream: [damusix/atomic-claude] }
+- id: muster-executor
+  kind: agent
+  roles: [implement]
+  rank: 56 # default implementer: one PLAN.md task, cohesion-bounded, handles N files; outranks surgeon (refuses 3+)
+  description: Implements one PLAN.md task in its worktree with tagged atomic commits and a self-checked ExecResult.
+  provenance: { license: Apache-2.0, upstream: [open-gsd/gsd-core] }
+- id: muster-reviewer
+  kind: agent
+  roles: [code-review]
+  rank: 55
+  description: "Read-only reviewer of one task's commits; re-runs its tests and returns a PASS/FAIL ReviewResult."
+  provenance: { license: Apache-2.0, upstream: [open-gsd/gsd-core, damusix/atomic-claude] }
+- id: muster-investigator
+  kind: agent
+  roles: [code-navigation]
+  rank: 55
+  description: "Read-only code locator: answers where-is and what-calls questions as a file:line table."
+  provenance: { license: Apache-2.0, upstream: [damusix/atomic-claude] }
+- id: muster-strategist
+  kind: agent
+  roles: [architecture-review, plan]
+  rank: 55
+  description: Read-only heavyweight reasoning on whether an approach, plan or spec is right; does not implement.
+  provenance: { license: Apache-2.0, upstream: [damusix/atomic-claude] }
+- id: muster-improver
+  kind: agent
+  roles: [improve]
+  rank: 55
+  description: "Read-only retrospective over a finished run; proposes user-gated edits to muster's skills and agents."
+  provenance: { license: Apache-2.0, upstream: [damusix/atomic-claude] }
+# Dev-team workflow seats (docs/strategy/dev-team-topologies.md). Both are workflow seats in
+# src/specialists.js, so an agent_hint never makes them a task's builder: muster:team
+# dispatches the test writer for tdd tasks and the integration checker per wave.
+- id: muster-test-writer
+  kind: agent
+  roles: [test-author]
+  rank: 45 # below wsh-test-automator: a workflow seat need not win the role, and the frozen Codex lane's test-author pick stays put
+  keywords: [tdd, red, failing-test, regression]
+  description: "TDD red: writes a task's failing tests, never the code."
+  provenance: { license: Apache-2.0, upstream: [open-gsd/gsd-core] }
+- id: muster-integration-checker
+  kind: agent
+  roles: [code-review]
+  rank: 40 # below muster-reviewer: it never displaces the code-review default
+  keywords: [integration, wiring, contracts, parallel]
+  description: "Checks a wave's parallel tasks wire together."
+  provenance: { license: Apache-2.0, upstream: [open-gsd/gsd-core] }
+
+# ----- Intent agents: merge-tracked vendored from ghaida/intent (CC0-1.0; vendor/manifest.yaml
+# source intent). Not clean-room: they keep upstream text with a muster note. Ranks sit below
+# every chosen provider for their roles, so the planner assigns them by agent_hint for UX,
+# research and strategy tasks instead of displacing a role's default. roles[0] is core-tier,
+# so the frontmatter model (sonnet) equals modelForRole(roles[0]).
+- id: intent-wren
+  kind: agent
+  roles: [frontend]
+  rank: 38
+  keywords: [flows, wireframing, microcopy, ia]
+  description: "Experience design: flows, IA, screens and UI copy."
+  provenance: { license: CC0-1.0, upstream: [ghaida/intent] }
+- id: intent-vigil
+  kind: agent
+  roles: [frontend]
+  rank: 37
+  keywords: [evaluation, heuristic, wcag, resilience]
+  description: "UX evaluation: heuristics, edge cases, WCAG 2.2."
+  provenance: { license: CC0-1.0, upstream: [ghaida/intent] }
+- id: intent-sage
+  kind: agent
+  roles: [brainstorm]
+  rank: 44
+  keywords: [brainstorming, stuck, explore]
+  description: "Design brainstorming before solving a problem."
+  provenance: { license: CC0-1.0, upstream: [ghaida/intent] }
+- id: intent-ember
+  kind: agent
+  roles: [plan, research]
+  rank: 36
+  keywords: [strategy, framing, scoping, brief]
+  description: "UX strategy and research: frames problems, scopes."
+  provenance: { license: CC0-1.0, upstream: [ghaida/intent] }
+- id: intent-rune
+  kind: agent
+  roles: [plan]
+  rank: 35
+  keywords: [handoff, packaging]
+  description: "Design handoff: packages approved work for builders."
+  provenance: { license: CC0-1.0, upstream: [ghaida/intent] }
+- id: intent-noor
+  kind: agent
+  roles: [plan, frontend]
+  rank: 23
+  keywords: [ethics, darkpattern, engagement, orientation]
+  description: "UX engagement lead: context, ethics and routing."
+  provenance: { license: CC0-1.0, upstream: [ghaida/intent] }
+
+# ----- pr-review-toolkit agents: merge-tracked vendored from anthropics/claude-plugins-official
+# (Apache-2.0; vendor/manifest.yaml source pr-review-toolkit). Read-only specialist reviewers with
+# stable ids (the development subagent teams reference them). Ranks sit below muster-reviewer (55)
+# and every installed code-review provider, so they are dispatched by id, never as a role default.
+# roles[0] is core-tier, so the frontmatter model (sonnet) equals modelForRole(roles[0]).
+- id: prt-silent-failure-hunter
+  kind: agent
+  roles: [code-review]
+  rank: 46
+  keywords: [silent-failure, error-handling, catch, fallback, swallowed]
+  description: "Silent-failure and error-handling review."
+  provenance: { license: Apache-2.0, upstream: [anthropics/claude-plugins-official] }
+- id: prt-type-design-analyzer
+  kind: agent
+  roles: [code-review, refactor]
+  rank: 45
+  keywords: [types, type-design, invariants, encapsulation]
+  description: "Type design and invariant review."
+  provenance: { license: Apache-2.0, upstream: [anthropics/claude-plugins-official] }
+- id: prt-pr-test-analyzer
+  kind: agent
+  roles: [code-review, test-author]
+  rank: 44
+  keywords: [test-coverage, coverage, tests, edge-cases]
+  description: "PR test-coverage gap review."
+  provenance: { license: Apache-2.0, upstream: [anthropics/claude-plugins-official] }

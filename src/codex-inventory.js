@@ -13,6 +13,26 @@ const execFileDefault = promisify(execFileCb);
 const INJECTED_CODEX_RUNNER = "muster:injected-codex-runner";
 const startupCodexHome = process.env.CODEX_HOME;
 
+// The Codex lane is frozen: builtins added after the freeze (the merge-tracked UX family:
+// uupm-*, intent-*, typeui, pfd; impeccable-*; the complementary evaluation/security/engineering
+// skills: evals-*, sentry-*, openai-*, tob-*, mp-*, splab-*, addy-source-driven-development; the
+// complementary research/data, SRE, writing and stack skills: kdense-*, kwp-*, go-*, simple-english,
+// supabase-postgres-best-practices and the ids below) are Claude-plugin only and never copied into
+// the Codex bundle's internal skills, so CODEX_COUNTS below stays the frozen census. So does
+// muster-pm (the PM artifact kit) and muster-roadmap (roadmap-prioritization, moved to a builtin):
+// the frozen lane gets no new features.
+// wsh-*, sp-* and mkt-* also name builtins that predate the freeze and ship in the Codex bundle,
+// so the complements added to those sources are listed by id.
+const COMPLEMENT_IDS = new Set([
+  "addy-source-driven-development", "simple-english", "supabase-postgres-best-practices",
+  "wsh-slo-implementation", "wsh-postmortem-writing", "wsh-incident-runbook-templates",
+  "wsh-security-requirement-extraction", "wsh-changelog-automation",
+  "mkt-copy-editing", "sp-writing-skills"
+]);
+export const isUxFamilyBuiltin = name => /^(uupm|intent)-/.test(name) || name === "typeui" || name === "pfd";
+export const isComplementBuiltin = name => /^(evals|sentry|openai|tob|mp|splab|kdense|kwp|go)-/.test(name) || COMPLEMENT_IDS.has(name);
+export const isCodexFrozenOutBuiltin = name => isUxFamilyBuiltin(name) || isComplementBuiltin(name) || /^impeccable-/.test(name) || name === "muster-pm" || name === "muster-roadmap";
+
 // Expected contents of one generated Codex bundle. This census belongs with
 // inventory/build validation; model adapters only translate tiers to models.
 export const CODEX_COUNTS = Object.freeze({
@@ -21,12 +41,16 @@ export const CODEX_COUNTS = Object.freeze({
   // (read by path, not listed per session); router/review-gate/tournament feed Codex from
   // codex/frozen/skills/; coordination, domain-router, sp-plan, sp-subagents and the gsd-*
   // builtins were deleted (the muster-gsd-* Codex fallbacks stay in codex/fallback-skills).
-  nativeSkills: 7,
-  builtinSkills: 46,
+  // 5 after PM domain stage D retired the prd-pipeline skill and moved roadmap-prioritization to
+  // the (Codex-frozen-out) muster-roadmap builtin.
+  nativeSkills: 5,
+  // +6 on 2026-11-10: book-run, sepia and the four cws-* craft builtins (book runs).
+  builtinSkills: 98,
   publicSkills: 8,
-  // 59: nativeSkills (7) + builtinSkills (46) + 3 frozen skills + 3 muster-gsd-* fallbacks.
-  internalSkills: 59,
-  pipelines: 20,
+  // 109: nativeSkills (5) + builtinSkills (98) + 3 frozen skills + 3 muster-gsd-* fallbacks.
+  internalSkills: 109,
+  // 19 after PM domain stage D retired the user-story pipeline.
+  pipelines: 19,
   mcpTools: 30,
   primaryModes: 7,
   aliases: 0

@@ -35,30 +35,68 @@ Every non-vendored source, generated from the manifest. Each row lists the items
 
 | Source | License | Basis for | Relation |
 | --- | --- | --- | --- |
-| [pbakaus/impeccable](https://github.com/pbakaus/impeccable) @ `32930818a109` | Apache-2.0 | `design`, `audit-pattern-design-ux` | inspired-by |
-| [obra/superpowers](https://github.com/obra/superpowers) @ `284be5905ed5` | MIT | 7 vendored builtins and agents | adapted, vendored |
-| [wshobson/agents](https://github.com/wshobson/agents) @ `cf6059d030bf` | MIT | 52 vendored builtins and agents | adapted, vendored |
-| [open-gsd/gsd-core](https://github.com/open-gsd/gsd-core) @ `9385f4618b52` | MIT | 40 vendored builtins and agents | adapted, vendored |
+| [pbakaus/impeccable](https://github.com/pbakaus/impeccable) @ `035c8f319edd` | Apache-2.0 | 26 vendored builtins and agents | inspired-by, adapted |
+| [obra/superpowers](https://github.com/obra/superpowers) @ `22f0b463e7a5` | MIT | 31 vendored builtins and agents | adapted, vendored |
+| [wshobson/agents](https://github.com/wshobson/agents) @ `9c61ab243def` | MIT | 98 vendored builtins and agents | adapted, vendored |
+| [anthropics/skills](https://github.com/anthropics/skills) @ `2c5958ecac7c` | Apache-2.0 | 4 vendored builtins and agents | adapted, vendored |
+| [Leonxlnx/taste-skill-classics](https://github.com/Leonxlnx/taste-skill-classics) @ `5e08c9383dc4` | MIT | 4 vendored builtins and agents | vendored |
+| [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills) @ `301b02b12bff` | MIT | 3 vendored builtins and agents | adapted, vendored |
+| [emilkowalski/skills](https://github.com/emilkowalski/skills) @ `715c1807e08c` | MIT | 23 vendored builtins and agents | vendored |
+| [nutlope/hallmark](https://github.com/nutlope/hallmark) @ `407fa689f4a2` | MIT | 109 vendored builtins and agents | adapted, vendored |
+| [greensock/gsap-skills](https://github.com/greensock/gsap-skills) @ `aed9cfd32777` | MIT | 8 vendored builtins and agents | vendored |
+| [elayadesign/ai-design-skills](https://github.com/elayadesign/ai-design-skills) @ `456d9e0d3e2d` | MIT | 2 vendored builtins and agents | vendored |
+| [jakubkrehel/skills](https://github.com/jakubkrehel/skills) @ `72bdd6121cd5` | MIT | 46 vendored builtins and agents | vendored |
+| [gotalab/cc-sdd](https://github.com/gotalab/cc-sdd) @ `e2a0c671aef3` | MIT | 2 vendored builtins and agents | vendored |
+| [K-Dense-AI/scientific-agent-skills](https://github.com/K-Dense-AI/scientific-agent-skills) @ `2d2065fb4520` | MIT | 36 vendored builtins and agents | vendored, adapted |
+| [AminBlg/SimpleEnglish](https://github.com/AminBlg/SimpleEnglish) @ `a6fcb4fde098` | MIT | 5 vendored builtins and agents | vendored |
+| [supabase/agent-skills](https://github.com/supabase/agent-skills) @ `c9be0e931b79` | MIT | 33 vendored builtins and agents | vendored |
+| [samber/cc-skills-golang](https://github.com/samber/cc-skills-golang) @ `d68d80aec298` | MIT | 28 vendored builtins and agents | vendored |
+| [Nanako0129/sepia](https://github.com/Nanako0129/sepia) @ `0eb11d6c64c9` | MIT | 20 vendored builtins and agents | vendored |
+| [haowjy/creative-writing-skills](https://github.com/haowjy/creative-writing-skills) @ `15003a6fd5a1` | Apache-2.0 | 31 vendored builtins and agents | vendored |
+| [haowjy/creative-writing-skills](https://github.com/haowjy/creative-writing-skills) @ `15003a6fd5a1` | Apache-2.0 | `book-developmental-editor`, `book-line-editor`, `book-continuity-checker`, `book-beta-reader` | inspired-by |
+| [danjdewhurst/story-skills](https://github.com/danjdewhurst/story-skills) @ `3c0e0346ee09` | MIT | `book-continuity-checker`, `book-beta-reader`, `book-run` | inspired-by |
+| [Calliope-Editor/writing-skills](https://github.com/Calliope-Editor/writing-skills) @ `2fad031982cb` | MIT | `book-continuity-checker`, `book-run` | inspired-by |
+| [epicsagas/Velith](https://github.com/epicsagas/Velith) @ `5ddd29675c5f` | Apache-2.0 | `book-beta-reader`, `book-run` | inspired-by |
+| [clutcher/book-writing-skills](https://github.com/clutcher/book-writing-skills) @ `0bea387d1fe1` | MIT | `book-run` | inspired-by |
+| [PenglongHuang/chinese-novelist-skill](https://github.com/PenglongHuang/chinese-novelist-skill) @ `507d41567925` | MIT | `book-writer` | inspired-by |
+| [howells/fiction](https://github.com/howells/fiction) @ `2f256acbfce6` | NONE | `book-continuity-checker` | inspired-by |
+| [felipelobomotta-blip/book-genesis-studio](https://github.com/felipelobomotta-blip/book-genesis-studio) @ `88e2e0047ad2` | MIT | `book-beta-reader` | inspired-by |
+| [open-gsd/gsd-core](https://github.com/open-gsd/gsd-core) @ `9385f4618b52` | MIT | 42 vendored builtins and agents | adapted, vendored |
+| [nextlevelbuilder/ui-ux-pro-max-skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) @ `4f2dbb67e649` | MIT | 144 vendored builtins and agents | vendored, inspired-by, adapted |
+| [ghaida/intent](https://github.com/ghaida/intent) @ `1806110106a4` | CC0-1.0 | 44 vendored builtins and agents | vendored, inspired-by, adapted |
+| [bergside/typeui](https://github.com/bergside/typeui) @ `efc5f21dff38` | MIT | 4 vendored builtins and agents | adapted |
+| [skovalik/perception-first-design](https://github.com/skovalik/perception-first-design) @ `1704ff61c188` | CC-BY-SA-4.0 | 40 vendored builtins and agents | vendored, adapted |
+| [ai-evals-course/evals-skills](https://github.com/ai-evals-course/evals-skills) @ `80d5f7b0127c` | Apache-2.0 | 7 vendored builtins and agents | vendored, inspired-by, adapted |
+| [getsentry/skills](https://github.com/getsentry/skills) @ `e94f22214528` | Apache-2.0 | 12 vendored builtins and agents | vendored, inspired-by, adapted |
+| [getsentry/skills](https://github.com/getsentry/skills) @ `e94f22214528` | CC-BY-SA-4.0 | 23 vendored builtins and agents | inspired-by, adapted, vendored |
+| [openai/skills](https://github.com/openai/skills) @ `49f948faa925` | Apache-2.0 | 5 vendored builtins and agents | inspired-by, adapted, vendored |
+| [trailofbits/skills](https://github.com/trailofbits/skills) @ `e4dd0bb5b155` | CC-BY-SA-4.0 | 26 vendored builtins and agents | vendored, inspired-by, adapted |
+| [anthropics/claude-plugins-official](https://github.com/anthropics/claude-plugins-official) @ `dceb15d50832` | Apache-2.0 | 4 vendored builtins and agents | vendored, adapted |
+| [mattpocock/skills](https://github.com/mattpocock/skills) @ `4ae2317ddb22` | MIT | 15 vendored builtins and agents | vendored, inspired-by, adapted |
+| [obra/superpowers-lab](https://github.com/obra/superpowers-lab) @ `51111f74f240` | MIT | 8 vendored builtins and agents | vendored, inspired-by, adapted |
+| [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills) @ `301b02b12bff` | MIT | 1 vendored builtins and agents | adapted |
 | [open-gsd/gsd-core](https://github.com/open-gsd/gsd-core) @ `1c352d1ea37b` | MIT | `muster-gsd-plan-phase`, `muster-gsd-execute-phase`, `muster-gsd-verify-work` | mechanism-port |
-| [wshobson/agents](https://github.com/wshobson/agents) @ `2de74ac1c8f6` | MIT | `wsh-signed-audit-trails-recipe` | mechanism-port |
-| [blader/humanizer](https://github.com/blader/humanizer) @ `1b48564898e9` | MIT | `muster-humanizer` | adapted |
-| [rudra496/StealthHumanizer](https://github.com/rudra496/StealthHumanizer) @ `1aacbda6e2f6` | MIT | `muster-humanizer` | adapted |
-| [conorbronsdon/avoid-ai-writing](https://github.com/conorbronsdon/avoid-ai-writing) @ `500ff59006f1` | MIT | `muster-humanizer` | adapted |
+| [wshobson/agents](https://github.com/wshobson/agents) @ `2de74ac1c8f6` | MIT | `wsh-signed-audit-trails-recipe`, `wsh-code-reviewer` | mechanism-port, vendored |
+| [blader/humanizer](https://github.com/blader/humanizer) @ `b48c832f0f80` | MIT | `muster-humanizer` | adapted |
+| [rudra496/StealthHumanizer](https://github.com/rudra496/StealthHumanizer) @ `8b0e90874c61` | MIT | `muster-humanizer` | adapted |
+| [conorbronsdon/avoid-ai-writing](https://github.com/conorbronsdon/avoid-ai-writing) @ `30971f1c50c6` | MIT | `muster-humanizer` | adapted |
 | [jalaalrd/anti-ai-slop-writing](https://github.com/jalaalrd/anti-ai-slop-writing) @ `63255f9bbb75` | NONE | `muster-humanizer` | inspired-by |
 | [aaaronmiller/humanize-writing](https://github.com/aaaronmiller/humanize-writing) @ `c07a2a8dab1f` | MIT | `muster-humanizer` | adapted |
 | [linexjlin/GPTs](https://github.com/linexjlin/GPTs) @ `3adfb7b38423` | NONE | `muster-humanizer` | inspired-by |
-| [hermes-labs-ai/lintlang](https://github.com/hermes-labs-ai/lintlang) @ `dd1723864381` | Apache-2.0 | `muster-prompt-smith` | mechanism-port |
-| [promptfoo/promptfoo](https://github.com/promptfoo/promptfoo) @ `3901d3949df3` | MIT | `muster-prompt-smith` | inspired-by |
+| [hardikpandya/stop-slop](https://github.com/hardikpandya/stop-slop) @ `8da1f030185b` | MIT | `muster-humanizer` | adapted |
+| [petergyang/no-ai-slop](https://github.com/petergyang/no-ai-slop) @ `000650b15698` | MIT | `muster-humanizer` | adapted |
+| [hermes-labs-ai/lintlang](https://github.com/hermes-labs-ai/lintlang) @ `645f57879ff5` | Apache-2.0 | `muster-prompt-smith` | mechanism-port |
+| [promptfoo/promptfoo](https://github.com/promptfoo/promptfoo) @ `8569e72ed6cf` | MIT | `muster-prompt-smith` | inspired-by |
 | [shobrook/promptimal](https://github.com/shobrook/promptimal) @ `e03cbc1db19c` | MIT | `muster-prompt-smith` | inspired-by |
-| [gepa-ai/gepa](https://github.com/gepa-ai/gepa) @ `92dadfffbe98` | MIT | `muster-prompt-smith` | inspired-by |
-| [felipelobomotta-blip/book-genesis-studio](https://github.com/felipelobomotta-blip/book-genesis-studio) @ `a43a429bdec1` | MIT | `book`, `muster-scorer` | mechanism-port, inspired-by |
-| [NousResearch/autonovel](https://github.com/NousResearch/autonovel) @ `d165f267a0ff` | NONE | `book` | inspired-by |
+| [gepa-ai/gepa](https://github.com/gepa-ai/gepa) @ `ce5b0d6e3d6a` | MIT | `muster-prompt-smith` | inspired-by |
+| [felipelobomotta-blip/book-genesis-studio](https://github.com/felipelobomotta-blip/book-genesis-studio) @ `c2fc628fd5d1` | MIT | `book`, `muster-scorer` | mechanism-port, inspired-by |
+| [NousResearch/autonovel](https://github.com/NousResearch/autonovel) @ `d165f267a0ff` | NONE | `book`, `book-run` | inspired-by |
 | [CSHaitao/Awesome-LLMs-as-Judges](https://github.com/CSHaitao/Awesome-LLMs-as-Judges) @ `d89ed4241b81` | NONE | `muster-scorer` | inspired-by |
 | [llm-as-a-judge/Awesome-LLM-as-a-judge](https://github.com/llm-as-a-judge/Awesome-LLM-as-a-judge) @ `ad3b4ce1d869` | NONE | `muster-scorer` | inspired-by |
-| [microsoft/LLM-Rubric](https://github.com/microsoft/LLM-Rubric) @ `70d56fc4e9a2` | MIT | `muster-scorer` | inspired-by |
-| [assafelovic/gpt-researcher](https://github.com/assafelovic/gpt-researcher) @ `409b8b60b477` | Apache-2.0 | `muster-research` | inspired-by |
+| [microsoft/LLM-Rubric](https://github.com/microsoft/LLM-Rubric) @ `030ab161e5af` | MIT | `muster-scorer` | inspired-by |
+| [assafelovic/gpt-researcher](https://github.com/assafelovic/gpt-researcher) @ `597a99e2ef87` | Apache-2.0 | `muster-research` | inspired-by |
 | [mbzuai-nlp/qraft](https://github.com/mbzuai-nlp/qraft) @ `3bbea66c832d` | NONE | `muster-research` | inspired-by |
-| [damusix/atomic-claude](https://github.com/damusix/atomic-claude) | MIT | `muster-surgeon`, `muster-reviewer`, `muster-investigator`, `muster-strategist`, `muster-improver`, `improve`, `muster` | inspired-by |
+| [damusix/atomic-claude](https://github.com/damusix/atomic-claude) @ `b4ca195cae60` | MIT | `muster-surgeon`, `muster-reviewer`, `muster-investigator`, `muster-strategist`, `muster-improver`, `improve`, `muster` | inspired-by |
 | [obra/superpowers](https://github.com/obra/superpowers) @ `d884ae04edeb` | MIT | `muster-runner` | mechanism-port |
 | [wshobson/agents](https://github.com/wshobson/agents) @ `511f8345cf42` | MIT | `muster-runner` | mechanism-port |
 | [VoltAgent/awesome-claude-code-subagents](https://github.com/VoltAgent/awesome-claude-code-subagents) @ `14bbcf5d984c` | MIT | `muster-runner` | mechanism-port |
@@ -67,25 +105,31 @@ Every non-vendored source, generated from the manifest. Each row lists the items
 | [disler/infinite-agentic-loop](https://github.com/disler/infinite-agentic-loop) @ `6e9a012f81ef` | NONE | `muster-runner` | inspired-by |
 | [hesreallyhim/awesome-claude-code](https://github.com/hesreallyhim/awesome-claude-code) @ `957922fca4cc` | CC-BY-NC-ND-4.0 | `muster-runner` | inspired-by |
 | [deanpeters/product-manager-prompts](https://github.com/deanpeters/product-manager-prompts) @ `418049a64858` | CC-BY-NC-SA-4.0 | `prd`, `epic` | inspired-by |
-| [deanpeters/Product-Manager-Skills](https://github.com/deanpeters/Product-Manager-Skills) @ `70fb6c4e4163` | CC-BY-NC-SA-4.0 | `prd`, `epic`, `user-story`, `launch-plan` | inspired-by |
-| [phuryn/pm-skills](https://github.com/phuryn/pm-skills) @ `d384f0c9eb81` | MIT | `user-story`, `launch-plan`, `prd` | inspired-by |
-| [anthropics/knowledge-work-plugins](https://github.com/anthropics/knowledge-work-plugins) @ `ca4618669075` | Apache-2.0 | `prd` | inspired-by |
+| [deanpeters/Product-Manager-Skills](https://github.com/deanpeters/Product-Manager-Skills) @ `70fb6c4e4163` | CC-BY-NC-SA-4.0 | `prd`, `epic`, `launch-plan` | inspired-by |
+| [phuryn/pm-skills](https://github.com/phuryn/pm-skills) @ `9af7bfd0bc47` | MIT | 8 vendored builtins and agents | inspired-by, adapted |
+| [github/spec-kit](https://github.com/github/spec-kit) @ `08252af8c5fb` | MIT | `muster-pm` | inspired-by |
+| [Fission-AI/OpenSpec](https://github.com/Fission-AI/OpenSpec) @ `579fcac57ae0` | MIT | `muster-pm` | inspired-by |
+| [Wirasm/prp](https://github.com/Wirasm/prp) @ `435292597e7b` | MIT | `muster-pm` | inspired-by |
+| [product-on-purpose/pm-skills](https://github.com/product-on-purpose/pm-skills) @ `9b920db418c5` | Apache-2.0 | 6 vendored builtins and agents | inspired-by, adapted |
+| [phuryn/product-engineering](https://github.com/phuryn/product-engineering) @ `061014ffe954` | MIT | 3 vendored builtins and agents | adapted |
+| [open-gsd/gsd-core](https://github.com/open-gsd/gsd-core) @ `9385f4618b52` | MIT | `muster-pm` | inspired-by |
+| [anthropics/knowledge-work-plugins](https://github.com/anthropics/knowledge-work-plugins) @ `e605d8ddbfb6` | Apache-2.0 | 6 vendored builtins and agents | inspired-by, adapted |
 | [joelparkerhenderson/objectives-and-key-results](https://github.com/joelparkerhenderson/objectives-and-key-results) @ `f7269521672a` | NONE | `okrs` | inspired-by |
-| [architecture-decision-record/architecture-decision-record](https://github.com/architecture-decision-record/architecture-decision-record) @ `a36c53f49517` | CC-BY-NC-SA-4.0 | `ai-implementation-spec` | inspired-by |
-| [adr/madr](https://github.com/adr/madr) @ `8cb64d7e8a85` | MIT OR CC0-1.0 | `ai-implementation-spec` | inspired-by |
-| [olivierlacan/keep-a-changelog](https://github.com/olivierlacan/keep-a-changelog) @ `37364f7ae516` | MIT | `release-notes` | inspired-by |
+| [architecture-decision-record/architecture-decision-record](https://github.com/architecture-decision-record/architecture-decision-record) @ `a36c53f49517` | CC-BY-NC-SA-4.0 | `design` | inspired-by |
+| [adr/madr](https://github.com/adr/madr) @ `ba75bb1b20d4` | MIT OR CC0-1.0 | `design` | inspired-by |
+| [olivierlacan/keep-a-changelog](https://github.com/olivierlacan/keep-a-changelog) @ `08d0df5a7e93` | MIT | `release-notes` | inspired-by |
 | [gcamilo/management-consulting](https://github.com/gcamilo/management-consulting) @ `dd2d099dc390` | MIT | `executive-summary` | inspired-by |
 | [reasoncommons/issuetrees](https://github.com/reasoncommons/issuetrees) @ `56ad78e0ce78` | NONE | `executive-summary` | inspired-by |
 | [cdeust/ai-prd-generator](https://github.com/cdeust/ai-prd-generator) @ `4189d41b102d` | LicenseRef-proprietary | `prd` | inspired-by |
-| [coreyhaines31/marketingskills](https://github.com/coreyhaines31/marketingskills) | MIT | `competitive-battlecard`, `lead-magnet`, `case-study`, `newsletter` | inspired-by |
-| [CosmoBlk/email-marketing-bible](https://github.com/CosmoBlk/email-marketing-bible) | MIT | `competitive-battlecard`, `lead-magnet`, `case-study`, `newsletter` | inspired-by |
-| [AgriciDaniel/claude-email](https://github.com/AgriciDaniel/claude-email) | MIT | `competitive-battlecard`, `lead-magnet`, `case-study`, `newsletter` | inspired-by |
+| [coreyhaines31/marketingskills](https://github.com/coreyhaines31/marketingskills) @ `8a3bde8083bd` | MIT | 8 vendored builtins and agents | inspired-by |
+| [CosmoBlk/email-marketing-bible](https://github.com/CosmoBlk/email-marketing-bible) @ `962648c1b147` | MIT | `competitive-battlecard`, `lead-magnet`, `case-study`, `newsletter` | inspired-by |
+| [AgriciDaniel/claude-email](https://github.com/AgriciDaniel/claude-email) @ `182270a0bbcd` | MIT | `competitive-battlecard`, `lead-magnet`, `case-study`, `newsletter` | inspired-by |
 | [SkeltonThatcher/run-book-template](https://github.com/SkeltonThatcher/run-book-template) @ `7014714b6021` | NONE | `runbook` | inspired-by |
-| [dastergon/awesome-sre](https://github.com/dastergon/awesome-sre) | CC0-1.0 | `runbook` | inspired-by |
-| [runbear-io/awesome-runbook](https://github.com/runbear-io/awesome-runbook) | CC0-1.0 | `runbook` | inspired-by |
+| [dastergon/awesome-sre](https://github.com/dastergon/awesome-sre) @ `e91ef69aa521` | CC0-1.0 | `runbook` | inspired-by |
+| [runbear-io/awesome-runbook](https://github.com/runbear-io/awesome-runbook) @ `d83a294e4eb6` | CC0-1.0 | `runbook` | inspired-by |
 | [Scoutflo/Scoutflo-SRE-Playbooks](https://github.com/Scoutflo/Scoutflo-SRE-Playbooks) @ `acc55da0224f` | MIT | `runbook` | inspired-by |
 | [WynterJones/CoppieGPT](https://github.com/WynterJones/CoppieGPT) @ `96fc78149f03` | NONE | `muster-author` | inspired-by |
-| [boraoztunc/skills](https://github.com/boraoztunc/skills) @ `c5c5dea7ceba` | Apache-2.0 | `muster-author` | inspired-by |
+| [boraoztunc/skills](https://github.com/boraoztunc/skills) @ `1209fb6b07b8` | Apache-2.0 | `muster-author` | inspired-by |
 
 ### Works
 
@@ -93,13 +137,18 @@ Articles, books, papers, standards, talks and people whose ideas, frameworks or 
 
 | Work | Kind | Basis for |
 | --- | --- | --- |
+| How to Write a Novel Using the Snowflake Method, Randy Ingermanson | book | `book-run` |
 | [Unlock AI: Open Engine and Open Skills](https://unlock-ai.natebjones.com/), Nate B. Jones | person | `review-gate`, `muster-humanizer`, `muster-image`, `muster-research`, `prd`, `case-study`, `newsletter`, `blog-post`, `social-post` |
 | [Building effective agents](https://www.anthropic.com/research/building-effective-agents), Erik Schluntz and Barry Zhang (Anthropic) | article | `muster-runner` |
 | [Create custom subagents (Claude Code docs)](https://code.claude.com/docs/en/sub-agents), Anthropic | article | `muster-runner` |
 | [LLM-Blender: Ensembling Large Language Models with Pairwise Ranking and Generative Fusion](https://arxiv.org/abs/2306.02561), Dongfu Jiang, Xiang Ren and Bill Yuchen Lin (ACL 2023) | paper | `tournament` |
 | [Prompting best practices (Claude Docs)](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices), Anthropic | article | `muster-prompt-smith` |
 | [Reduce hallucinations (Claude Docs, Strengthen guardrails)](https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations), Anthropic | article | `muster-prompt-smith` |
-| [Define success criteria and build evaluations (Claude Docs)](https://platform.claude.com/docs/en/test-and-evaluate/develop-tests), Anthropic | article | `muster-prompt-smith` |
+| [Define success criteria and build evaluations (Claude Docs)](https://platform.claude.com/docs/en/test-and-evaluate/develop-tests), Anthropic | article | `muster-prompt-smith`, `muster-pm` |
+| [Demystifying evals for AI agents](https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents), Anthropic | article | `muster-pm` |
+| [Evaluation best practices (OpenAI API docs)](https://developers.openai.com/api/docs/guides/evaluation-best-practices), OpenAI | article | `muster-pm` |
+| [Your AI Product Needs Evals](https://hamel.dev/blog/posts/evals/), Hamel Husain | article | `muster-pm` |
+| [AI Evals: Everything You Need to Know](https://hamel.dev/blog/posts/evals-faq/), Hamel Husain and Shreya Shankar | article | `muster-pm` |
 | [The new rules of context engineering for Claude 5 generation models](https://claude.com/blog/the-new-rules-of-context-engineering-for-claude-5-generation-models), Anthropic | article | `muster-prompt-smith` |
 | LLM-Cite | paper | `muster-research` |
 | [Wikipedia:Signs of AI writing](https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing), WikiProject AI Cleanup (Wikipedia editors) | article | `muster-humanizer` |
@@ -118,26 +167,21 @@ Articles, books, papers, standards, talks and people whose ideas, frameworks or 
 | The Hero with a Thousand Faces, Joseph Campbell | book | `case-study` |
 | [Building a StoryBrand (SB7)](https://storybrand.com/), Donald Miller | book | `book`, `case-study` |
 | The Pyramid Principle (SCQA, MECE), Barbara Minto | book | `executive-summary`, `book` |
-| Save the Cat!, Blake Snyder | book | `book` |
-| The Story Grid, Shawn Coyne | book | `book` |
-| Techniques of the Selling Writer (scene and sequel), Dwight V. Swain | book | `book` |
-| Chapter Blog nonfiction outline; ProWritingAid non-fiction structure | article | `book` |
+| Save the Cat!, Blake Snyder | book | `book`, `book-run` |
+| The Story Grid, Shawn Coyne | book | `book`, `book-run` |
+| Techniques of the Selling Writer (scene and sequel), Dwight V. Swain | book | `book`, `book-run` |
+| Chapter Blog nonfiction outline; ProWritingAid non-fiction structure | article | `book`, `book-run` |
 | Competing Against Luck (Jobs to Be Done), Clayton M. Christensen, Taddy Hall, Karen Dillon and David S. Duncan | book | `muster-author`, `prd`, `epic` |
 | Lean UX (hypothesis statements, proto-personas), Jeff Gothelf and Josh Seiden | book | `prd`, `epic` |
 | [The Humanizing Work Guide to Splitting User Stories](https://www.humanizingwork.com/the-humanizing-work-guide-to-splitting-user-stories/), Richard Lawrence and Peter Green | article | `epic` |
 | [User Story Mapping](https://www.jpattonassociates.com/user-story-mapping/), Jeff Patton | book | `epic` |
-| User Stories Applied (As a / I want / So that), Mike Cohn | book | `user-story` |
-| [INVEST in Good Stories, and SMART Tasks](https://xp123.com/invest-in-good-stories-and-smart-tasks/), Bill Wake | article | `user-story` |
-| [Essential XP: Card, Conversation, Confirmation](https://ronjeffries.com/xprog/articles/expcardconversationconfirmation/), Ron Jeffries | article | `user-story` |
-| [Gherkin reference (Given / When / Then)](https://cucumber.io/docs/gherkin/reference/), Cucumber | article | `user-story` |
-| [Designing features using job stories](https://www.intercom.com/blog/using-job-stories-design-features-ui-ux/), Alan Klement (Intercom) | article | `user-story` |
 | [Working Backwards (PR/FAQ)](https://workingbackwards.com/), Colin Bryar and Bill Carr | book | `launch-plan` |
 | [Semantic Versioning 2.0.0](https://semver.org/), Tom Preston-Werner | standard | `release-notes` |
 | Measure What Matters (OKRs), John Doerr | book | `okrs` |
 | High Output Management, Andrew S. Grove | book | `okrs` |
-| [RICE: simple prioritization for product managers](https://www.intercom.com/blog/rice-simple-prioritization-for-product-managers/), Sean McBride (Intercom) | article | `roadmap`, `roadmap-prioritization` |
-| [The Now-Next-Later roadmap](https://www.prodpad.com/blog/invented-now-next-later-roadmap/), Janna Bastow (ProdPad) | article | `roadmap`, `roadmap-prioritization` |
-| [Documenting Architecture Decisions](https://www.cognitect.com/blog/2011/11/15/documenting-architecture-decisions), Michael Nygard | article | `ai-implementation-spec` |
+| [RICE: simple prioritization for product managers](https://www.intercom.com/blog/rice-simple-prioritization-for-product-managers/), Sean McBride (Intercom) | article | `roadmap`, `muster-roadmap` |
+| [The Now-Next-Later roadmap](https://www.prodpad.com/blog/invented-now-next-later-roadmap/), Janna Bastow (ProdPad) | article | `roadmap`, `muster-roadmap` |
+| [Documenting Architecture Decisions](https://www.cognitect.com/blog/2011/11/15/documenting-architecture-decisions), Michael Nygard | article | `design` |
 | ISO/IEC/IEEE 29119-3, Software testing: Test documentation, ISO/IEC/IEEE | standard | `ai-test-plan` |
 | [IEEE 829, Standard for Software and System Test Documentation (withdrawn)](https://standards.ieee.org/ieee/829/3787/), IEEE | standard | `ai-test-plan` |
 | [Site Reliability Engineering (Managing Incidents)](https://sre.google/sre-book/managing-incidents/), Betsy Beyer, Chris Jones, Jennifer Petoff and Niall Richard Murphy (Google) | book | `runbook` |
@@ -191,6 +235,10 @@ The stage-2 lifecycle agents are adapted from [gsd-core](https://github.com/open
 - **muster-executor**: implements one task in its own worktree (from gsd-executor, with the former builder's one-slice scope contract)
 - **muster-verifier**: goal-backward verification with honest abstain (from gsd-verifier)
 - **muster-reviewer**: adversarial review of one task's commits (from gsd-code-reviewer, with muster's verdict discipline)
+- **muster-test-writer**: writes a task's failing tests before anyone implements it (from gsd-nyquist-auditor)
+- **muster-integration-checker**: checks that a wave's parallel tasks wire together (from gsd-integration-checker)
+
+The `muster:debug` workflow's hypothesis investigator, **wsh-team-debugger**, is adapted from wshobson's agent-teams `team-debugger` (MIT).
 
 ## Additional inspiration (clean-room, mechanism-level)
 

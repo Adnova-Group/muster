@@ -5,7 +5,8 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, sep } from "node:path";
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { trackedMkdtemp } from "../test-support/helpers.js";
 import { buildArgsFromPlan, writeBuildArgs } from "../src/build-args.js";
@@ -41,16 +42,38 @@ must_haves: [greet works]
 `;
 
 test("buildArgsFromPlan: waves in order, decoded verify commands, agentHint kept, checkpoints become humanNeeded", () => {
-  const { args, humanNeeded, problems } = buildArgsFromPlan(PLAN, { runId: "r1", base: "abc", models: { executor: { model: "haiku" } } });
+  const { args, humanNeeded, problems } = buildArgsFromPlan(PLAN, { runId: "r1", base: "abc", branch: "muster/r1", models: { executor: { model: "haiku" } } });
   assert.deepEqual(problems, []);
   assert.equal(args.runId, "r1");
   assert.equal(args.base, "abc");
+  assert.equal(args.branch, "muster/r1", "executors fast-forward to the work branch tip, which carries the plan commit");
   assert.deepEqual(args.models, { executor: { model: "haiku" } });
   assert.deepEqual(args.waves.map((w) => w.map((t) => t.taskId)), [["01"], ["02"]]);
   assert.deepEqual(args.waves[0][0], {
     taskId: "01", title: "greet", files: ["greet.js", "greet.test.js"], verify: ["node --test greet.test.js && echo ok"], agentHint: "wsh-test-automator",
+    // The Workflow agentType comes from the agent file's frontmatter name, not the catalog id.
+    agentType: "muster:backend-development-test-automator",
   });
   assert.deepEqual(humanNeeded, [{ taskId: "03", type: "checkpoint:human-verify", title: "look at it" }]);
+});
+
+test("buildArgsFromPlan: skills become absolute SKILL.md paths; unknown skills and non-dispatchable hints never reach build", () => {
+  const plan = PLAN
+    .replace('agent_hint="wsh-test-automator"', 'agent_hint="wsh-test-automator" skills="sp-tdd, wsh-javascript-testing-patterns"')
+    .replace('<task id="02" wave="2" depends_on="01">', '<task id="02" wave="2" depends_on="01" agent_hint="muster-reviewer">');
+  const { args, problems } = buildArgsFromPlan(plan, { runId: "r1" });
+  assert.deepEqual(problems, []);
+  const [t1] = args.waves[0];
+  assert.deepEqual(t1.skills.map((s) => s.id), ["sp-tdd", "wsh-javascript-testing-patterns"]);
+  for (const s of t1.skills) {
+    assert.ok(s.path.endsWith(`plugin/builtins/${s.id}/SKILL.md`.replace(/\//g, sep)), s.path);
+    assert.ok(existsSync(s.path), `${s.path} exists`);
+  }
+  // A read-only seat keeps its hint as a lens but is not dispatched.
+  assert.equal(args.waves[1][0].agentHint, "muster-reviewer");
+  assert.equal(args.waves[1][0].agentType, undefined);
+  const bad = buildArgsFromPlan(PLAN.replace('agent_hint="wsh-test-automator"', 'skills="no-such-skill"'), { runId: "r1" });
+  assert.ok(bad.problems.some((p) => /unknown skill\(s\): no-such-skill/.test(p)), bad.problems.join("; "));
 });
 
 test("buildArgsFromPlan: missing verify, missing wave and duplicate ids are problems, never silent", () => {
@@ -76,6 +99,7 @@ test("writeBuildArgs: writes build-args.json with preflight's seat models; refus
   const written = JSON.parse(await readFile(join(root, ".muster/runs/r1/build-args.json"), "utf8"));
   assert.deepEqual(written.models, { planner: { model: "haiku", effort: "high" } });
   assert.equal(written.base, "abc");
+  assert.match(written.cli, /^sh ".+\/runtime\/muster\.sh"$/, "build agents' bound skills run the CLI through this prefix");
 });
 
 test("build-args CLI exits 1 with problems and 0 with the report", async () => {

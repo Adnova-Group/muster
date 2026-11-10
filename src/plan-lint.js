@@ -27,6 +27,12 @@
 import { readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
+import { specialistCatalog } from "./specialists.js";
+import { matchSkills } from "./match.js";
+// spec_traceability (docs/plan-format.md "Planning from a spec"). spec-plan imports spec-lint,
+// which imports this module: the cycle is safe because no module in it reads another's
+// bindings while loading.
+import { lintSpecTraceability } from "./spec-plan.js";
 
 export const SEVERITY = Object.freeze({ BLOCKER: "blocker", WARNING: "warning", INFO: "info" });
 
@@ -40,6 +46,7 @@ export const DIMENSIONS = Object.freeze({
   TRACER: "tracer_first",
   REVERSIBILITY: "reversibility",
   THREAT_MODEL: "threat_model",
+  SPEC_TRACEABILITY: "spec_traceability",
 });
 
 export const REQUIRED_FRONTMATTER = Object.freeze(["run", "type", "autonomous", "must_haves"]);
@@ -49,6 +56,10 @@ export const MAX_PLAN_BYTES = 2 * 1024 * 1024;
 
 const TASK_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const AGENT_HINT_RE = /^[A-Za-z0-9][A-Za-z0-9:._/-]{0,127}$/;
+const SKILL_ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
+// A preflight skill candidate "scored highly" at this score (an id-token hit plus one more);
+// it must also match the task's own text before a skill-less task is flagged.
+export const HIGH_SKILL_SCORE = 4;
 
 // ─── Text helpers ─────────────────────────────────────────────────────────────
 
@@ -193,7 +204,10 @@ export function parsePlan(rawText) {
       wave: waveRaw !== null && /^\d+$/.test(waveRaw) ? Number(waveRaw) : null,
       dependsOn: splitList(tagAttribute(openTag, "depends_on")),
       agentHint: tagAttribute(openTag, "agent_hint"),
+      skills: splitList(tagAttribute(openTag, "skills")),
+      skillsDeclared: /(?:^|\s)skills\s*=\s*["']/i.test(openTag),
       tdd: tagAttribute(openTag, "tdd"),
+      covers: splitList(tagAttribute(openTag, "covers")),
       name: collapseWhitespace(elementBody(block, "name")),
       hasName: /<name[\s>]/i.test(block),
       files: splitFileList(elementBody(block, "files")),
@@ -214,6 +228,8 @@ export function parsePlan(rawText) {
         .filter(Boolean),
       reversibility,
       verifyBody: elementBody(block, "verify"),
+      // `<automated proves="REF-01.2 INV-01">`: the spec IDs a verify command proves.
+      proves: [...block.matchAll(/<automated(\s[^>]{0,200})?>/gi)].flatMap(m => splitList(tagAttribute(m[1] ?? "", "proves"))),
     };
   });
 
@@ -782,6 +798,12 @@ export function lintPlan(rawText, options = {}) {
   const projectRoot = typeof options.projectRoot === "string" && options.projectRoot ? options.projectRoot : process.cwd();
   const issues = [];
   const add = (dimension, severity, required_property, summary) => issues.push({ dimension, severity, required_property, summary });
+  // options.catalog ({agents, skills} Maps, src/specialists.js) turns on the agent_hint/skills
+  // membership checks; the CLI always passes it, pure callers may leave it out.
+  const catalog = options.catalog && options.catalog.agents && options.catalog.skills ? options.catalog : null;
+  // options.skillCandidates ([{id, score}], preflight.json's skillCandidates) adds the
+  // "skill-less task despite a strong candidate" warning; needs catalog for descriptions.
+  const skillCandidates = Array.isArray(options.skillCandidates) ? options.skillCandidates : [];
   const plan = parsePlan(rawText);
   const { frontmatter, tasks } = plan;
 
@@ -829,6 +851,22 @@ export function lintPlan(rawText, options = {}) {
     if (!t.hasName) add(DIMENSIONS.TASK_COMPLETENESS, SEVERITY.BLOCKER, "Every task has a `<name>`", `${label(t)} is missing <name>`);
     if (t.agentHint !== null && !AGENT_HINT_RE.test(t.agentHint)) {
       add(DIMENSIONS.TASK_COMPLETENESS, SEVERITY.WARNING, "`agent_hint` names one agent id", `${label(t)} has an agent_hint that is not an agent id: ${quote(t.agentHint)}`);
+    } else if (t.agentHint !== null && catalog) {
+      const agent = catalog.agents.get(t.agentHint);
+      if (!agent) add(DIMENSIONS.TASK_COMPLETENESS, SEVERITY.WARNING, "`agent_hint` is a known plugin agent id, else omitted", `${label(t)} names an unknown agent ${quote(t.agentHint)}; omit agent_hint for the default executor`);
+      else if (!agent.dispatchable) add(DIMENSIONS.TASK_COMPLETENESS, SEVERITY.WARNING, "`agent_hint` names an agent that can implement and commit", `${label(t)} names ${quote(t.agentHint)}, a read-only or workflow-seat agent that cannot execute a task`);
+    }
+    if (catalog && skillCandidates.length && t.kind !== "checkpoint" && !t.skillsDeclared) {
+      const strong = skillCandidates
+        .filter((c) => c && Number(c.score) >= HIGH_SKILL_SCORE && catalog.skills.has(c.id))
+        .map((c) => ({ id: c.id, source: "builtin", description: catalog.skills.get(c.id).description }));
+      const text = `${t.name} ${(t.block.match(/<action[^>]{0,200}>([\s\S]*?)<\/action>/) || [])[1] || ""}`;
+      const fit = matchSkills(text, strong, { limit: 3 }).filter((m) => m.score >= 3).map((m) => m.id);
+      if (fit.length) add(DIMENSIONS.TASK_COMPLETENESS, SEVERITY.WARNING, "A task binds the skills preflight ranked highly for it, or declines them with `skills=\"\"`", `${label(t)} binds no skills, but preflight ranked ${fit.map((id) => `"${id}"`).join(", ")} highly and they match this task; add skills="${fit.join(",")}" or write skills="" to decline`);
+    }
+    for (const id of t.skills) {
+      if (!SKILL_ID_RE.test(id)) add(DIMENSIONS.TASK_COMPLETENESS, SEVERITY.BLOCKER, "`skills` lists builtin skill ids", `${label(t)} has a malformed skill id ${quote(id)}`);
+      else if (catalog && !catalog.skills.has(id)) add(DIMENSIONS.TASK_COMPLETENESS, SEVERITY.BLOCKER, "`skills` lists builtin skill ids", `${label(t)} binds unknown skill ${quote(id)}; use an id from plugin/builtins/ or drop it`);
     }
     if (t.kind === "checkpoint") {
       const need = (has, el) => { if (!has) add(DIMENSIONS.TASK_COMPLETENESS, SEVERITY.BLOCKER, `A \`${t.type}\` task has \`<${el}>\``, `${label(t)} is missing <${el}>`); };
@@ -1010,6 +1048,12 @@ export function lintPlan(rawText, options = {}) {
     if (count > 1) add(DIMENSIONS.THREAT_MODEL, SEVERITY.BLOCKER, "Threat IDs are unique in the register", `threat ID ${id} names ${count} register rows`);
   }
 
+  // spec_traceability: checked only when the plan names its spec (`spec:` in frontmatter), so a
+  // spec-less plan lints exactly as before.
+  if (frontmatter && Object.hasOwn(frontmatter, "spec")) {
+    for (const i of lintSpecTraceability(plan, { projectRoot })) issues.push(i);
+  }
+
   return { verdict: issues.length === 0 ? "PASS" : "ISSUES", issues };
 }
 
@@ -1065,7 +1109,16 @@ export function runPlanLintCli(args, io = {}) {
     stderr.write(`muster: plan-lint: cannot read ${positionals[0]}: ${error.code ?? error.message} (not evaluated)\n`);
     return 2;
   }
-  const result = lintPlan(text, { projectRoot });
+  let catalog = io.catalog;
+  if (catalog === undefined) {
+    try { catalog = specialistCatalog(); } catch { catalog = null; }
+  }
+  // preflight.json sits next to PLAN.md in the run dir; absent or unreadable means no candidates.
+  let skillCandidates = io.skillCandidates;
+  if (skillCandidates === undefined) {
+    try { skillCandidates = JSON.parse(readFileSync(path.join(path.dirname(file), "preflight.json"), "utf8")).skillCandidates; } catch { skillCandidates = []; }
+  }
+  const result = lintPlan(text, { projectRoot, catalog, skillCandidates });
   stdout.write(`${json ? JSON.stringify(result, null, 2) : formatCheckResult(result, positionals[0])}\n`);
   return countBySeverity(result).blocker > 0 ? 1 : 0;
 }

@@ -21,14 +21,26 @@ export function readInstalledWork() {
   };
 }
 
-// --- Claude Cowork adapter ----------------------------------------------------
-// Cowork's own registry extends through MCP: local MCP servers
-// (claude_desktop_config.json), MCPB/DXT desktop extensions (a Claude
-// Extensions/ dir, no index file), and remote connectors (cloud/account state,
-// NOT on disk — see memory cowork-connector-storage). Claude Code plugin files
-// on disk are deliberately excluded: Cowork does not load their agents/skills,
-// and a plugin-shipped MCP server is not callable until it is registered with
-// Cowork itself.
+// --- Claude Desktop (Chat + Cowork) adapter -----------------------------------
+// Since the 2026-09-16 Unified Claude rollout, Chat and Cowork load plugins from
+// the claude.ai account (Customize > Plugins), not from the CLI's ~/.claude
+// directory: "Cowork loads the ones enabled for your claude.ai account, synced at
+// session start, and doesn't read the Claude Code CLI's ~/.claude directory"
+// (claude.com/docs/cowork/overview). Per claude.com/docs/plugins/platform-support,
+// Cowork loads a plugin's skills, commands, agents and hooks, and its local MCP
+// servers only "when the Cowork session runs on your computer"; Chat loads skills
+// and commands and ignores agents and hooks (docs/research/claude-cowork.md §3).
+//
+// So the Cowork inventory has three legs:
+//   1. local MCP servers (claude_desktop_config.json) and MCPB/DXT extensions
+//      (a Claude Extensions/ dir, no index file);
+//   2. remote connectors: account state, never on disk, so DECLARED;
+//   3. whether muster's own plugin rides in through the account plugin list.
+// Leg 3 is read from the Desktop app's local copy of that list,
+// <config dir>/plugin-list/<org>/<account>/plugins.json (observed on Claude
+// Desktop for Windows 2026-11-10; the layout is not documented, so a missing or
+// unreadable list means "unknown", never "absent"). ~/.claude/plugins stays
+// excluded: Cowork does not read it.
 
 // Ordered candidate Claude config dirs for a platform. On Windows the MSIX-virtualized
 // path is the one the app actually reads, so it comes before the %APPDATA% fallback.
@@ -57,31 +69,56 @@ async function readExtensionNames(extDir) {
   return names;
 }
 
+// The account plugin list the Desktop app caches locally:
+// <dir>/plugin-list/<org>/<account>/plugins.json -> {plugins:[{id,name,enabled}]}.
+// Returns null when no list is readable (unknown), else every entry found.
+export async function readAccountPluginList(dir) {
+  const root = join(dir, "plugin-list");
+  let found = false;
+  const plugins = [];
+  for (const org of await readdirSafe(root)) {
+    for (const account of await readdirSafe(join(root, org))) {
+      const list = await readJson(join(root, org, account, "plugins.json"));
+      if (!list || !Array.isArray(list.plugins)) continue;
+      found = true;
+      for (const p of list.plugins) {
+        if (p && typeof p.id === "string") {
+          plugins.push({ id: p.id, name: p.name || p.id.split("@")[0], enabled: p.enabled !== false });
+        }
+      }
+    }
+  }
+  return found ? plugins : null;
+}
+
+// Tri-state parse of a plugin-ride declaration: true, false, or undefined (not
+// declared). `--native-plugin` declares true and `--plugin-less` false;
+// MUSTER_COWORK_NATIVE_PLUGIN declares true for a truthy value, false for an
+// explicit 0/false/no/off, and nothing when unset or empty.
+export function declaredPluginRide(argv = [], env = process.env) {
+  if (argv.includes("--native-plugin")) return true;
+  if (argv.includes("--plugin-less")) return false;
+  const raw = env.MUSTER_COWORK_NATIVE_PLUGIN;
+  if (raw === undefined || raw === null || String(raw).trim() === "") return undefined;
+  return !/^(0|false|no|off)$/i.test(String(raw).trim());
+}
+
 // Cowork-flavored readInstalled: same {plugins, skills, mcpServers, agents} shape
-// resolveCapabilities consumes. Cowork registry discovery (local servers +
-// extensions) fills mcpServers. Remote connectors cannot be discovered
-// (connectorsDiscoverable:false) and must be DECLARED.
+// resolveCapabilities consumes, plus `pluginLoad` (glass-box: where the plugin
+// decision came from) and the derived `nativePluginRide` boolean.
 //
-// Native plugin ride (opts.nativePluginRide): ~May 2026 Cowork shipped a plugin
-// system bundling skills, connectors, hooks, and sub-agents in the Claude Code
-// plugin format (docs/research/claude-cowork.md section 3d) -- a different, later
-// surface than the on-disk `~/.claude/plugins` registry `readInstalled` reads for
-// the Claude Code adapter above, and NOT the same thing as the three legs this
-// function already discovers (local MCP servers, MCPB extensions, declared
-// connectors). Whether Cowork's loader actually accepted muster's plugin/ tree is
-// UNVERIFIED: no live Cowork session is reachable from this repo's tooling, and
-// Cowork exposes no on-disk or protocol signal an outside process (this CLI, or
-// the MCP server that spawns it) can inspect to auto-detect a native load. That
-// is the same "cannot be discovered, must be DECLARED" shape as remote
-// connectors just above, so nativePluginRide is a declared boolean (threaded by
-// the caller from MUSTER_COWORK_NATIVE_PLUGIN / a CLI flag -- see src/cli.js),
-// never an auto-probe. resolveCapabilities (src/capabilities.js) reads it off
-// the returned `nativePluginRide` field: false (the default) keeps today's
-// MCP-only filtering; true lets muster's builtin skills/agents resolve exactly
-// as they do on Claude Code, since a native load -- if it happened -- loaded
-// this same checkout's plugin/ tree.
+// nativePluginRide precedence:
+//   1. a declaration (opts.nativePluginRide true/false; see declaredPluginRide);
+//   2. the account plugin list: muster present and enabled -> true; list readable
+//      but muster absent or disabled -> false (the plugin-less MCP fallback);
+//   3. no readable list -> true. The plugin marketplace is the documented Desktop
+//      route and Cowork loads plugin skills and agents, so an unknown is not
+//      treated as plugin-less. Declare MUSTER_COWORK_NATIVE_PLUGIN=0 for an
+//      MCP-only install on a machine whose list cannot be read.
+// Remote connectors cannot be discovered (connectorsDiscoverable:false) and must
+// be DECLARED.
 export async function readInstalledCowork(home, opts = {}) {
-  const { platform = process.platform, declaredConnectors = [], dir, nativePluginRide = false } = opts;
+  const { platform = process.platform, declaredConnectors = [], dir, nativePluginRide } = opts;
   const dirs = dir ? [dir] : await coworkConfigDirs(home, platform);
 
   const discovered = [];
@@ -95,6 +132,28 @@ export async function readInstalledCowork(home, opts = {}) {
     }
   }
 
+  let accountList = null;
+  for (const d of dirs) {
+    accountList = await readAccountPluginList(d);
+    if (accountList) break;
+  }
+  const musterEntry = accountList
+    ? accountList.find(p => p.name === "muster" || p.id.startsWith("muster@"))
+    : undefined;
+
+  let pluginLoad;
+  if (typeof nativePluginRide === "boolean") {
+    pluginLoad = { state: nativePluginRide ? "present" : "absent", source: "declared" };
+  } else if (accountList) {
+    pluginLoad = {
+      state: musterEntry && musterEntry.enabled ? "present" : "absent",
+      source: "account-plugin-list",
+      ...(musterEntry ? { id: musterEntry.id, enabled: musterEntry.enabled } : {}),
+    };
+  } else {
+    pluginLoad = { state: "unknown", source: "default" };
+  }
+
   return {
     runtime: "cowork",
     plugins: [],
@@ -103,7 +162,8 @@ export async function readInstalledCowork(home, opts = {}) {
     mcpServers: [...new Set([...discovered, ...declaredConnectors])],
     connectorsDiscoverable: false,
     connectorsDeclared: [...new Set(declaredConnectors)],
-    nativePluginRide: !!nativePluginRide
+    pluginLoad,
+    nativePluginRide: pluginLoad.state !== "absent"
   };
 }
 

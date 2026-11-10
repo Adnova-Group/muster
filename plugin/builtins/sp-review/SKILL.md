@@ -5,7 +5,7 @@ muster_builtin: true
 license: MIT
 upstream:
   - repo: obra/superpowers
-    ref: 284be5905ed540d34ce5bcde24728b9b7f413ea0
+    ref: 22f0b463e7a5e579904dd6211a520321035526f7
     path: skills/requesting-code-review/SKILL.md
     license: MIT
     relation: adapted
@@ -17,7 +17,7 @@ You are muster's code-review dispatcher — prepare precise reviewer context and
 
 Respond with a structured review dispatch: SHAs, description, plan reference, and a prioritized action list derived from reviewer feedback.
 
-Dispatch a code reviewer subagent to catch issues before they cascade. The reviewer gets precisely crafted context for evaluation — never your session's history. This keeps the reviewer focused on the work product, not your thought process, and preserves your own context for continued work.
+Dispatch a code reviewer subagent to catch issues before they cascade. The reviewer gets precisely crafted context for evaluation — never your session's history.
 
 **Core principle:** Review early, review often.
 
@@ -36,7 +36,6 @@ Dispatch a code reviewer subagent to catch issues before they cascade. The revie
 ## How to Request
 
 **1. Get git SHAs:**
-<!-- hand-ported from obra/superpowers v7.0.0 (#2361): no positional shell parameters in skill bodies (Claude Code substitutes them), and merge-base instead of the moving origin/main tip -->
 ```bash
 BASE_SHA=$(git rev-parse HEAD~1)  # or: git merge-base origin/main HEAD
 HEAD_SHA=$(git rev-parse HEAD)
@@ -44,7 +43,7 @@ HEAD_SHA=$(git rev-parse HEAD)
 
 **2. Dispatch code reviewer subagent:**
 
-Use Task tool with `general-purpose` type, fill template at `code-reviewer.md`
+Dispatch a `general-purpose` subagent, filling the template at [code-reviewer.md](code-reviewer.md)
 
 **Placeholders:**
 - `{DESCRIPTION}` - Brief summary of what you built
@@ -85,20 +84,12 @@ You: [Fix progress indicators]
 [Continue to Task 3]
 ```
 
-## Integration with Workflows
+## Common Rationalizations
 
-**Subagent-Driven Development:**
-- Review after EACH task
-- Catch issues before they compound
-- Fix before moving to next task
-
-**Executing Plans:**
-- Review after each task or at natural checkpoints
-- Get feedback, apply, continue
-
-**Ad-Hoc Development:**
-- Review before merge
-- Review when stuck
+| Excuse | Reality |
+|--------|---------|
+| "I'll just review the diff myself instead of dispatching a reviewer" | You're the coordinator — reviewing the diff inline burns the context window you need to keep driving the work. Dispatch a reviewer subagent: the diff and the evaluation live in its context, and only the findings come back to you. |
+| "The reviewer needs my whole session history to understand the change" | Hand it precisely crafted context, never your session's history. That keeps the reviewer on the work product, not your thought process. |
 
 ## Red Flags
 
@@ -108,4 +99,4 @@ You: [Fix progress indicators]
 - Resolve Important issues before the next task
 - Accept valid technical feedback; push back only with technical reasoning, code, or tests that prove it works — or request clarification when the feedback is unclear
 
-See template at: requesting-code-review/code-reviewer.md
+See template at: [code-reviewer.md](code-reviewer.md)

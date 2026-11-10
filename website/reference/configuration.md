@@ -1,6 +1,6 @@
 # Configuration
 
-Muster needs no config file. Every tunable is an environment variable, every one has a working default, and every one is read at the point of use — so exporting it in your shell, your `settings.json` `env` block, or a single command invocation all work the same way.
+Muster needs no config file. The one optional project file, [`.muster/config`](#project-config-muster-config), holds skill pins. Every tunable is an environment variable, every one has a working default, and every one is read at the point of use — so exporting it in your shell, your `settings.json` `env` block, or a single command invocation all work the same way.
 
 Integer variables are parsed strictly: a non-numeric or out-of-range value falls back to the default rather than failing the run. Boolean-shaped declarations (`MUSTER_ENABLE_APEX`, `MUSTER_AGENT_TEAMS`, `MUSTER_COWORK_NATIVE_PLUGIN`) accept `1`/`true` to enable and `0`/`false` to disable; anything else fails closed to the documented default.
 
@@ -17,6 +17,7 @@ Integer variables are parsed strictly: a non-numeric or out-of-range value falls
 | `MUSTER_FUSE_MIN_DISAGREEMENT` | `1` | Minimum disagreement score required to activate fusion synthesis; below it, `muster fuse` falls back to the single best candidate. `0` always fuses when at least two candidates pass. | CLI (`src/fusion.js`) |
 | `MUSTER_REVIEW_DIFF_THRESHOLD` | `200` | Changed-line threshold at which the review gate dispatches two reviewers instead of one. A batching lever only — the gate's pass bar and fix-loop cap are unchanged. | CLI (`gate-cadence`, `src/gate-cadence.js`) |
 | `MUSTER_AGENT_TEAMS` | _(unset — off)_ | Declares that this session's tool list carries the native `Workflow` fan-out/barrier surface, selecting `mode: "native"` wave dispatch. Nothing declared means the prose wave loop, the floor on every harness. An explicit `--agent-teams`/`--no-agent-teams` flag always wins over the env var. | CLI (`wave-dispatch`, `src/wave-dispatch.js`) |
+| `MUSTER_CACHE_DIR` | _(platform cache dir)_ | Where `muster skills search` and `add` cache the ui-skills.com registry (24-hour TTL) and where preflight reads it for offline suggestions. Unset: `$XDG_CACHE_HOME/muster` or `~/.cache/muster` on Linux, `~/Library/Caches/muster` on macOS, `%LOCALAPPDATA%\muster\Cache` on Windows. | CLI (`src/skill-registry.js`) |
 | `MUSTER_SPRINT_PARALLEL` | `5` | Max concurrent item builds per wave in a `muster sprint-waves` schedule (the Cowork sprint protocol and the frozen Codex lane). Hard ceiling `10` (higher values clamp; `0` is invalid). Claude Code's `muster:backlog` workflow builds items sequentially and ignores it. | CLI (`sprint-waves`, `src/sprint-waves.js`) |
 
 ## Harness-scoped variables
@@ -27,7 +28,7 @@ The Cowork adapter is `cowork/mcp-server.mjs`; the neutral core receives its run
 | Variable | Default | Semantics | Read by |
 | --- | --- | --- | --- |
 | `MUSTER_RUNTIME` | _(unset)_ | The neutral MCP core marks nested CLI invocations with the active host (`cowork`, `codex`, or `work`), so capability resolution uses that lane. Set on child CLI spawns by `mcp/server.mjs`. | CLI (`src/capabilities.js`) |
-| `MUSTER_COWORK_NATIVE_PLUGIN` | _(unset — off)_ | Declares that Cowork's own plugin loader accepted muster's `plugin/` tree. A declared capability check, never a probe: unset keeps resolution MCP-only. | CLI (`src/cli.js`, `src/capabilities.js`) |
+| `MUSTER_COWORK_NATIVE_PLUGIN` | _(unset — detect)_ | Overrides plugin detection for `capabilities --cowork`: `1`/`true` declares muster's plugin loaded, `0`/`false` declares a plugin-less install. Unset reads the Desktop account plugin list, and assumes the plugin route when no list is readable. | CLI (`src/cli.js`, `src/harness.js`, `src/capabilities.js`) |
 | `MUSTER_COWORK_CONNECTORS` | _(unset)_ | Comma-separated remote-connector names (e.g. `slack,drive`) to treat as available. Remote connectors live in your cloud account, not on disk, so they cannot be auto-discovered. | CLI (`src/cli.js`) |
 | `MUSTER_COWORK_MAX_INFLIGHT` | `4` | Max concurrent MCP tool executions in the Cowork server. Hard ceiling `64`. | `mcp/server.mjs` (via `cowork/mcp-server.mjs` adapter) |
 | `MUSTER_COWORK_MAX_QUEUE` | `16` | Max queued MCP tool executions before overload rejection. Hard ceiling `1024`. | `mcp/server.mjs` (via `cowork/mcp-server.mjs` adapter) |
@@ -53,6 +54,27 @@ Muster's conceptual ladder is `scout`, `core`, `prime`, and `apex`; harness adap
 <!-- legacy-tier-compat:start -->
 Compatibility only: legacy input aliases `haiku`, `sonnet`, `opus`, and `fable` normalize to `scout`, `core`, `prime`, and `apex`; they are not a second conceptual ladder. `MUSTER_ENABLE_FABLE` remains an alias for `MUSTER_ENABLE_APEX`.
 <!-- legacy-tier-compat:end -->
+
+## Project config: `.muster/config`
+
+An optional JSON file at the project root that holds skill pins. `muster skills pin` creates it, and `muster skills unpin` edits it; editing it by hand works too.
+
+```json
+{
+  "version": 1,
+  "skills": {
+    "pins": [
+      { "id": "sp-tdd" },
+      { "id": "impeccable-core", "role": "frontend" }
+    ]
+  }
+}
+```
+
+- `id` is a builtin id (see the [Skill library](./skills)), or a skill that `muster skills add` installed in `.claude/skills/`.
+- `role` is optional, and must be a catalog role such as `frontend` or `test-author`. A pin without a role applies to every task. A pin with a role applies to the tasks whose `agent_hint` or bound skills carry that role.
+- `preflight` lists pinned builtins first among its skill candidates, and the planner brief names every pin. `build-args` then appends each pinned skill to every matching task in `build-args.json`, even if the plan left it out, and reports those tasks as `pinned`. A pin that no longer resolves becomes a `build-args` warning, not a failure.
+- A file that is not a JSON object is an error, because silently ignoring it would drop your pins.
 
 ## Not user knobs
 

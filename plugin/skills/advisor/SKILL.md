@@ -38,7 +38,7 @@ worker guesses instead of escalating.
 
 1. **Receive the escalation.** The response carries `question`/`context`/`decisionType`, not a
    deliverable. Write `advisor-escalation: <decisionType> at iteration <n>` to STATE.
-2. **Validate the request.** Run `$MUSTER_CLI advise .muster/advice-request.json` → `{ advisorModel,
+2. **Validate the request.** Run `sh "${CLAUDE_PLUGIN_ROOT}/runtime/muster.sh" advise .muster/advice-request.json` → `{ advisorModel,
    request }`. On failure (non-zero exit), append `advisor-validate-failed` to STATE, proceed
    best-effort, no advice.
 3. **Check the consult budget.** Track consults per task in STATE (`advisor-consults[<taskId>]: <n>`);
@@ -55,7 +55,7 @@ worker guesses instead of escalating.
 6. **Feed advice back to the worker.** Re-dispatch via the Agent tool with the original brief plus an
    `ADVISOR GUIDANCE` block (question/recommendation/rationale) — guidance the worker may override on
    stronger grounds, or say so if still unsure rather than guess. It continues and produces a final
-   result; the orchestrator proceeds to the review gate. Exhausted: guidance reads "budget exhausted --
+   result; the orchestrator proceeds to review. Exhausted: guidance reads "budget exhausted --
    proceed best-effort," no further consult attempts.
 
 ## Consult-per-task tracking

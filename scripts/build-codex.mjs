@@ -12,6 +12,7 @@ import { escapeRe } from "../src/keyword.js";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { generateNotice, generateProvenanceMarkdown } from "../src/provenance.js";
 import { parseFrontmatterLenient } from "../src/frontmatter.js";
+import { isCodexFrozenOutBuiltin } from "../src/codex-inventory.js";
 
 // Deliberately synchronous fs throughout this script (mirrors src/codex-release.js).
 //
@@ -107,7 +108,10 @@ function translatePluginPaths(text) {
 // (same `name`-array convention already used below for the --roles-only/manifest-validate
 // rewrites) keeps the guard from firing on files it was never meant to touch, while still
 // failing loud if one of the CARRIER files' own copy of the sentence is reworded.
-const FROZEN_CODEX_COMMANDS = ["plan.md", "go.md", "audit.md", "diagnose.md"];
+// init/design/capture froze at revival stage 3, when their Claude copies moved to runtime/muster.sh.
+const FROZEN_CODEX_COMMANDS = ["plan.md", "go.md", "audit.md", "diagnose.md", "init.md", "design.md", "capture.md"];
+// Post-freeze Claude-only commands: the frozen Codex lane never ships them.
+const CLAUDE_ONLY_COMMANDS = ["skills.md", "pm.md"];
 const FROZEN_CODEX_SKILLS = ["orchestrator", "router", "review-gate", "tournament"];
 const RUN_MARKER_FILES = ["go.md", "diagnose.md", "audit.md", "plan.md"];
 const STALE_MARKER_FILES = ["go.md", "diagnose.md", "audit.md", "plan.md"];
@@ -461,6 +465,9 @@ function bindBundledCodexCli(text) {
   const cli = `node ${"${PLUGIN_ROOT}"}/runtime/muster.mjs`;
   const escapedCli = escapeRe(cli);
   let result = text
+    // Claude prose calls the CLI through the per-call resolver (plugin/runtime/muster.sh);
+    // the Codex package's resolved CLI is the bundled runtime.
+    .replaceAll('sh "${CLAUDE_PLUGIN_ROOT}/runtime/muster.sh"', cli)
     // The Claude-side performance pass resolves `$MUSTER_CLI` once per run
     // (plugin/commands/go.md step -2) because a raw `npx` call pays a cold
     // start on every invocation. The Codex package has no such ambiguity:
@@ -523,11 +530,12 @@ function codexSkill(source, id, contract) {
     .replaceAll("Agent tool", "Codex subagent dispatcher")
     .replaceAll("Task tool", "Codex subagent dispatcher");
   if (id === "sp-brainstorm") {
-    const visualCompanionAnchor = "skills/brainstorming/visual-companion.md";
-    if (!body.includes(visualCompanionAnchor)) throw new Error("sp-brainstorm visual-companion anchor not found for Codex rewrite");
-    body = body.replaceAll(
+    // superpowers v7.0.2: "If they accept, read `visual-companion.md` in this directory before starting the server."
+    const visualCompanionAnchor = /If they accept, read `visual-companion\.md` in this directory before\s+starting the server\./;
+    if (!visualCompanionAnchor.test(body)) throw new Error("sp-brainstorm visual-companion anchor not found for Codex rewrite");
+    body = body.replace(
       visualCompanionAnchor,
-      `node ${"${PLUGIN_ROOT}"}/runtime/resolve-skill-provider.mjs builtin sp-brainstorm visual-companion.md\n\nBefore invoking any \`scripts/...\` command from that guide, run \`node ${"${PLUGIN_ROOT}"}/runtime/resolve-skill-provider.mjs builtin sp-brainstorm --path\`. Treat its verified absolute output as the guide's asset root and resolve every \`scripts/...\` path beneath it; never execute a path from the internal tree without this full-tree verification.`
+      () => `If they accept, read the visual companion guide before starting the server:\n\`node ${"${PLUGIN_ROOT}"}/runtime/resolve-skill-provider.mjs builtin sp-brainstorm visual-companion.md\`\n\nBefore invoking any \`scripts/...\` command from that guide, run \`node ${"${PLUGIN_ROOT}"}/runtime/resolve-skill-provider.mjs builtin sp-brainstorm --path\`. Treat its verified absolute output as the guide's asset root and resolve every \`scripts/...\` path beneath it; never execute a path from the internal tree without this full-tree verification.`
     );
   }
   if (id === "orchestrator") body = adaptOrchestratorForCodex(body, contract);
@@ -585,9 +593,9 @@ function codexSkill(source, id, contract) {
     body = body.replace(presentApprovalAnchor, "Render the complete enriched outcome and every success-criteria item inside the approval prompt itself; never refer to unstated criteria as ‘above’ or ‘previous’. Present both for approval via the **interactive user input** selection UI");
   }
   if (id === "wsh-sast-configuration") {
-    const semgrepRulesAnchor = "# See references/semgrep-rules.md for detailed examples";
-    if (!body.includes(semgrepRulesAnchor)) throw new Error("wsh-sast-configuration semgrep-rules anchor not found for Codex rewrite");
-    body = body.replace(semgrepRulesAnchor, "# Example custom rule; adapt it to the repository's threat model");
+    // Upstream fa128d5 (merged at wshobson 9c61ab2) dropped the unshipped references/semgrep-rules.md
+    // pointer this branch used to rewrite; fail loudly if a dangling pointer ever comes back.
+    if (/references\/semgrep-rules\.md|scripts\/run-sast\.sh/.test(body)) throw new Error("wsh-sast-configuration points at an unshipped SAST helper file again");
   }
   const binding = `\n\n## Codex harness binding\n\nRead \`${"${PLUGIN_ROOT}"}/runtime/codex-skill-adapter.md\` before following this workflow. Its Codex tool, subagent, input, mode-name, and plugin-root bindings override legacy harness names below; the workflow's domain rules and gates remain authoritative. Load any relative bundled asset named by this workflow through \`node ${"${PLUGIN_ROOT}"}/runtime/resolve-skill-provider.mjs builtin ${id} <relative-asset>\`; never read the internal tree directly. When a bundled asset must execute with sibling files, first run the same resolver with \`--path\`; it verifies the complete skill tree before returning its absolute root.\n`;
   return header + binding + body.replace(/^\r?\n*/, "\n");
@@ -719,6 +727,7 @@ async function buildCodexPluginOnce({ root, outDir, nodeExecPath }) {
     // targets the pre-revival prose. codex/frozen/ holds those inputs byte-for-byte as of
     // revival stage 2; the Claude sources no longer feed the Codex lane for these files.
     for (const name of FROZEN_CODEX_COMMANDS) cpSync(join(root, "codex", "frozen", "commands", name), join(plugin, "commands", name));
+    for (const name of CLAUDE_ONLY_COMMANDS) rmSync(join(plugin, "commands", name), { force: true });
     rmAndCopy(join(root, "catalog"), join(plugin, "catalog"));
     rmAndCopy(join(root, "pipelines"), join(plugin, "pipelines"));
     rmAndCopy(join(root, "vendor"), join(plugin, "vendor"));
@@ -747,6 +756,9 @@ async function buildCodexPluginOnce({ root, outDir, nodeExecPath }) {
     }
     rmAndCopy(join(root, "plugin", "skills"), internalSkillDir);
     rmAndCopy(join(root, "plugin", "builtins"), internalSkillDir, { merge: true });
+    // Frozen Codex lane: post-freeze builtins (the UX family and the 2026-11-10 complements) stay Claude-plugin only.
+    for (const entry of readdirSync(join(root, "plugin", "builtins"), { withFileTypes: true }))
+      if (entry.isDirectory() && isCodexFrozenOutBuiltin(entry.name)) rmSync(join(internalSkillDir, entry.name), { recursive: true, force: true });
     for (const entry of readdirSync(join(root, "codex", "skill-assets"), { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
       rmAndCopy(join(root, "codex", "skill-assets", entry.name), join(internalSkillDir, entry.name), { merge: true });
@@ -762,7 +774,7 @@ async function buildCodexPluginOnce({ root, outDir, nodeExecPath }) {
     cpSync(join(root, "src", "verdict.schema.json"), join(internalSkillDir, "review-gate", "verdict.schema.json"));
     const portedSkillNames = [...new Set([
       ...readdirSync(join(root, "plugin", "skills"), { withFileTypes: true }).filter(entry => entry.isDirectory()).map(entry => entry.name),
-      ...readdirSync(join(root, "plugin", "builtins"), { withFileTypes: true }).filter(entry => entry.isDirectory()).map(entry => entry.name),
+      ...readdirSync(join(root, "plugin", "builtins"), { withFileTypes: true }).filter(entry => entry.isDirectory() && !isCodexFrozenOutBuiltin(entry.name)).map(entry => entry.name),
       ...FROZEN_CODEX_SKILLS
     ])];
     for (const name of portedSkillNames.filter(name => name.startsWith("gsd-"))) {

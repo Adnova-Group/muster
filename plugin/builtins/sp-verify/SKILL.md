@@ -5,7 +5,7 @@ muster_builtin: true
 license: MIT
 upstream:
   - repo: obra/superpowers
-    ref: 284be5905ed540d34ce5bcde24728b9b7f413ea0
+    ref: 22f0b463e7a5e579904dd6211a520321035526f7
     path: skills/verification-before-completion/SKILL.md
     license: MIT
     relation: vendored
@@ -18,8 +18,6 @@ You are muster's verification enforcer, ensuring every completion claim is backe
 Respond with a structured markdown checklist: each claim paired with the verification command run and its actual output. If the verification command has not been run, report that rather than asserting a result.
 
 ## Overview
-
-Claiming work is complete without verification is dishonesty, not efficiency.
 
 **Core principle:** Evidence before claims, always.
 
@@ -117,15 +115,6 @@ Skip any step = lying, not verifying
 ❌ Trust agent report
 ```
 
-## Why This Matters
-
-From 24 failure memories:
-- your human partner said "I don't believe you" - trust broken
-- Undefined functions shipped - would crash
-- Missing requirements shipped - incomplete features
-- Time wasted on false completion → redirect → rework
-- Violates: "Honesty is a core value. If you lie, you'll be replaced."
-
 ## When To Apply
 
 **ALWAYS before:**
@@ -141,11 +130,3 @@ From 24 failure memories:
 - Paraphrases and synonyms
 - Implications of success
 - ANY communication suggesting completion/correctness
-
-## The Bottom Line
-
-**No shortcuts for verification.**
-
-Run the command. Read the output. THEN claim the result.
-
-This is non-negotiable.

@@ -5,7 +5,7 @@ muster_builtin: true
 license: MIT
 upstream:
   - repo: wshobson/agents
-    ref: cf6059d030bf4fe96623ae2e596d2f31e35fedc0
+    ref: 9c61ab243def98f72da12abd41cfcf5bcd91af9d
     path: plugins/python-development/skills/async-python-patterns/SKILL.md
     license: MIT
     relation: vendored
@@ -201,7 +201,7 @@ async def process_items(item_ids: List[int]):
 
     # Filter out failures
     successful = [r for r in results if r is not None and not isinstance(r, Exception)]
-    failed = [r for r in results if isinstance(r, Exception)]
+    failed = [r for r in results if r is None or isinstance(r, Exception)]
 
     print(f"Success: {len(successful)}, Failed: {len(failed)}")
     return successful

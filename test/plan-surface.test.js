@@ -39,11 +39,20 @@ test("hermes resolves to the native plan-skill + goal-completion-contract surfac
   assert.match(r.cite, /hermes\.md/);
 });
 
-test("cowork has no native plan surface -- resolves to the prose fallback", () => {
+test("cowork (Chat + Cowork) has no plan mode -- prose plan, AskUserQuestion approval", () => {
   const r = resolvePlanSurface("cowork");
   assert.equal(r.runtime, "cowork");
   assert.equal(r.surface, "prose");
-  assert.equal(r.primitive, null);
+  assert.equal(r.primitive, "AskUserQuestion");
+  assert.match(r.detail, /Auto and Manual/);
+  assert.match(r.cite, /claude-cowork\.md/);
+});
+
+test("claude-desktop (the Code tab) resolves to the native ExitPlanMode surface with the Plan pane", () => {
+  const r = resolvePlanSurface("claude-desktop");
+  assert.equal(r.surface, "native");
+  assert.equal(r.primitive, "ExitPlanMode");
+  assert.match(r.detail, /Plan pane/);
   assert.match(r.cite, /claude-cowork\.md/);
 });
 
@@ -73,7 +82,7 @@ test("runtime lookup is case- and whitespace-insensitive", () => {
 });
 
 test("every entry names a citation and a one-line detail string, never empty", () => {
-  for (const runtime of ["claude-code", "codex", "hermes", "cowork", "unknown"]) {
+  for (const runtime of ["claude-code", "claude-desktop", "codex", "hermes", "cowork", "unknown"]) {
     const r = resolvePlanSurface(runtime);
     assert.ok(r.detail && r.detail.length > 0, `${runtime} must carry a detail string`);
     assert.ok(r.cite && r.cite.length > 0, `${runtime} must carry a citation`);

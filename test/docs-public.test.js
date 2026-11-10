@@ -311,7 +311,7 @@ test("CHANGELOG.md contains a heading for the current version", async () => {
 // findings rather than the overall score because some categories legitimately
 // appear in these files:
 //
-//   EXCLUDED — em/en-dash-or-curly-quote: curly quotes appear around inline terms
+//   EXCLUDED — em/en-dash, curly-quote: curly quotes appear around inline terms
 //              (e.g. "Glass-box", "audit this code...") as a deliberate typographic
 //              choice; em-dash is already gated by the test above.
 //   EXCLUDED — emoji: README carries one intentional doc-link icon (📖), not an AI tell.

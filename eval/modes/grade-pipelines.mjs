@@ -2,8 +2,8 @@
 // extended past the skill-protocol layer into the phase prompts of pipelines/*.yaml --
 // blog-post, social-post, newsletter, case-study, lead-magnet, release-notes,
 // video-content, executive-summary, competitive-battlecard) plus the knowledge-pipeline
-// layer (the 11 remaining pipelines/*.yaml -- ai-implementation-spec, ai-test-plan, book,
-// business-case, epic, launch-plan, okrs, prd, roadmap, runbook, user-story;
+// layer (the 10 remaining pipelines/*.yaml -- design, ai-test-plan, book,
+// business-case, epic, launch-plan, okrs, prd, roadmap, runbook;
 // epic/okrs/roadmap/prd reuse sprint-waves/assess/roadmap-rice/evidence-table-shape
 // directly, no new grader needed for those). Combined into one module because both
 // layers grade the same underlying artifact family (a pipeline phase's rendered output),
@@ -65,31 +65,7 @@ function aiTestPlanCaseTableCheck(testCase, artifacts) {
   return checks;
 }
 
-// user-story.yaml's acceptance phase: "Given/When/Then (Gherkin); happy path + 2+
-// edge/negative" -- scenario blocks each needing at least one Given/When/Then line.
-const GHERKIN_SCENARIO_RE = /^Scenario:\s*.+$/;
-const GHERKIN_STEP_RE = /^(Given|When|Then|And)\s+.+$/;
-
-function userStoryGherkinShapeCheck(testCase, artifacts) {
-  const expect = testCase.expect || {};
-  const lines = String(artifacts).split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-  const scenarios = [];
-  let current = null;
-  for (const l of lines) {
-    if (GHERKIN_SCENARIO_RE.test(l)) {
-      current = { title: l, steps: [] };
-      scenarios.push(current);
-    } else if (current && GHERKIN_STEP_RE.test(l)) {
-      current.steps.push(l);
-    }
-  }
-  const wellFormed = scenarios.length > 0 && scenarios.every((s) => /^Given/.test(s.steps[0] || "") && s.steps.some((st) => /^When/.test(st)) && s.steps.some((st) => /^Then/.test(st)));
-  const checks = [{ name: "scenariosWellFormed", ok: wellFormed === (expect.scenariosWellFormed ?? true), detail: wellFormed ? `${scenarios.length} scenario(s), each with Given/When/Then` : "a scenario is missing a Given/When/Then step" }];
-  if (expect.minScenarios !== undefined) checks.push({ name: "minScenarios", ok: scenarios.length >= expect.minScenarios, detail: `${scenarios.length} scenario(s), expected >= ${expect.minScenarios}` });
-  return checks;
-}
-
-// ai-implementation-spec.yaml's adr phase (MADR 4.0): "status lifecycle
+// design.yaml's adr phase (formerly ai-implementation-spec.yaml) (MADR 4.0): "status lifecycle
 // proposed|accepted|deprecated|superseded-by ADR-XXXX".
 const ADR_ROW_RE = /^ADR-(\d+):.*status:\s*(proposed|accepted|deprecated|superseded-by ADR-\d+)\s*$/;
 
@@ -255,7 +231,6 @@ export const ARTIFACT_KIND = {
   "runbook-step-pairs": "text",
   "book-chapter-manifest": "text",
   "ai-test-plan-case-table": "text",
-  "user-story-gherkin-shape": "text",
   "adr-status-lifecycle": "text",
 };
 
@@ -270,6 +245,5 @@ export const CHECKS = {
   "runbook-step-pairs": runbookStepPairsCheck,
   "book-chapter-manifest": bookChapterManifestCheck,
   "ai-test-plan-case-table": aiTestPlanCaseTableCheck,
-  "user-story-gherkin-shape": userStoryGherkinShapeCheck,
   "adr-status-lifecycle": adrStatusLifecycleCheck,
 };

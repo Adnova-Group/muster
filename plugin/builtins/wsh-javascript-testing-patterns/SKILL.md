@@ -5,7 +5,7 @@ muster_builtin: true
 license: MIT
 upstream:
   - repo: wshobson/agents
-    ref: cf6059d030bf4fe96623ae2e596d2f31e35fedc0
+    ref: 9c61ab243def98f72da12abd41cfcf5bcd91af9d
     path: plugins/javascript-typescript/skills/javascript-testing-patterns/SKILL.md
     license: MIT
     relation: vendored
@@ -501,13 +501,13 @@ describe("OrderService", () => {
 
 Integration tests verify real database operations and HTTP endpoints using `supertest` and a test database instance. Always truncate tables in `beforeEach` and tear down in `afterAll`.
 
-For full API integration test examples (supertest + PostgreSQL) and database repository integration tests, see the [pinned upstream advanced-testing-patterns.md](https://github.com/wshobson/agents/blob/cf6059d030bf4fe96623ae2e596d2f31e35fedc0/plugins/javascript-typescript/skills/javascript-testing-patterns/references/advanced-testing-patterns.md).
+For full API integration test examples (supertest + PostgreSQL) and database repository integration tests, see [references/advanced-testing-patterns.md](references/advanced-testing-patterns.md).
 
 ## Frontend Testing with Testing Library
 
 Test React components by rendering them and querying by role, placeholder, or test ID. Test hooks with `renderHook` + `act`. Prefer semantic queries (`getByRole`, `getByPlaceholderText`) over `data-testid`.
 
-For complete React component test examples (UserForm, hooks with `renderHook`/`act`), see the [pinned upstream advanced-testing-patterns.md](https://github.com/wshobson/agents/blob/cf6059d030bf4fe96623ae2e596d2f31e35fedc0/plugins/javascript-typescript/skills/javascript-testing-patterns/references/advanced-testing-patterns.md).
+For complete React component test examples (UserForm, hooks with `renderHook`/`act`), see [references/advanced-testing-patterns.md](references/advanced-testing-patterns.md).
 
 ## Test Fixtures and Factories
 
@@ -528,7 +528,7 @@ export function createUserFixture(overrides?: Partial<User>): User {
 }
 ```
 
-For snapshot testing, coverage configuration, test organization patterns, promise testing, and timer mocking, see the [pinned upstream advanced-testing-patterns.md](https://github.com/wshobson/agents/blob/cf6059d030bf4fe96623ae2e596d2f31e35fedc0/plugins/javascript-typescript/skills/javascript-testing-patterns/references/advanced-testing-patterns.md).
+For snapshot testing, coverage configuration, test organization patterns, promise testing, and timer mocking, see [references/advanced-testing-patterns.md](references/advanced-testing-patterns.md).
 
 ## Best Practices
 

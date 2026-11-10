@@ -245,52 +245,70 @@ test("cli wire: capabilities --roles-only omits skills and installed inventory",
   assert.deepEqual(Object.keys(compact), ["roles"]);
 });
 
-// ── Cowork native-plugin-ride capability check ──────────────────────────────
-// Whether Cowork's own plugin loader (docs/research/claude-cowork.md section
-// 3d) actually accepts muster's plugin/ tree is unverified without a live
-// Cowork session; there is no on-disk/protocol signal to auto-detect it, so
-// it is a DECLARED capability check (--native-plugin flag or
-// MUSTER_COWORK_NATIVE_PLUGIN env var), mirroring the existing --connectors /
-// MUSTER_COWORK_CONNECTORS declared-connector pattern. These pin the branch
-// logic end-to-end through the real CLI: default stays MCP-only (today's
-// behavior, regression-pinned); either declaration flips a builtin, non-MCP
-// role off the forced-inline fallback to its NORMAL (non-cowork) resolution.
-// The assertions compare against that non-cowork resolution rather than a frozen
-// provider id, so a catalog re-rank (whichever builtin currently wins the debug
-// role) can never make these brittle.
-test("cli wire: capabilities --cowork with no native-plugin declaration keeps the MCP-only default (regression pin)", async () => {
-  const { stdout } = await run(["capabilities", "--cowork", "--role", "debug"]);
-  const { chosen } = JSON.parse(stdout);
-  assert.equal(chosen.id, "inline", "undeclared Cowork resolution must stay MCP-only until a native load is declared");
-});
-
-test("cli wire: capabilities --cowork --native-plugin lets a builtin non-MCP role resolve (native plugin ride declared via flag)", async () => {
-  const nativeRide = JSON.parse((await run(["capabilities", "--cowork", "--native-plugin", "--role", "debug"])).stdout).chosen;
-  const plain = JSON.parse((await run(["capabilities", "--role", "debug"])).stdout).chosen;
-  assert.notEqual(nativeRide.id, "inline", "native-ride declared must flip debug off the forced-inline fallback");
-  assert.deepEqual(nativeRide, plain, "native-ride declared: debug resolves the same as its non-cowork resolution");
-});
-
-test("cli wire: capabilities --cowork with MUSTER_COWORK_NATIVE_PLUGIN=1 declares the same native ride as --native-plugin", async () => {
-  const { stdout } = await pexecFile(process.execPath, [CLI, "capabilities", "--cowork", "--role", "debug"], {
-    cwd: REPO_ROOT,
-    env: { ...process.env, MUSTER_COWORK_NATIVE_PLUGIN: "1" },
-  });
-  const envRide = JSON.parse(stdout).chosen;
-  const plain = JSON.parse((await run(["capabilities", "--role", "debug"])).stdout).chosen;
-  assert.notEqual(envRide.id, "inline", "env-var declaration must flip debug off the forced-inline fallback");
-  assert.deepEqual(envRide, plain, "env-var declaration must resolve identically to the non-cowork resolution");
-});
-
-test("cli wire: MUSTER_COWORK_NATIVE_PLUGIN=0/false do not declare native ride (MCPB-boolean-safe, mirrors MUSTER_ENABLE_FABLE parsing)", async () => {
-  for (const value of ["0", "false", ""]) {
-    const { stdout } = await pexecFile(process.execPath, [CLI, "capabilities", "--cowork", "--role", "debug"], {
-      cwd: REPO_ROOT,
-      env: { ...process.env, MUSTER_COWORK_NATIVE_PLUGIN: value },
-    });
-    const { chosen } = JSON.parse(stdout);
-    assert.equal(chosen.id, "inline", `MUSTER_COWORK_NATIVE_PLUGIN=${JSON.stringify(value)} must not declare native ride`);
+// ── Cowork plugin-ride capability check ─────────────────────────────────────
+// Cowork loads plugin skills and agents from the claude.ai account
+// (docs/research/claude-cowork.md §3), so `capabilities --cowork` resolves
+// muster's builtins unless the install is plugin-less: a declaration
+// (--native-plugin / --plugin-less / MUSTER_COWORK_NATIVE_PLUGIN) wins, then
+// the Desktop app's account plugin list, then the documented plugin route.
+// Each test pins a fixture home (positional arg; on Linux the config dir is
+// <home>/.config/Claude) so a real Desktop install cannot change the result.
+// Assertions compare against the non-cowork resolution from an empty home
+// rather than a frozen provider id, so a catalog re-rank stays harmless.
+async function coworkHome(plugins) {
+  const home = await mkdtemp(join(tmpdir(), "muster-cowork-home-"));
+  if (plugins) {
+    const list = join(home, ".config/Claude/plugin-list/org/account");
+    await mkdir(list, { recursive: true });
+    await writeFile(join(list, "plugins.json"), JSON.stringify({ plugins }));
   }
+  return home;
+}
+const plainDebug = async (home) => JSON.parse((await run(["capabilities", home, "--role", "debug"])).stdout).chosen;
+const coworkDebug = async (home, extra = [], env = {}) => JSON.parse((await pexecFile(
+  process.execPath, [CLI, "capabilities", "--cowork", home, ...extra, "--role", "debug"],
+  { cwd: REPO_ROOT, env: { ...process.env, MUSTER_COWORK_NATIVE_PLUGIN: "", ...env } },
+)).stdout).chosen;
+
+test("cli wire: capabilities --cowork with no declaration and no readable plugin list resolves the plugin route", async () => {
+  const home = await coworkHome();
+  try {
+    const chosen = await coworkDebug(home);
+    assert.notEqual(chosen.id, "inline", "the plugin marketplace is the documented route; unknown is not plugin-less");
+    assert.deepEqual(chosen, await plainDebug(home));
+  } finally { await rm(home, { recursive: true, force: true }); }
+});
+
+test("cli wire: capabilities --cowork reads the account plugin list (muster absent -> MCP fallback, present -> plugin)", async () => {
+  const without = await coworkHome([{ id: "design@kw", name: "design", enabled: true }]);
+  const withMuster = await coworkHome([{ id: "muster@muster", name: "muster", enabled: true }]);
+  try {
+    assert.equal((await coworkDebug(without)).id, "inline", "a readable list without muster selects the plugin-less fallback");
+    assert.deepEqual(await coworkDebug(withMuster), await plainDebug(withMuster));
+  } finally {
+    await rm(without, { recursive: true, force: true });
+    await rm(withMuster, { recursive: true, force: true });
+  }
+});
+
+test("cli wire: --native-plugin and MUSTER_COWORK_NATIVE_PLUGIN=1 override a list without muster", async () => {
+  const home = await coworkHome([{ id: "design@kw", name: "design", enabled: true }]);
+  try {
+    const plain = await plainDebug(home);
+    assert.deepEqual(await coworkDebug(home, ["--native-plugin"]), plain);
+    assert.deepEqual(await coworkDebug(home, [], { MUSTER_COWORK_NATIVE_PLUGIN: "1" }), plain);
+  } finally { await rm(home, { recursive: true, force: true }); }
+});
+
+test("cli wire: --plugin-less and MUSTER_COWORK_NATIVE_PLUGIN=0/false declare the MCP-only fallback; empty declares nothing", async () => {
+  const home = await coworkHome();
+  try {
+    assert.equal((await coworkDebug(home, ["--plugin-less"])).id, "inline");
+    for (const value of ["0", "false"]) {
+      assert.equal((await coworkDebug(home, [], { MUSTER_COWORK_NATIVE_PLUGIN: value })).id, "inline", `MUSTER_COWORK_NATIVE_PLUGIN=${value}`);
+    }
+    assert.notEqual((await coworkDebug(home, [], { MUSTER_COWORK_NATIVE_PLUGIN: "" })).id, "inline", "an empty value is not a declaration");
+  } finally { await rm(home, { recursive: true, force: true }); }
 });
 
 // ---------------------------------------------------------------------------

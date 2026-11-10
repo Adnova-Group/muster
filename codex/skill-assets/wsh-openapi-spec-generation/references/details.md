@@ -1,5 +1,3 @@
-<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001, ANTH-POS-001, GUARD-IDK-001, GUARD-CITE-002, ANTH-XML-001, GUARD-SEP-003: Pinned upstream supporting asset loaded inside its parent skill; the parent supplies role, output, evidence, and input boundaries. -->
-
 # openapi-spec-generation — templates and worked examples
 
 ## Templates
@@ -469,7 +467,7 @@ security:
   - bearerAuth: []
 ```
 
-For advanced code-first generation patterns and tooling, see [references/code-first-and-tooling.md](references/code-first-and-tooling.md):
+For advanced code-first generation patterns and tooling, see [references/code-first-and-tooling.md](./code-first-and-tooling.md):
 
 - **Template 2: Python/FastAPI** — Pydantic models with `Field` validation, enum types, full CRUD endpoints with `response_model` and `status_code`, exporting the spec as JSON
 - **Template 3: TypeScript/tsoa** — Decorator-based controllers (`@Route`, `@Get`, `@Security`, `@Example`, `@Response`) that generate OpenAPI from TypeScript types

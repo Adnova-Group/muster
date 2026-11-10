@@ -1,4 +1,4 @@
-<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001, ANTH-POS-001, GUARD-IDK-001, GUARD-CITE-002, ANTH-XML-001, GUARD-SEP-003: Pinned upstream supporting asset loaded inside its parent skill; the parent supplies role, output, evidence, and input boundaries. -->
+<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001: upstream wshobson/agents reference loaded inside its parent wsh-* builtin, which supplies the role and output format; merge-tracked in vendor/manifest.yaml. -->
 
 # go-concurrency-patterns — detailed patterns and worked examples
 
@@ -27,20 +27,27 @@ type Result struct {
 }
 
 func WorkerPool(ctx context.Context, numWorkers int, jobs <-chan Job) <-chan Result {
-    results := make(chan Result, len(jobs))
+    results := make(chan Result)
 
     var wg sync.WaitGroup
     for i := 0; i < numWorkers; i++ {
         wg.Add(1)
         go func(workerID int) {
             defer wg.Done()
-            for job := range jobs {
+            for {
+                // Stop on cancel even while waiting for a job or a reader
                 select {
                 case <-ctx.Done():
                     return
-                default:
-                    result := processJob(job)
-                    results <- result
+                case job, ok := <-jobs:
+                    if !ok {
+                        return
+                    }
+                    select {
+                    case results <- processJob(job):
+                    case <-ctx.Done():
+                        return
+                    }
                 }
             }
         }(i)

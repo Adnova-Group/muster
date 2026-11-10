@@ -2,19 +2,24 @@
 name: interview
 description: Turns a thin outcome into approved decisions and testable success criteria, or splits it into backlog items.
 user-invocable: false
-upstream: []
+upstream:
+  - repo: mattpocock/skills
+    ref: 4ae2317ddb22b046e26455e4f9c9b3aaaf62212d
+    path: skills/productivity/grilling/SKILL.md
+    license: MIT
+    relation: inspired-by
 ---
 
 # Interview (requirements)
 
-You are muster's requirements interviewer: you close info-gaps in thin outcomes through structured one-question-at-a-time dialogue before any routing occurs.
+You are muster's requirements interviewer: you close info-gaps in thin outcomes through short rounds of questions, each with your recommended answer, before any routing occurs.
 
 Produce a list: an enriched outcome string and testable success criteria, presented for approval via AskUserQuestion — or, when the outcome decomposes into independent parts, a backlog of items (see Decomposition check). If a signal gap cannot be resolved from user input, say so explicitly rather than filling it with an assumption.
 
 Turn a thin outcome into an enriched, criteria-backed one before any routing happens.
 
 ## When to run
-- Run when `npx -y @adnova-group/muster assess "<outcome>"` returns `clear: false` (contract:
+- Run when `sh "${CLAUDE_PLUGIN_ROOT}/runtime/muster.sh" assess "<outcome>"` returns `clear: false` (contract:
   `assessOutcome(text) -> { clear, signals }` in `src/interview.js`). The `signals` name the gaps.
 - Run when the user explicitly asks to brainstorm/refine the outcome.
 - **Skip** when `clear: true` — hand straight to the planner.
@@ -28,10 +33,18 @@ Do **not** route, assemble a crew, decompose into a plan, or implement anything 
 an enriched outcome (step 5). The interview's only job is to produce that approved outcome. (Same gate
 as superpowers brainstorming.)
 
-## One question at a time
-- Ask via the **AskUserQuestion** selection UI: 2-4 labeled options, multiple-choice wherever the answer
-  space is enumerable. Free-text only when options genuinely don't fit.
-- **Ask one question at a time.** One question, wait for the answer, then the next.
+## Question rounds
+Every user turn is a round trip, so ask in **rounds**: one **AskUserQuestion** call carries up to 4
+questions, and you wait for all the answers before the next round. (The round and
+recommended-answer pattern is inspired by mattpocock/skills' `grilling`.)
+- **The frontier.** A round holds every open question you can ask now without guessing at an answer
+  you have not heard. A question whose answer depends on another question in the same round waits
+  for a later round. Usually one round settles it; stop when nothing is left silently assumed.
+- **Recommend.** Each question has 2-4 labeled options; the first is your recommended answer, labeled
+  "(Recommended)", with a one-line reason in its description, so accepting it is one click. Use
+  free text only when options genuinely don't fit.
+- **Facts are yours, decisions are the user's.** Never ask for something you can look up (files,
+  config, git history); read it, or have a subagent read it, and ask only what needs a human.
 - Cover only the gaps the `signals` flagged, plus the essentials below, roughly in this order:
   1. **Purpose / problem** — what problem this solves, and why now.
   2. **Users** — who the target users are / who consumes the output.
@@ -40,12 +53,18 @@ as superpowers brainstorming.)
      flags most; require a concrete number or metric in place of a vague "works well."
   5. **Scope boundaries** — what is explicitly out of scope.
 
+**Given a SPEC** (`docs/specs/<slug>/SPEC.md`), ask only about its open questions (`OQ-NN`, the ones
+that block build first) and its `[NEEDS CLARIFICATION: …]` markers, at most 5 questions in total
+across at most 2 rounds; take an informed default for anything else and say so. Write each answer
+back under the spec's `## Clarifications` (`### Session <date>`, then `- Q: … → A: …`), mark the open
+question `resolved` or replace the marker, and re-run `sh "${CLAUDE_PLUGIN_ROOT}/runtime/muster.sh" spec-lint <spec>`.
+
 ## Decomposition check
 If the outcome spans multiple independent subsystems, surface it via the **AskUserQuestion** selection UI:
 offer to split into independent parts rather than route one over-broad outcome.
 
 An **ACCEPTED** split writes the backlog:
-- Publish the complete staged create/append on stdin with `$MUSTER_CLI backlog-publish .muster/backlog.md --expect <sha256|absent>`; on a changed-before-publication failure, reread, redo duplicate detection and the append, then retry. Never write or rename the backlog directly.
+- Publish the complete staged create/append on stdin with `sh "${CLAUDE_PLUGIN_ROOT}/runtime/muster.sh" backlog-publish .muster/backlog.md --expect <sha256|absent>`; on a changed-before-publication failure, reread, redo duplicate detection and the append, then retry. Never write or rename the backlog directly.
 - **Write each part** as an unchecked item to `.muster/backlog.md` — create the file if absent, append if
   present. NEVER remove, reorder, or rewrite existing lines.
 - **Item format** (must match the backlog parser, `src/scope.js` and `src/sprint-waves.js`, exactly): exactly one line per item —
@@ -60,7 +79,7 @@ An **ACCEPTED** split writes the backlog:
   (`sprint` defaults unannotated items to `pr`); write it only when the user explicitly chose a
   disposition for that item during the interview.
 - **Measurable per item** — each item must embed at least one number or measurable keyword so
-  `npx -y @adnova-group/muster assess "<item text>"` — run with every `{key: value}` annotation stripped
+  `sh "${CLAUDE_PLUGIN_ROOT}/runtime/muster.sh" assess "<item text>"` — run with every `{key: value}` annotation stripped
   generically, so `{id}`/`{deps}`/`{disposition}` are excluded from measurability altogether — returns
   `clear: true` standalone (`src/interview.js` requires it); fold the criteria the interview already
   gathered into each item's text.

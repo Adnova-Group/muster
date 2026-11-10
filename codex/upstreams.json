@@ -6,16 +6,16 @@
     {
       "id": "superpowers",
       "repository": "https://github.com/obra/superpowers",
-      "version": "6.1.1",
-      "ref": "d884ae04edebef577e82ff7c4e143debd0bbec99",
+      "version": "7.0.2",
+      "ref": "22f0b463e7a5e579904dd6211a520321035526f7",
       "codex": "Official Codex CLI and App plugin using the shared skills directory.",
-      "musterStrategy": "Prefer the enabled superpowers plugin; keep the nine sp-* skills as collision-free fallbacks."
+      "musterStrategy": "Prefer the enabled superpowers plugin; keep the seven sp-* skills as collision-free fallbacks."
     },
     {
       "id": "wshobson-agents",
       "repository": "https://github.com/wshobson/agents",
       "version": null,
-      "ref": "2de74ac1c8f6669821dcef13153332c3168033c1",
+      "ref": "9c61ab243def98f72da12abd41cfcf5bcd91af9d",
       "codex": "Official marketplace and per-plugin manifests; make generate HARNESS=codex emits native skills and TOML agents.",
       "musterStrategy": "Prefer enabled unprefixed native skills; keep wsh-* skills and strict-model Muster profiles as collision-free fallbacks."
     },

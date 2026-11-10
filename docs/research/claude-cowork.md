@@ -1,523 +1,586 @@
-# Research: Claude Cowork — base loop, extension surfaces, and muster's ride
+# Research: Unified Claude (Chat + Cowork) on Claude Desktop, and muster's ride
 
-Input for harness-internals work: what Claude Cowork natively provides, how its naked base
-loop runs, which extension surfaces exist, and — reconciled line-by-line against muster's
-shipping Cowork compatibility route (`cowork/`) plus the canonical neutral MCP core (`mcp/`) — what muster rides today, where the port's assumptions
-have gone stale, and what is still unexploited.
+What Chat and Cowork in the Claude Desktop app natively provide as of 2026-11-10, how a
+plugin loads there, which muster primitives work on which surface, and what muster's
+Desktop distribution (`cowork/`, over the neutral MCP core `mcp/server.mjs`) should do.
+The Code tab (Claude Code inside Desktop) is covered in
+[`claude-code-desktop.md`](claude-code-desktop.md); this file cites it only where a
+Chat/Cowork fact depends on it.
 
-Evidence tags used throughout: **[DOCUMENTED-WEB]** = stated in a primary web source;
-**[CODE-VERIFIED]** = read directly from this repo's shipping adapter code (a primary
-source here, since the adapter was built against the live product and its probe results);
-**[INFERRED]** = judgment call from combining sources, flagged as such.
+Research rule: primary sources only, quoted verbatim with dates and versions. Where a
+source is silent the text says "not stated". Evidence tags:
 
-Headline reconciliation finding, up front: muster's adapter was written against
-January-2026 Cowork and asserts "Cowork extends only through MCP and MCPB desktop
-extensions. It has no plugin, skill, slash-command, or hook primitives" [src: readme-5].
-As of mid-2026 that premise is **stale in both directions**: Cowork gained a plugin system
-that bundles skills, connectors, hooks, and sub-agents [src: cw-plugins] [DOCUMENTED-WEB],
-while the local-MCP-server surface muster's Route A install rides is now
-documented inconsistently — one official article says config-file local servers "aren't
-available in Cowork" at all [src: cw-connectors] [DOCUMENTED-WEB]. Both shifts are
-detailed in sections 3 and 8.
+- **[DOC]**: stated in a primary web source (support.claude.com, claude.com/docs,
+  code.claude.com/docs, anthropic.com). Read 2026-11-10.
+- **[CHANGELOG]**: the Claude Desktop changelog at claude.com/docs/cowork/changelog,
+  quoted with its version and date. Each release has General, Code and Cowork sections
+  and then a **3P** section for third-party deployments (Desktop on Bedrock, Vertex,
+  Foundry or a gateway). Entries from the 3P section are marked "(3P)": they describe
+  the third-party build and its managed configuration, and are evidence for
+  first-party behavior only where a first-party source agrees.
+- **[OBSERVED]**: read on the owner's machine on 2026-11-10 (Claude Desktop for
+  Windows with bundled Claude Code 2.1.321), from Desktop's own files and session
+  transcripts. A behavior, not a documented contract.
+- **[CODE]**: read from this repository.
+- **[INFERRED]**: a judgment from combining sources, flagged as such.
 
-## 1. What Cowork is
+## 0. Headline findings
 
-Claude Cowork is Anthropic's agentic product for general knowledge work: "Claude Cowork
-uses the same agentic architecture that powers Claude Code, with no terminal required"
-[src: cw-start] [DOCUMENTED-WEB]. It launched January 12, 2026 as a research preview for
-Max subscribers on the macOS desktop app [src: vb-launch] [DOCUMENTED-WEB]; Anthropic's
-Labs announcement lists it alongside Claude Code, MCP, and Skills as a Labs-incubated
-product [src: labs] [DOCUMENTED-WEB]. Launch coverage framed it as a file-managing
-general-purpose agent squarely aimed at non-coding work [src: fortune] [DOCUMENTED-WEB];
-by July 2026 Anthropic reported that more than 90% of Cowork usage was not software
-development, with business operations and content creation the largest categories
-[src: blog-webmobile] [DOCUMENTED-WEB].
+1. **Chat and Cowork are one product now.** Release notes, 2026-09-16: "We're rolling out
+   a new Claude experience that makes everything Claude Cowork does available from any
+   conversation" [src: rn] [DOC]; for first-party plans it "is rolling out gradually,
+   starting with Pro, Max, and Ultra plans ... On Team plans (in beta) and Enterprise
+   plans, it's available where Chat and Cowork unified is turned on" [src: one-claude]
+   [DOC]. For third-party deployments, Desktop v2.31226.0 (2026-10-08, 3P) added
+   `desktopHome` for "Unified Claude (beta), which combines Chat and Cowork into one
+   experience ... (Code is not affected), or leave it out of your configuration to stay
+   on the current Chat and Cowork split until November 10, when Unified Claude goes on
+   for all orgs" [src: cl] [CHANGELOG].
+2. **Cowork runs in the cloud by default.** "On October 6, 2026, new Cowork tasks on Pro,
+   Max, and Ultra plans run in the cloud. The Only on your computer option in Settings >
+   General was removed" [src: cw-surfaces] [DOC]. And: "Local MCP servers don't run in
+   sessions in the cloud" [src: cw-arch] [DOC].
+3. **The plugin is the Desktop route.** Plugins install from Customize > Plugins > Add
+   marketplace, are attached to the account, and sync to Claude Code. Cowork loads a
+   plugin's skills, commands, agents and hooks; Chat loads skills and commands only
+   [src: platform] [DOC]. muster's plugin has no top-level `bin/`, so neither surface
+   refuses it [CODE].
+4. **The Code tab's task panel is driven by an app-injected MCP tool, not TaskCreate.**
+   The owner's screenshot session called `mcp__ccd_turn__update_plan`; Desktop's system
+   prompt says to "use it in place of Claude Code's own task-list tools (TaskCreate,
+   TaskUpdate, TaskList, TaskGet)" [OBSERVED]. The box shipped in v2.42304.0
+   (2026-10-15). The Claude Code research track reached the same result independently
+   ([`claude-code-desktop.md`](claude-code-desktop.md) §12.2). Cowork's Progress panel,
+   by contrast, ran on TaskCreate/TaskUpdate in every local Cowork transcript on the
+   machine, Fable 5 included [OBSERVED]. Section 2.2.
+5. **Mods run in the Code tab only.** "Mods work in the Claude Code CLI, the Code tab of
+   the Claude Desktop app, and the VS Code extension"; not in WSL sessions [src: mods]
+   [DOC]. The plugin directory "lists a mod ... for Claude Code" [src: platform] [DOC].
+   Section 8.
+6. **Desktop WSL sessions load no plugins, so muster is absent there.** "**Plugins**: not
+   available in WSL sessions" [src: cc-wsl] [DOC] (finding F7 in
+   [`2026-11-claude-code-findings.md`](2026-11-claude-code-findings.md)). The owner has a
+   "Muster (WSL)" saved environment [OBSERVED]; `muster doctor --desktop` now warns when
+   it finds WSL Code-tab sessions or environments. Use a local or SSH session, or the
+   CLI inside WSL.
+7. **A plugin `bin/` would cost muster Chat and Cowork.** A top-level `bin/` "makes that
+   surface refuse the whole plugin" in both [src: platform] [DOC]. Finding F16 (ship the
+   CLI through `plugin/bin/`) must not land as written while the plugin is the Desktop
+   route.
+8. **Parallel subagents are documented in Cowork; a per-call model override is not.**
+   Section 4. This splits muster's old phase-3 probe gate into a documented half and a
+   probe-only half.
 
-Timeline that matters for reconciling muster's port [DOCUMENTED-WEB]:
+## 1. What Unified Claude is
 
-- **Jan 12, 2026** — desktop-only research preview, Max plan, macOS first
-  [src: vb-launch]. This is the Cowork that muster's adapter comments describe.
-- **~May 2026** — plugins arrive: skills, connectors, hooks, sub-agents bundled per
-  plugin, installable in chat and Cowork [src: cw-plugins].
-- **Jul 7, 2026** — web and mobile rollout; **sessions run remotely by default** (beta),
-  the agent loop moves to Anthropic-managed sandboxes, scheduled tasks run with no
-  device online [src: blog-webmobile] [src: newstack].
+"Cowork uses the same agentic architecture that powers Claude Code, accessible within
+Claude Desktop without opening the terminal" [src: cw-overview] [DOC].
 
-### Execution model: two session architectures
+Timeline [DOC unless tagged]:
 
-Cowork now has two distinct execution architectures, and which one a session uses
-changes what integration surfaces exist [src: cw-arch] [DOCUMENTED-WEB]:
+- **2026-01-12**: Cowork research preview on Claude Desktop (macOS only) for Max plans:
+  "It runs locally on your computer in an isolated VM, enabling direct access to local
+  files and MCP integrations" [src: rn].
+- **2026-07-07**: "Claude Cowork is now available on web and mobile in addition to
+  desktop ... Cowork runs your sessions remotely (in beta) ... scheduled tasks run with
+  no device online. Chat and Cowork also share one home now" [src: rn].
+- **2026-08-06**, Desktop v1.26832.0 (3P): "Added the merged Chat and Cowork home as the
+  default. The "New" button starts a chat or a task from one composer" [src: cl]
+  [CHANGELOG].
+- **2026-09-16**: "Claude Cowork comes to every conversation ... Your chats, Cowork tasks,
+  projects, connectors, and skills carry over. The new experience is rolling out
+  gradually to Pro and Max plans on web, desktop, and mobile" [src: rn].
+- **2026-10-06**: new Cowork tasks on Pro, Max and Ultra run in the cloud
+  [src: cw-surfaces].
+- **2026-10-08**, v2.31226.0 (3P): `desktopHome` for Unified Claude; Unified Claude goes
+  on for all orgs on November 10 [src: cl] [CHANGELOG].
+- **2026-10-29**, v4.4212.0 (3P): "(breaking) Changed an unset `desktopHome` to read as
+  `standard` at launches after 12:00 PM PT on November 10, 2026: Unified Claude opens
+  with Cowork on, even where `coworkTabEnabled` is `false`" [src: cl] [CHANGELOG].
+- **2026-11-03**, v4.16336.0 (3P): "Removed the Chat and Cowork switch from a project's page
+  under Unified Claude. A message sent there now starts a Cowork task, or a chat on a
+  computer that can't run Cowork" [src: cl] [CHANGELOG].
 
-- **Remote sessions (the new default, beta):** "the agent loop and code execution run in
-  an isolated, temporary sandbox on Anthropic-managed infrastructure," one sandbox per
-  session, destroyed at session end. Egress goes through a mandatory allow-list proxy
-  outside the sandbox; the sandbox holds only short-lived session-scoped tokens;
-  "Connector authorization tokens never enter the sandbox; connector calls are made on
-  the server side." Device access (local files, browser) is brokered through the Claude
-  Desktop app over an Anthropic-brokered connection, limited to connected folders, and
-  unavailable when the app is offline [src: cw-arch].
-- **Local sessions (existing desktop deployments):** "The agent loop runs natively on
-  the device," covering conversation handling, file reads/writes in connected folders,
-  web fetches, "and local plugin MCP servers." Code execution runs in a dedicated Linux
-  VM isolated by the platform hypervisor (Apple Virtualization.framework on macOS,
-  Hyper-V on Windows), with its own egress filtering and syscall restrictions
-  [src: cw-arch].
+The merged experience, in the support article's words: "these are merged into a single
+conversation, so you don't need to decide which option better suits your task before
+getting started ... What you could previously only do in Claude Cowork is available from
+any conversation" [src: one-claude] [DOC]. "The model picker and the "Code" tab are where
+they were" [src: one-claude] [DOC].
 
-Muster's adapter documents exactly the local architecture: "Cowork runs the local MCP
-server natively on the device (the agent loop)" [src: readme-5] and "The CLI runs in
-Cowork's Linux VM" is the server's own framing of where spawned work lands
-[src: mcps-head] [CODE-VERIFIED]. Note the wrinkle: the MCP server is launched by the
-host-native agent loop (host Node, host PATH — the README requires host Node 20+
-explicitly [src: readme-42]), not inside the code-execution VM; the VM is where
-Claude-authored shell/code runs [INFERRED from src: cw-arch + src: readme-42].
+Whether a Unified Claude conversation loads plugin components as "Chat" or as "Cowork"
+in the platform-support table (section 3) is **not stated**. The table defines Chat as
+"conversations in claude.ai on the web, in the Claude desktop app, and in the mobile
+apps" and Cowork as "Cowork tasks in the desktop app" [src: platform]. The project-page
+entry above suggests a message becomes a Cowork task where the computer can run Cowork
+[INFERRED].
 
-### How it differs from Claude Code CLI
+### Execution model: cloud and local sessions
 
-- No terminal; the surface is the Claude Desktop/web/mobile chat UI [src: cw-start]
-  [DOCUMENTED-WEB].
-- No `~/.claude` loading: muster's capability resolver documents that "a Claude Code
-  plugin merely being present on disk does not make that plugin's agents/skills callable
-  from Cowork" [src: caps-23] [CODE-VERIFIED]. (Cowork's *own* plugin system, section 3,
-  is a separate install path with its own Customize UI [src: cw-plugins].)
-- No hooks in the Claude Code enforcement sense available to an MCP integrator: no
-  SessionStart/UserPromptSubmit/PreToolUse to register from outside; muster's sprint
-  protocol names the concrete losses — no wave-guard, no scale-gate, no action-class
-  fence, no run-active marker [src: sprint-14] [CODE-VERIFIED]. Plugin-bundled hooks now
-  exist ("Hooks and sub-agents run only in Cowork" [src: cw-plugins]) but are a plugin
-  author surface, not an MCP server surface [DOCUMENTED-WEB].
-- No git-native workflow primitives: no worktree isolation, no headless/CI mode, no
-  audit logs ("Cowork activity isn't captured in audit logs, the Compliance API, or data
-  exports" [src: cw-arch]) [DOCUMENTED-WEB].
-- Permissioning is UI-modal (Manual/Auto/Skip, section 2) rather than
-  settings.json allow/deny rules [src: cw-start] [DOCUMENTED-WEB].
+- **Cloud (default)**: "the agent loop and code execution run in an isolated, temporary
+  sandbox on Anthropic-managed infrastructure. Each session gets its own sandbox"
+  [src: cw-arch] [DOC]. "When a session in the cloud needs something on the user's device,
+  like a local file or the browser, the request goes through the Claude Desktop app on
+  that device over an Anthropic-brokered connection" [src: cw-arch] [DOC].
+- **Local (legacy)**: "Local sessions apply to existing desktop deployments (on Pro, Max,
+  and Ultra plans, only tasks and scheduled tasks started on the device before October 6,
+  2026)". There "The agent loop runs natively on the device. This includes ... local
+  plugin MCP servers", and "Code execution runs in an isolated virtual machine (VM)"
+  [src: cw-arch] [DOC].
+- **For local work, use the Code tab**: "For new tasks that run only on your computer,
+  use Claude Code in the desktop app" [src: cw-surfaces] [DOC].
 
-## 2. The naked base loop
+Cloud Cowork and local files conflict across two articles on MCP servers. The
+architecture article: "Local MCP servers don't run in sessions in the cloud"
+[src: cw-arch]. The surfaces article lists, under "What requires the desktop app ...
+even when your session runs in the cloud": "Local connectors. This includes plugins
+using those connectors", and "Local connectors and plugins that include local MCP
+servers work through the desktop app only" [src: cw-surfaces]. Both are [DOC]; how a
+cloud session reaches a local MCP server, if it does, is **not stated**.
 
-Anthropic documents Cowork's task loop as five steps: "1. Analyzes your request and
-creates a plan. 2. Breaks complex work into subtasks when needed. 3. Runs code and shell
-commands in an isolated environment on Anthropic's servers. 4. Coordinates multiple
-workstreams in parallel if appropriate. 5. Delivers finished outputs to your session"
-[src: cw-start] [DOCUMENTED-WEB]. So plan-then-execute with optional parallel fan-out is
-**native**, but the plan is free-form: there is no exposed task-graph object, no
-dependency ordering, no gate between "waves," and no validation that the plan was
-followed — which is precisely the hole muster's deterministic verbs fill
-[INFERRED from src: cw-start + src: readme-11].
+## 2. The base loop
 
-Native primitives that exist [DOCUMENTED-WEB, all src: cw-start unless noted]:
+"When you start a task in Cowork, Claude: Analyzes your request and creates a plan.
+Breaks complex work into subtasks when needed. Runs code and shell commands in an
+isolated environment on Anthropic's servers. Coordinates multiple workstreams in
+parallel if appropriate. Delivers finished outputs to your session" [src: cw-start]
+[DOC].
 
-- **Planning + subtask decomposition** — steps 1–2 of the loop; visible progress
-  indicators and surfaced reasoning ("Transparency: Claude surfaces its reasoning and
-  approach so you can follow along") [src: cw-start].
-- **Sub-agent coordination** — "Claude breaks complex work into smaller tasks and
-  coordinates parallel workstreams to complete them"; and during a task, "For complex
-  tasks, Claude may coordinate multiple sub-agents working simultaneously"
-  [src: cw-start]. This is the official confirmation of the parallel fan-out muster's
-  orchestration lifecycle depends on.
-- **Mid-run steering** — "You can jump in to course-correct or provide additional
-  direction mid-task," from any surface [src: cw-start]; the July blog frames it as
-  "redirect a draft mid-meeting and Claude keeps going" [src: blog-webmobile].
-- **Permission modes as the native gate** — three modes crossed with per-connector-tool
-  permission settings: Manual (pause and ask), Auto (Claude reviews each action for
-  safety — prompt-injection/exfiltration checks — and auto-blocks, falling back to
-  asking; consumes more usage), Skip (no checks). Auto mode will not auto-approve
-  sensitive actions such as granting new folder access, deleting files, or creating
-  scheduled tasks [src: cw-start].
-- **Enforced deletion protection** — "Claude requires your explicit permission before
-  permanently deleting any files"; this is a hard product-level gate, not a prompt
-  convention [src: cw-start].
-- **Long-running + scheduled execution** — no conversation-timeout interruption;
-  `/schedule` creates recurring tasks that run remotely with no device online
-  [src: cw-start]. (Note: `/schedule` is a slash-invoked product feature — another
-  small crack in the adapter's "no slash-command primitives" framing
-  [INFERRED from src: cw-start + src: readme-5].)
-- **Projects with memory** — persistent workspaces "with their own files, links,
-  instructions, and memory"; chat memory does not carry into Cowork, and within Cowork
-  memory is supported in projects only [src: cw-start].
-- **Global and folder instructions** — standing per-user instructions in Settings,
-  plus per-folder instructions that "Claude can also update ... on its own during a
-  session" — the CLAUDE.md analog [src: cw-start].
+Native primitives [DOC, src: cw-start unless noted]:
 
-Native primitives that are **absent** (the gap muster's port exists to fill)
-[CODE-VERIFIED against src: sprint-14, src: readme-38]:
+- **Sub-agent coordination**: "Claude breaks complex work into smaller tasks and
+  coordinates parallel workstreams to complete them"; "For complex tasks, Claude may
+  coordinate multiple sub-agents working simultaneously".
+- **Permission setting**: "If you have the new Claude experience, the permission setting
+  in the message box offers Auto (default on Pro, Max, Ultra, and Team plans) and Manual
+  (default on Enterprise plans)". The pre-unified Cowork selector also has Skip ("Skip
+  all approvals (Skip), formerly "Act without asking.""). No plan mode is documented for
+  Chat or Cowork.
+- **Deletion protection**: "Claude requires your explicit permission before permanently
+  deleting any files".
+- **Scheduled tasks**: "Scheduled tasks run remotely, so they run on their cadence even
+  when your computer is asleep or the Claude Desktop app is closed" and "have access to
+  the same capabilities as regular Cowork tasks, including connected tools, skills, and
+  installed plugins" [src: cw-sched]. Creating one, "Claude may ask you questions with
+  multiple choice responses" [src: cw-sched].
+- **Projects**: "Projects work in every conversation" [src: one-claude]; "From a project
+  you can start a chat or a Cowork session, and Claude uses the project's knowledge as
+  context" [src: cw-surfaces]. A project has its own instructions, scheduled tasks,
+  context and memory [src: cw-projects].
+- **Global and folder instructions**: folder instructions "add project-specific context
+  to Cowork when you select a local folder on desktop. Claude can also update these on
+  its own during a session".
 
-- No dependency-ordered task graph, no wave barrier, no review gate, no tournament or
-  fusion machinery — the plan is prose in the agent's head; the entire deterministic
-  gate/wave layer is what the 30-tool MCP server imports [src: readme-11] [INFERRED].
-- No enforcement hooks an integrator can register: muster's wave-guard, scale-gate, and
-  action-class fence have "no Cowork equivalent — this session's own discipline is the
-  only enforcement there is" [src: sprint-14].
-- No native isolated per-item worktree runners. Without a proven native per-subagent
-  worktree primitive, the orchestrator creates a dedicated isolated Git worktree for
-  each write-capable item and executes those implementations sequentially in their
-  assigned worktrees. The main tree remains the coordination and ordered-integration
-  surface [src: sprint-24].
-- No session sharing, no compliance/audit capture [src: cw-start] [src: cw-arch].
+Absent for muster's purposes: no dependency-ordered task graph, wave barrier, review gate
+or tournament; nothing in the documented loop validates that a plan was followed. That
+is the layer muster's deterministic tools supply [INFERRED].
 
-## 3. Extension surfaces: MCP as the (formerly only) integration plane
+### 2.1 Progress UI
 
-Muster's port targets a three-legged registry, encoded in `readInstalledCowork`: local
-MCP servers from `claude_desktop_config.json`, MCPB/DXT desktop extensions enumerated
-from a `Claude Extensions/` directory ("no index file exists, so we enumerate"), and
-remote connectors that live in cloud/account state and "cannot be discovered
-(connectorsDiscoverable:false) and must be DECLARED" [src: harness-31] [src: harness-46]
-[CODE-VERIFIED]. Each leg, reconciled against current docs:
+- Cowork: "Progress indicators show what Claude is doing at each step" [src: cw-start]
+  [DOC]. All three changelog entries on it sit in the 3P section: v3.6556.1
+  (2026-10-22, 3P) "Fixed Cowork's live list of steps and progress notes showing only
+  when a reply began with steps"; v4.16336.0 (2026-11-03, 3P) "In Cowork and Chat,
+  Claude's steps and progress notes now sit behind one status row, which opens with a
+  click"; v4.23118.1 (2026-11-09, 3P) "Fixed Cowork's Progress panel not ticking steps
+  that a subagent marked done" [CHANGELOG]. v1.15962.0 (2026-06-25, General): "Fixed the
+  conversation jumping and the Progress panel flashing when opening a completed task"
+  [CHANGELOG].
+- What drives the Progress panel is **not stated** in any source. Every local Cowork
+  transcript on the owner's machine (76 files, last on 2026-10-12, bundled Claude Code up
+  to 2.1.295) records TaskCreate (403 calls) and TaskUpdate (667) calls, including
+  sessions on `claude-fable-5` [OBSERVED]. Claude Code's tool reference explains why
+  Fable gets the tools there: "In background sessions and in cloud sessions, Claude Code
+  provides the same tools on every model, listed or not" [src: cc-tools] [DOC]. Whether
+  local Cowork counts as one of those, or Desktop opts in, is not stated.
 
-### 3a. Local MCP servers (`claude_desktop_config.json`)
+### 2.2 The Code tab's task panel (the owner's screenshot)
 
-Muster's Route A install merges a `muster` entry into `mcpServers` in
-`claude_desktop_config.json` at platform paths — `%APPDATA%\Claude` on Windows (with an
-MSIX-virtualized `LocalCache` copy that the app prefers when present),
-`~/Library/Application Support/Claude` on macOS, `~/.config/Claude` on Linux community
-builds [src: readme-53] [CODE-VERIFIED]; `coworkConfigDirs` mirrors exactly those paths
-and tries the MSIX-virtualized path first on Windows [src: harness-17] [CODE-VERIFIED].
+The screenshot (model Fable 5.2, effort High, mode Auto) shows "Set up build env and
+baseline" running with "1 running task" under it, pending items "Task 1: engine
+carry-over" through "Final checks and report", and "3 background commands completed".
+Claude Code's changelog says the task tools are off on these models: 2.1.233
+(2026-08-14) "Todo/task-tracking tools (TaskCreate/Get/Update/List, TodoWrite) are no
+longer available on Opus 4.8, Sonnet 5, Fable 5, Mythos 5, and newer models; set
+`CLAUDE_CODE_ENABLE_TODO_TOOLS=1` to bring them back" [src: cc-changelog] [DOC].
 
-The documentation is now **internally inconsistent** about this surface:
+The screenshot's session is a local Windows Code-tab session (`entrypoint:
+claude-desktop`, Claude Code 2.1.321, model `claude-fable-5-2`, effort `high`)
+[OBSERVED]. Its transcript shows:
 
-- The architecture overview says the local-session agent loop includes "local plugin MCP
-  servers," and its MDM key `isLocalDevMcpEnabled` disables "plugin-bundled and locally
-  configured MCP servers" — implying locally-configured servers are a live Cowork
-  surface on desktop [src: cw-arch] [DOCUMENTED-WEB].
-- The custom-connectors article (updated April 2026) states flatly: "Local MCP servers
-  configured in Claude Desktop via `claude_desktop_config.json` are a separate mechanism
-  and do use your local network, but those aren't available in Cowork or claude.ai"
-  [src: cw-connectors] [DOCUMENTED-WEB].
-- The get-started article says "plugins that include local MCP servers work through the
-  desktop app only" [src: cw-start], and the architecture overview adds "Local MCP
-  servers don't run in remote sessions" [src: cw-arch] [DOCUMENTED-WEB].
+- The list is written by `mcp__ccd_turn__update_plan`, an MCP server Desktop injects
+  into Code-tab sessions. The call that drew the screenshot's list carries
+  `{"items": [{"content": "Set up build env and baseline", "status": "in_progress"},
+  {"content": "Task 1: engine carry-over", "status": "pending"}, ...]}`; later calls send
+  `{"done": [1, 2], "start": 3}` or `{"advance": true}` [OBSERVED].
+- Desktop's system prompt for the session has a section "# Task list and wrap-up (this
+  app)": "The user follows your progress on a task list the app shows under your latest
+  message, not by reading your messages, so keeping it is part of doing the task here.
+  `mcp__ccd_turn__update_plan` is that list, and the only one the app shows under your
+  message: use it in place of Claude Code's own task-list tools (TaskCreate, TaskUpdate,
+  TaskList, TaskGet), and do not search for them" [OBSERVED].
+- The same section requires a closing `mcp__ccd_turn__wrap_up` call: "it fills the
+  next-step box ... When this turn leaves the user a decision to make or a step to take,
+  it also holds one short question ... plus buttons of one to three words that answer
+  it" [OBSERVED]. The session's call: `{"recap": ..., "ask": "Build Plan 5B as written,
+  with this drill layout?", "actions": [{"label": "Yes, build it"}, {"label": "Change
+  something"}], "blocked": true}` [OBSERVED].
+- Other app-injected servers named in that prompt: `ccd_session` (`start_session`,
+  `hand_off_to_session`, `list_start_targets`, `mark_chapter`, `dismiss_task`),
+  `ccd_session_mgmt` (`list_sessions`), `ccd_view` (`show_pane`), `ccd_window`
+  (`open_session_in`), plus `ccd_pr` and `ccd_settings` tools [OBSERVED].
+- "1 running task" and "3 background commands completed" match the documented tasks
+  pane: "The tasks pane shows the background work running inside the current session:
+  subagents, background shell commands, and dynamic workflows" [src: cc-desktop] [DOC].
+  The session dispatched `Agent` calls ("Implement Task 1: engine carry-over", `model:
+  "opus"`) and background Bash [OBSERVED].
 
-Muster's repository verifies Route A's 30-tool local MCP server and the sequential
-`muster_next` execution path [src: readme-7] [src: readme-11] [CODE-VERIFIED]. An older
-README claimed a live desktop probe had also confirmed parallel dispatch and per-call
-model override, but no phase-3 receipt is retained, so that claim is not current
-evidence. The reconciled reading: config-file local servers loaded in desktop-era local
-sessions, while **no local-server route reaches a remote session's sandbox** — the
-surface muster's whole port stands on is session-mode-dependent [INFERRED from the three
-sources above]. Re-running `scripts/cowork-probe.mjs` inside a current build — exactly
-what the probe
-was built for [src: probe-8] — is the only way to settle it empirically.
+The box itself is in the changelog. v2.42304.0 (2026-10-15, Code): "Added a box at the
+end of the conversation in local and SSH sessions that shows Claude's plan while it
+works. When a turn ends, the box can show a short recap with buttons for what to do next
+(not yet in third-party deployments)" [CHANGELOG]. The third-party build got it in
+v3.1623.0 (2026-10-20, 3P): "Added to Code tab sessions Claude's plan and a next-step box
+at the end of a turn" [CHANGELOG]. The entry names local and SSH sessions, not WSL.
 
-### 3b. MCPB desktop extensions
+Conclusion: in the Code tab the checklist is the app's own `update_plan` list, kept by
+the model because the Desktop system prompt tells it to, and the counts under it come
+from the tasks pane. It does not depend on TaskCreate or `CLAUDE_CODE_ENABLE_TODO_TOOLS`
+[OBSERVED]. The tool names and the system-prompt text are not in the public docs;
+`ccd_turn` is an internal surface that can change without notice. The Claude Code track
+read the same transcript and counted six `update_plan` calls, one `wrap_up` call and no
+TaskCreate or TodoWrite calls ([`claude-code-desktop.md`](claude-code-desktop.md) §12.2).
+Its finding F18 notes that muster's `mcp__.*` hook matcher also fires on these tools.
 
-MCPB (formerly DXT) is Anthropic's one-click packaging for local MCP servers: "MCP
-Bundles (.mcpb) are zip archives containing a local MCP server and a manifest.json,"
-installable like a browser extension, with a `user_config` block the host renders as a
-settings UI and passes to the server (as env vars, among other bindings)
-[src: mcpb-spec] [src: mcpb-blog] [DOCUMENTED-WEB]. Anthropic documents desktop
-extensions as the enterprise deployment path for local servers on Team/Enterprise
-[src: mcpb-docs] [DOCUMENTED-WEB]; the dedicated MDM kill switch is
-`isDesktopExtensionEnabled` [src: cw-arch].
+## 3. Extension surfaces
 
-Muster carries a development Route B descriptor: `manifest.json` with
-  `manifest_version` 0.3, a node entry point at `${__dirname}/mcp-server.mjs` (the
-  compatibility shim for canonical `mcp/server.mjs`), and
-`user_config` fields (Apex toggle, max tier, declared connectors) mapped to
-`MUSTER_ENABLE_APEX`, `MUSTER_MAX_TIER`, and `MUSTER_COWORK_CONNECTORS`
-[src: manifest-10] [CODE-VERIFIED]. It is **not currently a distribution**: the packed
-`cowork/` directory omits the repository CLI runtime and shared guidance/package files,
-so an extracted archive cannot initialize. Route A is the supported path until Route B
-has a bundled runtime and an unpack-and-initialize test; Windows MSIX virtualized paths
-remain an additional packaging risk [src: readme-105] [CODE-VERIFIED].
+### 3a. Plugins (the documented route)
 
-### 3c. Remote connectors
+Component support, verbatim from the platform-support page [src: platform] [DOC]:
 
-Remote connectors are account-level MCP: configured in claude.ai settings, brokered
-through Anthropic's cloud, never touching local disk. "The connection to your MCP server
-originates from Anthropic's servers, not from your machine's network interface" — true
-across every client including Cowork and desktop, so a custom connector's server must be
-reachable from Anthropic's published IP ranges [src: cw-connectors] [DOCUMENTED-WEB].
-Because they live in cloud state, muster cannot auto-discover them; the port makes the
-gap explicit rather than papering it: connectors must be declared via
-`MUSTER_COWORK_CONNECTORS`, and output carries `connectorsDiscoverable: false` "so the
-gap stays visible" [src: readme-123] [src: harness-46] [CODE-VERIFIED].
+| Component | Chat | Cowork | Claude Code |
+| :- | :- | :- | :- |
+| Skills (`skills/<name>/SKILL.md`) | Loads | Loads | Loads |
+| Commands (`commands/*.md`) | Loads as a skill; Claude applies it when it fits | Loads; you run it by typing `/plugin-name:command` | Loads |
+| Agents (`agents/*.md`) | Ignored | Loads | Loads |
+| Hooks (`hooks/hooks.json`) | Ignored | Loads | Loads |
+| Local MCP server, a command the app starts, including `.mcpb` bundles | Ignored | Loads when the Cowork session runs on your computer | Loads |
+| MCP server that references `${user_config.*}` values | Ignored when the URL contains the reference | Ignored when a referenced option has no default; Cowork doesn't prompt for values | Loads; prompts you for the values |
+| Executables in a top-level `bin/` directory | Can't be installed | Can't be installed | Loads |
+| LSP servers, output styles, themes, `settings` | Ignored | Ignored | Loads |
 
-### 3d. Plugins — the surface that did not exist when muster ported
+"A component marked "Ignored" is skipped on that surface, and a component marked "Can't be
+installed" makes that surface refuse the whole plugin" [src: platform]. The same page:
+"Chat and Cowork read plugins from your claude.ai account, and Claude Code reads them from
+the machine it runs on", and an account install "also appears in Claude Code as a synced
+plugin at the next session start" [src: platform]. Cowork "doesn't read the Claude Code
+CLI's `~/.claude` directory on your machine. To use a skill or plugin that exists only in
+`~/.claude`, add it in **Customize**" [src: cw-overview].
 
-"Each plugin bundles skills, connectors, and sub-agents into a single package"; skills
-work across chat and Cowork, while "Hooks and sub-agents run only in Cowork." Skills are
-invoked from a `/` menu in the composer. Plugin structure follows the **Claude Code
-plugins reference** ("For details on plugin structure and formatting, see the Plugins
-reference in our Claude Code docs"), plugins can be uploaded as files or synced from
-GitHub marketplaces, and org admins can distribute or require them [src: cw-plugins]
-[DOCUMENTED-WEB]. Plugins may include local MCP servers (desktop-only, with the same
-trust warnings as any local program) [src: cw-plugins].
+Install steps: "On the Plugins page, click "Add," then select "Add marketplace." ... Add
+from a repository: Enter a repository URL, or owner/repo for GitHub. Repositories on
+github.com work, and so do public repositories on gitlab.com and bitbucket.org"
+[src: cw-plugins-help] [DOC]. Sync to Claude Code "needs Claude Code v2.1.273 or later",
+happens "once each time Claude Code starts", and is one-way [src: cw-plugins-help] [DOC].
+Limits: 200 MB uncompressed, 5,000 files per plugin, 25 marketplaces [src: cw-plugins]
+[DOC].
 
-This falsifies the adapter's load-bearing comment — "it has no plugin/skill/slash/hook
-primitives" [src: mcps-head] [src: readme-5] — for current Cowork. Whether muster's
-existing Claude Code plugin (`plugin/`) loads as-is under Cowork's plugin loader is
-**unverified**: the format is shared, but Cowork's runtime honors a different primitive
-subset (no statement that commands/ slash-verbs load; hooks semantics undocumented
-beyond "run only in Cowork"). This is the single highest-value open question for the
-port [INFERRED from src: cw-plugins + src: readme-5].
+Related Desktop changes [CHANGELOG]:
+
+- v2.2553.0 (2026-09-17, Cowork): "Fixed plugin skills that reference
+  `${CLAUDE_PLUGIN_ROOT}` or `${CLAUDE_SKILL_DIR}` sometimes running their commands with
+  those paths blank".
+- v3.6556.1 (2026-10-22, Cowork): "Fixed Claude not finding your plugins and skills in
+  scheduled tasks and other tasks not open on screen, except in third-party deployments".
+- v1.24012.9 (2026-07-24, Cowork): "Fixed plugin hooks silently doing nothing on
+  Windows".
+- Third-party build only: v1.44121.4 (2026-09-02, 3P) "Added support in Chat for skills
+  from organization-provided plugins"; v1.52386.0 (2026-09-10, 3P) "Changed hooks from
+  organization plugins to also run in Chat, matching Cowork and Code". For first-party
+  Chat the table's "Ignored" for hooks stands.
+- Hooks on Windows without Git for Windows: v2.42304.0 (2026-10-15, 3P) "(breaking)
+  Changed what a failed `PreToolUse` hook does on Windows computers without Git for
+  Windows: if it sets none of `shell`, `args`, or `onFailure`, it now blocks the tool
+  call ... This includes hooks in plugins" [CHANGELOG]. The engine side applies to
+  every build: Claude Code 2.1.299 "Fixed PreToolUse and PermissionRequest hooks that
+  set no shell failing open when Git for Windows isn't installed; a guard that fails now
+  blocks the call" (quoted in [`claude-code-desktop.md`](claude-code-desktop.md) §12.5).
+  muster's `plugin/hooks/hooks.json` sets none of `shell`, `args` or `onFailure`, and
+  matches `Bash|PowerShell|mcp__.*` [CODE]. Finding F6 (exec form, explicit
+  `onFailure`) covers the fix.
+
+muster's plugin against the table [CODE]: skills (7) and commands (7) load in both
+surfaces; agents and the PreToolUse hook load in Cowork only; `output-styles/` is
+ignored; `workflows/` has no row (section 6); no `bin/`, no `.mcp.json`, no
+`${user_config}`. The plugin's commands call `sh "${CLAUDE_PLUGIN_ROOT}/runtime/muster.sh"`,
+which runs `npx -y @adnova-group/muster@<version>` outside a source checkout. Whether
+`sh`, `node` and `npx` with registry access exist in the Cowork sandbox is **not
+stated**; enterprise cloud sessions default to "No network access" [src: cw-arch].
+
+On disk, Desktop keeps the account plugin list at
+`%APPDATA%\Claude\plugin-list\<org>\<account>\plugins.json`, entries
+`{id, name, enabled, installPath}`, with installs under `%APPDATA%\Claude\rpm\` [OBSERVED].
+`muster doctor --desktop` and `capabilities --cowork` read it (section 5).
+
+### 3b. Local MCP servers (`claude_desktop_config.json`)
+
+The fallback route: muster's `cowork/mcp-server.mjs` registered under `mcpServers`.
+Code-tab docs: "A server you define in `claude_desktop_config.json` is available in both
+the Desktop chat surface and local Code tab sessions" [src: cc-desktop] [DOC]. Local
+Cowork sessions run local plugin MCP servers on the device [src: cw-arch]; cloud sessions
+do not (section 1). Admins can turn local servers off: "Set isLocalDevMcpEnabled to false
+to disable plugin-bundled and locally configured MCP servers" [src: cw-arch] [DOC].
+
+### 3c. MCPB desktop extensions
+
+`.mcpb` bundles are a local-MCP-server variant ("Local MCP server, a command the app
+starts, including `.mcpb` bundles" [src: platform]). muster's development MCPB
+descriptor (`cowork/manifest.json`, "Route B") is retired: plugins replace it, and
+"Cowork doesn't prompt for values" a `${user_config}` field would need [src: platform].
+
+### 3d. Remote connectors
+
+"In Cowork, connectors reach external services through Anthropic's cloud, not through
+your local network" [src: cw-plugins-help] [DOC]. "Connector authorization tokens never
+enter the sandbox; connector calls are made on the server side" [src: cw-arch] [DOC].
+Connector state lives in the account, not on disk, so muster still treats connectors as
+DECLARED (`MUSTER_COWORK_CONNECTORS`) [CODE].
 
 ## 4. Subagent dispatch and model override
 
-The two capabilities muster's full orchestration lifecycle is gated on
-[src: probe-8]:
+- **Parallel subagents: documented.** "Sub-agent coordination — Complex work gets divided
+  into smaller tasks with parallel workstreams for faster results" [src: cw-overview];
+  "Claude may coordinate multiple sub-agents working simultaneously" [src: cw-start];
+  plugin agents load in Cowork [src: platform]. All [DOC]. muster therefore needs no
+  probe before letting dependency-free wave members fan out in Cowork.
+- **Per-call model override: not documented.** No source describes choosing a model per
+  sub-agent in Chat or Cowork. Desktop v1.17377.1 (2026-06-30, 3P) "Fixed subagents
+  failing with an invalid model error on third-party inference providers" [CHANGELOG]
+  shows that subagents carry a model, not that a caller can pick it. muster keeps the phase-3 probe
+  (`scripts/cowork-probe.mjs`) as the instrument: a per-call model override needs a
+  fresh successful phase-3 receipt from the active Cowork build. Until then each role's
+  `claudeModel` is advisory in Cowork, and `capabilities --cowork` says so in its
+  `dispatch` block [CODE].
+- In the Code tab both are normal Claude Code behavior; the screenshot session passed
+  `model: "opus"` on its `Agent` calls [OBSERVED].
 
-- **Parallel fan-out: [DOCUMENTED-WEB].** "Coordinates multiple workstreams in
-  parallel"; "Claude may coordinate multiple sub-agents working simultaneously"
-  [src: cw-start]. Plugins can bundle sub-agents, and sub-agents "run only in Cowork"
-  [src: cw-plugins].
-- **Per-call model override: NOT documented anywhere public.** No official source found
-  describes selecting a model per sub-agent (or even a session model selector) in
-  Cowork. The only evidence is muster's own probe: phase 3 emits a three-task spec that
-  the runtime executes — parallel batch dispatch plus one task carrying
-  `modelOverride`, graded on whether "task c's modelReported reflects the override"
-  [src: probe-137] [CODE-VERIFIED as an instrument]. No retained phase-3 receipt proves
-  that an active Cowork build honored the override. The supported protocol therefore
-  defaults to sequential `muster_next`; parallel fan-out and per-call model selection
-  require a fresh successful phase-3 receipt from that build [src: readme-7]
-  [CODE-VERIFIED].
+There is still no dispatch API: an MCP server cannot spawn Cowork sub-agents. In the
+plugin-less fallback, muster steers dispatch by prompt from its MCP `instructions`, with
+sequential `muster_next` as the verified default driver when no subagent tool is
+available [CODE].
 
-There is no dispatch *API*: an MCP server cannot spawn Cowork sub-agents. Dispatch
-belongs to the agent, so muster steers it by prompt — the `COWORK_PROTOCOL` instructs
-"Dispatch each wave's members as PARALLEL subagents (fall back to muster_next, one task
-at a time, only if fan-out is unavailable)" and "dispatch each role on the model
-muster_capabilities assigns it" [src: mcps-56] [CODE-VERIFIED]. Degradation is
-first-class: if fan-out fails, "muster still runs as a router plus single-agent
-executor: the agent walks each wave one task at a time via `muster_next`"
-[src: readme-146] [CODE-VERIFIED]. Every role's fallback chain terminates at `inline`
-(the current agent doing the work itself) — a probe-enforced invariant [src: probe-98]
-[CODE-VERIFIED].
+## 5. Config topology and `muster doctor --desktop`
 
-## 5. Config and connector topology, auth model
+- **Config dirs** [CODE + OBSERVED]: macOS `~/Library/Application Support/Claude`;
+  Windows `%APPDATA%\Claude`, and for the MSIX package
+  `%LOCALAPPDATA%\Packages\Claude_<id>\LocalCache\Roaming\Claude`. On the owner's machine
+  the MSIX package `Claude_pzs8sxrjxfjjc` exists but has no `LocalCache\Roaming\Claude`,
+  and the app reads and writes `%APPDATA%\Claude` [OBSERVED].
+- **Logs**: `%LOCALAPPDATA%\Claude\Logs`, with one `mcp-server-<name>.log` per local MCP
+  server (`mcp-server-muster.log` present) [OBSERVED].
+- **Account plugin list**: section 3a [OBSERVED].
+- **Admin plane**: `isLocalDevMcpEnabled` and `isDesktopExtensionEnabled` are MDM keys
+  on every build [src: cw-arch]. `allowedPluginMarketplaces`,
+  `userPluginMarketplacesEnabled` and related keys are third-party configuration
+  (v1.37937.0, 2026-08-25, 3P: "Added
+  `userPluginMarketplacesEnabled` and `userPluginUploadsEnabled`, which control whether
+  members can add their own plugin marketplaces and upload their own plugins")
+  [CHANGELOG].
 
-Full topology, host side [CODE-VERIFIED unless noted]:
+`muster doctor --desktop` (read-only; it never edits Desktop config) reports each config
+dir it finds, from WSL through `/mnt/c/Users/*/AppData/...`; each `mcpServers` entry
+that launches muster, with the checkout's package version, git HEAD, commits behind this
+CLI's checkout, and uncommitted changes; whether muster is in the account plugin list;
+and the log dir [CODE].
 
-- **Config file:** `claude_desktop_config.json` under the platform config dir; on
-  Windows the MSIX-virtualized `AppData/Local/Packages/Claude_*/LocalCache/Roaming/
-  Claude` copy is "the one the app actually reads" and is tried first
-  [src: harness-17] [src: readme-53].
-- **Extensions:** `Claude Extensions/<id>/manifest.json`, one dir per extension, no
-  central index — discovery is enumeration [src: harness-31]. Extension `user_config`
-  binds to env vars at server launch [src: manifest-10] [src: mcpb-spec].
-- **Remote connectors:** account state on Anthropic's side; added via claude.ai settings
-  (org Owners gate Team/Enterprise), enabled per conversation via the `+` menu
-  [src: cw-connectors] [DOCUMENTED-WEB].
-- **Admin plane:** org-wide Cowork toggle; remote-session toggles (network-access
-  policy, forced per-call approval, trusted-device enrollment); MDM device keys
-  `isLocalDevMcpEnabled` and `isDesktopExtensionEnabled` [src: cw-arch]
-  [DOCUMENTED-WEB].
+## 6. Primitive matrix: which muster primitive works where
 
-Auth model for remote connectors [DOCUMENTED-WEB]:
+Columns: Code tab (local session, not WSL), Chat, Cowork local (tasks started on the
+device before 2026-10-06, or third-party/enterprise local deployments), Cowork cloud.
 
-- OAuth is the standard flow: "you'll typically go through an OAuth authentication
-  process to securely sign in ... without Claude ever seeing your actual password";
-  custom connectors optionally take an OAuth Client ID/Secret in advanced settings;
-  revocation is disconnect-side or provider-side [src: cw-connectors].
-- On Team/Enterprise, Owners add the connector org-wide but "users individually connect
-  to and enable that connector," so Claude only gets each user's own access
-  [src: cw-connectors].
-- In remote sessions, tokens are held server-side only: "Connector authorization tokens
-  never enter the sandbox; connector calls are made on the server side"; the sandbox
-  gets session-scoped tokens expiring within hours [src: cw-arch].
+| Primitive | Code tab | Chat | Cowork local | Cowork cloud |
+| :- | :- | :- | :- | :- |
+| Skills (`/muster:*` skills) | Yes [DOC] | Yes [DOC] | Yes [DOC] | Yes [DOC] |
+| Commands (`plugin/commands/*.md`) | Yes [DOC] | As skills, applied when they fit [DOC] | Yes, `/muster:<command>` [DOC] | Yes [DOC] |
+| Agent subagents (plugin agents) | Yes, with per-call `model` [DOC, OBSERVED] | Ignored [DOC] | Yes; per-call model not stated | Yes; per-call model not stated |
+| Workflow tool (`plugin/workflows/*.js`) | Yes: "Workflows are available in the CLI, the Desktop app, the IDE extensions" [src: cc-workflows] | Not stated | Dynamic workflows exist (v1.15962.0 one-time workflow prompt, Cowork section [CHANGELOG]); plugin workflows not stated | Not stated |
+| Hooks (`plugin/hooks/hooks.json`) | Yes [DOC] | Ignored [DOC]; org plugins' hooks run in 3P builds [CHANGELOG] | Yes; which events fire not stated | Yes; which events fire not stated |
+| MCP: local `cowork/mcp-server.mjs` | Yes, via `claude_desktop_config.json` [DOC] | Yes, via `claude_desktop_config.json` [DOC] | Yes [DOC] | No per [src: cw-arch]; conflicting wording in [src: cw-surfaces] |
+| AskUserQuestion | Yes [OBSERVED] | Not stated | Yes [OBSERVED]; multiple-choice questions documented for scheduled tasks [DOC] | Not stated |
+| Plan mode / ExitPlanMode | Yes, with the Plan pane [DOC] | No plan mode documented | No plan mode documented | No plan mode documented |
+| Task list | `mcp__ccd_turn__update_plan` [OBSERVED] | Status row (3P entry) [CHANGELOG] | TaskCreate/TaskUpdate [OBSERVED] | Not observed |
+| Mods | Yes, except WSL sessions [DOC] | No (directory lists mods for Claude Code) [DOC] | Not stated | Not stated |
+| `runtime/muster.sh` (`sh` + `npx`) | Yes | Not stated | Not stated | Not stated |
 
-## 6. Anatomy of muster's ride (and its reuse as the canonical MCP port)
+WSL sessions in the Code tab are a separate column in practice: "Plugins aren't available
+in WSL sessions" [src: cc-desktop], and mods' hooks don't run there "because plugins
+aren't available in WSL sessions" [src: mods] [DOC]. muster in a WSL Code-tab session
+gets none of its plugin. A Code-tab SSH session supports plugins ("In a local session or
+an SSH session, click **+** next to the prompt box and select **Add plugins**"
+[src: cc-desktop]) [DOC].
 
-What actually ships [CODE-VERIFIED]:
+Consequence for muster [INFERRED]: the software lifecycle (branches, worktrees,
+`merge-wave`, Workflow fan-out) belongs in the Code tab or the CLI. In Chat and Cowork
+the plugin's skills and commands load, but its git and `npx` steps depend on a sandbox
+whose toolchain is not documented, and cloud sessions see local files only through the
+desktop app's folder bridge. Non-code pipelines (content, product, business) fit Cowork.
 
-- **One neutral MCP core, no SDK:** `mcp/server.mjs` speaks newline-delimited JSON-RPC 2.0
-  over stdio, node builtins only, MCP protocol version pinned to `2025-06-18`
-  [src: mcps-head] [src: mcps-294]. It exposes 29 `muster_*` tools wrapping the
-  deterministic CLI (`src/cli.js`) — detection, capability/domain routing, gate scoring,
-  RICE prioritization, wave planning, tournament pick/fuse, review tally, advisor
-  validation [src: readme-11] [src: mcps-106].
-- **Explicit host adapters:** `mcp/codex-server.mjs`, `mcp/chatgpt-work-server.mjs`, and
-  `cowork/mcp-server.mjs` select Codex, Work, and Cowork behavior over the neutral core.
-  `cowork/chatgpt-work-server.mjs` remains a compatibility shim for older Work
-  source-checkout callers; the public Work plugin still exposes
-  `runtime/chatgpt-work-server.mjs`.
-- **Protocol injection via `instructions`:** the initialize response carries
-  `PRINCIPLES + VERBS + ROUTING_POLICY + COWORK_PROTOCOL` — "That replaces the
-  SessionStart and UserPromptSubmit hooks the Claude Code plugin uses" [src: readme-32]
-  [src: mcps-56]. The per-mode lifecycles (as of this research: plan/go/plan-backlog/go-backlog/diagnose/
-  audit) are driven "in prose since there are no slash commands" [src: mcps-56].
-- **Cowork-aware capability resolution:** `capabilities --cowork` resolves against
-  Cowork's registry via `readInstalledCowork`; in cowork mode every non-MCP provider is
-  filtered out — `if (cowork && entry?.kind !== "mcp") entry = null;` — and
-  recommendations are likewise MCP-only, so muster never advertises a provider Cowork
-  cannot invoke [src: caps-23] [src: cli-106]. The neutral core exports
-  `MUSTER_RUNTIME=cowork` on Cowork child CLI calls (the Codex and Work adapters select
-  their own host values), so nested CLI children (notably `audit`) resolve the same way
-  [src: mcps-142].
-- **Execution hygiene:** child CLI calls carry a 60 s timeout and 16 MB buffer; a
-  WorkLimiter bounds concurrency (4 in-flight / 16 queued by default, env-tunable with
-  hard ceilings); MCP `notifications/cancelled` aborts queued and active work and cleans
-  temp input dirs; stdin is capped at 4 MB against no-newline DoS [src: mcps-142]
-  [src: mcps-225] [src: readme-130].
-- **Sprint playbook as a tool:** `muster_sprint_protocol` serves
-  `cowork/sprint-protocol.md` verbatim — a Cowork-native go-backlog port that names
-  every degradation (no hooks, sequential item execution, claim/receipt discipline done
-  by hand, HUMAN-HOLD resolved by asking the live human in-chat because there is no
-  AskUserQuestion tool, merge-local/merge-push executing "with zero structural safety
-  net") [src: mcps-127] [src: sprint-14] [src: sprint-118] [src: sprint-131].
-- **Adapters are built explicitly:** `build-codex.mjs` builds `mcp/codex-server.mjs`
-  and `mcp/chatgpt-work-server.mjs` directly over `mcp/server.mjs`; it no longer
-  string-rewrites `cowork/mcp-server.mjs`. `cowork/mcp-server.mjs` is the retained
-  compatibility entrypoint for Route A, while `cowork/sprint-protocol.md` remains the
-  Cowork backlog playbook [src: build-codex-390] [CODE-VERIFIED].
+## 7. Plan and approval primitive
 
-## 7. Augmentation-surface table
+- **Code tab**: Plan mode, "Claude reads files and runs commands to explore, then proposes
+  a plan without editing your source code" [src: cc-desktop] [DOC]; v1.40609.0 (Code)
+  (2026-08-27): "the Plan pane now accepts comments in Plan mode or while Claude is asking
+  you to approve the plan" [CHANGELOG]. Same ExitPlanMode as the CLI, so
+  `resolvePlanSurface("claude-desktop")` returns the native surface [CODE]. The
+  `wrap_up` next-step box (section 2.2) also renders question buttons, but it is an
+  undocumented app surface; muster does not target it.
+- **Chat and Cowork**: the permission setting offers Auto and Manual (Skip in the
+  pre-unified selector) [src: cw-start]; no plan mode is documented. AskUserQuestion is
+  observed in local Cowork transcripts, and scheduled-task creation asks "questions with
+  multiple choice responses" [src: cw-sched]. `resolvePlanSurface("cowork")` returns the
+  prose plan with an AskUserQuestion approval [CODE].
 
-| Native primitive | What it's for | How muster rides it today | Advisory vs enforcement | Gap vs Claude Code |
-|---|---|---|---|---|
-| Local MCP server (`claude_desktop_config.json`) | Register host-local tools with the agent loop [src: cw-arch] | Route A: the whole 30-tool MCP server [src: readme-11] [src: harness-17] | Tool *results* are advisory to the agent; the server enforces its own contracts (required `dir` on audit, overload rejection, cancellation) [src: mcps-106] | Claude Code loads the full plugin (hooks, commands, agents); and this surface is contradicted for current Cowork / absent in remote sessions [src: cw-connectors] |
-| MCPB desktop extension + `user_config` | One-click packaged local server with a settings UI [src: mcpb-spec] | Development-only Route B descriptor; not self-contained or installable today [src: manifest-10] | Intended config mapping is deterministic, but no packaged runtime executes it yet | Claude Code has no equivalent packaging need (plugins carry servers); bundling and MSIX virtualized-spawn remain open Cowork work [src: readme-105] |
-| MCP `instructions` at initialize | Server-supplied session guidance [src: mcps-294] | Carries principles + routing policy + full per-mode execution protocol [src: readme-32] | Pure advisory — prompt text the model can ignore; nothing re-injects it per turn | Claude Code gets SessionStart/UserPromptSubmit hooks (guaranteed injection) plus PreToolUse denial [src: sprint-14] |
-| Sub-agent fan-out + per-call model override | Parallel workstreams on the right model tier [src: cw-start] | Sequential `muster_next` is the verified default; wave fan-out and per-role model selection are enabled only after a fresh successful phase-3 receipt from the active Cowork build [src: probe-137] [src: readme-7] | Unverified until that receipt; even after a pass, dispatch discipline is advisory prompt text and no hook can force crew dispatch over inline editing | Claude Code has a real Task tool contract, agent definitions, worktree isolation, wave-guard enforcement [src: sprint-24] |
-| Remote connectors (OAuth, cloud-brokered) | External SaaS tools, org-governed [src: cw-connectors] | Declared-only via `MUSTER_COWORK_CONNECTORS`; `connectorsDiscoverable:false` keeps the blindness visible [src: harness-46] | Declaration is trust-me config; muster cannot verify a connector exists or is enabled | Claude Code MCP configs are disk-discoverable; muster reads them directly there [src: caps-23] |
-| Plugins (skills + hooks + sub-agents + connectors) | Role/team customization, marketplace-distributed [src: cw-plugins] | **Not ridden by default** — a declared, unverified opt-in exists (`MUSTER_COWORK_NATIVE_PLUGIN`, see section 9) but no live-loaded plugin has been confirmed [src: readme-5] | Skills advisory; plugin hooks' enforcement semantics undocumented | Same plugin format as Claude Code per docs — potentially closes the skills/commands/hooks gap wholesale; unverified [src: cw-plugins] |
-| Permission modes + deletion protection | Native action gating (Manual/Auto/Skip; hard delete-approval) [src: cw-start] | Acknowledged only: sprint protocol prefers `pr`/`keep` because muster's own fences don't exist here [src: sprint-131] | Cowork-enforced, but not hookable — muster can't add its action-class fence into it | Claude Code permissions are rule-configurable (settings allow/deny) and hook-extensible |
-| Global/folder instructions | Standing context; folder-level, agent-updatable [src: cw-start] | **Not ridden** — muster injects context only via MCP `instructions` | Advisory prose | CLAUDE.md analog exists here; muster's plugin uses CLAUDE.md-adjacent hooks on Claude Code |
-| Scheduled tasks (`/schedule`, runs deviceless) | Recurring unattended runs [src: cw-start] | **Not ridden** — `/muster:runner`'s cron analog on Claude Code has no Cowork counterpart wired | Product-enforced schedule; content advisory | Claude Code routines/cron + runner mode already exist; a scheduled Cowork task could drive `muster_sprint_protocol` unattended [INFERRED] |
-| Projects (files, instructions, memory) | Persistent multi-task workspace [src: cw-start] | **Not ridden** — STATE.md is hand-written per sprint [src: sprint-14] | Advisory | Claude Code has no direct equivalent; projects could host `.muster/` state across sessions [INFERRED] |
+## 8. Desktop features since July 2026 that matter to muster
 
-## 8. Sourcing gaps and confidence notes
+- **Mods** (Claude Code 2.1.287, 2026-10-01: "Added Claude Mods: plugins may now modify
+  deeper behavior" [src: cc-changelog]). "A mod is a plugin that changes how Claude Code
+  looks and behaves. It's made of JavaScript or TypeScript event handlers" [src: mods].
+  A plugin ships one by naming "code a plugin names under `modules` in
+  `hooks/hooks.json`" [src: platform]. Where: CLI, the Code tab "except in a WSL
+  session", VS Code; hooks but no drawing in `claude -p` and cloud sessions [src: mods].
+  Mod vs settings hook: "Pick it when ... You want a pane, a band above the prompt, a
+  custom command, or to rewrite an event" versus "You want to block, allow, or log an
+  event with a script you already have" [src: mods]. The Desktop changelog v4.23118.1
+  (2026-11-09, 3P): "Changed tool calls made by a plugin's own code (a mod), rather than
+  by Claude, to never show an approval card" [CHANGELOG]; whether mods run in Cowork is
+  not stated. Design note:
+  [`docs/strategy/desktop-run-pane-mod.md`](../strategy/desktop-run-pane-mod.md).
+- **Task/progress UI**: section 2.
+- **Scheduled tasks**: Cowork's run in the cloud with skills and plugins [src: cw-sched];
+  the Code tab has local tasks that fire "only ... while the app is open and your computer
+  is awake" plus cloud tasks [src: cc-sched] [DOC].
+- **Subagents in Cowork**: section 4.
+- **Projects starting Cowork tasks**: v4.16336.0 (3P), section 1 [CHANGELOG]; for first-party plans "From a project you can start a chat or a Cowork session" [src: cw-surfaces]. Code-tab Projects
+  are a separate beta: "one ongoing conversation where Claude coordinates a stream of
+  related work", threads usually cloud sessions, "Projects aren't offered on Team or
+  Enterprise plans yet" [src: cc-projects] [DOC].
+- **Dispatch and computer use**: "Dispatch isn't available to new users. If you already
+  use Dispatch, you can keep using it for now" [src: one-claude] [DOC]. Dispatch "runs
+  your tasks on your desktop ... Development tasks run in Claude Code; knowledge work runs
+  in Cowork" [src: cw-dispatch]. Computer use is "In beta on Pro, Max, and Ultra plans"
+  [src: one-claude] [DOC].
+- **Artifacts and Claude Docs**: 2026-09-16, "You can now ask for a design, deck, or
+  document in any conversation with Claude, including in Claude Code and the Artifacts
+  tab ... Claude Docs is a new way to write living documents with Claude and your team"
+  [src: rn] [DOC].
+- **Remote Control**: a Code-tab local session "shows up on your other devices once Remote
+  Control connects it" [src: cc-desktop]; mods' hooks still run "in the session on your
+  machine" [src: mods] [DOC].
+- **Background sessions**: v2.110.0 (2026-09-15, Code) "Changed SSH and WSL sessions to
+  keep running when left idle in the background"; v4.16336.0 (3P) restarts local and WSL
+  Code sessions after an app restart "within a day" with one automatic message
+  [CHANGELOG].
+  Cowork cloud work "keep[s] running in the cloud even if you close your laptop"
+  [src: one-claude].
+- **Plan mode in the Code tab**: section 7.
+- **Models**: "Introducing Claude Fable 5.2 and Claude Mythos 5.2", Nov 9, 2026
+  [src: news] [DOC], which matches the owner's Desktop picker and the screenshot
+  session's `claude-fable-5-2` [OBSERVED]. Third-party builds: v4.23118.1 (2026-11-09,
+  3P) "Changed `fable` in `inferenceModels` to request the newest Fable model"; v1.17377.2
+  (2026-07-01, 3P) "Added Claude Fable 5 to the model picker for organizations with
+  access" [CHANGELOG].
 
-- **Per-call model override** has a code-backed probe instrument but no retained successful
-  phase-3 receipt and zero public documentation [src: readme-7] [src: probe-137].
-  Sequential `muster_next` remains the verified default; treat parallel dispatch and model
-  override as unverified until the active Cowork build produces a fresh successful phase-3
-  receipt, and re-probe after every Cowork update [src: readme-146].
-- **Sub-agent internals** (how many, scheduling, context inheritance, whether plugin
-  sub-agents and loop-native sub-agents are the same mechanism) are undocumented;
-  official sources say only that parallel sub-agent coordination happens
-  [src: cw-start] [src: cw-plugins].
-- **The local-MCP contradiction** (section 3a) is unresolved in official docs: the
-  architecture overview, get-started, and custom-connectors articles disagree on
-  whether config-file local servers reach Cowork at all [src: cw-arch] [src: cw-start]
-  [src: cw-connectors]. Muster's port empirically worked on desktop-era Cowork; its
-  status under remote-default sessions is unknown and is the port's biggest existential
-  risk.
-- **Plugin-format compatibility** — whether `plugin/` loads under Cowork's loader, and
-  what subset (skills yes, hooks "run only in Cowork" with undefined semantics,
-  commands unstated) — is the biggest unexploited opportunity and needs a hands-on
-  test, not more reading [src: cw-plugins] [src: readme-5].
-- **No deep-dive engineering source exists for Cowork** (contrast Claude Code's
-  published internals); the closest are the enterprise architecture overview
-  [src: cw-arch], the Trust Center security PDF it links, and launch/expansion press
-  [src: vb-launch] [src: newstack] [src: fortune]. Cowork sourcing is genuinely thin —
-  the shipping adapter code in this repo is the best primary source available for
-  integrator-facing behavior, which is itself a finding about the platform's maturity.
-- The support article muster's README links as "desktop-architecture-overview"
-  [src: readme-3] has been retitled "Claude Cowork architecture overview" and
-  restructured around remote sessions — a marker of how fast the January-era ground
-  truth is moving [src: cw-arch].
+## 9. Anatomy of muster's ride
 
-## 9. Native-plugin-loader probe result (`cowork-plugin-loader-probe` item)
+What ships [CODE]:
 
-Section 3d flagged whether muster's Claude Code plugin (`plugin/`) loads under Cowork's
-plugin loader as "the single highest-value open question." This section records the actual
-probe run against that question and what it changed.
+- **Primary route, the plugin.** `.claude-plugin/marketplace.json` lists `muster` with
+  source `./plugin`. In Desktop: Customize > Plugins > Add marketplace >
+  `Adnova-Group/muster`, then install `muster`. It syncs to Claude Code.
+- **Fallback route, the MCP server.** One neutral MCP core, `mcp/server.mjs`
+  (newline-delimited JSON-RPC 2.0 over stdio, node builtins only), wraps the CLI as a
+  30-tool MCP server: 29 CLI-wrapper tools plus `muster_sprint_protocol`.
+  `cowork/mcp-server.mjs` is the Cowork adapter (`runtimeIdentity: "cowork"`);
+  `mcp/codex-server.mjs` and `mcp/chatgpt-work-server.mjs` are the other host adapters,
+  and `cowork/chatgpt-work-server.mjs` is a compatibility shim. `build-codex.mjs` builds
+  the Codex and Work adapters directly; it no longer string-rewrites
+  `cowork/mcp-server.mjs`.
+- **Instructions are a fallback.** The Cowork adapter's MCP `instructions` now say: if
+  `/muster:*` skills are present, use them and treat the tools as their deterministic
+  backend; otherwise drive the fallback protocol. Parallel subagents are allowed
+  (documented); per-call model override needs a phase-3 receipt; sequential
+  `muster_next` remains the default when no subagent tool is available.
+- **Capability resolution.** `capabilities --cowork` reads `claude_desktop_config.json`,
+  `Claude Extensions/` and the account plugin list. A declaration (`--native-plugin`,
+  `--plugin-less`, `MUSTER_COWORK_NATIVE_PLUGIN`) wins; then the plugin list (muster
+  present and enabled: builtins resolve as on Claude Code; list readable without muster:
+  MCP servers plus inline); with no readable list the plugin route is assumed. Installed
+  non-MCP providers from `~/.claude` never resolve in Cowork, which does not read it. The
+  output carries a `dispatch` block: `pluginLoad`, `parallelSubagents: "documented"`,
+  and `perCallModelOverride` marked as requiring a phase-3 probe receipt.
+- **Sprint playbook as a tool.** `muster_sprint_protocol` serves
+  `cowork/sprint-protocol.md`. Without a proven native per-subagent worktree primitive,
+  the orchestrator creates a dedicated isolated Git worktree for each write-capable item
+  and executes those implementations sequentially in their assigned worktrees; the
+  main tree is the coordination and ordered-integration surface. Claim/receipt discipline
+  is done by hand, and `pr`/`keep` dispositions are preferred.
 
-**Method.** Two things were tried, in order: (1) confirm whether a live Cowork session is
-reachable from this repo's tooling/CI environment to test a hands-on install, and (2)
-re-check the cw-plugins primary source (already cited in section 3d) for any additional
-detail — an install-time manifest, an on-disk registry, a protocol handshake — that an
-outside process (this repo's CLI, or the MCP server it ships) could inspect to tell whether
-a native plugin load happened. Neither turned up new evidence: (1) no Cowork desktop/web/
-mobile session is reachable from this environment (headless Linux devbox, no Claude Desktop
-app) [INFERRED — an environment fact, not a doc claim]; (2) cw-plugins documents the *user*
-install flow (upload a file, sync from a GitHub marketplace, an org admin can require it) and
-the *runtime* behavior (skills via the `/` menu, "hooks and sub-agents run only in Cowork")
-but nothing about how an already-running MCP server sitting beside a plugin could query
-whether that plugin loaded [src: cw-plugins] [DOCUMENTED-WEB absence noted, not asserted].
+## 10. Augmentation table
 
-**Verdict: loads — unverified without a live Cowork session.** Not fabricated as a pass or a
-fail. What IS verifiable from docs alone: the plugin *format* is shared with Claude Code
-("For details on plugin structure and formatting, see the Plugins reference in our Claude
-Code docs" [src: cw-plugins]), so `plugin/`'s shape (skills/, agents/, hooks/,
-`.claude-plugin/plugin.json`) is at minimum structurally compatible. What is NOT verifiable
-without hands-on access: whether Cowork's loader actually accepts *this* plugin, whether its
-skills appear in the `/` menu, whether `plugin/hooks/hooks.json`'s SessionStart/PreToolUse
-registrations fire under Cowork's "hooks run only in Cowork" runtime, and whether
-`plugin/agents/*.md` dispatch as Cowork sub-agents. A live-session probe would need: Cowork
-desktop with plugin support (post-~May-2026 build), this repo uploaded or synced as a plugin
-via Settings → Plugins, then a direct check of the `/` menu for muster's skill names and one
-worked invocation.
+| Native surface | What it gives | muster's use |
+| :- | :- | :- |
+| Account plugins (Customize) | Skills, commands, agents, hooks in Cowork; skills and commands in Chat | Primary Desktop route |
+| Sub-agent coordination | Parallel workstreams | Wave fan-out without a probe |
+| Per-call model override | Not documented | Advisory `claudeModel`; phase-3 probe gates it |
+| Local MCP servers | Deterministic tools in Code tab, Chat, local Cowork | Plugin-less fallback; deterministic backend |
+| Code-tab `ccd_turn` task list | Checklist under the latest message | Observed only; not targeted |
+| Mods | Panes, bands, commands, in-process tool rules in the Code tab | Candidate run-progress pane (design note) |
+| Scheduled tasks | Cloud runs with plugins | Candidate home for the unattended runner |
+| AskUserQuestion | Selection UI | Approval in the fallback and in plan-surface |
 
-**What shipped instead of a fabricated load.** A capability check that PREFERS a native
-plugin ride when one is confirmed, keeping the verified-working MCP server as the fallback,
-exactly as this item's success criteria call for — implemented as a DECLARED signal (the same
-shape muster already uses for undiscoverable remote connectors, `connectorsDiscoverable:
-false` — section 3c), not an auto-probe, because there is no signal to auto-probe:
+## 11. Gaps and confidence
 
-- `readInstalledCowork` (`src/harness.js`) takes `opts.nativePluginRide` (default `false`)
-  and threads it into the returned inventory as `nativePluginRide`.
-- `resolveCapabilities` (`src/capabilities.js`) computes `coworkMcpOnly = cowork &&
-  !installed.nativePluginRide` and uses it everywhere the old blanket `cowork` filter did —
-  declared `true` lets muster's builtin skills/agents resolve exactly as they do on Claude
-  Code (the non-Cowork path); the default (`false`) keeps today's already-verified MCP-only
-  ride unchanged.
-- `src/cli.js`'s `capabilities --cowork` reads `--native-plugin` or `MUSTER_COWORK_NATIVE_PLUGIN`
-  (parsed MCPB-boolean-safe, mirroring `MUSTER_ENABLE_FABLE` in `src/model.js`) and passes it
-  through.
-- `mcp/server.mjs` needs no new wiring for the env var to reach the CLI child — its Cowork
-  adapter path spawns with `env: {...process.env, MUSTER_RUNTIME: "cowork"}`, so
-  `MUSTER_COWORK_NATIVE_PLUGIN` set in the Cowork host's MCP server config (the Route A
-  `env` block) passes straight through; only the compatibility entrypoint remains under
-  `cowork/`.
-- Branch logic is fixture-driven, TDD'd, and green: `test/harness-cowork.test.js` (the flag
-  default and echo), `test/capabilities.test.js` (`resolveCapabilities` resolving a builtin
-  agent/skill role under `nativePluginRide: true` vs staying MCP-only under `false`),
-  `test/cli-wire.test.js` (end-to-end through the real CLI process, both the flag and the env
-  var, plus the `"0"`/`"false"`/`""` non-enabling cases), and `test/cowork.test.js` (end to
-  end through the actual MCP `tools/call` for `muster_capabilities`).
-
-**Docs corrected** (criterion 3): `cowork/README.md`'s opening paragraph and Configuration
-section, and `cowork/mcp-server.mjs`'s header comment, no longer assert Cowork "has no
-plugin, skill, slash-command, or hook primitives" as a flat present-tense fact — both now
-name the ~May 2026 plugin system, mark the load as unverified, and point at
-`MUSTER_COWORK_NATIVE_PLUGIN` / `--native-plugin` as the declared capability check.
-
-**Fallback preserved** (criterion 3): the new flag is strictly additive-opt-in — every
-existing Cowork call site that never sets it keeps exactly today's MCP-only resolution,
-pinned by regression tests in the four files above.
+- Which hook events fire in Cowork: not stated. Check by hand.
+- Whether `sh`/`node`/`npx` resolve in the Cowork sandbox: not stated. Check by hand.
+- Whether plugin `workflows/` load in Cowork or Chat: not stated.
+- How a cloud session reaches a local MCP server: the two support articles conflict
+  (section 1).
+- Whether a Unified Claude conversation loads plugins as Chat or as Cowork: not stated.
+- What drives Cowork's Progress panel: not stated; TaskCreate/TaskUpdate observed.
+- The `ccd_turn` tools and the `plugin-list/` file are undocumented app internals; muster
+  reads the plugin list (read-only, with a declared override) and does not call
+  `ccd_turn`.
+- Older claims this file used to make, now retired: "Cowork has no plugin, skill,
+  slash-command, or hook primitives" (stale since the 2026 plugin launch), and the
+  MCP-only default in `capabilities --cowork`.
 
 ## Sources
 
-- cw-arch: https://support.claude.com/en/articles/14479288-claude-cowork-desktop-architecture-overview
+- rn: https://support.claude.com/en/articles/12138966-release-notes (read 2026-11-10)
+- one-claude: https://support.claude.com/en/articles/16761823-claude-cowork-and-chat-are-one-claude
+- cw-surfaces: https://support.claude.com/en/articles/15520349-use-claude-cowork-on-web-desktop-and-mobile
+- cw-arch: https://support.claude.com/en/articles/14479288-claude-cowork-architecture-overview
 - cw-start: https://support.claude.com/en/articles/13345190-get-started-with-claude-cowork
-- cw-plugins: https://support.claude.com/en/articles/13837440-use-plugins-in-cowork
-- cw-connectors: https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp
-- blog-webmobile: https://claude.com/blog/cowork-web-mobile
-- newstack: https://thenewstack.io/claude-cowork-cloud-mobile/
-- vb-launch: https://venturebeat.com/technology/anthropic-launches-cowork-a-claude-desktop-agent-that-works-in-your-files-no
-- fortune: https://fortune.com/2026/01/13/anthropic-claude-cowork-ai-agent-file-managing-threaten-startups/
-- labs: https://www.anthropic.com/news/introducing-anthropic-labs
-- mcpb-blog: https://www.anthropic.com/engineering/desktop-extensions
-- mcpb-spec: https://github.com/modelcontextprotocol/mcpb
-- mcpb-docs: https://claude.com/docs/connectors/custom/desktop-extensions
-- readme-3: cowork/README.md:3
-- readme-5: cowork/README.md:5
-- readme-7: cowork/README.md:7
-- readme-11: cowork/README.md:11-32
-- readme-32: cowork/README.md:32
-- readme-38: cowork/README.md:38
-- readme-42: cowork/README.md:42
-- readme-53: cowork/README.md:53-57
-- readme-105: cowork/README.md:105
-- readme-123: cowork/README.md:123-126
-- readme-130: cowork/README.md:130-132
-- readme-146: cowork/README.md:146
-- mcps-head: mcp/server.mjs:2-16
-- mcps-56: mcp/server.mjs:53-78
-- mcps-106: mcp/server.mjs:106-139
-- mcps-127: mcp/server.mjs:127-131
-- mcps-142: mcp/server.mjs:142-166
-- mcps-225: mcp/server.mjs:221-292
-- mcps-294: mcp/server.mjs:294-331
-- sprint-14: cowork/sprint-protocol.md:12-33
-- sprint-24: cowork/sprint-protocol.md:24-31
-- sprint-118: cowork/sprint-protocol.md:113-125
-- sprint-131: cowork/sprint-protocol.md:131-143
-- manifest-10: cowork/manifest.json:10-42
-- harness-17: src/harness.js:15-29
-- harness-31: src/harness.js:31-40
-- harness-46: src/harness.js:42-70
-- caps-23: src/capabilities.js:23-29,43,60
-- cli-106: src/cli.js:106-117
-- probe-8: scripts/cowork-probe.mjs:2-13
-- probe-98: scripts/cowork-probe.mjs:98-131
-- probe-137: scripts/cowork-probe.mjs:134-166
-- build-codex-390: scripts/build-codex.mjs:390-398,327
+- cw-sched: https://support.claude.com/en/articles/13854387-schedule-recurring-tasks-in-claude-cowork
+- cw-projects: https://support.claude.com/en/articles/14116274-organize-your-tasks-with-projects-in-claude-cowork
+- cw-dispatch: https://support.claude.com/en/articles/13947068-assign-tasks-from-anywhere-in-claude-cowork
+- cw-plugins-help: https://support.claude.com/en/articles/13837440 (Use plugins in Claude)
+- cl: https://claude.com/docs/cowork/changelog (Claude Desktop changelog; latest entry v4.23118.1, 2026-11-09, bundled Claude Code 2.1.321)
+- cw-overview: https://claude.com/docs/cowork/overview.md
+- cw-plugins: https://claude.com/docs/cowork/guide/plugins.md
+- platform: https://claude.com/docs/plugins/platform-support.md
+- plugins-build: https://claude.com/docs/plugins/build.md
+- cc-desktop: https://code.claude.com/docs/en/desktop.md
+- cc-wsl: https://code.claude.com/docs/en/desktop-wsl.md
+- cc-sched: https://code.claude.com/docs/en/desktop-scheduled-tasks.md
+- cc-projects: https://code.claude.com/docs/en/claude-projects.md
+- cc-workflows: https://code.claude.com/docs/en/workflows.md
+- cc-tools: https://code.claude.com/docs/en/tools-reference.md (Task tool availability)
+- cc-changelog: https://code.claude.com/docs/en/changelog.md (2.1.233, 2.1.268, 2.1.287)
+- mods: https://code.claude.com/docs/en/plugins/mods/overview.md and reference.md
+- news: https://www.anthropic.com/news (Nov 9, 2026 entry) and https://www.anthropic.com/claude-fable-and-mythos-5-2
+- Observed: `%APPDATA%\Claude\` (config, `plugin-list\`, `local-agent-mode-sessions\`),
+  `%LOCALAPPDATA%\Claude\Logs\`, and the Code-tab transcript
+  `%USERPROFILE%\.claude\projects\<project>\<session>.jsonl` of the screenshot session,
+  all read 2026-11-10 on the owner's Windows machine.
+- Code: `cowork/mcp-server.mjs`, `mcp/server.mjs`, `src/harness.js`,
+  `src/capabilities.js`, `src/plan-surface.js`, `src/doctor.js`,
+  `plugin/runtime/muster.sh`, `plugin/hooks/hooks.json`, `scripts/cowork-probe.mjs`.

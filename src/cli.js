@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { detectProject, hasPromptingSignal } from "./detect.js";
 import { loadCatalog } from "./catalog.js";
-import { readInstalled, readInstalledCowork, readInstalledWork } from "./harness.js";
+import { declaredPluginRide, readInstalled, readInstalledCowork, readInstalledWork } from "./harness.js";
 import { resolveCapabilities } from "./capabilities.js";
 import { validateManifest, manifestWarnings } from "./manifest.js";
 import { writeMemory, readMemory } from "./memory.js";
@@ -24,7 +24,7 @@ import { spawnSync } from "node:child_process";
 import { lstat, readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
-import { runDoctor } from "./doctor.js";
+import { runDesktopDoctor, runDoctor } from "./doctor.js";
 import { initScratchpad } from "./scratchpad.js";
 import { readProfile } from "./profile.js";
 import { buildSignals } from "./signals.js";
@@ -81,7 +81,7 @@ import { runCodexWave, runCodexWaveContinuation } from "./codex-wave-runner.js";
 import { resolvePlanSurface } from "./plan-surface.js";
 import { classifyPlanTurn, createCodexAppServerClient, fallbackPlanLaunch, launchCodexPlan, readSecretTerminalInput, renderPlanNotification, sanitizeTerminalText } from "./codex-plan-launch.js";
 import { resolveDesktopHarness } from "./desktop-harness.js";
-import { envInt, isTruthyFlag } from "./env-util.js";
+import { envInt } from "./env-util.js";
 import { scoreOutcomeForFastPath, buildFastPathManifest } from "./fast-path.js";
 import { detectReviewTriggers, lightBriefEligible } from "./review-brief.js";
 import { BACKLOG_PUBLICATION_MAX_BYTES } from "./backlog-publication.js";
@@ -147,7 +147,7 @@ const USAGE = [
   // manifest + waves: validate, order, and drive a plan
   "manifest validate <file> [--work]|wave <file>|next <manifest.json> [--done a,b]|",
   // stage-2 run steps: one-call preflight, deterministic wave merge, run position
-  "preflight <outcome> [--json] [--run <id>] [--model <model>]|build-args <runId> [--base <sha>]|merge-wave <runId> --result <build-result.json>|next --run <id>|plan-lint <PLAN.md> [--json] [--root <dir>]|",
+  "preflight <outcome> [--json] [--run <id>] [--model <model>]|build-args <runId> [--base <sha>]|pipeline-args <runId> [--pipeline <id>] [--out <path>] [--with <phase,...>]|merge-wave <runId> --result <build-result.json>|next --run <id>|plan-lint <PLAN.md> [--json] [--root <dir>]|spec-lint <SPEC.md> [--intent] [--json] [--root <dir>]|spec-context <runId> [--spec <path>]|spec-clarify <SPEC.md> [--date <YYYY-MM-DD>]|spec-trace <runId> [--accept <IDs>] [--coverage] [--json]|book <init|args|record|amend|close|status> <runId> ...|",
   // performance pass + gate helpers
   "resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|codex-wave <wave.json> --fence-file <action-fence.json> --repository-root <repo> --base-sha <sha>|codex-wave-resume <receipt-id> --review-state <file>|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex>|plan-surface <runtime>|codex-plan <outcome> [--cwd <dir>]|desktop-harness <chatgpt-desktop|codex-desktop|gpt-work>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|",
   // sprint waves, review tally, tournament pick/fuse, advisor
@@ -155,15 +155,17 @@ const USAGE = [
   // harness-native dispatch packets (codex lane)
   "codex-audit-provider --role <role> --task-id <id> --callable-apis <v1,v2> --callable-agent-ids <id,...> [--api-override <v1|v2>] [--message <text>|--message-file <f>]|codex-spawn-packet --task-id <id> --agent-type <id> [--message <text>|--message-file <f>] [--version v1|v2] [--fork-turns <none|N>]|codex-wait-packet [--version v1|v2] [--targets a,b] [--timeout-ms N]|",
   // memory + vendor + init lifecycle
-  "memory read|write ...|vendor [update <source> --to <tag> [--dry-run]|report <source> --to <tag> [--stdout]|check]|provenance [--write]|init [dir]|init transition [dir] --to <handoff|attempted|completed>|init normalize [dir] --approve CLAUDE.md|init acknowledge [dir] --reason unavailable|init finalize [dir]|setup [dir]|design <init|status|resolve|detect|ignores|provider|gate|workflows|run> ...|",
+  "memory read|write ...|vendor [update <source> --to <tag> [--dry-run]|report <source> --to <tag> [--stdout]|check]|provenance [--write]|init [dir]|init transition [dir] --to <handoff|attempted|completed>|init normalize [dir] --approve CLAUDE.md|init acknowledge [dir] --reason unavailable|init finalize [dir]|init pm-link [dir] [--approve pm-link]|setup [dir]|design <init|status|resolve|detect|ignores|provider|gate|workflows|run> ...|",
   // planning + routing artifacts
-  "plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|",
+  "plan-checklist <file>|domain <outcome>|pipeline <domain|id|--list>|route <outcome>|score <file>|",
+  // skill discovery: browse builtins, registry search, per-project enable/add, pins, usage
+  "skills <list [domain]|show <id>|search <query> [--offline]|enable <id>|disable <id>|add <publisher>/<skill>|pin <id> [--role <role>]|unpin <id>|usage> [--json]|",
   // prompt tooling
   "prompt <lint|variations|eval|optimize|scan> [file|dir]|humanize-score <file> [--threshold N]|citation-check <file>|prioritize <file> [--model rice|ice|wsjf|weighted]|",
   // diagnose/audit/issue/assess/steer/scope
   "diagnose <symptom>|--ci <file>|audit [--backlog] [path...]|issue <ref>|assess <outcome>|steer <message>|scope [text]|",
   // doctor/conformance/scratchpad/profile/install/signals/hygiene/help
-  "doctor [--codex]|codex-conformance [YYYY/MM/DD | --days N] [--cwd <repo>] [--current-pins-only]|scratchpad <runId>|profile|install <codex [--scope project-or-user]|chatgpt-work --connection-id <id> --profile <pro-safe|full> [--scope project|user] [--allow-full-actions]> [--dry-run]|uninstall <codex [--scope project-or-user]> [--dry-run]|signals [dir]|hygiene [--reap] [--json] [--backlog <file>] [--worktree-threshold N] [--zombie-stale-min N] [--claim-stale-min N]|help [command]>",
+  "doctor [--codex | --desktop]|codex-conformance [YYYY/MM/DD | --days N] [--cwd <repo>] [--current-pins-only]|scratchpad <runId>|profile|install <codex [--scope project-or-user]|chatgpt-work --connection-id <id> --profile <pro-safe|full> [--scope project|user] [--allow-full-actions]> [--dry-run]|uninstall <codex [--scope project-or-user]> [--dry-run]|signals [dir]|hygiene [--reap] [--json] [--backlog <file>] [--worktree-threshold N] [--zombie-stale-min N] [--claim-stale-min N]|help [command]>",
 ].join("");
 
 function out(obj) { process.stdout.write(JSON.stringify(obj, null, 2) + "\n"); }
@@ -533,15 +535,10 @@ async function handleCoreCommandPart1(cmd, rest) {
     } else if (rest.includes("--cowork")) {
       const declared = (flagValue(rest, "--connectors") || process.env.MUSTER_COWORK_CONNECTORS || "")
         .split(",").map(s => s.trim()).filter(Boolean);
-      // Native plugin ride: whether Cowork's own plugin loader (see
-      // docs/research/claude-cowork.md section 3d) actually accepted muster's
-      // plugin/ tree is unverified and has no on-disk/protocol detection signal,
-      // so it is DECLARED the same way remote connectors are -- --native-plugin
-      // or MUSTER_COWORK_NATIVE_PLUGIN (MCPB-boolean-safe: only "1"/"true"-ish
-      // values enable -- isTruthyFlag in src/env-util.js, the same parse
-      // MUSTER_ENABLE_APEX uses in src/model.js).
-      const nativePluginRide = rest.includes("--native-plugin")
-        || isTruthyFlag(process.env.MUSTER_COWORK_NATIVE_PLUGIN);
+      // Plugin ride (docs/research/claude-cowork.md §3): a declaration
+      // (--native-plugin / --plugin-less / MUSTER_COWORK_NATIVE_PLUGIN) wins;
+      // undeclared, readInstalledCowork reads the Desktop account plugin list.
+      const nativePluginRide = declaredPluginRide(rest, process.env);
       installed = await readInstalledCowork(home, { declaredConnectors: declared, nativePluginRide });
     } else {
       installed = await readInstalled(home);
@@ -1060,8 +1057,15 @@ async function handleCoreCommandPart3(cmd, rest) {
     out(await scaffoldProject(rest[0] || process.cwd()));
     return true;
   } else if (cmd === "init") {
-    const action = ["transition", "normalize", "acknowledge", "finalize"].includes(rest[0]) ? rest[0] : null;
-    if (!action) {
+    const action = ["transition", "normalize", "acknowledge", "finalize", "pm-link"].includes(rest[0]) ? rest[0] : null;
+    if (action === "pm-link") {
+      // Optional AGENTS.md pointer to docs/intent and docs/specs (src/agents-link.js): preview by
+      // default; --approve pm-link appends it after the attended confirmation.
+      const { linkPmDocs } = await import("./agents-link.js");
+      const approve = flagValue(rest, "--approve");
+      if (approve !== undefined && approve !== "pm-link") fail("init pm-link [dir] [--approve pm-link]: exact approval is required");
+      out(await linkPmDocs(rest[1] && !rest[1].startsWith("--") ? rest[1] : process.cwd(), { approved: approve === "pm-link" }));
+    } else if (!action) {
       out(await initializeProject(rest[0] || process.cwd()));
     } else {
       const dir = rest[1] && !rest[1].startsWith("--") ? rest[1] : process.cwd();
@@ -1233,9 +1237,18 @@ async function handleCoreCommandPart7(cmd, rest) {
     out(prioritize(items, model));
     return true;
   } else if (cmd === "pipeline") {
-    if (!rest[0]) fail("pipeline <domain|id>: missing arg");
+    if (!rest[0]) fail("pipeline <domain|id> | pipeline --list: missing arg");
     const ps = await loadPipelines(new URL("../pipelines/", import.meta.url));
-    out(pipelineForDomain(ps, rest[0]) || ps.find(p => p.id === rest[0]) || null);
+    const { resolvePipeline, PIPELINE_ALIASES } = await import("./pipeline.js");
+    if (rest[0] === "--list") {
+      out({
+        pipelines: ps.map(p => ({ id: p.id, title: p.title || p.id, domain: p.domain })).sort((a, b) => a.id.localeCompare(b.id)),
+        aliases: Object.fromEntries(Object.entries(PIPELINE_ALIASES).map(([id, a]) => [id, a.to || `retired: ${a.use}`])),
+      });
+      return true;
+    }
+    const r = resolvePipeline(ps, rest[0]);
+    out(pipelineForDomain(ps, rest[0]) || r.pipeline || (r.retired ? { retired: rest[0], use: r.retired } : null));
   // ── routing (cont.): domain classification, pipeline routing, diagnose/audit modes, issue/assess/steer/scope ──
     return true;
   } else if (cmd === "domain") {
@@ -1313,7 +1326,9 @@ async function handleCoreCommandPart4(cmd, rest) {
   } else if (cmd === "doctor") {
     const r = rest.includes("--codex")
       ? await runCodexDoctor({ root: new URL("../", import.meta.url) })
-      : await runDoctor({ root: new URL("../", import.meta.url), cwd: process.cwd() });
+      : rest.includes("--desktop")
+        ? await runDesktopDoctor({ root: new URL("../", import.meta.url) })
+        : await runDoctor({ root: new URL("../", import.meta.url), cwd: process.cwd() });
     out(r);
     if (!r.ok) process.exit(2);
     return true;
@@ -1466,8 +1481,11 @@ function renderPreflight(s) {
     `run ${s.runId}: scope ${s.scope}, clear ${yn(s.clear)}${s.clear ? "" : ` (${s.unclear.join(", ")})`}, fast-path ${yn(s.fastPath)}`,
     `project ${s.project.languages.join("/") || "unknown"}, tests ${s.project.testRunner}, branch ${s.project.branch ?? "-"}${s.project.dirty ? " (dirty)" : ""}`,
     `models ${models}`,
-    `candidates ${s.candidates.join(", ") || "-"}`,
+    `candidates ${s.candidates.join(", ") || "-"}; skills ${(s.skills || []).join(", ") || "-"}`,
+    `route ${s.route}${s.pipeline ? ` (pipeline ${s.pipeline}, domain ${s.domain})` : ""}`,
+    ...(s.spec ? [`spec ${s.spec.path}${s.spec.anchor ? `#${s.spec.anchor}` : ""}: ${s.spec.status ?? "unreadable"}, ready ${yn(s.spec.ready)}, ${s.spec.acs.length} criteria, ${s.spec.invariants.length} invariants, ${s.spec.evals.length} evals, ${s.spec.openQuestions.length} blocking questions`] : []),
     `gsd ${yn(s.detected.gsd)}, plugins ${s.detected.plugins.join(", ") || "-"}, memory ${s.memory.join(", ") || "-"}`,
+    ...(s.warnings || []).map((w) => `warning: ${w}`),
     `detail ${s.detail}`,
   ].join("\n") + "\n";
 }
@@ -1484,6 +1502,16 @@ async function handleRunCommand(cmd, rest) {
     if (rest.includes("--json")) process.stdout.write(JSON.stringify(summary) + "\n");
     else process.stdout.write(renderPreflight(summary));
     return true;
+  } else if (cmd === "pipeline-args") {
+    const valued = new Set(["--pipeline", "--out", "--with"]);
+    const runId = rest.find((a, i) => !a.startsWith("-") && !valued.has(rest[i - 1]));
+    if (!runId) fail("pipeline-args <runId> [--pipeline <id>] [--out <path>] [--with <phase,...>]: missing runId");
+    const { writePipelineArgs } = await import("./pipeline-args.js");
+    const withPhases = (flagValue(rest, "--with") || "").split(",").map((s) => s.trim()).filter(Boolean);
+    const report = await writePipelineArgs({ cwd: process.cwd(), runId, pipelineId: flagValue(rest, "--pipeline"), out: flagValue(rest, "--out"), withPhases });
+    out(report);
+    if (!report.ok) process.exit(1);
+    return true;
   } else if (cmd === "build-args") {
     const runId = rest.find((a, i) => !a.startsWith("-") && rest[i - 1] !== "--base");
     if (!runId) fail("build-args <runId> [--base <sha>]: missing runId");
@@ -1495,7 +1523,14 @@ async function handleRunCommand(cmd, rest) {
         base = head.status === 0 ? head.stdout.trim() : null;
       } catch { base = null; }
     }
-    const report = await writeBuildArgs({ cwd: process.cwd(), runId, base });
+    // The work branch: its tip after the plan commit is what executors fast-forward to when an
+    // isolated worktree starts from the remote default branch (findings F1).
+    let branch = null;
+    try {
+      const b = spawnSync(assertTrustedGitCommand(), ["symbolic-ref", "--quiet", "--short", "HEAD"], { encoding: "utf8" });
+      branch = b.status === 0 ? b.stdout.trim() || null : null;
+    } catch { branch = null; }
+    const report = await writeBuildArgs({ cwd: process.cwd(), runId, base, branch });
     out(report);
     if (!report.ok) process.exit(1);
     return true;
@@ -1519,11 +1554,67 @@ async function handleRunCommand(cmd, rest) {
 
 async function handleCoreCommand(cmd, rest) {
   if (await handleRunCommand(cmd, rest)) return true;
+  if (cmd === "book") {
+    // Book runs (src/book.js): canon ledger, continuity debts, and the args/record steps around
+    // the muster:book Workflow. Exit 0 ok, 1 refused, 2 usage.
+    const { runBookCli } = await import("./book.js");
+    const { code, report } = await runBookCli(rest);
+    out(report);
+    process.exitCode = code;
+    return true;
+  }
   if (cmd === "plan-lint") {
     // Deterministic plan gates ported from gsd (src/plan-lint.js). Exit 0 = no blockers,
     // 1 = blockers, 2 = not evaluated; set via exitCode so a usage error never reads as exit 1.
     const { runPlanLintCli } = await import("./plan-lint.js");
     process.exitCode = runPlanLintCli(rest);
+    return true;
+  }
+  if (cmd === "skills") {
+    // Skill discovery and per-project opt-in (src/skills.js). Network only on search and add.
+    const { runSkillsCli } = await import("./skills.js");
+    process.exitCode = await runSkillsCli(rest);
+    return true;
+  }
+  if (cmd === "spec-lint") {
+    // Deterministic SPEC / INTENT gates (src/spec-lint.js, docs/spec-format.md). Same exit
+    // contract as plan-lint: 0 = no blockers, 1 = blockers, 2 = not evaluated.
+    const { runSpecLintCli } = await import("./spec-lint.js");
+    process.exitCode = runSpecLintCli(rest);
+    return true;
+  }
+  if (cmd === "spec-context") {
+    // Import a spec's D-NN decisions (verbatim, LOCKED) and non-goals into the run's CONTEXT.md.
+    const runId = rest.find((a, i) => !a.startsWith("-") && rest[i - 1] !== "--spec");
+    if (!runId) fail("spec-context <runId> [--spec <path[#REF-NN]>]: missing runId");
+    const { writeSpecContext } = await import("./spec-plan.js");
+    const report = await writeSpecContext({ cwd: process.cwd(), runId, specRef: flagValue(rest, "--spec") });
+    out(report);
+    if (!report.ok) process.exitCode = 1;
+    return true;
+  }
+  if (cmd === "spec-clarify") {
+    // One clarification round's answers (JSON on stdin) written back into the spec.
+    const specPath = rest.find((a, i) => !a.startsWith("-") && rest[i - 1] !== "--date");
+    if (!specPath) fail("spec-clarify <SPEC.md> [--date YYYY-MM-DD] < answers.json: missing spec path");
+    let answers;
+    try {
+      const raw = (await readStdin()).trim();
+      const parsed = raw ? JSON.parse(raw) : [];
+      answers = Array.isArray(parsed) ? parsed : parsed?.answers;
+      if (!Array.isArray(answers)) throw new Error("expected [{id, a}] or {answers: [...]}");
+    } catch (error) { fail(`spec-clarify: answers on stdin: ${error.message}`); }
+    const { runSpecClarify } = await import("./spec-plan.js");
+    const date = flagValue(rest, "--date") || new Date().toISOString().slice(0, 10);
+    const report = await runSpecClarify({ cwd: process.cwd(), specPath, answers, date });
+    out(report);
+    if (!report.ok || !report.ready) process.exitCode = 1;
+    return true;
+  }
+  if (cmd === "spec-trace") {
+    // Regenerate a spec's Traceability block from a verified run (src/spec-trace.js).
+    const { runSpecTraceCli } = await import("./spec-trace.js");
+    process.exitCode = await runSpecTraceCli(rest);
     return true;
   }
   if (await handleCoreCommandPart1(cmd, rest)) return true;

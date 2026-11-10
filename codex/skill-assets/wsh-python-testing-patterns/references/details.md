@@ -1,4 +1,4 @@
-<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001, ANTH-POS-001, GUARD-IDK-001, GUARD-CITE-002, ANTH-XML-001, GUARD-SEP-003: Pinned upstream supporting asset loaded inside its parent skill; the parent supplies role, output, evidence, and input boundaries. -->
+<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001: upstream wshobson/agents reference loaded inside its parent wsh-* builtin, which supplies the role and output format; merge-tracked in vendor/manifest.yaml. -->
 
 # python-testing-patterns — detailed patterns and worked examples
 
@@ -148,7 +148,8 @@ import pytest
 
 def is_valid_email(email: str) -> bool:
     """Check if email is valid."""
-    return "@" in email and "." in email.split("@")[1]
+    local, sep, domain = email.partition("@")
+    return bool(local) and bool(sep) and "." in domain and "@" not in domain
 
 
 @pytest.mark.parametrize("email,expected", [
@@ -302,7 +303,7 @@ def test_exception_info():
     assert "invalid literal" in str(exc_info.value)
 ```
 
-For advanced patterns including async testing, monkeypatching, temporary files, conftest setup, property-based testing, database testing, CI/CD integration, and configuration files, see [references/advanced-patterns.md](references/advanced-patterns.md)
+For advanced patterns including async testing, monkeypatching, temporary files, conftest setup, property-based testing, database testing, CI/CD integration, and configuration files, see [references/advanced-patterns.md](./advanced-patterns.md)
 
 ## Test Design Principles
 

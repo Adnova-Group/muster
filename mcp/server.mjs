@@ -119,7 +119,7 @@ const TOOLS = {
   },
   muster_design: {
     argv: ["design"], kind: "design",
-    description: "Resolve canonical DESIGN.md context and digest receipts; initialize attended design context; inspect status/evidence/ignores/provider state; enforce the human-facing write gate; or dispatch one of Muster's 23 pinned Impeccable-inspired workflows.",
+    description: "Resolve canonical DESIGN.md context and digest receipts; initialize attended design context; inspect status/evidence/ignores/provider state; enforce the human-facing write gate; or dispatch one of Muster's 24 pinned Impeccable workflows.",
     inputSchema: {
       type: "object",
       properties: {

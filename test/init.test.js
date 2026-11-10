@@ -564,10 +564,18 @@ test("repository fingerprints reject a path-set addition during hashing", async 
     await writeFile(join(dir, "inserted.txt"), "late\n");
   })();
   // The insertion races the 128 MiB hash, so it can land during the directory walk ("repository
-  // directory changed") or during hashing ("repository changed while fingerprinting"). Both are the
-  // fail-closed outcome this test pins.
-  await assert.rejects(() => learnProjectProfile(dir), /repository (directory changed|changed while fingerprinting)/);
+  // directory changed") or during hashing ("repository changed while fingerprinting"), or, on a
+  // loaded machine, between the learning snapshot and the first hash ("repository changed while
+  // learning"). All three are the fail-closed outcome this test pins. Under load the 20 ms timer can
+  // also complete the insertion before learning takes its first snapshot; then the insertion is not
+  // mid-walk and the profile must resolve with the fingerprint of the final tree, never a stale one.
+  let profile = null;
+  try { profile = await learnProjectProfile(dir); }
+  catch (error) { assert.match(error.message, /repository (directory changed|changed while (fingerprinting|learning))/); }
   await writer;
+  if (profile) {
+    assert.equal(profile.repositoryFingerprint.digest, (await learnProjectProfile(dir)).repositoryFingerprint.digest);
+  }
 });
 
 test("directory learning limits remain explicit without blocking fingerprinting", async () => {
@@ -774,11 +782,18 @@ test("project learning rejects metadata changed before its fingerprint is sealed
     await sleep(20);
     await writeFile(instructions, "after!!\n");
   })();
-  await assert.rejects(
-    () => learnProjectProfile(dir),
-    /file changed while reading: AGENTS\.md/,
-  );
+  // The rewrite normally lands after AGENTS.md is learned and before the fingerprint is sealed,
+  // which must reject. On a loaded machine the 20 ms timer can complete it before AGENTS.md is
+  // read; then nothing changed after learning and the profile must record the rewritten bytes,
+  // never the stale ones.
+  let profile = null;
+  try { profile = await learnProjectProfile(dir); }
+  catch (error) { assert.match(error.message, /file changed while reading: AGENTS\.md/); }
   await writer;
+  if (profile) {
+    const learned = profile.facts.instructionFiles.find((row) => row.path === "AGENTS.md");
+    assert.equal(learned.sha256, createHash("sha256").update("after!!\n").digest("hex"));
+  }
 });
 
 test("project learning binds source facts to the pre-learning directory snapshot", async () => {

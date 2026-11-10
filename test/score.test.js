@@ -44,8 +44,30 @@ test("non-finite score values are rejected before they can corrupt the gate", ()
     "NaN must be rejected");
   assert.throws(() => scoreArtifact({ a: Infinity }, {}), /must be a finite number/,
     "Infinity must be rejected");
-  assert.throws(() => scoreArtifact({ a: null }, {}), /must be a finite number/,
-    "null must be rejected");
+  assert.throws(() => scoreArtifact({ a: undefined }, {}), /must be a finite number, got undefined \(write null/,
+    "undefined must be rejected (only null means not assessed)");
+});
+
+test("null = not assessed: the rubric is incomplete and the gate cannot pass", () => {
+  // book-genesis-studio's Genesis Score: an unassessable criterion is reported, not invented,
+  // and a passing gate is never computed from the remaining criteria.
+  const r = scoreArtifact({ a: 3, b: null, c: 3 }, { floor: 2, pass_total: 4 });
+  assert.equal(r.passing, false);
+  assert.deepEqual(r.incomplete, ["b"]);
+  assert.equal(r.total, 6, "null contributes nothing to total");
+  assert.equal(r.weakest.criterion, "a", "weakest is taken over assessed criteria only");
+  const allNull = scoreArtifact({ a: null }, {});
+  assert.deepEqual(allNull, { total: 0, weakest: { criterion: null, value: 0 }, passing: false, incomplete: ["a"] });
+});
+
+test("a gate criterion with no score makes the rubric incomplete", () => {
+  const gate = { criteria: ["a", "b", "c"], floor: 2, pass_total: 6 };
+  const r = scoreArtifact({ a: 3, b: 3 }, gate);
+  assert.equal(r.passing, false, "dropping a criterion must not let the rest pass the gate");
+  assert.deepEqual(r.incomplete, ["c"]);
+  const full = scoreArtifact({ a: 3, b: 3, c: 2 }, gate);
+  assert.deepEqual(full, { total: 8, weakest: { criterion: "c", value: 2 }, passing: true },
+    "a complete rubric keeps the original result shape (no `incomplete` key)");
 });
 
 test("empty / nullish input -> zeroed result, never throws, never passes", () => {

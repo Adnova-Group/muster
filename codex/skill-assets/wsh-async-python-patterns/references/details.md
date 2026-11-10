@@ -1,4 +1,4 @@
-<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001, ANTH-POS-001, GUARD-IDK-001, GUARD-CITE-002, ANTH-XML-001, GUARD-SEP-003: Pinned upstream supporting asset loaded inside its parent skill; the parent supplies role, output, evidence, and input boundaries. -->
+<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001: upstream wshobson/agents reference loaded inside its parent wsh-* builtin, which supplies the role and output format; merge-tracked in vendor/manifest.yaml. -->
 
 # async-python-patterns — detailed worked examples
 
@@ -86,16 +86,11 @@ async def producer(queue: Queue, producer_id: int, num_items: int):
         await queue.put(item)
         print(f"Producer {producer_id} produced: {item}")
         await asyncio.sleep(0.1)
-    await queue.put(None)  # Signal completion
 
 async def consumer(queue: Queue, consumer_id: int):
     """Consume items from queue."""
     while True:
         item = await queue.get()
-        if item is None:
-            queue.task_done()
-            break
-
         print(f"Consumer {consumer_id} processing: {item}")
         await asyncio.sleep(0.2)  # Simulate work
         queue.task_done()

@@ -1,4 +1,4 @@
-<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001, ANTH-POS-001, GUARD-IDK-001, GUARD-CITE-002, ANTH-XML-001, GUARD-SEP-003: Pinned upstream supporting asset loaded inside its parent skill; the parent supplies role, output, evidence, and input boundaries. -->
+<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001: upstream wshobson/agents reference loaded inside its parent wsh-* builtin, which supplies the role and output format; merge-tracked in vendor/manifest.yaml. -->
 
 # microservices-patterns — detailed patterns and worked examples
 
@@ -209,7 +209,8 @@ class EventBus:
     async def start(self):
         self.producer = AIOKafkaProducer(
             bootstrap_servers=self.bootstrap_servers,
-            value_serializer=lambda v: json.dumps(v).encode()
+            # default=str turns datetime fields such as occurred_at into text
+            value_serializer=lambda v: json.dumps(v, default=str).encode()
         )
         await self.producer.start()
 
@@ -251,6 +252,7 @@ async def create_order(order_data: dict):
         data={
             "order_id": order.id,
             "customer_id": order.customer_id,
+            "items": order_data["items"],
             "total": order.total
         }
     )

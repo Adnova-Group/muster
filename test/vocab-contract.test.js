@@ -95,3 +95,10 @@ test("contract: humanizer-score tier1-vocab regex == SKILL.md tier-1 list", () =
   const skill = skillList(/\*\*Tier 1 — always rewrite:\*\*\s*([A-Za-z, -]+)\./, "tier-1 vocab");
   assert.deepEqual(sorted(scorer), sorted(skill));
 });
+
+test("contract: humanizer-score TIER2_RE == SKILL.md tier-2 list", () => {
+  const m = HUMANIZER_SCORE_SRC.match(/const TIER2_RE = \/\\b\(\?:([A-Za-z|-]+)\)/);
+  assert.ok(m, "could not find TIER2_RE in humanizer-score.js");
+  const skill = skillList(/\*\*Tier 2 — rewrite when two or more share a paragraph:\*\*\s*([A-Za-z, -]+)\./, "tier-2 vocab");
+  assert.deepEqual(sorted(m[1].split("|")), sorted(skill));
+});

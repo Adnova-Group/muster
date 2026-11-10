@@ -64,7 +64,7 @@ A provider resolves to one of four kinds, which decides how the orchestrator dis
 
 Dispatch honors `chosen.kind`, but the mechanism and the not-dispatchable contract differ by harness.
 
-**On Claude Code**, an agent is dispatched by `subagent_type` and anything else gets a generic subagent with the relevant skill injected; the crew member's `model` is always passed as the Agent tool's model override. Plan and Go dispatch through the plugin Workflow scripts (`plugin/workflows/plan.js`, `build.js`, `backlog.js`), which set each seat's `model` and `effort` from the per-seat map `muster preflight` computes; where the Workflow tool is missing, the orchestrator skill's prose fallback dispatches the same agents with the Agent tool.
+**On Claude Code**, an agent is dispatched by `subagent_type` and anything else gets a generic subagent with the relevant skill injected; the crew member's `model` is always passed as the Agent tool's model override. Plan and Go dispatch through the plugin Workflow scripts (`plugin/workflows/make-plan.js`, `build.js`, `backlog.js`), which set each seat's `model` and `effort` from the per-seat map `muster preflight` computes; where the Workflow tool is missing, the orchestrator skill's prose fallback dispatches the same agents with the Agent tool.
 
 **On Codex**, an agent routes through its installed Codex profile using `agent_type` and a bounded context fork. Because dispatch has no cwd field, worktree briefs carry absolute worktree, manifest, and STATE paths and require that worktree as every tool call's working directory. If a named agent profile is not dispatchable, the task **fails closed** with a reinstall/new-session diagnostic; it never silently falls back and loses the pinned role/model policy. Generic skill/MCP/inline dispatch inherits the parent model because Codex does not expose a per-call model override for that path.
 
@@ -110,7 +110,7 @@ Enforcement follows the run's EXTERNAL effects, not the orchestrator's own in-re
 
 `/muster:go` writes `.muster/run-active` before it builds and removes it at the merge decision. Nothing renews or expires the marker: one left behind by an interrupted run stays until the next run overwrites it or you delete it.
 
-**`PreToolUse`** (`pre-tool-use.js`, matcher `Bash|PowerShell|mcp__.*`) is the action-class fence and nothing else. A recognized forbidden external effect is fenced even when the call is delegated (`agent_id`).
+**`PreToolUse`** (`pre-tool-use.js`, exec-form `node` hook, fail-open, matcher `^(Bash|PowerShell|mcp__(?!ccd_turn__(?:update_plan|wrap_up)$).*)$`, which skips exactly the two chatty Claude Desktop turn tools `mcp__ccd_turn__update_plan` and `mcp__ccd_turn__wrap_up`) is the action-class fence and nothing else. A recognized forbidden external effect is fenced even when the call is delegated (`agent_id`).
 
 **Action-class fence** (`action-guard.js`): when both `.muster/run-active` and `.muster/forbidden-actions` exist, the hook classifies the tool call (an `mcp__`-prefixed tool name against a `send`/`submit`/`publish`/`sign`/`purchase` keyword set, word-boundary matched; or a Bash or PowerShell command against a small high-confidence allowlist -- `git push`, `npm publish`, `gh release create`, `gh pr merge`, `curl -X POST`) and denies a match against the run's declared `forbiddenActions`, honouring `MUSTER_ACTION_GUARD` (`off`/`warn`/deny-by-default). Either file absent, or no class matching, is a no-op.
 

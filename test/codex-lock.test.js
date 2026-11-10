@@ -731,3 +731,53 @@ test("withCodexFileLock release cannot unlink a replacement injected after final
   assert.equal(injected, true, "the final-release-validation race seam must fire");
   assert.deepEqual(JSON.parse(await readFile(lock, "utf8")), replacement);
 });
+
+// Full-suite hang regression (test/codex-release.test.js "concurrent publishes ..." spun a worker
+// at 100% CPU for 29+ minutes). A contender whose own acquisition stage survived a failed attempt
+// (publishCodexPlugin's orphan sweep once deleted the private directory the stage was being
+// retired into) reused the same stage name on its next attempt; open(...,"wx") failed with
+// EEXIST, the loop read that as lock contention, and once the lock was free reclaimIfStale()
+// returned true and the loop retried immediately with no pause and no timeout check, forever.
+// Each attempt now opens a fresh stage name, and every iteration is bounded by timeoutMs.
+test("withCodexFileLock acquires after its own earlier acquisition stage is left behind, instead of spinning", async t => {
+  const tmp = await mkdtemp(join(tmpdir(), "muster-codex-lock-leftover-stage-"));
+  t.after(() => rm(tmp, { recursive: true, force: true }));
+  const lock = join(tmp, "build.lock");
+  let releaseHolder;
+  let holderIn;
+  const held = new Promise(resolve => { holderIn = resolve; });
+  const holder = withCodexFileLock(lock, async () => {
+    holderIn();
+    await new Promise(resolve => { releaseHolder = resolve; });
+  });
+  await held;
+
+  const stages = [];
+  let planted = false;
+  let ran = false;
+  const contender = withCodexFileLock(lock, async () => { ran = true; }, {
+    timeoutMs: 20_000,
+    __afterAcquireOpenHook: ({ acquisitionPath }) => { stages.push(acquisitionPath); },
+    beforeOpen: async () => {
+      // Second attempt: the first attempt failed against the live holder and cleaned up its
+      // stage. Put a file back at that exact name (what the deleted retirement directory left
+      // behind), then let the holder go.
+      if (stages.length === 1 && !planted) {
+        planted = true;
+        await writeFile(stages[0], "left behind by a failed cleanup\n", { flag: "wx" });
+        releaseHolder();
+      }
+    },
+  });
+  let watchdog;
+  const outcome = await Promise.race([
+    contender.then(() => "acquired"),
+    new Promise(resolve => { watchdog = setTimeout(() => resolve("spinning"), 15_000); }),
+  ]);
+  clearTimeout(watchdog);
+  await holder;
+  assert.equal(planted, true, "the leftover stage must have been planted before the second attempt");
+  assert.equal(outcome, "acquired", "a leftover stage of this call's own earlier attempt must not stall acquisition");
+  assert.equal(ran, true);
+  assert.equal(new Set(stages).size, stages.length, `every attempt must use a fresh stage name: ${JSON.stringify(stages)}`);
+});

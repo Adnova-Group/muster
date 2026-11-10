@@ -176,6 +176,37 @@ test("deny: mcp send-shaped tool_name when 'send' is forbidden and a run is acti
   }
 });
 
+// The Desktop exclusion is two EXACT tool names, never a server or prefix: a user-configured
+// server named ccd_<anything>, or another tool on the Desktop's own ccd_turn server, is still
+// classified and fenced during a run.
+test("deny: ccd_-named MCP servers and other ccd_turn tools are fenced like any MCP tool", async () => {
+  const tmpDir = makeRunDir();
+  writeForbidden(tmpDir, ["publish"]);
+  try {
+    for (const tool of ["mcp__ccd_evil__publish_post", "mcp__ccd_turn__publish"]) {
+      const { stdout, code } = await runRaw(mcpPayload(tool, tmpDir));
+      assert.equal(code, 0);
+      assert.equal(JSON.parse(stdout).hookSpecificOutput.permissionDecision, "deny", `${tool} must be denied`);
+    }
+  } finally {
+    cleanDir(tmpDir);
+  }
+});
+
+test("allow: the two Desktop turn tools skip classification even during a run", async () => {
+  const tmpDir = makeRunDir();
+  writeForbidden(tmpDir, ["send", "sign", "submit", "publish", "purchase", "delete-remote"]);
+  try {
+    for (const tool of ["mcp__ccd_turn__update_plan", "mcp__ccd_turn__wrap_up"]) {
+      const { stdout, code } = await runRaw(mcpPayload(tool, tmpDir));
+      assert.equal(code, 0);
+      assert.equal(JSON.parse(stdout).hookSpecificOutput.permissionDecision, undefined, `${tool} must be allowed`);
+    }
+  } finally {
+    cleanDir(tmpDir);
+  }
+});
+
 test("deny: npm publish Bash command when 'publish' is forbidden and a run is active", async () => {
   const tmpDir = makeRunDir();
   writeForbidden(tmpDir, ["publish"]);

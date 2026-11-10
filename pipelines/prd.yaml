@@ -15,12 +15,17 @@ upstream:
     license: CC-BY-NC-SA-4.0
     relation: inspired-by
   - repo: phuryn/pm-skills
-    ref: d384f0c9eb81fe74656a4f6da168587836939edb
+    ref: 9af7bfd0bc47fdad43c2eaa7a43cd13918e7aaef
     path: null
     license: MIT
     relation: inspired-by
+  - repo: product-on-purpose/pm-skills
+    ref: 9b920db418c5bf641edea9afb4915a286e1d42ea
+    path: skills/deliver-prd/SKILL.md
+    license: Apache-2.0
+    relation: inspired-by
   - repo: anthropics/knowledge-work-plugins
-    ref: ca4618669075c133a8f437310775428a5c664e09
+    ref: e605d8ddbfb688da57dfaaceebd93f12a64ef1d3
     path: product-management/skills/write-spec/SKILL.md
     license: Apache-2.0
     relation: inspired-by
@@ -45,11 +50,12 @@ upstream:
     url: null
     relation: inspired-by
 phases:
-  - { id: intake,   role: brainstorm,    desc: "clarify problem, audience, success metrics; confidence-gated clarification — keep asking until you can state the problem and metrics with high confidence before drafting, don't draft on guesses; when intake ingests raw notes/brain-dumps/transcripts, extract a structured row per item — {decision|action|fact, owner, deadline, source-anchor}; unowned actions and undated deadlines are flagged, not silently dropped" }
+  - { id: intake,   role: brainstorm,    skills: [muster-pm], desc: "clarify problem, audience, success metrics; confidence-gated clarification — keep asking until you can state the problem and metrics with high confidence before drafting, don't draft on guesses; when intake ingests raw notes/brain-dumps/transcripts, extract a structured row per item — {decision|action|fact, owner, deadline, source-anchor}; unowned actions and undated deadlines are flagged, not silently dropped. RENDER MODE: when the outcome names an INTENT (docs/intent/INT-NNNN-<slug>.md) or a SPEC (docs/specs/<slug>/SPEC.md), or one exists for this feature, the PRD is a stakeholder rendering of them, not a third source of truth: record in your notes that render mode is on, and take the problem, Outcome metrics, non-goals and bets from the intent and the requirements, invariants, EV rows, decisions and open questions from the spec, each with its ID" }
   - { id: framing,  role: brainstorm,    desc: "Jobs-to-be-Done framing: functional/emotional/social job + hiring criteria; proto-persona" }
   - { id: research, role: docs-research, desc: "gather evidence: market, competitor, customer context; for ingested source documents: build a section-map before searching, extract facts as {fact, anchor, confidence, needs_review} rows before synthesis, every fact anchored file+locator, anchors land in ## Sources as `- anchor: file+locator`, synthesis uses ledger rows only" }
-  - { id: draft,    role: author,        desc: "draft the body: problem statement (who is affected, how often, what it costs them, the evidence); goals tied to the OKR or strategy they serve, plus explicit non-goals; target users; proposed solution; requirements ranked must/should/could/won't, each traced to a user story; one primary success metric with leading and lagging indicators and their targets, plus guardrail metrics that must not regress; dependencies, risks, open questions" }
-  - { id: review,   role: code-review,   desc: "adversarial review gate (reuse review-gate) + claim-by-claim verification: each requirement/metric carries a confidence flag; unsupported claims are flagged, not asserted; before the score gate, rank every draft assumption load-bearing × evidence-strength and name the single riskiest as 'most dangerous assumption: X — because...'; unresolved high-load/low-evidence assumptions are findings" }
+  - { id: draft,    role: author,        desc: "draft the body: problem statement (who is affected, how often, what it costs them, the evidence); goals tied to the OKR or strategy they serve, plus explicit non-goals; target users; proposed solution; requirements ranked must/should/could/won't, each traced to a user story; one primary success metric with leading and lagging indicators and their targets, plus guardrail metrics that must not regress; dependencies, risks, open questions. Lean by default: the shortest document that lets the team decide and start; a section with little to say gets a line, never a TBD placeholder; what you do not know goes to open questions, not into the body as fact; a research finding goes in only if it changes a decision; the first version targets two or three segments at most; say in the reply, not the document, which sections you skipped on purpose. AI BEHAVIOR: when a model output is part of the feature, add an 'AI behavior and evaluation' section, one row per behavior with how it is evaluated and a pass rule fixed before the run, with refusal, abstention and prompt-injection rows when it takes user text (muster-pm references/ai-evals.md); a rate with no designed sample is an outcome metric, not a pass rule. In render mode, copy the spec's EV table, cite requirement IDs instead of rewriting them, add no requirement the spec lacks, and send every gap to open questions for the spec owner" }
+  - { id: red-team, role: brainstorm,    skills: [muster-pm], desc: "red-team the draft as the muster-pm builtin's references/red-team.md says (read-only on the PRD): extract the load-bearing claims, steelman then attack each, rank by impact × likelihood × cheapness to test, and write the top 3-5 kill-assumptions to your notes, each with Fails if, evidence to get this week, kill criterion and cheapest test, plus what is well-reasoned and what you could not assess. Name the single riskiest as 'most dangerous assumption: X — because ...'. A load-bearing claim with no evidence and no test is a blocker for the gate reviewer" }
+  - { id: review,   role: code-review,   desc: "adversarial review gate + claim-by-claim verification, reading the red-team notes: each requirement/metric carries a confidence flag; unsupported claims are flagged, not asserted; every red-team blocker that the draft has not answered (with evidence, a test or an open question) is a finding" }
   - { id: score,    role: score,         desc: "score vs rubric, apply floor principle" }
   - { id: humanize, role: humanize,     desc: "final pass: strip AI tells (em-dashes, banned words, robotic cadence) for human delivery" }
 gate:

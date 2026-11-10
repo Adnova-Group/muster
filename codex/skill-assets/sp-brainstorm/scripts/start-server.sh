@@ -133,7 +133,6 @@ if [[ -n "$PROJECT_DIR" ]]; then
   # Make the project dir absolute now: the script cds into its own directory
   # before starting the server, which would re-root a relative path there.
   # mkdir -p keeps the existing behavior of creating a missing project dir.
-  # Hand-ported from obra/superpowers v7.0.2 (#2657).
   if ! PROJECT_DIR="$(mkdir -p -- "$PROJECT_DIR" && CDPATH='' cd -- "$PROJECT_DIR" && pwd)"; then
     echo "{\"error\": \"Cannot create or enter --project-dir\"}"
     exit 1

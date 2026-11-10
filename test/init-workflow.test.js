@@ -10,12 +10,12 @@ test("init command binds the frozen prepare, transition, normalize, acknowledge,
 
   assert.match(text, /^name: init$/m);
   assert.match(text, /^argument-hint: "\[dir\]"$/m);
-  assert.match(text, /\$MUSTER_CLI init "\$TARGET"/);
-  assert.match(text, /\$MUSTER_CLI init transition "\$TARGET" --to handoff --reason not-callable --expect AGENTS\.md/);
-  assert.match(text, /\$MUSTER_CLI init transition "\$TARGET" --to handoff --reason unavailable --expect ""/);
-  assert.match(text, /\$MUSTER_CLI init normalize "\$TARGET" --approve CLAUDE\.md/);
-  assert.match(text, /\$MUSTER_CLI init acknowledge "\$TARGET" --reason unavailable/);
-  assert.match(text, /\$MUSTER_CLI init finalize "\$TARGET"/);
+  assert.match(text, /M init "<target>"/);
+  assert.match(text, /M init transition "<target>" --to handoff --reason not-callable --expect AGENTS\.md/);
+  assert.match(text, /M init transition "<target>" --to handoff --reason unavailable --expect ""/);
+  assert.match(text, /M init normalize "<target>" --approve CLAUDE\.md/);
+  assert.match(text, /M init acknowledge "<target>" --reason unavailable/);
+  assert.match(text, /M init finalize "<target>"/);
 });
 
 test("init command makes native harness work a HUMAN-HOLD and never treats invocation as completion", async () => {
@@ -39,7 +39,7 @@ test("Codex AGENTS-only no-op offers an approved canonical pointer recovery", as
   assert.match(text, /# Claude Code\n\s*\n\s*@AGENTS\.md/);
   assert.match(
     text,
-    /explicit user approval[\s\S]*?init normalize "\$TARGET" --approve CLAUDE\.md[\s\S]*?init finalize/i,
+    /explicit user approval[\s\S]*?init normalize "<target>" --approve CLAUDE\.md[\s\S]*?init finalize/i,
   );
   assert.match(text, /Do not synthesize the write[\s\S]*?shell redirection[\s\S]*?`writeFile`/i);
   assert.match(text, /both files existed at the baseline[\s\S]*?preexisting-confirmed/i);
@@ -57,14 +57,14 @@ test("init command preserves the cloned-repository trust boundary", async () => 
 test("init command binds confirmation and callable-result evidence files exactly", async () => {
   const text = await read("plugin/commands/init.md");
 
-  assert.match(text, /CONFIRMATION_FILE="\.muster\/native-init-confirmation\.json"/);
+  assert.match(text, /`\.muster\/native-init-confirmation\.json` as the confirmation file/);
   assert.match(
     text,
     /\{"format":"muster\.native-init-confirmation","schemaVersion":1,"confirmation":"already-initialized","artifacts":\["AGENTS\.md","CLAUDE\.md"\]\}/,
   );
   assert.match(
     text,
-    /\$MUSTER_CLI init transition "\$TARGET" --to completed --evidence preexisting-confirmed --evidence-file "\$CONFIRMATION_FILE"/,
+    /M init transition "<target>" --to completed --evidence preexisting-confirmed --evidence-file \.muster\/native-init-confirmation\.json/,
   );
   assert.match(
     text,
@@ -79,9 +79,9 @@ test("Copilot and unknown harnesses use an unavailable handoff that acknowledgem
 
   assert.match(
     text,
-    /Copilot\/unknown[\s\S]*?\$MUSTER_CLI init transition "\$TARGET" --to handoff --reason unavailable --expect \.github\/copilot-instructions\.md/,
+    /Copilot\/unknown[\s\S]*?M init transition "<target>" --to handoff --reason unavailable --expect \.github\/copilot-instructions\.md/,
   );
-  assert.match(text, /\$MUSTER_CLI init acknowledge "\$TARGET" --reason unavailable/);
+  assert.match(text, /M init acknowledge "<target>" --reason unavailable/);
   assert.match(text, /Copilot\/unknown[\s\S]*?HUMAN-HOLD/);
   assert.match(text, /Never shell `copilot init`/);
   assert.match(text, /mere artifact existence is not completion/);

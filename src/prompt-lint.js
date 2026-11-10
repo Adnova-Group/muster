@@ -80,6 +80,36 @@ const ACTION_VERB = /^(write|generate|classify|summari[sz]e|extract|identify|ana
 const NEGATIVE_SRC = "\\b(do not|don'?t|never|avoid|no\\s+(?:log|cach|retr|truncat|format|wrap|generat|output|process|nest|render)\\w*ing)\\b";
 const NEGATIVE_RE = new RegExp(NEGATIVE_SRC, "gi");
 
+// lintlang H2 (missing constraint scaffolding), as refined through v0.8.3: a loop or retry
+// instruction with no stated bound, and an explicit numeric budget as the bound that
+// satisfies it. Re-implemented here (patterns.py is the reference; no code carried).
+// A budget is a number (digits or a small number word) of countable agent actions.
+const BUDGET_COUNT = "(?:\\d+|one|two|three|four|five|six|seven|eight|nine|ten|twenty)";
+const BUDGET_UNIT = "(?:tool\\s+calls?|attempts?|retries|tries|iterations?|turns?|rounds?|steps?|times|cycles|passes)";
+const NUMERIC_BUDGET_RE = new RegExp(
+  `\\b(?:max(?:imum)?(?:\\s+of)?|at\\s+most|no\\s+more\\s+than|up\\s+to|after|capped\\s+at|limit(?:ed)?\\s+(?:to|of))\\s+${BUDGET_COUNT}\\s+${BUDGET_UNIT}\\b` +
+  "|\\b(?:max_retries|max_iterations|max_turns|max_steps|retry_limit)\\b" +
+  "|\\b(?:iteration|retry|attempt|round|turn)\\s+(?:cap|limit|budget)\\b", "i");
+// Each linear (no nested quantifiers), so the rule stays ReDoS-safe on runtime prompts.
+// Narrower than lintlang's list on purpose: a plain "loop until every member has settled" or
+// "repeat until done" names its exit condition, and flagging it was all noise on muster's own
+// corpus. What stays is the failure-driven retry ("keep trying until it works", "retry until"),
+// the explicit no-exit forms, and "as many times as needed".
+const UNBOUNDED_LOOP_RE = /\bkeep\s+(?:on\s+)?trying\s+until\b|\b(?:retry(?:ing)?|try\s+again)\s+until\b|\b(?:retry(?:ing)?|try\s+again|repeat)\s+as\s+many\s+times\b|\bdon'?t\s+stop\s+until\b|\b(?:continue|keep\s+going|loop|run|retry)\s+(?:indefinitely|forever|endlessly|without\s+stopping)\b/gi;
+// "Never retry forever" / "do not keep trying until ..." states a bound, not an unbounded loop:
+// a negator earlier in the same sentence turns the match into a prohibition. "don't stop
+// until" is itself the unbounded form, so it is never treated as negated.
+const LOOP_NEGATOR_RE = /\b(?:do\s+not|don'?t|never|avoid|no)\b[^.!?\n]*$/i;
+function unboundedLoopPhrase(s) {
+  for (const m of s.matchAll(UNBOUNDED_LOOP_RE)) { // matchAll clones the /g regex: no lastIndex state
+    if (/^don'?t/i.test(m[0])) return m[0];
+    const before = s.slice(Math.max(0, m.index - 60), m.index);
+    if (!LOOP_NEGATOR_RE.test(before)) return m[0];
+  }
+  return null;
+}
+const hasNumericBudget = (s) => NUMERIC_BUDGET_RE.test(s);
+
 export const RULES = [
   {
     id: "ANTH-ROLE-001", severity: "error", systemSeverity: "warn", dimension: "structure",
@@ -160,8 +190,22 @@ export const RULES = [
     id: "LINT-STOP-002", severity: "warn", dimension: "agentic",
     title: "Define stop / termination conditions for agents", source: LINTLANG,
     applies: (t, c) => !!c.isAgent,
-    pass: has(/\bstop when\b|when (you are |you're )?(done|finished|complete)|\buntil\b|\bterminat|\bfinish(ed)? (when|once)/i),
+    // An explicit numeric budget ("at most 5 tool calls") is a stop condition too (lintlang H2).
+    pass: (t, c) => /\bstop when\b|when (you are |you're )?(done|finished|complete)|\buntil\b|\bterminat|\bfinish(ed)? (when|once)/i.test(surface(t, c)) ||
+      hasNumericBudget(surface(t, c)),
     fix: "State when to stop, e.g. 'Stop once the tests pass or after N attempts.'",
+  },
+  {
+    // lintlang H2's dangerous-pattern sub-check: "keep trying until it works", "retry until",
+    // "continue indefinitely" with no number anywhere that caps them. Applies to
+    // any prompt that issues such an instruction (not just --agent ones): the phrase itself is
+    // what makes the prompt iterative. Code samples are ignored; a negated form ("never retry
+    // forever") is a bound, not a loop.
+    id: "LINT-LOOP-004", severity: "warn", dimension: "agentic",
+    title: "Bound every retry / loop instruction with an explicit budget", source: LINTLANG,
+    applies: (t, c) => unboundedLoopPhrase(stripCode(surface(t, c))) !== null,
+    pass: (t, c) => hasNumericBudget(stripCode(surface(t, c))),
+    fix: "Cap the loop with a number, e.g. 'Retry at most 3 times, then report the failure.'",
   },
   {
     // lintlang H3 (schema-intent mismatch). Only fires when the caller passes the actual tool

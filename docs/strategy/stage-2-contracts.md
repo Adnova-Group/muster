@@ -43,7 +43,7 @@ action fence reads, and `.claude/worktrees/`.
 
 ## Workflow scripts (plugin/workflows/)
 
-- `plan.js`: args `{runId, outcome, contextPath, candidates}`. Runs planner → plan-checker, looping
+- `make-plan.js` (`plan.js` until amendment 19): args `{runId, outcome, contextPath, candidates, cli}`. Runs planner → plan-checker, looping
   at most 3 revisions and escalating when the issue count stops falling. Returns
   `{runId, planPath, verdict, revisions, issues[]}`.
 - `build.js`: args `{runId, waves:[[{taskId, title, agentHint, files, verify}]], base}`. Runs each
@@ -58,7 +58,7 @@ Every `agent()` call:
 - sets `model` / `effort` from args (the tier map is computed by the CLI);
 - has an idempotent builder brief: check git state before acting.
 
-The main thread calls the workflows as `Workflow({name:"muster:plan"|"muster:build"|"muster:backlog", args:{…}})`. It resumes with `{name, resumeFromRunId}`, never with `scriptPath`.
+The main thread calls the workflows as `Workflow({name:"muster:make-plan"|"muster:build"|"muster:backlog", args:{…}})` (amendment 19). It resumes with `{name, resumeFromRunId}`, never with `scriptPath`.
 
 ## Result schemas (JSON Schema, in plugin/workflows/schemas.js)
 
@@ -138,3 +138,126 @@ branches with `branch -d` only.
 - `vendor/reports/gsd-<tag>.md` is the per-item upstream diff report.
 - `.github/workflows/upstream-watch.yml` runs weekly. It opens an issue when a new gsd release
   touches tracked files.
+
+## Amendments from stage 3 (2026-11-10: wiring the dropped breadth back in)
+
+9. **Specialists.** A task's `agent_hint` names a catalog agent id. `build-args` resolves a
+   *dispatchable* one (not a workflow seat, not `readOnly` in the agent manifest, has Bash) to
+   `agentType: "muster:<frontmatter name>"` (`src/specialists.js`; `wsh-debugger` runs as
+   `muster:debugging-toolkit-debugger`). `build.js` dispatches that type for the build stage
+   and puts the executor contract in the brief (branch check, tagged commit, no package
+   installs, no SUMMARY file, ExecResult fields), since specialists do not carry it. Anything
+   else runs `muster-executor` with the hint as a lens. Fixers stay `muster-executor`
+   (amendment 4 unchanged).
+10. **Skills.** A task's `skills="id, id"` binds builtin skills (`plugin/builtins/<id>/`).
+    `build-args` writes `skills: [{id, path}]` with the absolute `SKILL.md` path; the builder
+    reads each first and returns `skillsApplied: [{id, how, quote?}]` (optional in ExecResult);
+    the reviewer gets the same skills and fails work that does not follow one; `build.js`
+    reports bound skills without evidence as the task's `skillsMissing`. Path binding is
+    deliberate: Workflow `agent()` has no skills option, frontmatter `skills:` preloading is
+    per agent (not per task) and cannot load `disable-model-invocation` skills, and exposing
+    the builtins as plugin skills would list 46 descriptions in every session.
+    `muster plan-lint` blocks unknown skill ids, warns on unknown or non-dispatchable hints,
+    and warns on a task with no `skills` attribute when a preflight `skillCandidates` entry
+    scored >= 4 and matches the task (`skills=""` declines).
+11. **preflight** also returns `skills`, `skillRoot`, `route` (`code` | `pipeline` | `ask`),
+    `domain` and `pipeline`, and writes `skillCandidates` (with scores) to `preflight.json`.
+    Seat tiers: planner, checker and verifier `prime`, executor and reviewer `core`.
+12. **Worktree cap.** `build.js` starts at most `args.worktreeConcurrency` builders at once
+    (default 3) to keep simultaneous `git worktree add` calls off `.git/config.lock`.
+13. **Content pipelines.** `muster pipeline-args <runId>` writes `pipeline-args.json`
+    (`{runId, outcome, contextPath?, pipeline:{id, title, gate}, phases:[{id, role, desc,
+    skills}], artifactPath, models}`); `plugin/workflows/pipeline.js` runs the phases in order
+    in the main checkout, then review + score as the gate (JS applies the floor and pass total;
+    at most 2 revisions of the last author phase), then the remaining phases. It returns
+    `{runId, pipeline, artifactPath, verdict: PASS|FAIL|ERROR, halted, revisions, score, review,
+    phases}`; the main thread saves it as `pipeline-result.json`, which `next --run` reads.
+14. **Worktree base (findings F1, probed live 2026-11-10 on 2.1.322).** In a scratch repo with a
+    bare `origin` and one unpushed commit on the work branch, a Workflow
+    `agent({isolation:'worktree'})` started at `origin/main` (the unpushed commit absent); with
+    `{"worktree":{"baseRef":"head"}}` in `.claude/settings.local.json` it started at the local
+    HEAD. Without a remote it falls back to local HEAD, which is why the stage-2 smokes passed.
+    The base alone is not enough: `build-args.json` is committed after `base` is computed, so
+    the base never contains PLAN.md. `build-args` therefore also records `branch` (the work
+    branch), and the executor brief fast-forwards (`git merge --ff-only <branch>`, else the base)
+    when PLAN.md is missing or the base is not an ancestor, then requires the base, blocking with
+    `base mismatch` otherwise (never a reset), and
+    preflight warns when `worktree.baseRef` is not `head` in a repo with a remote. A plugin
+    `settings.json` cannot set `worktree`, so the setting stays the user's choice.
+15. **Runtime limits (F8, F12, F13).** Up to 16 concurrent Workflow agents by default
+    (`CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS`), 1,000 agents per run; the `Large workflow`
+    warning (over 25 agents or 1.5M projected tokens) is advisory and expected for backlogs. In
+    `claude -p`, background and cloud sessions, a usage limit fails the agent instead of pausing
+    the run; the `agent()` wrapper records `{status:"error"}` and `/muster:go --run <runId>`
+    retries. `CLAUDE_CODE_EFFORT_LEVEL`, `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`,
+    `CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL` and `CLAUDE_CODE_SUBAGENT_EFFORT` can replace
+    `args.models[seat]`; preflight lists any that are set in `warnings`.
+16. **Plan mode (F3, probed 2026-11-10).** Started with `--permission-mode plan`, the session
+    declined the branch switch, the CONTEXT.md write and the Workflow call before any tool ran,
+    citing plan mode. `/muster:plan` therefore leaves plan mode first (ExitPlanMode) instead of
+    presenting the finished plan through it.
+17. **Dev-team topologies** (`docs/strategy/dev-team-topologies.md`). `plugin/workflows/team.js`
+    takes build's args plus `topology: {testFirst: auto|all|off, seats: auto|off, maxSeats,
+    integrate: auto|all|off, escalate, seatRules}` and task fields `tdd` (set by `build-args` from
+    `tdd="true"` or `type="tdd"`) and `reviewSeats`, and returns build's result plus per task
+    `red`, `seats`, `integrationFix` and per run `topology` and `integration[]`, so `merge-wave`
+    reads it unchanged (red commits are ancestors of the task commit on the same branch). Extra
+    seats in `args.models`: `testWriter`, `integrator`, `escalate`. New schemas in `schemas.js`:
+    RedResult, IntegrationResult, HypothesesResult, HypothesisResult. Its `<build-shared>` block is
+    build.js's `<shared>` slice up to `reviewLoop`, byte for byte (tested); build.js is unchanged.
+    `plugin/workflows/debug.js` takes `{symptom, repro?, context?, hypotheses?, maxHypotheses?,
+    models.investigator}` and returns `{verdict: ROOT_CAUSE|COMPOUND|INCONCLUSIVE|ERROR,
+    rootCause, contributing, ranking, hypotheses, investigations, challenges, next}`; it is
+    read-only. `muster-test-writer` and `muster-integration-checker` are workflow seats in
+    `src/specialists.js`, and the integration checker and `wsh-team-debugger` are `readOnly`,
+    so no `agent_hint` builds with them. `wsh-code-reviewer` left the Claude plugin for
+    `codex/frozen/agents/`.
+
+## Amendments from PM stage B (2026-11-10: planning from a SPEC.md)
+
+18. **Spec runs** (`docs/strategy/2026-11-pm-domain-design.md` "Plan integration",
+    `docs/plan-format.md` "Planning from a spec"). `muster preflight` detects a SPEC.md in the
+    outcome (or a backlog item's `{spec: path#REF-02}`), runs spec-lint in the same call and
+    returns `spec: {path, anchor, status, ready, acs, invariants, evals, decisions,
+    openQuestions}`; `clear` is `spec.ready` and `route` is `code`. New CLI steps:
+    `muster spec-clarify <SPEC.md>` (one question round's answers on stdin, written under a dated
+    `## Clarifications` session; a draft that now passes becomes `ready`), `muster spec-context
+    <runId>` (CONTEXT.md gets the spec's D-NN verbatim and LOCKED, its non-goals as Deferred
+    Ideas, and the spec's path and sha256; the command never hand-writes it) and `muster
+    spec-trace <runId> [--accept <IDs>] [--coverage]` (the spec's Traceability block from
+    PLAN.md `covers`/`proves` and the verifier's `## Acceptance` table; `status: shipped` when
+    every ID is VERIFIED or accepted). `plan.js` takes `specPath` and passes the coverage rules
+    to the planner and the delivery check to the checker on every round. PLAN.md gains `spec:`,
+    `requirements:`, `ac:` on must-haves, `covers` on tasks and `proves` on `<automated>`;
+    plan-lint's `spec_traceability` dimension applies only when `spec:` is set. Change-set and
+    diff gates exclude `.muster/`.
+
+## Amendments from the release smoke (2026-11-10: invocation on Claude Code 2.1.319)
+
+19. **Workflow names never equal a command or skill name.** A plugin workflow runs as
+    `muster:<meta.name>` (docs: "a script whose `meta.name` is `release-audit` runs as
+    `/acme-tools:release-audit`"), the namespace commands and skills use. With
+    `plugin/workflows/plan.js` named `plan`, both the typed `/muster:plan <outcome>` and
+    `Skill("muster:plan")` launched the Workflow directly with the raw text as args, and the
+    command body (preflight, branch, interview, approval stop) never ran. The planning workflow
+    is now `make-plan` (`plugin/workflows/make-plan.js`, `Workflow({name:"muster:make-plan"})`,
+    allow rule `Workflow(muster:make-plan)`): a verb phrase, so it cannot be mistaken for the
+    `/muster:plan` command, and it reads as what the script does in an allow list next to
+    `Workflow(muster:build)`. The other workflows (`build`, `backlog`, `team`, `debug`,
+    `pipeline`, `book`) collide with no command (`audit`, `capture`, `design`, `diagnose`, `go`,
+    `init`, `plan`, `pm`, `skills`, `write-book`) or skill (`advisor`, `greenfield`, `improve`,
+    `interview`, `orchestrator`). `test/plugin-invocation.test.js` fails on any future clash.
+20. **The CLI prefix travels in the brief.** `muster` is not on PATH in a user's project and
+    `CLAUDE_PLUGIN_ROOT` may be unset in an agent's shell, so the planner's and checker's bare
+    `muster plan-lint` failed with "command not found". `muster preflight` returns `cli`, the
+    exact absolute prefix for this install (`sh "<plugin root>/runtime/muster.sh"`, derived from
+    the plugin root like `skillRoot`; `src/specialists.js` `musterCli`). The main thread passes it
+    to `muster:make-plan`; `build-args` and `pipeline-args` copy it into their args as `cli`.
+    Every brief whose agent may run the CLI says "Run muster CLI commands as: <cli> <verb> ...":
+    the planner and checker (which runs `<cli> plan-lint <planPath>` first), executor and green
+    briefs with bound skills (build, backlog, team), and every pipeline phase. Agents and the
+    `muster-*` and `book-run` builtins write CLI calls as `<cli> <verb>`; book agents never call
+    the CLI, so book args carry no `cli`. Without a `cli` arg a workflow falls back to
+    `sh "$CLAUDE_PLUGIN_ROOT/runtime/muster.sh"` and logs it. `test/plugin-invocation.test.js`
+    fails on a bare `` `muster <verb>` `` or "run muster <verb>" in a plugin agent, workflow
+    script or one of those builtins.

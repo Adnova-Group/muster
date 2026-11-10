@@ -6,6 +6,10 @@ import { join } from "node:path";
 import { readState, runDir, writeStateHead } from "./run-dir.js";
 import { parsePlan } from "./plan-lint.js";
 
+// The Workflow tool returns `{summary, agentCount, logs, result}`; the main thread may save that
+// envelope instead of the bare result (seen in the stage-3 content smoke).
+const unwrap = (j) => (j && j.result && typeof j.result === "object" && !Array.isArray(j.tasks) && j.verdict === undefined ? j.result : j);
+
 async function readOrNull(path) {
   try { return await readFile(path, "utf8"); } catch { return null; }
 }
@@ -52,18 +56,28 @@ export async function nextForRun({ cwd, runId }) {
   const merged = mergedTasks(state);
   let built = [];
   if (has("build-result.json")) {
-    try { built = (JSON.parse(await readOrNull(join(dir, "build-result.json"))).tasks || []).map((t) => t.taskId); } catch { built = []; }
+    try { built = (unwrap(JSON.parse(await readOrNull(join(dir, "build-result.json")))).tasks || []).map((t) => t.taskId); } catch { built = []; }
   }
   const verdict = has("VERIFICATION.md") ? verificationVerdict(await readOrNull(join(dir, "VERIFICATION.md")) || "") : null;
   const rel = `.muster/runs/${runId}`;
 
+  // Content runs (muster:pipeline) have pipeline-args.json instead of PLAN.md.
+  let pipelineVerdict = null;
+  if (has("pipeline-result.json")) {
+    try { pipelineVerdict = unwrap(JSON.parse(await readOrNull(join(dir, "pipeline-result.json")))).verdict || "ERROR"; } catch { pipelineVerdict = "ERROR"; }
+  }
+
   let position, action, why;
   if (has("continue-here.md")) {
     [position, action, why] = ["paused", `resume: read ${rel}/continue-here.md, then continue from the step it names`, "continue-here.md exists"];
+  } else if (has("pipeline-args.json") && !plan) {
+    if (!pipelineVerdict) [position, action, why] = ["pipeline", `pipeline: Workflow({name:"muster:pipeline", args:<${rel}/pipeline-args.json>})`, "pipeline-args.json exists, pipeline-result.json does not"];
+    else if (pipelineVerdict === "PASS") [position, action, why] = ["verified", "done: present the artifact, its score and the merge decision", "pipeline-result.json verdict PASS"];
+    else [position, action, why] = ["inconclusive", "ask the human: the content gate did not pass (see pipeline-result.json halted and score)", `pipeline-result.json verdict ${pipelineVerdict}`];
   } else if (!plan && !has("CONTEXT.md")) {
     [position, action, why] = ["new", "discuss: run the interview to write CONTEXT.md (or plan directly when preflight says the outcome is clear)", "no CONTEXT.md and no PLAN.md"];
   } else if (!plan) {
-    [position, action, why] = ["discussed", `plan: Workflow({name:"muster:plan", args:{runId:"${runId}", contextPath:"${rel}/CONTEXT.md", ...}})`, "CONTEXT.md exists, PLAN.md does not"];
+    [position, action, why] = ["discussed", `plan: Workflow({name:"muster:make-plan", args:{runId:"${runId}", contextPath:"${rel}/CONTEXT.md", ...}})`, "CONTEXT.md exists, PLAN.md does not"];
   } else if (built.some((t) => !merged.includes(t))) {
     [position, action, why] = ["built", `merge: muster merge-wave ${runId} --result ${rel}/build-result.json`, `build-result.json has unmerged tasks: ${built.filter((t) => !merged.includes(t)).join(", ")}`];
   } else if (planned.length ? planned.some((t) => !summarized.includes(t)) : !summarized.length) {
@@ -76,7 +90,7 @@ export async function nextForRun({ cwd, runId }) {
   } else if (verdict === "HUMAN_NEEDED") {
     [position, action, why] = ["human_needed", "done: present the merge decision with VERIFICATION.md's human-check items", "VERIFICATION.md status human_needed"];
   } else if (verdict === "GAPS") {
-    [position, action, why] = ["gaps", "replan: run muster:plan with the gaps from VERIFICATION.md as the outcome", "VERIFICATION.md verdict GAPS"];
+    [position, action, why] = ["gaps", "replan: run the muster:make-plan workflow with the gaps from VERIFICATION.md as the outcome", "VERIFICATION.md verdict GAPS"];
   } else {
     [position, action, why] = ["inconclusive", "ask the human: the verifier abstained", "VERIFICATION.md verdict ABSTAIN"];
   }
@@ -85,7 +99,7 @@ export async function nextForRun({ cwd, runId }) {
     runId, position, next: action, why,
     artifacts: {
       context: has("CONTEXT.md"), plan: !!plan, summaries: summarized, buildResult: has("build-result.json"),
-      verification: verdict, paused: has("continue-here.md"),
+      verification: verdict, paused: has("continue-here.md"), pipeline: has("pipeline-args.json") ? (pipelineVerdict || "pending") : null,
     },
     tasks: { planned, summarized, merged },
   };

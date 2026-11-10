@@ -127,6 +127,32 @@ test("Cowork native plugin ride: false (the default) keeps the MCP-only filterin
   assert.deepEqual(a.skills, []);
 });
 
+test("Cowork plugin ride never advertises ~/.claude-installed skills or agents (Cowork does not read ~/.claude)", () => {
+  const a = resolveCapabilities(
+    [...catalog, ...agentCatalog],
+    {
+      runtime: "cowork",
+      nativePluginRide: true,
+      pluginLoad: { state: "present", source: "account-plugin-list" },
+      plugins: [],
+      skills: ["my-home-skill"],
+      agents: ["ext-agent"],
+      mcpServers: ["serena"],
+    },
+  );
+  assert.deepEqual(a.roles.implement.chosen, { id: "low-agent", source: "builtin", kind: "agent" },
+    "an installed non-MCP external must not displace muster's own builtin in Cowork");
+  assert.ok(!a.skills.some((s) => s.id === "my-home-skill"), "home-dir skills are not Cowork skills");
+  assert.deepEqual(a.dispatch.pluginLoad, { state: "present", source: "account-plugin-list" });
+  assert.equal(a.dispatch.parallelSubagents, "documented");
+  assert.match(a.dispatch.perCallModelOverride, /phase-3 probe receipt/);
+});
+
+test("non-Cowork lanes carry no dispatch block", () => {
+  const a = resolveCapabilities([...catalog, ...agentCatalog], { plugins: [], skills: [], mcpServers: [], agents: [] });
+  assert.equal(a.dispatch, undefined);
+});
+
 import { loadCatalog } from "../src/catalog.js";
 test("debug role resolves to a built-in on a bare machine (not inline)", async () => {
   const cat = await loadCatalog(new URL("../catalog/", import.meta.url));

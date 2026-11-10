@@ -1,0 +1,211 @@
+{
+  "format": 1,
+  "description": "Authoritative conceptual-tier + harness-neutral effort mapping for the 27 Codex agent profiles, plus Claude-only entries marked \"codex\": false (the merge-tracked intent-* UX agents and the dev-team seats muster-test-writer, muster-integration-checker and wsh-team-debugger, added after the Codex freeze: they resolve a Claude profile and get no Codex profile; wsh-code-reviewer left the Claude plugin and keeps its Codex profile from codex/frozen/agents/). Each entry is { tier, effort? }: the tier picks the gpt-5.6 model + a default reasoning effort via src/codex.js's CODEX_MODEL_POLICY, and the optional SEMANTIC effort (workhorse|judgment|peak) is resolved to a native reasoning effort by that policy's applyEffort (workhorse->medium, judgment->high, peak->xhigh). No entry names a concrete gpt-5.6 model any more (2026-07-23 neutral-shape migration; the resolved {model,effort} is byte-identical to the prior hardcoded mapping). The lanes (evidence: DeepSWE v1.1 + the sol effort research, per-role rationale in the codex-tier-remap-receipts PR): Sol/medium (prime+workhorse) is the measured builder point; Sol/high (prime default, or prime+judgment) is reserved for judgment that gates other work (architecture, review verdicts, strategy); Sol/xhigh (prime+peak) is the single rare high-consequence lane, wsh-security-auditor; Luna/xhigh (the core tier) is the bounded-work lane whose output is verified downstream and whose per-task context stays small -- muster-surgeon (1-2 file mechanical edits), wsh-api-documenter and wsh-tutorial-engineer (doc recipes over given sources), wsh-test-automator (module-scoped authoring, self-verified by running the suite, deliberately a different model family than the Sol builders it checks -- METR flags Sol's reward-hack rate highest on verifier-adjacent work), and the human-read content quartet wsh-business-analyst/wsh-content-marketer/wsh-customer-support/wsh-data-scientist. The former 'luna-xhigh' tier was byte-identical to core and has been removed. Terra/high (the scout tier) is reserved for the read-only locator muster-investigator. Fable stays conceptual and adapts to Sol/high, never routine max.",
+  "agents": {
+    "muster-executor": {
+      "source": "plugin/agents/muster-executor.md",
+      "tier": "prime",
+      "effort": "workhorse"
+    },
+    "muster-improver": {
+      "source": "plugin/agents/muster-improver.md",
+      "tier": "apex",
+      "readOnly": true
+    },
+    "muster-investigator": {
+      "source": "plugin/agents/muster-investigator.md",
+      "tier": "scout",
+      "readOnly": true
+    },
+    "muster-reviewer": {
+      "source": "plugin/agents/muster-reviewer.md",
+      "tier": "prime",
+      "effort": "judgment",
+      "readOnly": true
+    },
+    "muster-runner": {
+      "source": "codex/frozen/agents/muster-runner.md",
+      "tier": "prime",
+      "effort": "workhorse"
+    },
+    "muster-strategist": {
+      "source": "plugin/agents/muster-strategist.md",
+      "tier": "apex",
+      "readOnly": true
+    },
+    "muster-surgeon": {
+      "source": "plugin/agents/muster-surgeon.md",
+      "tier": "core"
+    },
+    "wsh-api-documenter": {
+      "source": "plugin/agents/wsh-api-documenter.md",
+      "tier": "core"
+    },
+    "wsh-backend-architect": {
+      "source": "plugin/agents/wsh-backend-architect.md",
+      "tier": "prime"
+    },
+    "wsh-business-analyst": {
+      "source": "plugin/agents/wsh-business-analyst.md",
+      "tier": "core"
+    },
+    "wsh-cloud-architect": {
+      "source": "plugin/agents/wsh-cloud-architect.md",
+      "tier": "prime"
+    },
+    "wsh-code-reviewer": {
+      "source": "codex/frozen/agents/wsh-code-reviewer.md",
+      "tier": "prime",
+      "effort": "judgment",
+      "readOnly": true
+    },
+    "wsh-content-marketer": {
+      "source": "plugin/agents/wsh-content-marketer.md",
+      "tier": "core"
+    },
+    "wsh-customer-support": {
+      "source": "plugin/agents/wsh-customer-support.md",
+      "tier": "core"
+    },
+    "wsh-data-engineer": {
+      "source": "plugin/agents/wsh-data-engineer.md",
+      "tier": "prime",
+      "effort": "workhorse"
+    },
+    "wsh-data-scientist": {
+      "source": "plugin/agents/wsh-data-scientist.md",
+      "tier": "core"
+    },
+    "wsh-database-optimizer": {
+      "source": "plugin/agents/wsh-database-optimizer.md",
+      "tier": "prime",
+      "effort": "workhorse"
+    },
+    "wsh-debugger": {
+      "source": "plugin/agents/wsh-debugger.md",
+      "tier": "prime",
+      "effort": "workhorse"
+    },
+    "wsh-devops-troubleshooter": {
+      "source": "plugin/agents/wsh-devops-troubleshooter.md",
+      "tier": "prime",
+      "effort": "workhorse"
+    },
+    "wsh-docs-architect": {
+      "source": "plugin/agents/wsh-docs-architect.md",
+      "tier": "prime",
+      "effort": "workhorse"
+    },
+    "wsh-frontend-developer": {
+      "source": "plugin/agents/wsh-frontend-developer.md",
+      "tier": "prime",
+      "effort": "workhorse"
+    },
+    "wsh-legacy-modernizer": {
+      "source": "plugin/agents/wsh-legacy-modernizer.md",
+      "tier": "prime",
+      "effort": "workhorse"
+    },
+    "wsh-ml-engineer": {
+      "source": "plugin/agents/wsh-ml-engineer.md",
+      "tier": "prime",
+      "effort": "workhorse"
+    },
+    "wsh-prompt-engineer": {
+      "source": "plugin/agents/wsh-prompt-engineer.md",
+      "tier": "prime",
+      "effort": "workhorse"
+    },
+    "wsh-security-auditor": {
+      "source": "plugin/agents/wsh-security-auditor.md",
+      "tier": "prime",
+      "effort": "peak",
+      "readOnly": true
+    },
+    "wsh-test-automator": {
+      "source": "plugin/agents/wsh-test-automator.md",
+      "tier": "core"
+    },
+    "wsh-tutorial-engineer": {
+      "source": "plugin/agents/wsh-tutorial-engineer.md",
+      "tier": "core"
+    },
+    "intent-ember": {
+      "source": "plugin/agents/intent-ember.md",
+      "tier": "core",
+      "effort": "judgment",
+      "codex": false
+    },
+    "intent-noor": {
+      "source": "plugin/agents/intent-noor.md",
+      "tier": "core",
+      "effort": "judgment",
+      "codex": false
+    },
+    "intent-rune": {
+      "source": "plugin/agents/intent-rune.md",
+      "tier": "core",
+      "effort": "workhorse",
+      "codex": false
+    },
+    "intent-sage": {
+      "source": "plugin/agents/intent-sage.md",
+      "tier": "core",
+      "effort": "judgment",
+      "codex": false
+    },
+    "intent-vigil": {
+      "source": "plugin/agents/intent-vigil.md",
+      "tier": "core",
+      "effort": "judgment",
+      "codex": false
+    },
+    "intent-wren": {
+      "source": "plugin/agents/intent-wren.md",
+      "tier": "core",
+      "effort": "workhorse",
+      "codex": false
+    },
+    "muster-test-writer": {
+      "source": "plugin/agents/muster-test-writer.md",
+      "tier": "core",
+      "effort": "workhorse",
+      "codex": false
+    },
+    "muster-integration-checker": {
+      "source": "plugin/agents/muster-integration-checker.md",
+      "tier": "core",
+      "effort": "judgment",
+      "readOnly": true,
+      "codex": false
+    },
+    "wsh-team-debugger": {
+      "source": "plugin/agents/wsh-team-debugger.md",
+      "tier": "core",
+      "effort": "judgment",
+      "readOnly": true,
+      "codex": false
+    },
+    "prt-silent-failure-hunter": {
+      "source": "plugin/agents/prt-silent-failure-hunter.md",
+      "tier": "core",
+      "effort": "judgment",
+      "readOnly": true,
+      "codex": false
+    },
+    "prt-type-design-analyzer": {
+      "source": "plugin/agents/prt-type-design-analyzer.md",
+      "tier": "core",
+      "effort": "judgment",
+      "readOnly": true,
+      "codex": false
+    },
+    "prt-pr-test-analyzer": {
+      "source": "plugin/agents/prt-pr-test-analyzer.md",
+      "tier": "core",
+      "effort": "judgment",
+      "readOnly": true,
+      "codex": false
+    }
+  }
+}

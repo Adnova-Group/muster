@@ -36,6 +36,7 @@ import {
   computeDependencyLevels,
   DIMENSIONS,
 } from "../src/plan-lint.js";
+import { specialistCatalog } from "../src/specialists.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES = path.join(here, "fixtures", "plan-lint");
@@ -845,5 +846,54 @@ describe("vendor/manifest.yaml records plan-lint's gsd sources", () => {
     const { ok, errors } = validateVendorManifest(bad);
     assert.equal(ok, false);
     for (const field of ["from", "to", "mode", "baseBlob"]) assert.ok(errors.some(e => e.includes(`.${field}:`)), field);
+  });
+});
+
+// ─── Revival stage 3: agent_hint / skills against the plugin catalog ─────────
+
+describe("agent_hint and skills against the catalog (src/specialists.js)", () => {
+  const catalog = specialistCatalog();
+  const lint = (tasks, options = {}) => lintPlan(planDoc({ tasks }), { projectRoot: fixtureRoot("cat"), catalog, ...options });
+  const completeness = r => r.issues.filter(i => i.dimension === DIMENSIONS.TASK_COMPLETENESS);
+
+  test("a dispatchable specialist and builtin skills pass", () => {
+    assert.deepEqual(completeness(lint([autoTask("01", 1, ' agent_hint="wsh-debugger" skills="sp-debug, sp-tdd"')])), []);
+  });
+
+  test("an unknown or read-only agent_hint is a warning; an unknown skill is a blocker", () => {
+    const unknown = completeness(lint([autoTask("01", 1, ' agent_hint="wsh-nope"')]));
+    assert.deepEqual(unknown.map(i => i.severity), ["warning"]);
+    assert.match(unknown[0].summary, /unknown agent "wsh-nope"/);
+    const seat = completeness(lint([autoTask("01", 1, ' agent_hint="muster-reviewer"')]));
+    assert.match(seat[0].summary, /cannot execute a task/);
+    const skill = completeness(lint([autoTask("01", 1, ' skills="sp-tdd,no-such-skill"')]));
+    assert.deepEqual(skill.map(i => i.severity), ["blocker"]);
+    assert.match(skill[0].summary, /unknown skill "no-such-skill"/);
+  });
+
+  test("without a catalog only the id shape is checked (pure callers)", () => {
+    assert.deepEqual(completeness(lintPlan(planDoc({ tasks: [autoTask("01", 1, ' agent_hint="wsh-nope" skills="no-such-skill"')] }), { projectRoot: fixtureRoot("cat2") })), []);
+  });
+
+  test("a skill-less task warns when a high-scoring preflight candidate fits it; skills=\"\" declines", () => {
+    const task = autoTask("01", 1).replace("<name>Task 01</name>", "<name>Add a debug trace for the failing test</name>");
+    const strong = [{ id: "sp-debug", score: 4 }];
+    const warned = completeness(lint([task], { skillCandidates: strong }));
+    assert.deepEqual(warned.map(i => i.severity), ["warning"]);
+    assert.match(warned[0].summary, /binds no skills, but preflight ranked "sp-debug" highly/);
+    assert.deepEqual(completeness(lint([task.replace('wave="1"', 'wave="1" skills=""')], { skillCandidates: strong })), []);
+    assert.deepEqual(completeness(lint([task], { skillCandidates: [{ id: "sp-debug", score: 3 }] })), [], "below the high score");
+    assert.deepEqual(completeness(lint([autoTask("01", 1)], { skillCandidates: strong })), [], "candidate does not match the task text");
+  });
+
+  test("the CLI loads the catalog and the run dir's preflight.json", () => {
+    const dir = fixtureRoot("cat-cli");
+    const plan = planDoc({ tasks: [autoTask("01", 1, ' agent_hint="wsh-nope"').replace("<name>Task 01</name>", "<name>Debug the failing test</name>")] });
+    writeFileSync(path.join(dir, "PLAN.md"), plan);
+    writeFileSync(path.join(dir, "preflight.json"), JSON.stringify({ skillCandidates: [{ id: "sp-debug", score: 7 }] }));
+    const r = spawnSync(process.execPath, [CLI, "plan-lint", path.join(dir, "PLAN.md"), "--json", "--root", dir], { encoding: "utf8" });
+    const out = JSON.parse(r.stdout);
+    assert.ok(out.issues.some(i => /unknown agent "wsh-nope"/.test(i.summary)), r.stdout);
+    assert.ok(out.issues.some(i => /preflight ranked "sp-debug"/.test(i.summary)), r.stdout);
   });
 });

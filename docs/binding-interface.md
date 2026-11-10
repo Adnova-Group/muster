@@ -96,10 +96,11 @@ than parsing free text.
 mechanism in this audit (see the Grep audit table below): the backlog-scope confirm and the
 approval stop in `plugin/commands/plan.md`, the unclear-outcome questions and the merge decision
 in `plugin/commands/go.md`, the merge-decision prompt in `plugin/commands/audit.md`, capture's
-write gate in `plugin/commands/capture.md`, the interview skill's one-question-at-a-time loop in
-`plugin/skills/interview/SKILL.md`, the escalation stops in `plugin/skills/orchestrator/SKILL.md`,
-roadmap-prioritization's optional-push offers in
-`plugin/skills/roadmap-prioritization/SKILL.md`, and the greenfield skill's "ask, don't invent"
+write gate in `plugin/commands/capture.md`, the interview skill's question rounds (up to 4
+questions per call, each with a recommended answer) in `plugin/skills/interview/SKILL.md`, the
+PM command's question rounds and approval stops in `plugin/commands/pm.md`, the escalation stops
+in `plugin/skills/orchestrator/SKILL.md`, the roadmap's optional-push offers in
+`plugin/builtins/muster-roadmap/SKILL.md`, and the greenfield skill's "ask, don't invent"
 rule in `plugin/skills/greenfield/SKILL.md`. Workflow agents cannot ask the user, so every one of
 these stops sits between workflow calls in the main thread.
 
@@ -122,7 +123,7 @@ never named as harness degradation before now.
 the model chooses to comply.
 
 **Claude Code binding.** `plugin/hooks/hooks.json` registers one script, and it does nothing
-outside a muster run's scope: a single `PreToolUse` matched against `Bash|PowerShell|mcp__.*`
+outside a muster run's scope: a single `PreToolUse` matched against `^(Bash|PowerShell|mcp__(?!ccd_turn__(?:update_plan|wrap_up)$).*)$`
 (`plugin/hooks/pre-tool-use.js`, the action-class fence). The `TaskCompleted` gate was removed
 in revival stage 2b with the native task board. There is no `SessionStart` or `UserPromptSubmit` hook
 and no warn-only nudge: muster costs nothing in a session that never invokes a verb. The
@@ -255,18 +256,27 @@ both numbers on every test run from the live prose tree, so this table cannot si
 stale:
 
 ```
-AskUserQuestion    files=7  mentions=17
+AskUserQuestion    files=10  mentions=22
 dispatch (Agent/Task tool)  files=2  mentions=8
 hook (PreToolUse/SessionStart/UserPromptSubmit)  files=2  mentions=3
-worktree   files=8  mentions=55
+worktree   files=10 mentions=65
 ```
 
-Counts refreshed for revival stage 2b (2026-11-09): plan.md, go.md and the orchestrator were
+The worktree row was refreshed on 2026-11-10 for the dev-team seats: `muster-test-writer` and
+`muster-integration-checker` work in an isolated and a scratch worktree, and the go and diagnose
+commands name `muster:team`. Counts refreshed for revival stage 2b (2026-11-09): plan.md, go.md and the orchestrator were
 rewritten around the Workflow scripts; plan-backlog, go-backlog, runner, the router,
 domain-router, review-gate, tournament and coordination skills, the muster-runner agent and the
 `TaskCompleted` gate were deleted, and the ten audit-pattern hunt lists moved out of
 `plugin/skills/`. Earlier per-item refresh notes described prose that no longer exists and were
 dropped; the test re-derives every number from the live tree.
+2026-11-10: `write-book.md` (book runs) adds one AskUserQuestion mention (the attended
+clarifying questions before the outline).
+
+Refreshed for revival stage 3 (2026-11-10): plan.md and go.md gained the content-route and
+skill-edit questions, and the build briefs and orchestrator describe the worktree base.
+Refreshed for PM stage B (2026-11-10): the orchestrator's spec-run rules add the clarification
+round's AskUserQuestion, and the verifier's anti-pattern scope line was shortened.
 
 Every one of those mentions is accounted for above: AskUserQuestion under Ask; Agent/Task tool
 and `subagent_type` under Dispatch; hook/PreToolUse/SessionStart/UserPromptSubmit under

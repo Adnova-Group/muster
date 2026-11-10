@@ -621,6 +621,14 @@ test("prompt-smith-optimize-proposal: a stronger non-baseline winner reports no 
   assert.equal(gradeCase({ check: "prompt-smith-optimize-proposal", expect: { regression: false } }, regressed).pass, false);
 });
 
+test("pm-spec-lint: a ready lite spec passes; ready with markers and an unverifiable criterion blocks", () => {
+  const ready = "---\nspec: x\nstatus: ready\n---\n\n## Intent\nJob: x.\n\n- **NG-01** y — because z.\n\n## Requirements\n\n### EXP-01 Dates parse\n- **EXP-01.1** [ubiquitous] The system shall write dates as YYYY-MM-DD. — verify: test\n";
+  assert.equal(gradeCase({ check: "pm-spec-lint", expect: { verdict: "PASS", blocks: false } }, ready).pass, true);
+  const early = ready.replace(" — verify: test", " [NEEDS CLARIFICATION: which zone?]");
+  assert.equal(gradeCase({ check: "pm-spec-lint", expect: { verdict: "ISSUES", blocks: true, dimensions: ["readiness", "acceptance_criteria"] } }, early).pass, true);
+  assert.equal(gradeCase({ check: "pm-spec-lint", expect: { verdict: "PASS" } }, early).pass, false);
+});
+
 test("author-draft-shape: a stated framework + single CTA pass; no framework and multiple CTAs are correctly detected as such", () => {
   const clean = "Framework: PAS\n\nbody text\n\nCTA: buy now.";
   assert.equal(gradeCase({ check: "author-draft-shape", expect: { framework: "PAS", ctaCount: 1 } }, clean).pass, true);
@@ -659,14 +667,6 @@ test("ai-test-plan-case-table: a well-formed risk/type/data/env/owner table pass
   assert.equal(gradeCase({ check: "ai-test-plan-case-table", expect: { formatValid: false } }, bad).pass, true);
 });
 
-test("user-story-gherkin-shape: Given/When/Then scenarios pass; a scenario missing Then fails a scenariosWellFormed:true expectation", () => {
-  const clean = "Scenario: happy path\nGiven a thing\nWhen it happens\nThen the outcome";
-  assert.equal(gradeCase({ check: "user-story-gherkin-shape", expect: { scenariosWellFormed: true, minScenarios: 1 } }, clean).pass, true);
-  const bad = "Scenario: happy path\nGiven a thing\nWhen it happens";
-  assert.equal(gradeCase({ check: "user-story-gherkin-shape", expect: { scenariosWellFormed: true } }, bad).pass, false);
-  assert.equal(gradeCase({ check: "user-story-gherkin-shape", expect: { scenariosWellFormed: false } }, bad).pass, true);
-});
-
 test("adr-status-lifecycle: a valid proposed|accepted|deprecated|superseded-by status passes; an undocumented status fails formatValid:true", () => {
   const clean = "ADR-001: x -- status: accepted\nADR-002: y -- status: superseded-by ADR-9";
   assert.equal(gradeCase({ check: "adr-status-lifecycle", expect: { formatValid: true } }, clean).pass, true);
@@ -685,7 +685,11 @@ const dataset = JSON.parse(await read("eval/modes/dataset.json"));
 // plan/plan-backlog/go/go-backlog modes. The aliases themselves retired in 0.7.0.
 // Revival stage 2b deleted plan-backlog, go-backlog and runner (backlog scope folds into plan/go).
 const MODES = ["plan", "go", "audit", "diagnose", "capture"];
-const STRUCTURAL_MODES = ["init", "design"];
+// write-book only sequences the muster:book Workflow and the `muster book` CLI; its behaviour is
+// graded by test/book-workflow.test.js and test/book-ledger.test.js, not by a response eval.
+const STRUCTURAL_MODES = ["init", "design", "skills", "write-book", "pm"];
+// pm (PM domain stage C) is a verb router onto spec-lint, the muster-pm references and the
+// pipelines, each graded where it lives (test/spec-lint.test.js, test/pm-domain.test.js).
 const RETIRED_ALIASES = new Set(["run", "autopilot", "sprint"]);
 // The skill-protocol layer (plugin/skills/*, router excluded — it already has
 // eval:router). Every case's `mode` field names either one of the 8 mode prompts above
@@ -700,9 +704,9 @@ const SKILLS = [
   "interview",
   "advisor",
   "greenfield",
-  "prd-pipeline",
-  "roadmap-prioritization",
 ];
+// PM domain stage D retired prd-pipeline (its prd.yaml gate cases now carry mode "prd") and moved
+// roadmap-prioritization to the muster-roadmap builtin (its RICE cases carry that mode).
 // improver-fork item: `improve` is a thin `context: fork` dispatcher onto muster-improver's
 // own retrospective judgment (plugin/agents/muster-improver.md) — an AGENT, and agents are
 // already outside this eval's graded universe (see the BUILTINS comment below, "muster-
@@ -736,17 +740,18 @@ const CONTENT_PIPELINES = [
   "competitive-battlecard",
 ];
 // The native-builtin layer (eval/modes extended to plugin/builtins/muster-*/SKILL.md) --
-// the 7 built-in pipeline-role providers (the gsd-*/sp-*/wsh-* builtins are vendored
+// the 7 built-in pipeline-role providers plus the muster-pm artifact kit and the muster-roadmap prioritizer (the gsd-*/sp-*/wsh-* builtins are vendored
 // generic technique skills, not muster's own pipeline-role prompts, and are out of scope
 // for this eval — see README's coverage table).
-const BUILTINS = ["muster-research", "muster-image", "muster-video", "muster-humanizer", "muster-scorer", "muster-prompt-smith", "muster-author"];
-// The knowledge-pipeline layer (eval/modes extended to the 11 remaining pipelines/*.yaml
-// not already covered by the content-pipeline layer above: ai-implementation-spec,
-// ai-test-plan, book, business-case, epic, launch-plan, okrs, prd, roadmap, runbook,
-// user-story). `prd`'s own pipeline-id mode is distinct from the skill-protocol layer's
-// `prd-pipeline` mode above — same real pipelines/prd.yaml gate, dispatched twice by
+const BUILTINS = ["muster-research", "muster-image", "muster-video", "muster-humanizer", "muster-scorer", "muster-prompt-smith", "muster-author", "muster-pm", "muster-roadmap"];
+// The knowledge-pipeline layer (eval/modes extended to the 10 remaining pipelines/*.yaml
+// not already covered by the content-pipeline layer above: design (formerly
+// ai-implementation-spec), ai-test-plan, book, business-case, epic, launch-plan, okrs, prd,
+// roadmap, runbook). The user-story pipeline was retired in PM domain stage D (its job is
+// /muster:pm tickets) and its cases left with it. `prd` also carries the gate cases of the
+// retired prd-pipeline skill layer — same real pipelines/prd.yaml gate, dispatched twice by
 // design (see the dataset case's own comment).
-const KNOWLEDGE_PIPELINES = ["ai-implementation-spec", "ai-test-plan", "book", "business-case", "epic", "launch-plan", "okrs", "prd", "roadmap", "runbook", "user-story"];
+const KNOWLEDGE_PIPELINES = ["design", "ai-test-plan", "book", "business-case", "epic", "launch-plan", "okrs", "prd", "roadmap", "runbook"];
 
 test("dataset covers all 5 mode prompts with at least 5 cases each, 35+ total", () => {
   const modeCases = dataset.cases.filter((c) => MODES.includes(c.mode));
@@ -767,14 +772,15 @@ test("no dataset case declares a retired alias as its mode", () => {
 // never deleted -- this pins the total so a future "migrate by deleting the inconvenient half"
 // can't silently shrink coverage. Revival stage 2b re-based it: the 46 cases for the seven
 // deleted surfaces (plan-backlog, go-backlog, runner, review-gate, coordination, tournament,
-// domain-router) left with them, 168 -> 122.
-test("dataset case-count floor: total >= 122 (post-stage-2b baseline)", () => {
-  assert.ok(dataset.cases.length >= 122, `expected >=122 total dataset cases, got ${dataset.cases.length}`);
+// domain-router) left with them, 168 -> 122. PM domain stage D re-based it again: the 3 cases of the
+// retired user-story pipeline left with it, 124 -> 121.
+test("dataset case-count floor: total >= 121 (post-PM-stage-D baseline)", () => {
+  assert.ok(dataset.cases.length >= 121, `expected >=121 total dataset cases, got ${dataset.cases.length}`);
 });
 
-test("dataset covers all 6 skill-protocol skills with at least 3 cases each, 23+ total", () => {
+test("dataset covers all 4 skill-protocol skills with at least 3 cases each, 16+ total", () => {
   const skillCases = dataset.cases.filter((c) => SKILLS.includes(c.mode));
-  assert.ok(skillCases.length >= 23, `expected 23+ skill cases, got ${skillCases.length}`);
+  assert.ok(skillCases.length >= 16, `expected 16+ skill cases, got ${skillCases.length}`);
   const bySkill = {};
   for (const c of skillCases) bySkill[c.mode] = (bySkill[c.mode] || 0) + 1;
   for (const skill of SKILLS) assert.ok((bySkill[skill] || 0) >= 3, `skill "${skill}" has only ${bySkill[skill] || 0} cases`);
@@ -788,17 +794,17 @@ test("dataset covers all 9 content pipelines with at least 2 cases each, 18+ tot
   for (const pipeline of CONTENT_PIPELINES) assert.ok((byPipeline[pipeline] || 0) >= 2, `pipeline "${pipeline}" has only ${byPipeline[pipeline] || 0} cases`);
 });
 
-test("dataset covers all 7 native builtins with at least 2 cases each, 14+ total", () => {
+test("dataset covers all 9 native builtins with at least 2 cases each, 18+ total", () => {
   const builtinCases = dataset.cases.filter((c) => BUILTINS.includes(c.mode));
-  assert.ok(builtinCases.length >= 14, `expected 14+ native-builtin cases, got ${builtinCases.length}`);
+  assert.ok(builtinCases.length >= 18, `expected 18+ native-builtin cases, got ${builtinCases.length}`);
   const byBuiltin = {};
   for (const c of builtinCases) byBuiltin[c.mode] = (byBuiltin[c.mode] || 0) + 1;
   for (const builtin of BUILTINS) assert.ok((byBuiltin[builtin] || 0) >= 2, `builtin "${builtin}" has only ${byBuiltin[builtin] || 0} cases`);
 });
 
-test("dataset covers all 11 knowledge pipelines with at least 1 gate-achievability case each, 11+ total", () => {
+test("dataset covers all 10 knowledge pipelines with at least 1 gate-achievability case each, 10+ total", () => {
   const pipelineCases = dataset.cases.filter((c) => KNOWLEDGE_PIPELINES.includes(c.mode));
-  assert.ok(pipelineCases.length >= 11, `expected 11+ knowledge-pipeline cases, got ${pipelineCases.length}`);
+  assert.ok(pipelineCases.length >= 10, `expected 10+ knowledge-pipeline cases, got ${pipelineCases.length}`);
   const byPipeline = {};
   for (const c of pipelineCases) byPipeline[c.mode] = (byPipeline[c.mode] || 0) + 1;
   for (const pipeline of KNOWLEDGE_PIPELINES) assert.ok((byPipeline[pipeline] || 0) >= 1, `knowledge pipeline "${pipeline}" has only ${byPipeline[pipeline] || 0} cases`);
@@ -925,7 +931,7 @@ test("the content-pipeline gate-achievability fixtures' gate matches each pipeli
   }
 });
 
-test("the 11 knowledge-pipeline gate-achievability fixtures' gate matches each pipeline's live yaml (drift guard)", async () => {
+test("the 10 knowledge-pipeline gate-achievability fixtures' gate matches each pipeline's live yaml (drift guard)", async () => {
   const { parse } = await import("yaml");
   for (const pipelineId of KNOWLEDGE_PIPELINES) {
     const live = parse(await read(`pipelines/${pipelineId}.yaml`));
@@ -954,7 +960,7 @@ test("coverage-table surfaces match the actual file inventory (glob counts) — 
   assert.equal(builtinDirs.length, BUILTINS.length, `plugin/builtins/muster-*/ has ${builtinDirs.length} dir(s), expected ${BUILTINS.length} (BUILTINS)`);
 
   const pipelineFiles = (await readdir(new URL("../pipelines", import.meta.url))).filter((f) => f.endsWith(".yaml"));
-  assert.equal(pipelineFiles.length, CONTENT_PIPELINES.length + KNOWLEDGE_PIPELINES.length, `pipelines/*.yaml has ${pipelineFiles.length} file(s), expected ${CONTENT_PIPELINES.length + KNOWLEDGE_PIPELINES.length} (9 CONTENT_PIPELINES + 11 KNOWLEDGE_PIPELINES)`);
+  assert.equal(pipelineFiles.length, CONTENT_PIPELINES.length + KNOWLEDGE_PIPELINES.length, `pipelines/*.yaml has ${pipelineFiles.length} file(s), expected ${CONTENT_PIPELINES.length + KNOWLEDGE_PIPELINES.length} (9 CONTENT_PIPELINES + 10 KNOWLEDGE_PIPELINES)`);
 
   const readmeText = await read("eval/modes/README.md");
   for (const name of [...MODES, ...STRUCTURAL_MODES, ...SKILLS, ...STRUCTURAL_SKILLS, ...CONTENT_PIPELINES, ...BUILTINS, ...KNOWLEDGE_PIPELINES]) {

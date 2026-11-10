@@ -8,10 +8,11 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { exists } from "./fs-util.js";
 import { isContainedLexical } from "./fs-safe.js";
-import { modelForRole, maxTier, floorAtCore, normalizeTier } from "./model.js";
+import { modelForRole, maxTier, floorAtCore, normalizeTier, emissionTier } from "./model.js";
 import { claudeModelForTier, claudeProfileForAgentId } from "./claude.js";
+import { agentProfiles } from "./agent-manifest.js";
 import { matchFrontmatter } from "./frontmatter.js";
-import { isSyncItem, isSyncSource, validateSyncItem, validateSyncSource } from "./vendor-sync.js";
+import { isSyncItem, isSyncSource, validateSyncItem, validateSyncSource, syncCatalogEntries } from "./vendor-sync.js";
 import {
   RELATIONS, ITEM_PATHS, WAIVER_STATUSES, WORK_KINDS, LICENSE_REVIEW_FINDINGS, isWorkSource,
   isValidLicense, isVendoredItem, isFetchedSource,
@@ -194,6 +195,9 @@ export function validateVendorManifest(doc) {
       errors.push(`sources[${i}].license: must be an allowed SPDX id, NONE or LicenseRef-*`);
     if (s.copyright !== undefined && (typeof s.copyright !== "string" || !s.copyright.trim()))
       errors.push(`sources[${i}].copyright: must be a non-empty string`);
+    // A trademark notice the upstream asks to travel with attribution (reproduced in NOTICE).
+    if (s.trademark !== undefined && (typeof s.trademark !== "string" || !s.trademark.trim()))
+      errors.push(`sources[${i}].trademark: must be a non-empty string`);
     if (s.formerly !== undefined && (!Array.isArray(s.formerly) || !s.formerly.every(r => REPO_RE.test(r))))
       errors.push(`sources[${i}].formerly: must be a list of owner/name`);
     if (s.tag !== undefined && !isSyncSource(s)) errors.push(`sources[${i}].tag: only a merge-tracked source (items with mode) records a tag`);
@@ -303,9 +307,24 @@ export function vendoredAgentModel(item) {
   return claudeProfileForAgentId(item.id)?.model ?? claudeModelForTier(tier).model;
 }
 
+// The Claude `effort:` toAgent writes for a vendored agent. A semantic effort declared in
+// catalog/agents.manifest.json wins (the Claude adapter maps workhorse=medium, judgment=high,
+// peak=xhigh); otherwise the tier default below, read off the same tier vendoredAgentModel
+// resolves (manifest tier through the emission layer, else an item pin, else the role tier).
+// Exported so toAgent and the agents.generated drift check share one code path.
+const CLAUDE_TIER_DEFAULT_EFFORT = Object.freeze({ scout: "low", core: "medium", prime: "high", apex: "high" });
+export function vendoredAgentEffort(item) {
+  const profile = claudeProfileForAgentId(item.id);
+  if (profile?.workflowEffort) return profile.workflowEffort;
+  const config = agentProfiles()[item.id];
+  const tier = config ? emissionTier(config.tier) : item.model ? normalizeTier(item.model) : modelForRoles(item.roles);
+  return CLAUDE_TIER_DEFAULT_EFFORT[tier];
+}
+
 export function toAgent(sourceText, item, source) {
   const { data, body } = splitFrontmatter(sourceText);
   const model = vendoredAgentModel(item);
+  const effort = vendoredAgentEffort(item);
   const filteredTools = (() => {
     if (!data.tools) return DEFAULT_TOOLS;
     const allowed = data.tools.split(",").map(s => s.trim()).filter(t => ALLOWED_TOOLS.has(t));
@@ -315,6 +334,7 @@ export function toAgent(sourceText, item, source) {
     name: data.name || item.id,
     description: item.description || data.description || `Agent for ${item.roles.join(", ")} (adapted from ${source.repo})`,
     model,
+    effort,
     tools: filteredTools,
     muster_builtin: true,
     license: source.license
@@ -432,9 +452,18 @@ export async function runVendor({ home = homedir(), repoRoot = process.cwd(), ma
   const warnings = [];
   const builtinEntries = [];
   const agentEntries = [];
+  // Entries produced by fetching (the overwrite guards below count only these).
+  let vendoredBuiltins = 0, vendoredAgents = 0;
   for (const source of manifest.sources) {
-    // Attribution-only sources are recorded (NOTICE, `upstream:`) but never fetched;
-    // merge-tracked sources are only touched by `muster vendor update`.
+    // Merge-tracked sources are only touched by `muster vendor update`; their builtin/agent
+    // items with roles stay registered in the generated catalogs, in manifest order.
+    if (isSyncSource(source)) {
+      const tracked = syncCatalogEntries(source);
+      builtinEntries.push(...tracked.builtins);
+      agentEntries.push(...tracked.agents);
+      continue;
+    }
+    // Attribution-only sources are recorded (NOTICE, `upstream:`) but never fetched.
     if (!isFetchedSource(source) || !source.items.some(it => isVendoredItem(source, it))) continue;
     const { root, error, cleanup } = await fetchSourceRoot(source, home);
     if (!root) {
@@ -466,23 +495,35 @@ export async function runVendor({ home = homedir(), repoRoot = process.cwd(), ma
         }
         await atomicPublish(outputRoot, path, content);
         (isAgent ? agentEntries : builtinEntries).push(catalogEntry);
+        if (isAgent) vendoredAgents++; else vendoredBuiltins++;
       }
     } finally {
       await cleanup?.();
     }
   }
-  const allEntries = [...builtinEntries, ...agentEntries];
-  if (allEntries.length === 0) {
+  // Merge-tracked items whose manifest entry carries no roles (wshobson's) keep their current
+  // generated-catalog entry, so a rewritten catalog never drops them; entries already produced
+  // from manifest roles above (superpowers, gsd) win, deduplicated by id.
+  const produced = new Set([...builtinEntries, ...agentEntries].map(e => e.id));
+  const tracked = new Set(manifest.sources.filter(isSyncSource).flatMap(s => s.items.filter(isSyncItem).map(i => i.id)).filter(Boolean));
+  const carried = async path => {
+    const bytes = await readOutputRegular(join(outputRoot, path));
+    return bytes ? (parse(bytes.toString("utf8")) || []).filter(e => tracked.has(e?.id) && !produced.has(e?.id)) : [];
+  };
+  builtinEntries.push(...await carried("catalog/builtins.generated.yaml"));
+  agentEntries.push(...await carried("catalog/agents.generated.yaml"));
+  const vendored = vendoredBuiltins + vendoredAgents;
+  if (vendored === 0) {
     return { count: 0, warnings: [...warnings, "no items vendored — refusing to overwrite NOTICE/builtins.generated.yaml"] };
   }
   // Only overwrite a generated catalog when we actually produced entries of that kind,
   // so a partial/agent-only re-vendor can't clobber the other file on fetch failure.
-  if (builtinEntries.length > 0)
+  if (vendoredBuiltins > 0)
     await atomicPublish(outputRoot, "catalog/builtins.generated.yaml", YAML_BANNER + stringify(builtinEntries, { lineWidth: 0 }));
-  if (agentEntries.length > 0)
+  if (vendoredAgents > 0)
     await atomicPublish(outputRoot, "catalog/agents.generated.yaml", YAML_BANNER + stringify(agentEntries, { lineWidth: 0 }));
   // cowork/NOTICE ships in the Cowork bundle and must stay byte-identical to NOTICE.
   const notice = generateNotice(manifest);
   for (const path of NOTICE_PATHS) await atomicPublish(outputRoot, path, notice);
-  return { count: allEntries.length, builtins: builtinEntries.length, agents: agentEntries.length, warnings };
+  return { count: vendored, builtins: vendoredBuiltins, agents: vendoredAgents, tracked: builtinEntries.length + agentEntries.length - vendored, warnings };
 }

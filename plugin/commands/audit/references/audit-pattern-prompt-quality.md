@@ -52,6 +52,14 @@ Read the source for exact regexes/thresholds; do not paraphrase them here where 
   negative-instruction density (`ANTH-POS-001`) -- don't flag a system prompt for lacking
   worked examples or an action-verb opening line; that rubric is for task prompts only.
 
+## Writing the fix
+
+A finding whose fix is a structural rewrite of an agent-facing document (pointer wording, what to
+disclose into a separate file, negation-heavy instructions, no-op sentences) names
+`mp-writing-for-agents` as the method in its fix column, not a paraphrase of it. A finding on a
+skill or process document that agents skip under pressure (no baseline test, rules without a
+rationalization table) names `sp-writing-skills` and its subagent pressure test as the fix.
+
 ## Known false positives to rule out
 
 - `CTX-EXAMPLE-001` already EXCLUDES `plugin/builtins/**` and `codex/fallback-skills/**` content

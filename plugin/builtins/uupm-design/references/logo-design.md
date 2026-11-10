@@ -1,3 +1,4 @@
+<!-- prompt-lint-disable ANTH-FMT-001, ANTH-ROLE-001: vendored upstream text, adapted under merge tracking in vendor/manifest.yaml and kept as upstream wrote it so `muster vendor update` can 3-way merge it; muster loads it on demand and the loading command supplies the role and output format. -->
 # Logo Design Reference
 
 AI-powered logo design with 55+ styles, 30 color palettes, 25 industry guides. Gemini Nano Banana is the default provider; Atlas Cloud and MuAPI are also available as explicit opt-in providers.

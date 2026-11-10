@@ -36,6 +36,26 @@ Muster works in Claude Code today, but it is carrying three months of drift:
 - **Harness lanes: drop Kimi and Orca completely; freeze Codex** (keep it building and passing, no new work). ChatGPT Work and Hermes are undecided.
 - **Fence exception (from a live probe, Claude Code 2.1.319):** skill-frontmatter hooks miss subagent and worktree tool calls, vanish on `--resume`, and don't load from plugin `commands/` at all. So the action fence stays as the single `hooks.json` registration, and it is a no-op unless a run is active.
 
+## Skill discovery follow-up (2026-11-10)
+
+Scope for the `/muster:skills` track, which starts after the routing track lands:
+
+- Browse muster's builtins by domain and show each one's source.
+- Per-project enable copies a skill into `.claude/skills/`.
+- Project pins in `.muster/config`.
+- A generated skill-library docs page.
+- A usage report built from the run directories.
+
+**ui-skills.com registry** (712 skills from 124 publishers): use it for discovery, not vendoring.
+
+- Sources: the MCP server at `https://www.ui-skills.com/mcp` (tools `list_skills`, `get_skill`) and the catalog at `https://www.ui-skills.com/skills/registry.json`.
+- `/muster:skills search` searches the builtins first, then the registry.
+- `/muster:skills add <publisher>/<skill>` checks the publisher repo's license, records provenance, and installs per project.
+- `preflight` suggests registry skills from a cached catalog only when no builtin matches strongly, so it stays offline by default.
+- Full vendoring stays curated: ui-skills (9), ui-ux-pro-max (7), impeccable.
+
+**Mobbin MCP**: detect-and-use in design workflows, never bundled; it needs a paid plan and per-user OAuth.
+
 ## Breakages on current Claude Code
 
 | # | Change | Muster impact | Fix |

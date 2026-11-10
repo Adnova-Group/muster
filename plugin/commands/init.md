@@ -1,6 +1,6 @@
 ---
 name: init
-description: "Prepare a repository for Muster, then coordinate the active harness's native instruction initialization through a receipted handoff. Native completion requires positive artifact or call-result evidence; an unavailable handoff remains a HUMAN-HOLD until explicitly acknowledged. Usage: /muster:init [dir]"
+description: "Prepare a repository for muster and hand off native instruction setup. Usage: /muster:init [dir]"
 argument-hint: "[dir]"
 upstream: []
 ---

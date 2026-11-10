@@ -4,7 +4,7 @@
   roles:
     - architecture-review
   rank: 50
-  description: Expert backend architect specializing in scalable API design, microservices architecture, and distributed systems. Masters REST/GraphQL/gRPC APIs, event-driven architectures, service mesh patterns, and modern backend frameworks. Handles service boundary definition, inter-service communication, resilience patterns, and observability. Use PROACTIVELY when creating new backend services or APIs.
+  description: "Backend architecture: API design, service boundaries, resilience and observability."
   provenance:
     license: MIT
     upstream:
@@ -14,7 +14,7 @@
   roles:
     - code-review
   rank: 50
-  description: Elite code review expert specializing in modern AI-powered code analysis, security vulnerabilities, performance optimization, and production reliability. Masters static analysis tools, security scanning, and configuration review with 2024/2025 best practices. Use PROACTIVELY for code quality assurance.
+  description: Code review for quality, security and production reliability.
   provenance:
     license: MIT
     upstream:
@@ -24,7 +24,7 @@
   roles:
     - debug
   rank: 50
-  description: Debugging specialist for errors, test failures, and unexpected behavior. Use proactively when encountering any issues.
+  description: Debugging errors, test failures and unexpected behavior.
   provenance:
     license: MIT
     upstream:
@@ -34,7 +34,7 @@
   roles:
     - security-review
   rank: 50
-  description: Review code and architecture for security vulnerabilities, OWASP Top 10, auth flaws, and compliance issues. Use for security review during feature development.
+  description: "Security review: OWASP Top 10, auth flaws and compliance."
   provenance:
     license: MIT
     upstream:
@@ -44,7 +44,7 @@
   roles:
     - frontend
   rank: 50
-  description: Build React components, implement responsive layouts, and handle client-side state management. Masters React 19, Next.js 15, and modern frontend architecture. Optimizes performance and ensures accessibility. Use PROACTIVELY when creating UI components or fixing frontend issues.
+  description: "Frontend work: React components, layouts, state, performance and accessibility."
   provenance:
     license: MIT
     upstream:
@@ -54,7 +54,7 @@
   roles:
     - test-author
   rank: 50
-  description: Create comprehensive test suites including unit, integration, and E2E tests. Supports TDD/BDD workflows. Use for test creation during feature development.
+  description: "Test suites: unit, integration and E2E, with TDD/BDD support."
   provenance:
     license: MIT
     upstream:
@@ -65,7 +65,7 @@
     - refactor
     - tech-debt
   rank: 50
-  description: Refactor legacy codebases, migrate outdated frameworks, and implement gradual modernization. Handles technical debt, dependency updates, and backward compatibility. Use PROACTIVELY for legacy system updates, framework migrations, or technical debt reduction.
+  description: Legacy refactoring, framework migrations and gradual modernization.
   provenance:
     license: MIT
     upstream:
@@ -75,7 +75,7 @@
   roles:
     - architecture-review
   rank: 50
-  description: Creates comprehensive technical documentation from existing codebases. Analyzes architecture, design patterns, and implementation details to produce long-form technical manuals and ebooks. Use PROACTIVELY for system documentation, architecture guides, or technical deep-dives.
+  description: Long-form technical documentation from an existing codebase.
   provenance:
     license: MIT
     upstream:
@@ -85,7 +85,7 @@
   roles:
     - research
   rank: 50
-  description: Expert data scientist for advanced analytics, machine learning, and statistical modeling. Handles complex data analysis, predictive modeling, and business intelligence. Use PROACTIVELY for data analysis tasks, ML modeling, statistical analysis, and data-driven insights.
+  description: Analytics, statistical modeling and machine-learning analysis.
   provenance:
     license: MIT
     upstream:
@@ -95,7 +95,7 @@
   roles:
     - research
   rank: 50
-  description: Build scalable data pipelines, modern data warehouses, and real-time streaming architectures. Implements Apache Spark, dbt, Airflow, and cloud-native data platforms. Use PROACTIVELY for data pipeline design, analytics infrastructure, or modern data stack implementation.
+  description: Data pipelines, warehouses and streaming (Spark, dbt, Airflow).
   provenance:
     license: MIT
     upstream:
@@ -105,7 +105,7 @@
   roles:
     - implement
   rank: 50
-  description: Expert DevOps troubleshooter specializing in rapid incident response, advanced debugging, and modern observability. Masters log analysis, distributed tracing, Kubernetes debugging, performance optimization, and root cause analysis. Handles production outages, system reliability, and preventive monitoring. Use PROACTIVELY for debugging, incident response, or system troubleshooting.
+  description: Incident response and debugging with logs, traces and Kubernetes.
   provenance:
     license: MIT
     upstream:
@@ -115,7 +115,7 @@
   roles:
     - architecture-review
   rank: 50
-  description: Expert cloud architect specializing in AWS/Azure/GCP/OCI multi-cloud infrastructure design, advanced IaC (Terraform/OpenTofu/CDK), FinOps cost optimization, and modern architectural patterns. Masters serverless, microservices, security, compliance, and disaster recovery. Use PROACTIVELY for cloud architecture, cost optimization, migration planning, or multi-cloud strategies.
+  description: "Cloud architecture on AWS, Azure and GCP: IaC, cost, security and disaster recovery."
   provenance:
     license: MIT
     upstream:
@@ -125,7 +125,7 @@
   roles:
     - performance
   rank: 50
-  description: Expert database optimizer specializing in modern performance tuning, query optimization, and scalable architectures. Masters advanced indexing, N+1 resolution, multi-tier caching, partitioning strategies, and cloud database optimization. Handles complex query analysis, migration strategies, and performance monitoring. Use PROACTIVELY for database optimization, performance issues, or scalability challenges.
+  description: "Database performance: query tuning, indexing, caching and migrations."
   provenance:
     license: MIT
     upstream:
@@ -135,7 +135,7 @@
   roles:
     - docs-research
   rank: 50
-  description: Master API documentation with OpenAPI 3.1, AI-powered tools, and modern developer experience practices. Create interactive docs, generate SDKs, and build comprehensive developer portals. Use PROACTIVELY for API documentation or developer portal creation.
+  description: "API documentation: OpenAPI 3.1, developer portals and SDK docs."
   provenance:
     license: MIT
     upstream:
@@ -145,7 +145,7 @@
   roles:
     - implement
   rank: 50
-  description: Build production ML systems with PyTorch 2.x, TensorFlow, and modern ML frameworks. Implements model serving, feature engineering, A/B testing, and monitoring. Use PROACTIVELY for ML model deployment, inference optimization, or production ML infrastructure.
+  description: "Production ML systems: model serving, feature pipelines and monitoring."
   provenance:
     license: MIT
     upstream:
@@ -155,7 +155,7 @@
   roles:
     - implement
   rank: 50
-  description: Expert prompt engineer specializing in advanced prompting techniques, LLM optimization, and AI system design. Masters chain-of-thought, constitutional AI, and production prompt strategies. Use when building AI features, improving agent performance, or crafting system prompts.
+  description: Prompt engineering for LLM features, agents and system prompts.
   provenance:
     license: MIT
     upstream:
@@ -165,7 +165,7 @@
   roles:
     - research
   rank: 50
-  description: Master modern business analysis with AI-powered analytics, real-time dashboards, and data-driven insights. Build comprehensive KPI frameworks, predictive models, and strategic recommendations. Use PROACTIVELY for business intelligence or strategic analysis.
+  description: "Business analysis: KPI frameworks, dashboards and data-driven recommendations."
   provenance:
     license: MIT
     upstream:
@@ -175,7 +175,7 @@
   roles:
     - author
   rank: 50
-  description: Elite content marketing strategist specializing in AI-powered content creation, omnichannel distribution, SEO optimization, and data-driven performance marketing. Masters modern content tools, social media automation, and conversion optimization with 2024/2025 best practices. Use PROACTIVELY for comprehensive content marketing.
+  description: "Content marketing: strategy, SEO, distribution and performance."
   provenance:
     license: MIT
     upstream:
@@ -185,7 +185,7 @@
   roles:
     - docs-research
   rank: 50
-  description: Creates step-by-step tutorials and educational content from code. Transforms complex concepts into progressive learning experiences with hands-on examples. Use PROACTIVELY for onboarding guides, feature tutorials, or concept explanations.
+  description: Step-by-step tutorials and onboarding guides from code.
   provenance:
     license: MIT
     upstream:
@@ -195,7 +195,7 @@
   roles:
     - author
   rank: 50
-  description: Elite AI-powered customer support specialist mastering conversational AI, automated ticketing, sentiment analysis, and omnichannel support experiences. Integrates modern support tools, chatbot platforms, and CX optimization with 2024/2025 best practices. Use PROACTIVELY for comprehensive customer experience management.
+  description: "Customer support experience: ticketing, support content and CX."
   provenance:
     license: MIT
     upstream:

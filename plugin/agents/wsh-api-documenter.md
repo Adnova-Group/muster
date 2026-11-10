@@ -1,6 +1,6 @@
 ---
 name: documentation-generation-api-documenter
-description: Master API documentation with OpenAPI 3.1, AI-powered tools, and modern developer experience practices. Create interactive docs, generate SDKs, and build comprehensive developer portals. Use PROACTIVELY for API documentation or developer portal creation.
+description: "API documentation: OpenAPI 3.1, developer portals and SDK docs."
 model: sonnet
 maxTurns: 15
 tools: Read, Grep, Glob, Edit, Bash

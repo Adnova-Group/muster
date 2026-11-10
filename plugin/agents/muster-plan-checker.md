@@ -1,6 +1,6 @@
 ---
 name: muster-plan-checker
-description: Read-only goal-backward check of a run's PLAN.md before execution; returns a CheckResult of binding required_property issues.
+description: "Checks a run's PLAN.md against binding dimensions and plan-lint; returns a CheckResult."
 tools: Read, Bash, Grep, Glob
 model: sonnet
 effort: high

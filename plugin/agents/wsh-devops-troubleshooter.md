@@ -1,6 +1,6 @@
 ---
 name: cicd-automation-devops-troubleshooter
-description: Expert DevOps troubleshooter specializing in rapid incident response, advanced debugging, and modern observability. Masters log analysis, distributed tracing, Kubernetes debugging, performance optimization, and root cause analysis. Handles production outages, system reliability, and preventive monitoring. Use PROACTIVELY for debugging, incident response, or system troubleshooting.
+description: Incident response and debugging with logs, traces and Kubernetes.
 model: opus
 maxTurns: 25
 tools: Read, Grep, Glob, Edit, Bash

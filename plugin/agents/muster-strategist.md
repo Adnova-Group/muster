@@ -1,6 +1,6 @@
 ---
 name: muster-strategist
-description: Read-only heavyweight reasoning — revise plans, audit specs/designs, surface hidden assumptions and tradeoffs. Answers "is this the right approach?", not "is this code correct?". Does not implement.
+description: Read-only heavyweight reasoning on whether an approach, plan or spec is right; does not implement.
 tools: Read, Bash, Grep, Glob
 model: opus
 maxTurns: 35

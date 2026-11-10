@@ -1,6 +1,6 @@
 ---
 name: muster-verifier
-description: Goal-backward verifier for a finished run. Checks the codebase delivers what PLAN.md promised, abstains honestly on non-inferable truths, writes VERIFICATION.md.
+description: "Goal-backward verifier of a run's integrated work: PASS, GAPS, or an honest ABSTAIN with evidence."
 tools: Read, Write, Bash, Grep, Glob
 model: sonnet
 effort: high

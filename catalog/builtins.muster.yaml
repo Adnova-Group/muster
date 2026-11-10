@@ -332,3 +332,10 @@
   keywords: [domain, ddd, glossary, ubiquitous-language, terminology, adr]
   description: "Sharpen a project's domain language as you design: challenge terms, keep GLOSSARY.md current, and record hard-to-reverse decisions as ADRs."
   provenance: { license: MIT, upstream: [mattpocock/skills] }
+- id: splab-finding-duplicate-functions
+  kind: builtin
+  roles: [refactor, tech-debt]
+  rank: 46
+  keywords: [duplicate, duplicates, duplication, dedupe, semantic, consolidate]
+  description: "Find semantic duplicate functions (same intent, different names or code) by extracting a function catalog, clustering it by domain, then judging each cluster."
+  provenance: { license: MIT, upstream: [obra/superpowers-lab] }

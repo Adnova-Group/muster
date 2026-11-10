@@ -49,6 +49,8 @@ Per-item detail (upstream path, ref, relation) is in each item's `upstream:` fie
 - anthropics/claude-plugins-official @ dceb15d50832e6adf380bedc26dde03d251324b9 (Apache-2.0)
 - mattpocock/skills @ 4ae2317ddb22b046e26455e4f9c9b3aaaf62212d (MIT)
   Copyright (c) 2026 Matt Pocock
+- obra/superpowers-lab @ 51111f74f24058117752d9aa917cb19859f8ec86 (MIT)
+  Copyright (c) 2025 Jesse Vincent
 - blader/humanizer @ 1b48564898e999219882660237fde01bf4843a0f (MIT)
   Copyright (c) 2025 Siqi Chen
 - rudra496/StealthHumanizer @ 1aacbda6e2f66afbdcb6714a85347307068373e9 (MIT)

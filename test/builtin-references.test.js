@@ -57,6 +57,7 @@ const PROJECT_FILES = {
   "mp-codebase-design": { "GLOSSARY.md": glossary },
   "mp-improve-codebase-architecture": { "GLOSSARY.md": glossary },
   "mp-domain-modeling": { "GLOSSARY.md": glossary, "GLOSSARY-MAP.md": "the project's map of per-context glossaries in a multi-context repository" },
+  "splab-finding-duplicate-functions": { "report.md": "the duplicates report its generate-report.sh writes into the user's working directory" },
   "tob-supply-chain-risk-auditor": { "report.md": "the report its render.py writes into an output directory outside the audited repository" },
   "sentry-gha-security-review": Object.fromEntries(["CLAUDE.md", "AGENTS.md"].map(f => [f, "an agent-instruction file in the reviewed repository that its workflows load (a prompt-injection surface)"]))
 };

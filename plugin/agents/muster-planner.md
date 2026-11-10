@@ -264,6 +264,7 @@ The main thread allows at most 3 revision iterations, and
 <!-- verbatim: gsd gsd-core/references/revision-loop.md:56-56 -->
 Track the number of BLOCKER + WARNING issues returned by the checker on each iteration. If the count does not decrease between consecutive iterations, the producing agent is stuck and further iterations will not help. Break early and escalate to the user.
 <!-- /verbatim -->
+In muster only BLOCKERs bind: the revision brief lists them, and the stall rule counts them. Warnings arrive as optional notes; fix one only when it is a small, local edit, and never let one grow the plan.
 A REVISION_CONFLICT does not consume an iteration; three conflict returns, or the same `required_property` twice in a row, escalate to the user.
 
 Never rewrite whole tasks for minor issues or break working parts; re-derive waves when dependencies change; introduce no new issue.

@@ -125,7 +125,7 @@ function specLines(specPath) {
   ]
 }
 
-function planBrief(cfg, planPath, issues, revision) {
+function planBrief(cfg, planPath, issues, revision, advisories) {
   const lines = [
     `Run ${cfg.runId}. Outcome: ${cfg.outcome || '(see CONTEXT.md)'}`,
     ...specLines(cfg.specPath),
@@ -141,11 +141,18 @@ function planBrief(cfg, planPath, issues, revision) {
       `Check the file first: this brief may be replayed. If ${planPath} already exists and covers this outcome, keep it and report it instead of rewriting it.`,
     )
   } else {
+    const line = (i) => `- [${i.severity}] ${i.dimension}${i.required_property ? ` (${i.required_property})` : ''}: ${i.summary}`
     lines.push(
-      `Revision ${revision} of ${REVISION_CAP}: revise ${planPath} in place to resolve exactly these checker issues.`,
+      `Revision ${revision} of ${REVISION_CAP}: revise ${planPath} in place to resolve exactly these checker blockers.`,
       'Do not reduce scope to make an issue disappear. If an issue conflicts with a D-NN decision, keep the decision and say so in summary.',
-      ...issues.map((i) => `- [${i.severity}] ${i.dimension}${i.required_property ? ` (${i.required_property})` : ''}: ${i.summary}`),
+      ...issues.map(line),
     )
+    if (advisories && advisories.length) {
+      lines.push(
+        'Non-binding warnings (they never block the gate): address one only when it is a small, local edit; leave the rest for the downstream test-writer, reviewers and verifier.',
+        ...advisories.map(line),
+      )
+    }
   }
   lines.push('Return status, planPath, taskCount and a one-paragraph summary.')
   return lines.filter(Boolean).join('\n')
@@ -158,6 +165,7 @@ function checkBrief(cfg, planPath) {
     cfg.specPath ? `Spec: ${cfg.specPath}. Dimension 1 covers its in-scope AC, INV and EV IDs too, and a task whose covers cites an ID must deliver that ID in full.` : '',
     cliLine(cfg),
     `Run ${cliPrefix(cfg)} plan-lint ${planPath} first and carry every lint issue into your result unchanged.`,
+    'Only blockers hold this gate; warnings are shown and handed downstream. Rate severity by your <downstream_defences> and <calibration> sections.',
     'Read only: do not edit the plan. verdict PASS only when no blocker remains.',
   ].filter(Boolean).join('\n')
 }
@@ -178,14 +186,18 @@ const plannerFailure = (p, revisions, issues) => /^REVISION_CONFLICT\b/.test(Str
 let plan = await call(planBrief(cfg, planPath, null, 0), planOpts(0))
 if (plan.status !== 'done') return plannerFailure(plan, 0, [])
 
-// gsd's checker reports ISSUES on any issue, info included; only blockers and warnings bind a
-// revision or count toward the stall rule.
-const binding = (issues) => issues.filter((i) => /^(blocker|warning)$/i.test(String(i.severity || '')))
-// A stall is the planner failing to resolve what it was asked to fix: the count did not fall
-// AND an open issue repeats a dimension from the last round. Same-size issues in new
+// gsd's checker reports ISSUES on any issue, info included. muster's gate is proportional (owner's
+// call after the live e2e of 2026-11-10, where warning-only rounds took 60-90% of wall time and
+// stalled 2 of 3 runs): only blockers bind a revision or count toward the stall rule. Warnings
+// never block; they reach the planner as optional notes when a blocker forces a revision anyway,
+// and the main thread shows them. Downstream stages (test-writer, review seats, integration
+// check, verifier, merge-wave's verify re-run) are where a warning gets caught.
+const binding = (issues) => issues.filter((i) => /^blocker$/i.test(String(i.severity || '')))
+const warnings = (issues) => issues.filter((i) => /^warning$/i.test(String(i.severity || '')))
+// A stall is the planner failing to resolve what it was asked to fix: the blocker count did not
+// fall AND an open blocker repeats a dimension from the last round. Same-size blockers in new
 // dimensions mean the old ones were fixed and the checker found new ones: progress, bounded by
-// REVISION_CAP (live e2e 2026-11-10: a fixed test-count warning followed by an unrelated new
-// warning escalated a sound spec run after one revision).
+// REVISION_CAP.
 const dims = (issues) => new Set(issues.map((i) => String(i.dimension || '').toLowerCase()))
 let revisions = 0
 let lastCount = Infinity
@@ -197,7 +209,11 @@ for (;;) {
   if (check.status === 'error') return result('ERROR', revisions, [], 'checker', { error: check.error, reason: check.reason })
   const issues = Array.isArray(check.issues) ? check.issues : []
   const open = binding(issues)
-  if (check.verdict === 'PASS' || !open.length) return result('PASS', revisions, issues, null)
+  if (check.verdict === 'PASS' || !open.length) {
+    const w = warnings(issues).length
+    if (w) log(`no blockers; passing with ${w} non-blocking warning${w === 1 ? '' : 's'}`)
+    return result('PASS', revisions, issues, null)
+  }
   if (revisions >= REVISION_CAP) return result('ISSUES', revisions, issues, 'cap')
   if (open.length >= lastCount && [...dims(open)].some((d) => lastDims.has(d))) {
     log(`blocking issue count stalled at ${open.length}; escalating`)
@@ -206,6 +222,6 @@ for (;;) {
   lastCount = open.length
   lastDims = dims(open)
   revisions++
-  plan = await call(planBrief(cfg, planPath, open, revisions), planOpts(revisions))
+  plan = await call(planBrief(cfg, planPath, open, revisions, warnings(issues)), planOpts(revisions))
   if (plan.status !== 'done') return plannerFailure(plan, revisions, issues)
 }

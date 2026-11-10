@@ -139,9 +139,9 @@ CLI (planner, checker, bound skills, pipeline phases) says "Run muster CLI comma
 **Plan.** Agent `muster:muster-planner` with: runId, outcome, CONTEXT.md path, candidate
 specialists and skills (with `skillRoot`), the plan path `.muster/runs/<runId>/PLAN.md`, "keep an existing plan that covers
 the outcome". Then Agent `muster:muster-plan-checker` (read-only; it runs plan-lint first).
-Loop: only blocker and warning issues bind; revise in place with exactly those issues, at most
-3 revisions; stop and escalate when the binding-issue count does not fall, or when the planner's
-summary starts with `REVISION_CONFLICT`.
+Loop: only blocker issues bind (warnings are shown, never block); revise in place with exactly
+those issues, at most 3 revisions; stop and escalate when the blocker count does not fall, or when
+the planner's summary starts with `REVISION_CONFLICT`.
 
 **Build.** After build-args.json is committed, for each wave in order:
 1. In ONE message, one Agent call per task: `subagent_type` = the task's `agentType` from

@@ -35,20 +35,20 @@ Every non-vendored source, generated from the manifest. Each row lists the items
 
 | Source | License | Basis for | Relation |
 | --- | --- | --- | --- |
-| [pbakaus/impeccable](https://github.com/pbakaus/impeccable) @ `035c8f319edd` | Apache-2.0 | 26 vendored builtins and agents | inspired-by, adapted |
+| [pbakaus/impeccable](https://github.com/pbakaus/impeccable) @ `b856e5010f2d` | Apache-2.0 | 26 vendored builtins and agents | inspired-by, adapted |
 | [obra/superpowers](https://github.com/obra/superpowers) @ `22f0b463e7a5` | MIT | 31 vendored builtins and agents | adapted, vendored |
 | [wshobson/agents](https://github.com/wshobson/agents) @ `9c61ab243def` | MIT | 98 vendored builtins and agents | adapted, vendored |
 | [anthropics/skills](https://github.com/anthropics/skills) @ `2c5958ecac7c` | Apache-2.0 | 4 vendored builtins and agents | adapted, vendored |
 | [Leonxlnx/taste-skill-classics](https://github.com/Leonxlnx/taste-skill-classics) @ `5e08c9383dc4` | MIT | 4 vendored builtins and agents | vendored |
 | [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills) @ `301b02b12bff` | MIT | 3 vendored builtins and agents | adapted, vendored |
 | [emilkowalski/skills](https://github.com/emilkowalski/skills) @ `715c1807e08c` | MIT | 23 vendored builtins and agents | vendored |
-| [nutlope/hallmark](https://github.com/nutlope/hallmark) @ `407fa689f4a2` | MIT | 109 vendored builtins and agents | adapted, vendored |
+| [nutlope/hallmark](https://github.com/nutlope/hallmark) @ `7e213cb6feb4` | MIT | 109 vendored builtins and agents | adapted, vendored |
 | [greensock/gsap-skills](https://github.com/greensock/gsap-skills) @ `aed9cfd32777` | MIT | 8 vendored builtins and agents | vendored |
 | [elayadesign/ai-design-skills](https://github.com/elayadesign/ai-design-skills) @ `456d9e0d3e2d` | MIT | 2 vendored builtins and agents | vendored |
-| [jakubkrehel/skills](https://github.com/jakubkrehel/skills) @ `72bdd6121cd5` | MIT | 46 vendored builtins and agents | vendored |
+| [jakubkrehel/skills](https://github.com/jakubkrehel/skills) @ `8b254eb75dad` | MIT | 46 vendored builtins and agents | vendored |
 | [gotalab/cc-sdd](https://github.com/gotalab/cc-sdd) @ `e2a0c671aef3` | MIT | 2 vendored builtins and agents | vendored |
 | [K-Dense-AI/scientific-agent-skills](https://github.com/K-Dense-AI/scientific-agent-skills) @ `2d2065fb4520` | MIT | 36 vendored builtins and agents | vendored, adapted |
-| [AminBlg/SimpleEnglish](https://github.com/AminBlg/SimpleEnglish) @ `a6fcb4fde098` | MIT | 5 vendored builtins and agents | vendored |
+| [AminBlg/SimpleEnglish](https://github.com/AminBlg/SimpleEnglish) @ `300432a9e4c4` | MIT | 5 vendored builtins and agents | vendored |
 | [supabase/agent-skills](https://github.com/supabase/agent-skills) @ `c9be0e931b79` | MIT | 33 vendored builtins and agents | vendored |
 | [samber/cc-skills-golang](https://github.com/samber/cc-skills-golang) @ `d68d80aec298` | MIT | 28 vendored builtins and agents | vendored |
 | [Nanako0129/sepia](https://github.com/Nanako0129/sepia) @ `0eb11d6c64c9` | MIT | 20 vendored builtins and agents | vendored |

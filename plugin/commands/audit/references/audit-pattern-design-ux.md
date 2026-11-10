@@ -3,7 +3,7 @@ name: audit-pattern-design-ux
 description: Hunt-list pattern skill for muster's UX/design audit dimension -- leads with the vendored impeccable critique and audit skills, then points into the uupm priority table and pre-delivery checklist, the supporting UX skills and muster's design-gate machinery rather than duplicating them. Loaded by the audit orchestrator as a REQUIRED SKILLS binding on the frontend (design-ux) dimension task; read on demand, never dispatched standalone.
 upstream:
   - repo: pbakaus/impeccable
-    ref: 035c8f319edd019936525a062fe99e83ca8d12c6
+    ref: b856e5010f2dd86bd97f9b2d5e38e33f3d5bd992
     path: null
     license: Apache-2.0
     relation: inspired-by

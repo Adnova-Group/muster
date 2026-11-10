@@ -5,7 +5,7 @@ muster_builtin: true
 license: MIT
 upstream:
   - repo: jakubkrehel/skills
-    ref: 72bdd6121cd595f47fd21c9f23e374028c9cbacd
+    ref: 8b254eb75dadf3615a6abce87aed28e1b6e4d77c
     path: skills/break/SKILL.md
     license: MIT
     relation: vendored

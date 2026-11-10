@@ -5,7 +5,7 @@ muster_builtin: true
 license: MIT
 upstream:
   - repo: AminBlg/SimpleEnglish
-    ref: a6fcb4fde098b33617cc1578d151ebf58774b883
+    ref: 300432a9e4c473229a7049ab61b8ca2522d9214c
     path: skills/simple-english/SKILL.md
     license: MIT
     relation: vendored
@@ -53,7 +53,7 @@ After (procedural, headed, numbered):
 
 Every chat reply, in every mode, follows these rules:
 
-1. Answer in prose. No headers, no bullet lists, no bold, no tables. A code block is legal when the reader must copy it.
+1. Answer in prose by default. Use a label line, a list, or a table only when the content has that shape. The shapes are separate blocks, three or more parallel items, steps in order, and a comparison across attributes. No bold. A code block is legal when the reader must copy it.
 2. The first sentence gives the answer or the result. Do not restate the question.
 3. No em-dashes. Name the relation ("because", "but", "for example") or write two sentences.
 4. Define a concept term in a few words the first time you use it: "idempotent (safe to run twice)". Do not define product names.
@@ -65,7 +65,7 @@ After: The pods restarted and the queue lost its leader for a short time. It rec
 
 ## Self-Check Before You Deliver
 
-1. Reply: search for `—`, `**`, `#`, and a line that starts with `-`. Remove each one.
+1. Reply: search for `—` and `**`. Remove each one. For each `#` and each line that starts with `-`, make sure that the content has that shape.
 2. Document: count the words in your three longest sentences. Over 20 or 25, split. Search for `'`, `has been`, `should`, `may`, `;`, `—`, `, making`, `**`, `check`, `verify`, `config`, and any heading that covers fewer than three sentences. Fix each hit. Read each step: does it name a host, a flag, or a prior step the reader must already have? If not, add it or point to it.
 
 ## Modes

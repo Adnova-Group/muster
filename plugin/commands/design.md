@@ -4,7 +4,7 @@ description: "DESIGN.md context and pinned design workflows. Usage: /muster:desi
 argument-hint: "<init|status|resolve|detect|ignores|provider|workflow> [target]"
 upstream:
   - repo: pbakaus/impeccable
-    ref: 035c8f319edd019936525a062fe99e83ca8d12c6
+    ref: b856e5010f2dd86bd97f9b2d5e38e33f3d5bd992
     path: null
     license: Apache-2.0
     relation: inspired-by

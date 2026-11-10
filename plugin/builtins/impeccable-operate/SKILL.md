@@ -5,7 +5,7 @@ muster_builtin: true
 license: Apache-2.0
 upstream:
   - repo: pbakaus/impeccable
-    ref: 035c8f319edd019936525a062fe99e83ca8d12c6
+    ref: b856e5010f2dd86bd97f9b2d5e38e33f3d5bd992
     path: plugin/skills/impeccable/reference/operate.md
     license: Apache-2.0
     relation: adapted

@@ -5,7 +5,7 @@ muster_builtin: true
 license: Apache-2.0
 upstream:
   - repo: pbakaus/impeccable
-    ref: 035c8f319edd019936525a062fe99e83ca8d12c6
+    ref: b856e5010f2dd86bd97f9b2d5e38e33f3d5bd992
     path: plugin/skills/impeccable/reference/onboard.md
     license: Apache-2.0
     relation: adapted
@@ -184,7 +184,7 @@ Projects help you organize your work and collaborate with your team.
 
 ## Empty State Design
 
-Every empty state needs:
+A first-use empty state carries all five parts below. The other types listed after them need fewer: a user-cleared state stays light, and a no-results state mostly needs a way out.
 
 ### What Will Be Here
 "Your recent projects will appear here"
@@ -212,17 +212,18 @@ Illustration or icon (not just text on blank page)
 
 ### Technical approaches:
 
-**Tooltip libraries**: Tippy.js, Popper.js
-**Tour libraries**: Intro.js, Shepherd.js, React Joyride
+**Tooltip libraries**: Floating UI, Tippy.js
+**Tour libraries**: Driver.js, React Joyride (both MIT)
 **Modal patterns**: Focus trap, backdrop, ESC to close
 **Progress tracking**: LocalStorage for "seen" states
 **Analytics**: Track completion, drop-off points
 
 **Storage patterns**:
 ```javascript
-// Track which onboarding steps user has seen
-localStorage.setItem('onboarding-completed', 'true');
-localStorage.setItem('feature-tooltip-seen-reports', 'true');
+// Namespace keys by account id + onboarding version, so a shared browser
+// doesn't let one account's progress hide onboarding for another.
+localStorage.setItem('onboarding-completed:v1:' + userId, 'true');
+localStorage.setItem('feature-tooltip-seen-reports:v1:' + userId, 'true');
 ```
 
 Show onboarding once: track completion and respect dismissals.

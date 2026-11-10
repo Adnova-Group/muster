@@ -26,34 +26,44 @@ with the release receipt.
    grep -Eq "^\\[${TARGET_VERSION//./\\.}\\]: https://github.com/Adnova-Group/muster/compare/v" CHANGELOG.md
    ```
 
-3. **Tag gate**: after the release commit is published, the annotated or lightweight tag
+3. **npm-before-plugin gate**: the Claude plugin's `runtime/muster.sh` runs
+   `npx -y @adnova-group/muster@<plugin version>` whenever no source checkout sits beside it,
+   which is every marketplace install. So `@adnova-group/muster@${TARGET_VERSION}` must be on npm
+   before the release commit reaches the marketplace branch, or every installed `/muster:plan` and
+   `/muster:go` fails at its first CLI call.
+
+   ```sh
+   npm view "@adnova-group/muster@${TARGET_VERSION}" version
+   ```
+
+4. **Tag gate**: after the release commit is published, the annotated or lightweight tag
    `v${TARGET_VERSION}` resolves to a commit.
 
    ```sh
    git rev-parse --verify "refs/tags/v${TARGET_VERSION}^{commit}"
    ```
 
-4. **Green suite**: `npm test` (the pretest hook builds the Codex bundle; never gate on bare
+5. **Green suite**: `npm test` (the pretest hook builds the Codex bundle; never gate on bare
    `node --test`).
-5. **Codex package gate**: `npm run check:codex` passes against the generated distribution.
-6. **Dependency audit**: `npm audit --json` at the repository root and in `website/` reports
+6. **Codex package gate**: `npm run check:codex` passes against the generated distribution.
+7. **Dependency audit**: `npm audit --json` at the repository root and in `website/` reports
    zero vulnerabilities.
-7. **Package inspection**: run `npm pack --dry-run --json`, inspect the reported file list,
+8. **Package inspection**: run `npm pack --dry-run --json`, inspect the reported file list,
    identity, version, size, and entry count, and confirm no secrets, local state, or machine paths
    are included. The dry run must not leave a tarball behind.
-8. **Documentation website**: from `website/`, run `npm run docs:build`; then run the repository's
+9. **Documentation website**: from `website/`, run `npm run docs:build`; then run the repository's
    website/docs tests so navigation, links, anchors, public support claims, release pins, and brand
    assets are checked together.
-9. **Tree integrity**: `git diff --check` passes and `git status --short` is empty at the reviewed
+10. **Tree integrity**: `git diff --check` passes and `git status --short` is empty at the reviewed
    release commit.
-10. **Install/doctor smoke**: `muster install <harness> --dry-run` plus `muster doctor` is clean
+11. **Install/doctor smoke**: `muster install <harness> --dry-run` plus `muster doctor` is clean
    on at least the Claude Code harness.
 
 Context-health checks (Claude-5 context-engineering adoption, 2026-07-29):
 
-11. **Prompt surface**: `node src/cli.js prompt scan .` reports zero failing files. The
+12. **Prompt surface**: `node src/cli.js prompt scan .` reports zero failing files. The
    CTX-EXAMPLE-001 and CTX-RULE-001 ratchets guard against example and rule densification of
    Muster-authored prompts (`src/prompt-lint.js`).
-12. **`claude doctor`**: run it in a session with the Muster plugin enabled and act on anything
+13. **`claude doctor`**: run it in a session with the Muster plugin enabled and act on anything
    it reports about Muster's skills or `CLAUDE.md` footprint, Anthropic's own tooling for
    context-engineering drift.

@@ -1525,5 +1525,10 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // plugin/commands/audit/references/; plugin/runtime/muster.sh is added; every description is
   // one line and internal skills set user-invocable: false; receipt-verify leaves mcp/server.mjs.
   // Owner decisions in docs/strategy/2026-11-revival-review.md. Deliberate, not drift.
-  assert.equal(hash.digest("hex"), "1174ad557ebc48b92a302b07f5cebf4d41743832655ef40b1c74faee5f74b73e");
+  // Re-pin 2026-11-09f (revival stage 2 integration, content-only, file count unchanged): the
+  // action fence also finds a live run's markers from a linked worktree (Workflow executors in
+  // .claude/worktrees/), resolved from the worktree's .git file without spawning git, and the
+  // orchestrator says so; plugin/runtime/muster.sh no longer falls back to a global or project
+  // muster (possibly an older release) and pins npx to the plugin's own version. Deliberate.
+  assert.equal(hash.digest("hex"), "288eaf68e8f369d0984be382f6d4cd6524110d5678c93c0366fe963bca74c1af");
 });

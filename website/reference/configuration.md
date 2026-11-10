@@ -10,7 +10,6 @@ Integer variables are parsed strictly: a non-numeric or out-of-range value falls
 | --- | --- | --- | --- |
 | `MUSTER_INLINE_SCALE` | `3` | Codex only: border-invitation threshold for the Codex lifecycle hook, the Nth distinct file edited inline with no muster run active warns once per crossing. Never denies. Claude Code has no border invitation. | Codex hook (`codex/hooks/muster-hook.mjs`) |
 | `MUSTER_ACTION_GUARD` | `deny` | The action-class fence, active only while a run is live and `.muster/forbidden-actions` lists a class: `deny` blocks a matching send/sign/submit/publish/purchase/delete-remote tool call, `warn` allows it with a reminder, `off` disables the fence. The only hard-deny surface in the stack. | `PreToolUse` hook (`plugin/hooks/pre-tool-use.js`) |
-| `MUSTER_TASK_GATE` | _(unset — gate on)_ | Ties a native task board "completed" tick to a recorded review-gate PASS for muster-tracked tasks; a `pending` or `escalated` entry is denied. `off` allows unconditionally. Fail-open for any task muster did not create. | `TaskCompleted` hook (`plugin/hooks/task-completed-gate.js`) |
 | `MUSTER_MAX_TIER` | _(unset)_ | Caps the conceptual model tier policy (`prime` excludes apex, `core` enables budget mode); unset means no cap. Static agent frontmatter pins are unaffected on direct invocation; in Muster runs the dispatch override honors the cap. | CLI (`src/model.js`) |
 | `MUSTER_ENABLE_APEX` | _(unset; off)_ | Enables apex for peak-judgment roles (tournament judge, `architecture-review`, `improve`, `advisor`). Unset degrades apex to prime deterministically. | CLI (`src/model.js`) |
 | `MUSTER_ADVISOR_MAX_CONSULTS` | `3` | Maximum advisor consults per run — bounds the cost of workers escalating to the advisor role. `0` disables advisor consults. | CLI (`src/advisor.js`) |
@@ -18,7 +17,7 @@ Integer variables are parsed strictly: a non-numeric or out-of-range value falls
 | `MUSTER_FUSE_MIN_DISAGREEMENT` | `1` | Minimum disagreement score required to activate fusion synthesis; below it, `muster fuse` falls back to the single best candidate. `0` always fuses when at least two candidates pass. | CLI (`src/fusion.js`) |
 | `MUSTER_REVIEW_DIFF_THRESHOLD` | `200` | Changed-line threshold at which the review gate dispatches two reviewers instead of one. A batching lever only — the gate's pass bar and fix-loop cap are unchanged. | CLI (`gate-cadence`, `src/gate-cadence.js`) |
 | `MUSTER_AGENT_TEAMS` | _(unset — off)_ | Declares that this session's tool list carries the native `Workflow` fan-out/barrier surface, selecting `mode: "native"` wave dispatch. Nothing declared means the prose wave loop, the floor on every harness. An explicit `--agent-teams`/`--no-agent-teams` flag always wins over the env var. | CLI (`wave-dispatch`, `src/wave-dispatch.js`) |
-| `MUSTER_SPRINT_PARALLEL` | `5` | Max concurrent item-runner subagents per wave in `/muster:go-backlog` wave mode. Hard ceiling `10` (higher values clamp; `0` is invalid). Read by go-backlog's orchestration protocol, not by library code. | `plugin/commands/go-backlog.md` |
+| `MUSTER_SPRINT_PARALLEL` | `5` | Max concurrent item builds per wave in a `muster sprint-waves` schedule (the Cowork sprint protocol and the frozen Codex lane). Hard ceiling `10` (higher values clamp; `0` is invalid). Claude Code's `muster:backlog` workflow builds items sequentially and ignores it. | CLI (`sprint-waves`, `src/sprint-waves.js`) |
 
 ## Harness-scoped variables
 
@@ -45,7 +44,7 @@ MUSTER_MAX_TIER=core npx -y @adnova-group/muster capabilities
 export MUSTER_ENABLE_APEX=1
 ```
 
-For the hook-side variables (`MUSTER_INLINE_SCALE`, `MUSTER_ACTION_GUARD`, `MUSTER_TASK_GATE`), set them where the harness can see them when it spawns a hook — the `env` block of your Claude Code `settings.json`, or the environment Codex itself was launched from. A variable exported inside a session after the hook has already fired does not retroactively change that firing.
+For the hook-side variables (`MUSTER_INLINE_SCALE`, `MUSTER_ACTION_GUARD`), set them where the harness can see them when it spawns a hook — the `env` block of your Claude Code `settings.json`, or the environment Codex itself was launched from. A variable exported inside a session after the hook has already fired does not retroactively change that firing.
 
 To confirm a value is actually reaching the CLI, read it back off a command that reports it: `muster capabilities` shows the effective per-role model (proving `MUSTER_MAX_TIER` and `MUSTER_ENABLE_APEX`), and `muster gate-cadence <manifest.json> --changed-lines N` shows the resolved `reviewerCount` (proving `MUSTER_REVIEW_DIFF_THRESHOLD`).
 

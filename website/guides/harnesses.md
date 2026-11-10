@@ -2,7 +2,7 @@
 
 Muster keeps routing, scoring, manifests, waves, and gates in one deterministic Node CLI. The model-facing controls depend on the active harness. Native Claude Code, Codex, and Cowork lanes use that harness's account or subscription; Muster does not ask those lanes for a separate model API key. ChatGPT Work is a private/local, proof-gated exception that uses Secure MCP Tunnel and a separately billed OpenAI Platform API key.
 
-Claude Code and Codex expose all ten modes, including Design and Init. Cowork and ChatGPT
+Claude Code and Codex expose all seven modes, including Design and Init. Cowork and ChatGPT
 Work use narrower MCP surfaces whose verified boundaries are listed below.
 
 ## Support matrix
@@ -11,8 +11,8 @@ Work use narrower MCP surfaces whose verified boundaries are listed below.
 
 | Harness | Entry points | Parallel dispatch | Write isolation | Policy enforcement | Init handoff |
 | --- | --- | --- | --- | --- | --- |
-| Claude Code | Ten `/muster:*` modes, including Design | Native agents; optional Workflow fan-out | Native agent worktrees | Plugin hooks plus review gates | Native `/init`, canonical instruction pair |
-| Codex | Ten `$muster-*` modes, including Design | Production waves use process-only `codex-wave` / `codex exec -C` | Authenticated pristine registered worktrees | Advisory hooks plus review gates | Native `/init`, canonical instruction pair |
+| Claude Code | Seven `/muster:*` modes, including Design | Workflow scripts (`muster:plan`, `muster:build`, `muster:backlog`); prose Agent fallback | Workflow agent worktrees, merged by `muster merge-wave` | Run-scoped action fence plus reviewer and merge-wave evidence checks | Native `/init`, canonical instruction pair |
+| Codex | Seven `$muster-*` modes, including Design (frozen lane) | Production waves use process-only `codex-wave` / `codex exec -C` | Authenticated pristine registered worktrees | Advisory hooks plus review gates | Native `/init`, canonical instruction pair |
 | Cowork | MCP instructions and tools | Probe phase 3 required; sequential path is verified | No proven per-subagent worktree primitive | Review gates; native plugin enforcement is unverified | No proven callable native adapter |
 | ChatGPT Work (private/local; proof-gated) | Universal plugin + registered MCP connection | Pro-safe `muster_prioritize` only after native Scan Tools; full profile requires entitlement + double opt-in | Host-controlled; no Muster worktree claim | ChatGPT approvals/admin controls plus nonce-bound native proof gate | No callable Init adapter; no Codex-config inheritance |
 
@@ -58,7 +58,7 @@ an explicit declaration and fails closed:
 ## Choose a guide
 
 - [Codex](/guides/codex) covers scoped profiles, hooks, trust, and receipts.
-- [Cowork](/guides/cowork) covers the local MCP server, its 31-tool surface, and the verified degradation path.
+- [Cowork](/guides/cowork) covers the local MCP server, its 30-tool surface, and the verified degradation path.
 - [ChatGPT Work](/guides/chatgpt-work) covers the private/local universal plugin, Secure MCP Tunnel, profile opt-ins, and the native proof contract.
 - [Install](/guides/install) covers Claude Code.
 

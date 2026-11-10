@@ -1,5 +1,7 @@
 # Speed tuning (backlog item `muster-speed-tuning`)
 
+> **Superseded (revival stage 2b, 2026-11-09).** This records the pre-revival prose lifecycle (router, review-gate, tournament and coordination skills, plan-backlog/go-backlog/runner verbs). Claude Code's plan and go now run on the Workflow scripts in `plugin/workflows/`; see [architecture](architecture.md) and `docs/strategy/stage-2-contracts.md`. The Codex lane still builds from that prose, frozen in `codex/frozen/`. Kept as history.
+
 Seed context: weight-reduction (`docs/weight-reduction.md`) landed the single-agent fast path,
 diff-scaled review-gate reviewer counts, and cli-resolve wiring for the remaining raw-npx verbs
 — but its own criterion 3 replay measured the fast path consuming 39.8% of full-pipeline tokens

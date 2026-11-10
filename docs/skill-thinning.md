@@ -1,5 +1,7 @@
 # Skill content-only thinning (backlog item `skill-content-only-thinning`)
 
+> **Superseded (revival stage 2b, 2026-11-09).** This records the pre-revival prose lifecycle (router, review-gate, tournament and coordination skills, plan-backlog/go-backlog/runner verbs). Claude Code's plan and go now run on the Workflow scripts in `plugin/workflows/`; see [architecture](architecture.md) and `docs/strategy/stage-2-contracts.md`. The Codex lane still builds from that prose, frozen in `codex/frozen/`. Kept as history.
+
 Last item in the native-delegation sequence (`docs/strategy/native-delegation.md` backlog item
 11, Part D's scorecard), run after all nine sibling delegation items landed on main
 (workflow-tool-delegation, codex-spawn-agent-dispatch, task-board-authoritative,

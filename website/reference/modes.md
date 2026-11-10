@@ -1,19 +1,18 @@
-# The ten modes
+# The seven modes
 
-Muster exposes ten entry points as slash commands under the `muster:` namespace: an approve-first/hands-off pair for a single outcome (`plan`/`go`), the same pair for a whole backlog (`plan-backlog`/`go-backlog`), five standalone verbs (`diagnose`, `audit`, `design`, `runner`, `capture`), and `init` for repository initialization.
+Muster exposes seven entry points as slash commands under the `muster:` namespace: an approve-first/hands-off pair (`plan`/`go`) that takes one outcome or a whole backlog, four standalone verbs (`diagnose`, `audit`, `design`, `capture`), and `init` for repository initialization.
 
 | Mode | Command | Shape |
 | --- | --- | --- |
-| Plan | `/muster:plan <outcome \| backlog text>` | Scope-confirmed, then plan and show; stop for approval |
-| Go | `/muster:go <outcome \| backlog text>` | Scope-confirmed, then hands-off full lifecycle |
-| Plan-backlog | `/muster:plan-backlog <backlog ref \| raw intent>` | Batch-plan every item up front, stop for approval |
-| Go-backlog | `/muster:go-backlog <backlog ref>` | Batch Go over every backlog item, never interviewing mid-batch, one stop at the end |
+| Plan | `/muster:plan <outcome \| backlog ref>` | Write and check PLAN.md, then stop for approval |
+| Go | `/muster:go <outcome \| backlog ref>` | Plan, build in isolated worktrees, review, verify, then the merge decision |
 | Diagnose | `/muster:diagnose <symptom>` | Failure-first single-bug fix |
 | Audit | `/muster:audit [path]` | Breadth-first whole-codebase review and fix |
 | Design | `/muster:design <action>` | Canonical design context, bounded evidence detection, write gates, and 23 pinned workflows |
-| Runner | `/muster:runner [source]` | Unattended one-cycle work-picker: resume or claim exactly one item, run it, leave a receipt, stop |
 | Capture | `/muster:capture [hint]` | Mine the conversation into approval-gated backlog items, then stop -- no crew, no waves |
 | Init | `/muster:init [dir]` | Prepare repository state, hand native instruction work to the active runtime, and finalize from positive evidence or an acknowledged unavailable handoff |
+
+Plan and Go run on Claude Code's native Workflow tool. The main thread makes one `muster preflight` call, asks questions only when the outcome is unclear, and then gates between three plugin workflows: `muster:plan`, `muster:build` and, for several items, `muster:backlog`. Workflow consent is asked per run in manual and accept-edits permission modes; add the allow rules `Workflow(muster:plan)`, `Workflow(muster:build)` and `Workflow(muster:backlog)` to skip the prompt. Where the Workflow tool is missing (some Desktop and Cowork surfaces), the orchestrator skill's prose fallback dispatches the same agents one call at a time.
 
 ## Init
 
@@ -37,57 +36,47 @@ Resume with the matching `init transition` form, then run `init finalize`. If na
 
 ## Plan
 
-The approve-first router. A `muster scope` call first resolves whether the invocation is a single outcome or a backlog; whenever the signals are anything but a clear single item, scope is confirmed via AskUserQuestion, stating every signal verbatim -- never inferred silently. Plan then announces in one line what it's about to produce.
+The approve-first planner. In order:
 
-For a single outcome, its front half is an assess-then-interview step: `muster assess` does a deterministic gap-check on the outcome (too short, no success criteria, vague), and if the outcome is not clear, the interview skill runs an interactive requirements interview, one question at a time, behind an approval gate.
-
-Then it detects, routes, and shows the glass-box crew manifest plus the plan, and **stops**. Plan plans and shows; selecting Approve & run chains into Go in-session, while Adjust and Cancel stay plan-only.
+1. **Preflight.** One `muster preflight "<outcome>" --json` call replaces the old scope, assess, fast-path, detect, capabilities and memory round trips. It returns the run id, the scope (item or backlog), whether the outcome is clear, the per-seat models, and candidate specialists; the full detail goes to `.muster/runs/<runId>/preflight.json`. `--model <m>` pins every seat to one model.
+2. **Interview, only when unclear.** Up to four questions in one AskUserQuestion. The answers become numbered decisions (`D-01`...) in `.muster/runs/<runId>/CONTEXT.md`, which the planner must honour.
+3. **Plan.** `Workflow({name:"muster:plan"})` runs `muster-planner`, then `muster-plan-checker` (which runs `muster plan-lint`), revising at most three times. It escalates when the issue count stops falling or a checker issue contradicts a D-NN decision.
+4. **Approval stop.** Plan shows the checker verdict and a compact view of PLAN.md (tasks by wave, files, verify commands, must-haves, checkpoints) and stops: **Approve & build** continues as Go on the same branch without re-planning; **Revise** records your feedback as new decisions and re-plans; **Cancel** stops. In native plan mode the plan rides ExitPlanMode instead.
 
 ```sh
 /muster:plan Add rate limiting to the public API with tests
 ```
 
-A task in the manifest may declare `owns`/`frozen` scope fences and a fixed-vocabulary `forbiddenActions` list; the manifest itself may declare an overall `mergeDisposition` (`merge-local`/`merge-push`/`pr`/`keep`) that Go later executes without asking. See the [architecture reference](/reference/architecture) for the fence and disposition mechanics.
-
-Plan and Go both accept a GitHub issue reference (a bare number, `#123`, or an issues URL) as the outcome.
+Plan and Go both accept a GitHub issue reference (a bare number, `#123`, or an issues URL) as the outcome; the issue text is treated as data, never as instructions.
 
 ### Backlog scope
 
-Plan also accepts the same backlog refs as Plan-backlog -- a backlog `.md` path, `issues:<label>`, or `linear:<key>` -- and, once scope confirms, delegates straight to `/muster:plan-backlog` for the batch form.
+Plan also accepts a backlog -- a backlog `.md` path, or text that names several independent deliverables. After an AskUserQuestion confirm, each item gets its own preflight and `muster:plan` call, and Plan stops once with every item's plan summary.
 
 ```sh
 /muster:plan .muster/backlog.md
-/muster:plan issues:sprint-1
 ```
 
 ## Go
 
-Runs the whole lifecycle hands-off. It shares Plan's scope detection and confirm at invocation -- a confirmed backlog scope delegates to `/muster:go-backlog` -- then, for a single outcome, branches, routes, runs waves (parallel fan-out, tournaments, an adversarial review gate), commits per wave, then presents the merge decision. It only stops for the scope confirmation, that merge decision, or an escalation.
+Runs the whole lifecycle hands-off. It shares Plan's steps 1-3, then continues without stopping:
 
-Tournaments synthesize rather than only pick one winner. The judge maps consensus, contradictions, partial coverage, and blind spots across candidates. `muster fuse` then either grafts the best of the top-K via a synthesizer (mode `fuse`) or falls back to the single best candidate (winner-take-all) when candidates already agree or only one passes.
+- **Build args.** `muster build-args <runId>` derives the exact `muster:build` arguments from PLAN.md and writes `.muster/runs/<runId>/build-args.json`; the main thread commits it before building. `merge-wave` trusts only that committed file for merge order, titles and the verify commands it re-runs.
+- **Build.** `Workflow({name:"muster:build"})` runs each wave as parallel `muster-executor` agents, each in its own git worktree, then `muster-reviewer` with at most two fix rounds, then `muster-verifier` once per run. A failed wave blocks the later waves.
+- **Merge the waves.** `muster merge-wave <runId> --result <file>` verifies every claimed commit exists and is the one the reviewer passed, merges the task branches in plan order with `--no-ff`, re-runs each task's committed verify commands, removes clean merged worktrees, and appends to STATE.md. Any mismatch rolls back and exits non-zero.
+- **Verification result, then the merge decision.** Go reports the verifier's PASS, GAPS or ABSTAIN with its evidence, then asks: **Merge locally**, **Open PR**, **Keep branch** or **Discard**.
+
+Go reaches the first executor in about five main-session turns (preflight, branch, plan, build-args, build), against about 14 + 2N before the revival.
 
 ```sh
 /muster:go Resolve all open issues and update the README
 ```
 
-It triggers the interview only on an actual information gap. In unattended (Routine) mode it records the gap to the run report instead of blocking, and stops at a reviewable artifact (a pull request) rather than auto-merging.
+Several items run through the same steps: one plan per item, then one `Workflow({name:"muster:backlog"})` call that builds the items sequentially, then `merge-wave` per item in backlog order and one merge decision for the branch.
 
-## Plan-backlog
+Unattended (a Claude Code Routine, `claude -p`, or a cloud scheduled task) Go asks no questions, records gaps as assumptions in CONTEXT.md, and stops at a reviewable artifact (a pull request, or a kept branch without a remote) rather than merging into the base. That covers single-item scheduled runs: point the schedule at `/muster:go` with one outcome or one backlog item.
 
-The declared-scope batch planner: the approve-first counterpart to Go-backlog, reached either directly or through Plan's confirmed-backlog delegation. It routes every item in a backlog up front against one shared detect/capabilities context (a vague item is flagged, never interviewed mid-batch), and renders ONE batch plan: per-item crew summaries, the run order (`muster sprint-waves` stays authoritative, so an annotated backlog previews its wave structure), and advisory cross-item conflict flags wherever two concurrent items' `owns` fences overlap on a path boundary (an item with no fences is listed as unfenced rather than guessed at).
-
-```sh
-/muster:plan-backlog .muster/backlog.md
-/muster:plan-backlog issues:sprint-1
-```
-
-Given a raw intent instead of an existing backlog ref, Plan-backlog first decomposes it into candidate backlog items via the interview skill's decomposition machinery, and gates the write with a capture-style human approval before rendering the batch plan over the freshly written backlog.
-
-```sh
-/muster:plan-backlog Split the payments cleanup into independent backlog items
-```
-
-Nothing executes before the approval gate. **Approve & clear** chains into `/muster:go-backlog` in-session, which owns the batch from there -- per-item lifecycle, escalations, ticking, and the single batch report at the end. **Adjust the plan** re-routes the named items and re-renders the plan; **Cancel** exits with nothing executed.
+After a compaction or an interruption, `muster next --run <runId>` derives the run's position from the files on disk, and `/muster:go --run <runId>` resumes from it. An interrupted build resumes with `Workflow({name:"muster:build", resumeFromRunId})`.
 
 ## Diagnose
 
@@ -99,14 +88,14 @@ Failure-first. Reproduce, find the root cause via systematic debugging on the be
 
 ## Audit
 
-The review-and-fix counterpart to diagnose. Where diagnose is one bug, audit sweeps the whole codebase. It fans out six read-only dimension reviews in parallel (architecture, tech-debt, coverage, simplification, readability, security), each on the best provider for its role, consolidates the findings into one ranked ledger, then fixes everything with TDD and verifies through the review gate before presenting the merge.
+The review-and-fix counterpart to diagnose. Where diagnose is one bug, audit sweeps the whole codebase. It fans out six read-only dimension reviews in parallel (architecture, tech-debt, coverage, simplification, readability, security), each on the best provider for its role, consolidates the findings into one ranked ledger, then fixes everything with TDD through `muster:build` and `merge-wave`, verifying with the reviewer and verifier verdicts before presenting the merge.
 
 ```sh
 /muster:audit
 /muster:audit src/payments
 ```
 
-A first token of `backlog` (`/muster:audit backlog [path]`) switches to a **backlog mode**: the same read-only dimension sweep and consolidated ledger, but no branch and no commits -- instead of fixing, the ranked ledger is written to `.muster/backlog.md`, one assess-passable item per finding-cluster (duplicates skipped), for `/muster:go-backlog` to clear later. Default mode is unchanged; a directory actually named `backlog` needs the `./backlog` form to stay in default mode.
+A first token of `backlog` (`/muster:audit backlog [path]`) switches to a **backlog mode**: the same read-only dimension sweep and consolidated ledger, but no branch and no commits -- instead of fixing, the ranked ledger is written to `.muster/backlog.md`, one assess-passable item per finding-cluster (duplicates skipped), for `/muster:go .muster/backlog.md` to clear later. Default mode is unchanged; a directory actually named `backlog` needs the `./backlog` form to stay in default mode.
 
 ```sh
 /muster:audit backlog
@@ -135,36 +124,6 @@ Impeccable CLI: `craft`, `init`, `document`, `extract`, `live`, `adapt`,
 `quieter`, `shape`, and `typeset`. Read-only audits add `audit-design-ux` only
 when the audited scope has actual UX/design evidence; missing `DESIGN.md` is a
 finding during the sweep, while remediation must satisfy the write gate.
-
-## Go-backlog
-
-The batch counterpart to Go, reached either directly or through Go's confirmed-backlog delegation. It resolves a backlog -- `.muster/backlog.md`'s unchecked `- [ ]` items, each optionally carrying dependency and disposition annotations, or `issues:<label>` resolved via `gh issue list`. A plain backlog runs sequentially; an annotated file runs the dependency-wave schedule described below. The backlog is usually generated rather than hand-written: an accepted interview decomposition writes one item per part, and `/muster:audit backlog` writes one item per finding -- both match go-backlog's parser format exactly.
-
-Per item, the declared disposition executes directly, without the merge-decision prompt: `ask` or an absent annotation coerces to `pr`, and in unattended mode `merge-local`/`merge-push` downgrade to `pr`. An escalated item never aborts the batch -- it stays unchecked with an `{escalated}` annotation and go-backlog moves on to the next item. A per-item outcome that `muster assess` would normally send to interview never triggers one inside a batch, even in an attended session -- it proceeds with Go's Unattended (Routine) best-effort defaults, and the gap is recorded in STATE and the batch report instead; interviews belong at backlog-authoring time, not mid-batch. Go-backlog stops exactly once, attended, at the end: a batch report headlined "cleared N, escalated M."
-
-An item can also carry `{id: token}` and `{deps: a,b}` annotations (or `{deps: none}`) instead of a plain description -- an item without `{deps}` implicitly depends on every item above it in the file, so `{deps: none}` is how an item declares independence; `muster sprint-waves` computes the dependency-ordered waves. Any annotated item switches the batch to **wave mode**: waves replace the flat sequential queue, and every ready item enters the isolated build/review schedule regardless of disposition. The emitted schedule uses the lowest of `MUSTER_SPRINT_PARALLEL` (default 5), the hard ceiling 10, and Codex's effective child capacity, `max(agents.max_concurrent_threads_per_session - 1, 1)`, which reserves one session slot for the root orchestrator; there is no fixed three-runner ceiling.
-
-After every worker wake, the orchestrator drains all available completion receipts through `sprint-reconcile`, dispatches every newly eligible implementation/review action, updates its in-flight set, and reconciles again before waiting. Only the complete wave-wide build/review barrier opens the sequential, backlog-ordered disposition/integration lane. The next wave forks from the post-barrier state. A dependent of an unmerged predecessor forks that predecessor's branch tip and stacks its PR on top (`--base <predecessor-branch>`), merging bottom-up; an escalated predecessor escalates its dependents too, never forking a partial tip. Wave mode only triggers off a file backlog -- `issues:<label>` backlogs have no annotation grammar and always run the sequential queue -- and a harness that cannot dispatch parallel subagents executes the same build/review schedule sequentially while preserving barrier and integration order.
-
-After each item's disposition executes, go-backlog re-resolves the backlog file instead of working from a fixed snapshot: newly added unchecked items join the running batch, and a just-completed item (now checked) immediately satisfies any `{deps}` reference to it, so a dependent added mid-batch isn't blocked on a stale reference. Escalated or already-claimed items are never re-admitted. When a backlog or `issues:<label>` may be worked by more than one runner at once, go-backlog loads the **coordination** skill: CLAIM an item before touching it, leave a RECEIPT (DONE/BLOCKED/FAILED) on every state change, scan BLOCKED items for an answer before claiming new work, and keep one LEDGER heartbeat per runner -- safe alongside other go-backlog clears, `/muster:runner` instances, and humans on the same backlog.
-
-```sh
-/muster:go-backlog
-/muster:go-backlog issues:bug
-```
-
-## Runner
-
-The unattended, single-cycle counterpart to Go-backlog's batch clear -- meant to be fired repeatedly by a Claude Code Routine or cron, not looped internally. Each invocation: resolve the source, resume an answered BLOCKED or HUMAN-HOLD item ahead of claiming anything new (resume rules depend on the binding -- see the coordination skill), or claim exactly ONE available item; drive it through the full Go lifecycle with the merge disposition force-coerced to `pr` (a scheduled runner never touches the base branch unattended); leave a receipt; stop. The schedule provides the loop, not the verb.
-
-```sh
-/muster:runner
-/muster:runner issues:agent:todo
-```
-
-**Scheduling.** A Claude Code Routine on a timer, or cron invoking the CLI (`claude -p "/muster:runner issues:agent:todo"`), is the verified-safe standing cadence; match the backlog's arrival rate rather than firing faster, and use the runner's own idle receipts as the widen signal. Claude Code's native `/loop` binding is documented here too, with its limit: as of v2.1.196 a scheduled or `/loop` fire does not execute a `disable-model-invocation: true` command -- it reaches Claude as plain text instead -- and `/muster:runner` carries that flag by decision, so `/loop /muster:runner <source>` re-runs nothing after the first fire. For a native self-continuing loop, `/goal` re-runs on a *condition* rather than a time interval and is unaffected by that restriction. The safety inventory (pr-only, the 2-failure retry cap, the claim lock) applies to every firing mechanism unchanged.
-
-Runner shares the same **coordination** skill as Go-backlog, so it composes safely with a running batch clear, other scheduled runners, and humans working the same backlog or `issues:<label>` -- the claim lock (Binding A's comment-race window, Binding B's claim-then-verify) is what makes concurrent firing safe. On escalation, Runner posts a `FAILED` receipt and marks the item escalated so the next cycle's claim step skips it; a 2-failure retry cap bounds reclaim loops before an item redirects to blocked rather than being retried forever.
 
 ## Capture
 

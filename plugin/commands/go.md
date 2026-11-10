@@ -53,7 +53,8 @@ Never re-plan an approved run.
    (skip absent files) and `git commit -m "chore(muster): plan <runId>"` (skip when nothing
    changed, e.g. a resumed run). merge-wave trusts only
    this committed file. Report its `humanNeeded` checkpoints at the merge stop.
-5. **Build.** `Workflow({name:"muster:build", args:<the exact contents of build-args.json>})`.
+5. **Build.** `Workflow({name:"muster:build", args:<the exact contents of build-args.json>})`;
+   `muster:team` instead (same args, result) when a task has `tdd` or a wave has 2+ tasks.
    Interrupted? Same session: `{name:"muster:build", resumeFromRunId:"<workflow run id>"}`;
    a new session: `/muster:go --run <runId>` (executors are idempotent).
 6. **Merge the waves (1 call).** Write the Workflow's returned JSON to

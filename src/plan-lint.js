@@ -63,9 +63,16 @@ export const HIGH_SKILL_SCORE = 4;
 
 // ─── Text helpers ─────────────────────────────────────────────────────────────
 
-/** `&amp;` -> `&` (gsd #4730/#3611): planners escape `&&` as `&amp;&amp;` inside XML-ish tags. */
+/**
+ * XML entities -> characters (gsd #4730/#3611): planners escape `&&` as `&amp;&amp;` inside
+ * XML-ish tags, and `>`/`<` redirects as `&gt;`/`&lt;` (live e2e 2026-11-10: a verify command
+ * reached build-args.json as `printf ... &gt; "$D/e.csv"`, which no shell runs as a redirect).
+ * `&amp;` goes last so `&amp;gt;` decodes once, to the literal text `&gt;`.
+ */
 export function decodeEntityAmps(s) {
-  return String(s).replace(/&amp;/g, "&");
+  return String(s)
+    .replace(/&gt;/g, ">").replace(/&lt;/g, "<").replace(/&quot;/g, '"').replace(/&apos;|&#39;/g, "'")
+    .replace(/&amp;/g, "&");
 }
 
 /**

@@ -34,7 +34,7 @@ must_haves: [greet works]
   <name>farewell</name>
   <files>farewell.js</files>
   <action>implement</action>
-  <verify><automated>node --test farewell.test.js</automated></verify>
+  <verify><automated>node --test farewell.test.js &gt; out.txt 2&gt;&amp;1 &amp;&amp; grep -q &quot;ok&quot; out.txt &lt; /dev/null; echo &amp;gt;</automated></verify>
   <done>x</done>
 </task>
 <task id="03" type="checkpoint:human-verify" wave="3"><name>look at it</name><what-built>x</what-built><how-to-verify>y</how-to-verify><resume-signal>ok</resume-signal></task>
@@ -55,6 +55,8 @@ test("buildArgsFromPlan: waves in order, decoded verify commands, agentHint kept
     agentType: "muster:backend-development-test-automator",
   });
   assert.deepEqual(humanNeeded, [{ taskId: "03", type: "checkpoint:human-verify", title: "look at it" }]);
+  // Redirects arrive XML-escaped too (live e2e 2026-11-10); &amp; decodes last, exactly once.
+  assert.deepEqual(args.waves[1][0].verify, ['node --test farewell.test.js > out.txt 2>&1 && grep -q "ok" out.txt < /dev/null; echo &gt;']);
 });
 
 test("buildArgsFromPlan: skills become absolute SKILL.md paths; unknown skills and non-dispatchable hints never reach build", () => {

@@ -256,7 +256,7 @@ both numbers on every test run from the live prose tree, so this table cannot si
 stale:
 
 ```
-AskUserQuestion    files=8  mentions=20
+AskUserQuestion    files=9  mentions=21
 dispatch (Agent/Task tool)  files=2  mentions=8
 hook (PreToolUse/SessionStart/UserPromptSubmit)  files=2  mentions=3
 worktree   files=10 mentions=66

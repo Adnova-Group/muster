@@ -81,7 +81,11 @@ re-runs `testsRun` before merging, through `muster merge-wave`.
   capabilities, memory and validate. Prints a small JSON summary: scope, fast-path eligibility, tier
   map, top candidate agents, gsd/plugin detections. Full detail goes to a file.
 - `muster merge-wave <runId> --result <build-result.json>`:
-  1. verify every claimed commit exists on its branch;
+  1. verify every claimed commit exists on its branch, and that no task branch modifies the
+     run's committed inputs (`CONTEXT.md`, `PLAN.md`, `build-args.json`) relative to the plan
+     commit. Plan rules exclude `.muster/` from the builders' diff and change-set gates, so this
+     is the check that keeps a builder from rewriting its own plan. `SUMMARY-*.md` is exempt;
+     `merge-wave` writes it;
   2. merge the branches in manifest order (`--no-ff`);
   3. re-run each task's `verify` / `testsRun`;
   4. remove the worktrees and branches;

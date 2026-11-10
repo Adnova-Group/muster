@@ -6,7 +6,12 @@
 //   args, committed at HEAD as .muster/runs/<id>/build-args.json (the exact args the main
 //   thread passed to muster:build). Agent-reported testsRun is compared, never executed.
 // - Before anything merges, every claimed commit must exist, sit at the tip of its branch,
-//   and be the sha the reviewer passed.
+//   and be the sha the reviewer passed. The workflow scripts cannot run git, so this is the
+//   only place a claimed commit is proven to exist.
+// - No task branch may change the run's committed inputs (CONTEXT.md, PLAN.md,
+//   build-args.json). Plan rules keep .muster/ out of the builders' diff and change-set gates,
+//   so without this a builder could rewrite its own plan unnoticed. SUMMARY files are not
+//   inputs: merge-wave writes them, and a branch may bring its own.
 // - A worktree is removed only when it is under <root>/.claude/worktrees/, has the merged
 //   task branch checked out, and is clean; branches are deleted with `branch -d` only.
 // Any mismatch rolls HEAD back and the CLI exits non-zero.
@@ -60,8 +65,19 @@ function plannedTasks(root, runId) {
   return { tasks };
 }
 
+export const RUN_INPUTS = ["CONTEXT.md", "PLAN.md", "build-args.json"];
+
+// What merging `commit` would change in the run inputs: the diff from its merge base with
+// HEAD (which carries the plan commit) to the commit. Fails closed when git cannot answer.
+function runInputEdits(root, runId, commit) {
+  const paths = RUN_INPUTS.map((f) => `.muster/runs/${runId}/${f}`);
+  const d = git(root, ["diff", "--name-only", "--no-renames", `HEAD...${commit}`, "--", ...paths]);
+  if (!d.ok) return [`(git diff failed: ${tail(d.err, 200)})`];
+  return d.out.split("\n").filter(Boolean).sort();
+}
+
 // Pre-merge evidence checks. Returns a list of problems; empty means safe to merge.
-function checkTask(root, plan, task) {
+function checkTask(root, runId, plan, task) {
   const id = plan.taskId;
   const p = [];
   if (!task) return [`${id}: planned task is missing from the build result`];
@@ -78,6 +94,10 @@ function checkTask(root, plan, task) {
     p.push(`${id}: commit ${short(commit.out)} is not on branch ${task.branch}`);
   } else if (tip.out !== commit.out) {
     p.push(`${id}: branch ${task.branch} has commits after ${short(commit.out)} that were not reviewed (tip ${short(tip.out)})`);
+  }
+  const edited = runInputEdits(root, runId, commit.out);
+  if (edited.length) {
+    p.push(`${id}: branch ${task.branch} modifies the run's committed inputs (${edited.join(", ")}) relative to the plan commit; builders must not edit a run's CONTEXT.md, PLAN.md or build-args.json, so re-plan instead of merging`);
   }
   const reviewed = task.review?.commitReviewed
     ? git(root, ["rev-parse", "--verify", "--quiet", `${task.review.commitReviewed}^{commit}`])
@@ -208,7 +228,7 @@ export async function mergeWave({ cwd, runId, result, resultFile, now = () => ne
   for (const id of byId.keys()) if (!plannedIds.has(id)) report.problems.push(`${id}: not a task in the approved build args`);
   if (!planned.tasks.length) report.problems.push("the approved build args have no tasks");
   for (const plan of planned.tasks) {
-    report.problems.push(...checkTask(root, plan, byId.get(plan.taskId)));
+    report.problems.push(...checkTask(root, runId, plan, byId.get(plan.taskId)));
     if (byId.get(plan.taskId)) report.notes.push(...testsRunNotes(plan, byId.get(plan.taskId)));
   }
   if (report.problems.length) return finish(false);

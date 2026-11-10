@@ -14,7 +14,7 @@ import { resolveCapabilities } from "./capabilities.js";
 import { readMemory } from "./memory.js";
 import { matchProviders, matchSkills } from "./match.js";
 import { claudeProfileForConfig } from "./claude.js";
-import { PLUGIN_ROOT, musterCli, specialistCatalog } from "./specialists.js";
+import { PLUGIN_ROOT, musterCli, specialistCatalog, skillFitsStack } from "./specialists.js";
 import { classifyDomain } from "./domain.js";
 import { loadPipelines, pickPipeline, routePipeline } from "./pipeline.js";
 import { writeContainedFile } from "./fs-safe.js";
@@ -151,7 +151,11 @@ export async function runPreflight({ outcome, cwd, home, catalogDir, runId, mode
     .slice(0, 5).map((m) => m.id);
   const builtinSkills = [...specialists.skills].map(([id, s]) => ({ id, source: "builtin", description: s.description }));
   // score >= 3 = an id-token hit or three description hits; one shared word ("write") is noise.
-  const skillCandidates = matchSkills(outcome, builtinSkills, { limit: 6 }).filter((m) => m.score >= 3).map((m) => ({ id: m.id, score: m.score }));
+  // Language-specific skills are offered only when they fit the project's detected stack (or the
+  // outcome names their language), so a JavaScript task is never handed a Python-only skill.
+  const skillCandidates = matchSkills(outcome, builtinSkills, { limit: 12 })
+    .filter((m) => m.score >= 3 && skillFitsStack(m.id, project.languages || [], outcome))
+    .slice(0, 6).map((m) => ({ id: m.id, score: m.score }));
   // Project pins (.muster/config) lead the candidates; build-args binds them to matching tasks.
   let pins = [];
   try { pins = readPins(cwd).filter((p) => specialists.skills.has(p.id) || existsSync(join(cwd, ".claude", "skills", p.id, "SKILL.md"))); } catch { pins = []; }

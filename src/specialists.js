@@ -96,3 +96,32 @@ export function agentTypeFor(hint, catalog = specialistCatalog()) {
 export function skillPath(id, catalog = specialistCatalog()) {
   return catalog.skills.get(id)?.path ?? null;
 }
+
+// Language-specific builtins, tagged by id. A skill with no tag is general and always fits.
+// The JavaScript family covers TypeScript, Node, React, Next.js, Vue, Svelte, Tailwind and GSAP's React skill.
+const LANGUAGE_PATTERNS = [
+  ["python", /(^|-)python(-|$)|(^|-)django(-|$)|(^|-)fastapi(-|$)/],
+  ["go", /^go-|(^|-)golang(-|$)/],
+  ["javascript", /(^|-)(javascript|typescript|nodejs|node|react|nextjs|vue|svelte|tailwind|angular)(-|$)/],
+  ["rust", /(^|-)rust(-|$)/],
+  ["java", /(^|-)(java|kotlin|spring)(-|$)/],
+  ["swift", /(^|-)(swift|swiftui|ios)(-|$)/],
+];
+const LANGUAGE_FAMILY = { typescript: "javascript", tsx: "javascript", jsx: "javascript", node: "javascript", kotlin: "java" };
+
+export function skillLanguage(id) {
+  for (const [language, pattern] of LANGUAGE_PATTERNS) if (pattern.test(String(id))) return language;
+  return null;
+}
+
+// A language-specific skill fits when the project's detected languages include its language, or the
+// outcome names that language. With no detected languages (unknown stack) every skill fits.
+export function skillFitsStack(id, languages = [], outcome = "") {
+  const language = skillLanguage(id);
+  if (!language || !languages.length) return true;
+  const detected = new Set(languages.map((l) => LANGUAGE_FAMILY[String(l).toLowerCase()] || String(l).toLowerCase()));
+  if (detected.has(language)) return true;
+  const named = language === "javascript" ? /\b(javascript|typescript|node(\.js)?|react|next\.js|vue|svelte|tailwind)\b/i
+    : language === "go" ? /\b(go|golang)\b/i : new RegExp(`\\b${language}\\b`, "i");
+  return named.test(String(outcome));
+}

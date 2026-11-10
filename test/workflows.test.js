@@ -156,6 +156,16 @@ test("build: at most worktreeConcurrency builders start at once (the .git/config
   }
 });
 
+test("build: a worktree that starts behind the run fast-forwards to the base, never resets (F1: remote-default worktrees)", async () => {
+  const { calls } = await run("build.js", { runId: "r1", base: "base123", waves: [[task("A", { agentType: "muster:debugging-toolkit-debugger" }), task("B")]] }, happy);
+  for (const b of calls.filter((c) => c.opts.label.startsWith("build "))) {
+    assert.match(b.prompt, /git merge-base --is-ancestor base123 HEAD/);
+    assert.match(b.prompt, /git merge-base --is-ancestor HEAD base123 succeeds[\s\S]*git merge --ff-only base123, then re-check/);
+    assert.match(b.prompt, /return status "blocked" with "base mismatch: HEAD <sha>, base base123"/);
+    assert.match(b.prompt, /Never reset or rebase/);
+  }
+});
+
 test("build: unset models are omitted so agents inherit the session model", async () => {
   const { calls } = await run("build.js", { runId: "r1", waves: [[task("A")]] }, happy);
   for (const c of calls) {

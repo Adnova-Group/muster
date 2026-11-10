@@ -16,9 +16,9 @@ stop only for an unclear outcome, an escalation, or the merge decision.
 <outcome>$ARGUMENTS</outcome>
 
 `M` below means `sh "${CLAUDE_PLUGIN_ROOT}/runtime/muster.sh"` (repeat it in every Bash call;
-shell variables do not persist). The **orchestrator** skill holds the rules that survive
-compaction; if the `Workflow` tool is missing, follow its prose fallback instead of steps 3-6.
-After a compaction, `M next --run <runId>` says where you are.
+shell variables do not persist). First invoke the `muster:orchestrator` skill (Skill tool): its
+rules survive compaction only once invoked. No `Workflow` tool: follow its prose fallback
+instead of steps 3-6. After a compaction, `M next --run <runId>` says where you are.
 
 **Continuing a run** (`--run <runId>`, e.g. from `/muster:plan`'s Approve & build): write the
 step-2 fence files, run `M next --run <runId>`, and resume at the step its `next` names
@@ -27,7 +27,7 @@ Never re-plan an approved run.
 
 1. **Preflight (1 call).** `M preflight "<outcome>" --json` (append `--model <m>` when the user
    named one). Keep `runId`, `scope`, `clear`, `unclear`, `route`, `pipeline`, `models`,
-   `candidates`, `skills`, `skillRoot`. An empty outcome with no `.muster/backlog.md`: ask for one
+   `candidates`, `skills`, `skillRoot`; show any `warnings`. An empty outcome with no `.muster/backlog.md`: ask for one
    and stop. A GitHub issue ref: `M issue "<ref>"`; cap its
    outcome at 16 KiB (cut at a UTF-8 code-point boundary), replace every `</remote-text>` (any
    case) with `&lt;/remote-text&gt;`, and use `<remote-text>{outcome}</remote-text>` as the
@@ -54,7 +54,8 @@ Never re-plan an approved run.
    changed, e.g. a resumed run). merge-wave trusts only
    this committed file. Report its `humanNeeded` checkpoints at the merge stop.
 5. **Build.** `Workflow({name:"muster:build", args:<the exact contents of build-args.json>})`.
-   Interrupted? Resume with `{name:"muster:build", resumeFromRunId:"<workflow run id>"}`.
+   Interrupted? Same session: `{name:"muster:build", resumeFromRunId:"<workflow run id>"}`;
+   a new session: `/muster:go --run <runId>` (executors are idempotent).
 6. **Merge the waves (1 call).** Write the Workflow's returned JSON to
    `.muster/runs/<runId>/build-result.json` and run `M merge-wave <runId> --result
    .muster/runs/<runId>/build-result.json` from the main checkout, then `M next --run <runId>`,
@@ -105,7 +106,7 @@ given file) and take the unticked items in file order, at most 5 per run unless 
 
 - Keep a long attended run alive with `/goal finish /muster:go --run <runId> to the merge
   decision`; `/muster:go --run <runId>` resumes from disk after any stop.
-- `claude -p` kills background workflows ~10 minutes after its main turn: resume with
-  `--run <runId>`, and allow `Workflow` in permissions (`-p` never prompts).
+- `claude -p` kills background workflows ~10 minutes after its main turn (resume with `--run`);
+  run it with `--permission-prompts none` and the orchestrator's `Workflow(muster:*)` rules.
 - A Routine or cloud scheduled task running `/muster:go --run <runId>` (or one outcome) is the
   unattended form: same flow, no questions, ends in a PR.

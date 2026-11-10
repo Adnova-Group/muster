@@ -1469,6 +1469,7 @@ function renderPreflight(s) {
     `candidates ${s.candidates.join(", ") || "-"}; skills ${(s.skills || []).join(", ") || "-"}`,
     `route ${s.route}${s.pipeline ? ` (pipeline ${s.pipeline}, domain ${s.domain})` : ""}`,
     `gsd ${yn(s.detected.gsd)}, plugins ${s.detected.plugins.join(", ") || "-"}, memory ${s.memory.join(", ") || "-"}`,
+    ...(s.warnings || []).map((w) => `warning: ${w}`),
     `detail ${s.detail}`,
   ].join("\n") + "\n";
 }

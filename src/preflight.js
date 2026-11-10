@@ -1,7 +1,7 @@
 // `muster preflight <outcome>`: one call replacing scope, assess, fast-path, detect,
 // capabilities and memory (docs/strategy/stage-2-contracts.md). It prints a compact
 // summary (target < 2 KB) and writes the full detail to .muster/runs/<runId>/preflight.json.
-import { lstat } from "node:fs/promises";
+import { lstat, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { detectScope } from "./scope.js";
 import { assessOutcome } from "./interview.js";
@@ -81,6 +81,33 @@ export async function detectPlugins(installed, home) {
 
 const PIPELINES_DIR = new URL("../pipelines/", import.meta.url);
 
+// Env vars that silently replace the per-seat model/effort a Workflow agent() call sets
+// (docs/research/2026-11-claude-code-findings.md F8).
+export const SEAT_OVERRIDE_ENV = Object.freeze(["CLAUDE_CODE_EFFORT_LEVEL", "CLAUDE_CODE_SUBAGENT_MODEL_FORCE", "CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL", "CLAUDE_CODE_SUBAGENT_EFFORT"]);
+
+async function readJsonOrNull(path) {
+  try { return JSON.parse(await readFile(path, "utf8")); } catch { return null; }
+}
+
+// Claude Code's worktree.baseRef, local > project > user settings. "fresh" (the default) branches
+// isolated agent worktrees from the remote's default branch, not the local work branch; a live
+// probe (2026-11-10, 2.1.322) showed Workflow isolation:'worktree' agents follow it.
+export async function worktreeBaseRef(cwd, home) {
+  for (const p of [join(cwd, ".claude", "settings.local.json"), join(cwd, ".claude", "settings.json"), join(home, ".claude", "settings.json")]) {
+    const v = (await readJsonOrNull(p))?.worktree?.baseRef;
+    if (typeof v === "string") return v;
+  }
+  return "fresh";
+}
+
+export function preflightWarnings({ env = process.env, baseRef, hasRemote }) {
+  const warnings = [];
+  const set = SEAT_OVERRIDE_ENV.filter((k) => env[k]);
+  if (set.length) warnings.push(`seat models/effort overridden by env: ${set.map((k) => `${k}=${env[k]}`).join(", ")}`);
+  if (hasRemote && baseRef !== "head") warnings.push('worktree.baseRef is not "head": executor worktrees start from the remote default branch and fast-forward to the run base, or block when the remote is ahead; set {"worktree":{"baseRef":"head"}} in .claude/settings.local.json');
+  return warnings;
+}
+
 const words = (s) => new Set(String(s).toLowerCase().match(/[a-z0-9][a-z0-9-]{2,}/g) || []);
 
 function rankMemory(entries, outcome) {
@@ -91,7 +118,7 @@ function rankMemory(entries, outcome) {
     .sort((a, b) => b.score - a.score || a.slug.localeCompare(b.slug));
 }
 
-export async function runPreflight({ outcome, cwd, home, catalogDir, runId, model = null, now = new Date() }) {
+export async function runPreflight({ outcome, cwd, home, catalogDir, runId, model = null, now = new Date(), env = process.env }) {
   if (typeof outcome !== "string" || !outcome.trim()) throw new Error("preflight <outcome>: missing outcome");
   const id = assertRunId(runId || slugRunId(outcome, now));
   const [scope, project, catalog, installed] = await Promise.all([
@@ -120,13 +147,15 @@ export async function runPreflight({ outcome, cwd, home, catalogDir, runId, mode
   const skills = skillCandidates.map((m) => m.id);
   const routing = routeOutcome(outcome, await loadPipelines(PIPELINES_DIR), project);
   const memory = rankMemory(await readMemory(join(cwd, ".muster", "memory"), ""), outcome);
+  const baseRef = await worktreeBaseRef(cwd, home);
+  const warnings = preflightWarnings({ env, baseRef, hasRemote: !!project.vcs?.hasRemote });
   const detected = await detectPlugins(installed, home);
 
   const dir = await ensureRunDir(cwd, id);
   const detailPath = join(dir, "preflight.json");
   const detail = {
     runId: id, outcome, createdAt: now.toISOString(), scope, assess, fastPath, project, models,
-    candidates, skills, skillCandidates, ...routing, matches, memory, detected,
+    candidates, skills, skillCandidates, ...routing, worktreeBaseRef: baseRef, warnings, matches, memory, detected,
     roles: capabilities.roles,
     installedSkills: capabilities.skills.map((s) => s.id),
   };
@@ -147,6 +176,7 @@ export async function runPreflight({ outcome, cwd, home, catalogDir, runId, mode
     candidates,
     skills,
     skillRoot: join(PLUGIN_ROOT, "builtins"),
+    ...(warnings.length ? { warnings } : {}),
     memory: memory.slice(0, 3).map((m) => m.slug),
     detected: { gsd: detected.gsd.installed, plugins: Object.keys(detected.plugins).filter((k) => detected.plugins[k]) },
     detail: join(".muster", "runs", id, "preflight.json"),

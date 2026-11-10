@@ -180,7 +180,9 @@ function execBrief(cfg, t, prior) {
     `Verify commands: ${list(t.verify).join(' ; ') || '(see PLAN.md)'}`,
     'You are in a fresh, isolated git worktree. This brief may be replayed after a crash, so:',
     `1. Check git state first: git status --short; git log --oneline ${cfg.base || 'HEAD~20'}..HEAD. If a commit whose message contains ${tag} already exists and the tree is clean, do not redo the work: re-run the verify commands and report that commit.`,
-    cfg.base ? `2. Run git merge-base --is-ancestor ${cfg.base} HEAD. If it fails, stop and return status "blocked".` : '2. (no base commit given; skip the base check)',
+    cfg.base
+      ? `2. Base check: git merge-base --is-ancestor ${cfg.base} HEAD. If that fails but git merge-base --is-ancestor HEAD ${cfg.base} succeeds, your worktree started behind the run (Claude Code branches isolated worktrees from the remote default branch unless worktree.baseRef is "head"): git merge --ff-only ${cfg.base}, then re-check. If the base is still not an ancestor of HEAD, stop and return status "blocked" with "base mismatch: HEAD <sha>, base ${cfg.base}". Never reset or rebase.`
+      : '2. (no base commit given; skip the base check)',
     prior.length
       ? `3. Integrate the earlier waves first. For each commit C of ${prior.map((p) => p.commit).join(' ')}: git merge-base --is-ancestor C HEAD || git merge --no-ff --no-edit C`
       : '3. (first wave: nothing to integrate)',

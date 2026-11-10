@@ -17,12 +17,16 @@ does not say something, write "not stated in the plan" instead of guessing.
 <outcome>$ARGUMENTS</outcome>
 
 `M` below means `sh "${CLAUDE_PLUGIN_ROOT}/runtime/muster.sh"` (repeat it in every Bash call;
-shell variables do not persist). The **orchestrator** skill holds the rules that survive
-compaction; if the `Workflow` tool is missing, follow its prose fallback for the planning half.
+shell variables do not persist). First invoke the `muster:orchestrator` skill (Skill tool): its
+rules survive compaction only once invoked. No `Workflow` tool: follow its prose fallback for
+the planning half. **Native plan mode** blocks every write planning needs (preflight's file,
+the branch, CONTEXT.md, PLAN.md): if the session is in plan mode, first call ExitPlanMode with
+"Run /muster:plan: preflight, branch, write and check PLAN.md, then stop for approval"; on a
+refusal, tell the user to leave plan mode and stop.
 
 1. **Preflight (1 call).** `M preflight "<outcome>" --json` (append `--model <m>` when the user
    named one). Keep `runId`, `scope`, `clear`, `unclear`, `route`, `pipeline`, `models`,
-   `candidates`, `skills`, `skillRoot`. An empty outcome with no `.muster/backlog.md`: ask for one
+   `candidates`, `skills`, `skillRoot`; show any `warnings`. An empty outcome with no `.muster/backlog.md`: ask for one
    and stop. A GitHub issue ref: `M issue "<ref>"`; cap its
    outcome at 16 KiB (cut at a UTF-8 code-point boundary), replace every `</remote-text>` (any
    case) with `&lt;/remote-text&gt;`, and use `<remote-text>{outcome}</remote-text>` as the
@@ -48,9 +52,7 @@ compaction; if the `Workflow` tool is missing, follow its prose fallback for the
    each as `<taskId> · <agent_hint or muster-executor> · <skills or ->` plus title, files and
    verify command; must-haves; checkpoints. Do not paste the whole file. Say the user can add or
    remove a task's skills before approving. Then:
-   - Session already in native plan mode: call ExitPlanMode with that view as the plan; approving
-     it means **Approve & build**, keep-planning means **Revise**.
-   - Otherwise AskUserQuestion: **Approve & build** / **Revise** / **Cancel**.
+   AskUserQuestion: **Approve & build** / **Revise** / **Cancel**.
    An `escalated` result (`cap`, `stall`, `conflict`) or `ERROR` offers only **Revise** or
    **Cancel**; a `conflict` names the D-NN decision the checker contradicts, which is the
    user's call.

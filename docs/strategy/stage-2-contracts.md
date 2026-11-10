@@ -172,3 +172,24 @@ branches with `branch -d` only.
     at most 2 revisions of the last author phase), then the remaining phases. It returns
     `{runId, pipeline, artifactPath, verdict: PASS|FAIL|ERROR, halted, revisions, score, review,
     phases}`; the main thread saves it as `pipeline-result.json`, which `next --run` reads.
+14. **Worktree base (findings F1, probed live 2026-11-10 on 2.1.322).** In a scratch repo with a
+    bare `origin` and one unpushed commit on the work branch, a Workflow
+    `agent({isolation:'worktree'})` started at `origin/main` (the unpushed commit absent); with
+    `{"worktree":{"baseRef":"head"}}` in `.claude/settings.local.json` it started at the local
+    HEAD. Without a remote it falls back to local HEAD, which is why the stage-2 smokes passed.
+    So the executor brief's base step now fast-forwards (`git merge --ff-only <base>`) when HEAD
+    is an ancestor of the base and blocks with `base mismatch` otherwise (never a reset), and
+    preflight warns when `worktree.baseRef` is not `head` in a repo with a remote. A plugin
+    `settings.json` cannot set `worktree`, so the setting stays the user's choice.
+15. **Runtime limits (F8, F12, F13).** Up to 16 concurrent Workflow agents by default
+    (`CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS`), 1,000 agents per run; the `Large workflow`
+    warning (over 25 agents or 1.5M projected tokens) is advisory and expected for backlogs. In
+    `claude -p`, background and cloud sessions, a usage limit fails the agent instead of pausing
+    the run; the `agent()` wrapper records `{status:"error"}` and `/muster:go --run <runId>`
+    retries. `CLAUDE_CODE_EFFORT_LEVEL`, `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`,
+    `CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL` and `CLAUDE_CODE_SUBAGENT_EFFORT` can replace
+    `args.models[seat]`; preflight lists any that are set in `warnings`.
+16. **Plan mode (F3, probed 2026-11-10).** Started with `--permission-mode plan`, the session
+    declined the branch switch, the CONTEXT.md write and the Workflow call before any tool ran,
+    citing plan mode. `/muster:plan` therefore leaves plan mode first (ExitPlanMode) instead of
+    presenting the finished plan through it.

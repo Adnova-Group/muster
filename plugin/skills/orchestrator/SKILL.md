@@ -10,8 +10,8 @@ upstream: []
 <!-- prompt-lint-disable ANTH-POS-001: run-safety rules; the prohibitions are load-bearing -->
 
 You are the main thread of a muster run (`/muster:plan`, `/muster:go`, `/muster:audit`,
-`/muster:diagnose`). The Workflow scripts (`muster:plan`, `muster:build`, `muster:backlog`) do
-the fan-out, review loops and verification; you gate between them. These rules hold for the
+`/muster:diagnose`). The Workflow scripts (`muster:plan`, `muster:build`, `muster:backlog`,
+`muster:pipeline`) do the fan-out, review loops and verification; you gate between them. These rules hold for the
 whole run, including after compaction.
 
 ## Must-hold rules
@@ -68,14 +68,26 @@ whole run, including after compaction.
 
 ## Claude Code facts (2.1.319+)
 
-- **No task board on current models.** TaskCreate/TaskUpdate/TodoWrite exist only on older
-  models (Claude 3.x, Opus 4.0-4.7, Sonnet 4.0-4.6, Haiku 4.5); Opus/Sonnet 5.x and Fable have
-  none. Progress is the run directory plus `muster next --run`. Never assume TaskCreate exists.
+- **Task boards are optional mirrors.** TaskCreate/TodoWrite exist by default only on older
+  models (Claude 3.x, Opus 4.0-4.7, Sonnet 4.0-4.6, Haiku 4.5), and in background and cloud
+  sessions on any model. Desktop draws its plan box from `mcp__ccd_turn__update_plan`. When
+  either is present, mirror the run's stages or PLAN.md tasks into it so the user sees
+  progress; never depend on it. The record is the run directory plus `muster next --run`.
 - **TaskOutput is removed.** A background agent's result is read from its output file.
-- **Workflow consent is per run** in manual and accept-edits modes. Recommend the named allow
-  rules `Workflow(muster:plan)`, `Workflow(muster:build)`, `Workflow(muster:backlog)`; the
-  un-namespaced form is denied and project rules are ignored in an untrusted workspace. Resume
-  with `{name, resumeFromRunId}`, never `scriptPath`.
+- **Workflow consent:** manual and accept-edits modes ask on every run until the user picks
+  "Yes, and don't ask again" (CLI) or "Always" (Desktop), once per project per workflow;
+  suggest that on the first prompt. `claude -p` never prompts: it needs the named allow rules
+  `Workflow(muster:plan)`, `Workflow(muster:build)`, `Workflow(muster:backlog)`,
+  `Workflow(muster:pipeline)`; the un-namespaced form is denied and project rules are ignored in
+  an untrusted workspace. `{name, resumeFromRunId}` resumes only in the same session (or after
+  `claude --resume`), never via `scriptPath`; otherwise `/muster:go --run <runId>`.
+- **Unattended runs never wait on a prompt:** `claude -p --permission-prompts none`, or
+  `permissions.denyInsteadOfPrompting` in a scheduled environment's settings; a denied call is
+  a tool error and escalates. Workflows there do not pause at usage limits: agents fail, the
+  run escalates, and `/muster:go --run <runId>` retries.
+- **Isolated worktrees start from the remote default branch** unless `worktree.baseRef` is
+  `"head"` (probed live 2026-11-10); executor briefs fast-forward to the run base or block.
+  preflight warns when the setting is missing in a repo with a remote.
 - Workflow agents have no Agent tool (one nesting level) and cannot ask the user, so every human
   stop sits between workflow calls. In `claude -p` a workflow runs as a background task: the
   session emits a first result early, continues on the completion notification, and kills a
@@ -92,15 +104,17 @@ artifacts and the merge path are identical. If the Agent tool is also absent, sa
 surface cannot run muster's lifecycle and stop; never do the run's work inline.
 
 **Plan.** Agent `muster:muster-planner` with: runId, outcome, CONTEXT.md path, candidate
-specialists, the plan path `.muster/runs/<runId>/PLAN.md`, "keep an existing plan that covers
+specialists and skills (with `skillRoot`), the plan path `.muster/runs/<runId>/PLAN.md`, "keep an existing plan that covers
 the outcome". Then Agent `muster:muster-plan-checker` (read-only; it runs `muster plan-lint`).
 Loop: only blocker and warning issues bind; revise in place with exactly those issues, at most
 3 revisions; stop and escalate when the binding-issue count does not fall, or when the planner's
 summary starts with `REVISION_CONFLICT`.
 
 **Build.** After build-args.json is committed, for each wave in order:
-1. In ONE message, one Agent call per task: `subagent_type: "muster:muster-executor"`,
-   `isolation: "worktree"`, `model`/`effort` from `models.executor`.
+1. In ONE message, one Agent call per task: `subagent_type` = the task's `agentType` from
+   build-args (else `"muster:muster-executor"`), `isolation: "worktree"`, `model`/`effort` from
+   `models.executor`. A specialist's brief also carries build.js's executor contract, and every
+   brief lists the task's `skills` paths to Read first, returning `skillsApplied`.
    <!-- muster-brief-template:start -->Brief: run and task id,
    "PLAN.md is the source of truth", the task's files and verify commands, the agentHint as a
    domain lens, "check git state first; if a commit tagged `[<runId>/<taskId>]` exists and the
@@ -108,6 +122,9 @@ summary starts with `REVISION_CONFLICT`.
    "commit with `[<runId>/<taskId>]` in the message".<!-- muster-brief-template:end -->
    <!-- muster-return-template:start -->Return the ExecResult JSON: taskId, status, branch,
    commit, worktree, filesChanged, testsRun, testsPassed, selfCheck, deviations.<!-- muster-return-template:end -->
+   Subagents run in the background (always in Desktop and VS Code, by default in the
+   terminal): their results arrive as completion notifications in later turns. Wait for every
+   executor of the wave before reviewing; never review or merge a partial wave.
 2. For each `done` task with selfCheck PASSED: Agent `muster:muster-reviewer` (read-only) on
    that commit only (`git log -p --no-merges <commit> --not <base> <earlier commits>`), returning
    ReviewResult JSON with `commitReviewed`. On FAIL, a fixer (`muster:muster-executor`, no
@@ -121,3 +138,7 @@ Write `{runId, base, tasks:[ExecResult + {title, wave, verify, review}], verific
 `build-result.json` and continue with `muster merge-wave` exactly as the command says.
 
 **Backlog.** Run the build loop once per item, sequentially, then merge-wave per item in order.
+
+**Content.** Run `pipeline-args.json`'s phases in order, one Agent per phase with its skills'
+paths in the brief, then the review and score phases as the gate (floor and pass total from
+the args, at most 2 revisions of the last author phase), then the rest.

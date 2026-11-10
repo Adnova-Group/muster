@@ -122,6 +122,26 @@
     upstream:
       - Leonxlnx/taste-skill-classics
   description: "Opt-in classic, use only when named: write a Google Stitch export file with strict type, colour and layout rules; a project's canonical DESIGN.md wins."
+- id: addy-frontend-ui-engineering
+  kind: builtin
+  roles:
+    - frontend
+  rank: 42
+  provenance:
+    license: MIT
+    upstream:
+      - addyosmani/agent-skills
+  description: "Frontend engineering discipline: production-quality components, state, responsive layout and WCAG-ready markup without the generic AI look."
+- id: addy-browser-testing-with-devtools
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - addyosmani/agent-skills
+  description: "Verify UI in a real browser through the Chrome DevTools MCP: DOM, console errors, network requests, performance traces and screenshots."
 - id: wsh-stride-analysis-patterns
   kind: builtin
   roles:

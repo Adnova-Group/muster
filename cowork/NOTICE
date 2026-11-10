@@ -16,6 +16,8 @@ Per-item detail (upstream path, ref, relation) is in each item's `upstream:` fie
   Copyright 2026 Anthropic, PBC
 - Leonxlnx/taste-skill-classics @ 5e08c9383dc4ad7fc0df70e1ac8cfa09ec356305 (MIT)
   Copyright (c) 2026 Leonxlnx
+- addyosmani/agent-skills @ 301b02b12bff98e4688e6984af6556802322bbde (MIT)
+  Copyright (c) 2025 Addy Osmani
 - open-gsd/gsd-core @ 9385f4618b52ef68ed8a5e8bdd93cfb25bd87765, 1c352d1ea37b010e99b8353905eb5def4f784100 (MIT)
   Copyright (c) 2026 Open GSD
 - blader/humanizer @ 1b48564898e999219882660237fde01bf4843a0f (MIT)

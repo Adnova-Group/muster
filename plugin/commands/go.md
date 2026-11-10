@@ -27,7 +27,7 @@ Never re-plan an approved run.
 
 1. **Preflight (1 call).** `M preflight "<outcome>" --json` (append `--model <m>` when the user
    named one). Keep `runId`, `scope`, `clear`, `unclear`, `route`, `pipeline`, `models`,
-   `candidates`, `skills`, `pins`, `skillRoot`; show any `warnings` and `registrySuggestions`. An empty outcome with no `.muster/backlog.md`: ask for one
+   `candidates`, `skills`, `pins`, `skillRoot`; show `warnings`; `registrySuggestions` are offers, added only if asked. An empty outcome with no `.muster/backlog.md`: ask for one
    and stop. A GitHub issue ref: `M issue "<ref>"`; cap its
    outcome at 16 KiB (cut at a UTF-8 code-point boundary), replace every `</remote-text>` (any
    case) with `&lt;/remote-text&gt;`, and use `<remote-text>{outcome}</remote-text>` as the
@@ -44,15 +44,14 @@ Never re-plan an approved run.
    `.muster/forbidden-actions`. Both are gitignored; the action fence reads them.
 3. **Plan.** `Workflow({name:"muster:plan", args:{runId, outcome, contextPath, candidates, skills, pins, skillRoot, models}})`
    (`contextPath` only when CONTEXT.md exists). On `verdict: PASS` print one line per task,
-   `<taskId> · <agent_hint or muster-executor> · <skills or ->`, and continue. On `ISSUES` with
+   `<taskId> · <agent_hint or muster-executor> · <skills or ->`; continue. On `ISSUES` with
    `escalated` set (`cap`, `stall`, `conflict`) or `ERROR`: show the issues and stop for the user;
-   this is an escalation, not something to fix inline.
+   an escalation, never fixed inline.
 4. **Build args (1 call).** `M build-args <runId>` writes `.muster/runs/<runId>/build-args.json`
    from PLAN.md, then commit the plan inputs in the same call:
    `git add -f .muster/runs/<runId>/CONTEXT.md .muster/runs/<runId>/PLAN.md .muster/runs/<runId>/build-args.json`
-   (skip absent files) and `git commit -m "chore(muster): plan <runId>"` (skip when nothing
-   changed, e.g. a resumed run). merge-wave trusts only
-   this committed file. Report its `humanNeeded` checkpoints at the merge stop.
+   (skip absent files) and `git commit -m "chore(muster): plan <runId>"` (skip if unchanged).
+   merge-wave trusts only this committed file. Report its `humanNeeded` checkpoints at the merge stop.
 5. **Build.** `Workflow({name:"muster:build", args:<the exact contents of build-args.json>})`;
    `muster:team` instead (same args, result) when a task has `tdd` or a wave has 2+ tasks.
    Interrupted? Same session: `{name:"muster:build", resumeFromRunId:"<workflow run id>"}`;

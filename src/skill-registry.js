@@ -124,11 +124,12 @@ export function matchRegistry(query, skills, { limit = 8, minScore = 1 } = {}) {
 export async function suggestFromCachedRegistry(outcome, { cacheDir, limit = 3, minScore = 3 } = {}) {
   const cached = await readCachedRegistry(cacheDir);
   if (!cached) return [];
-  return matchRegistry(outcome, cached.skills, { limit, minScore }).map((m) => ({
-    ref: m.ref,
-    description: m.description.length > 140 ? `${m.description.slice(0, 137)}...` : m.description,
-    note: `not installed, use \`/muster:skills add ${m.ref}\``,
-  }));
+  // Refs only: registry descriptions are third-party free text and reach the model through
+  // preflight's summary, so they stay out (prompt-injection surface). `muster skills show`
+  // and `search` let the user read them on request. Refs are validated to the owner/name shape.
+  return matchRegistry(outcome, cached.skills, { limit, minScore })
+    .filter((m) => /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(String(m.ref)))
+    .map((m) => ({ ref: m.ref, note: `not installed; offer \`/muster:skills add ${m.ref}\` only if the user asks` }));
 }
 
 export function findRegistryEntry(skills, ref) {

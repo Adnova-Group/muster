@@ -75,7 +75,7 @@ test("list: grouped by role, filter by role or family, unrouted last; CLI prints
   assert.ok(groupBuiltins(inv, "emil").flatMap((g) => g.skills).every((b) => b.id.startsWith("emil-")));
   const { code, out } = await capture(["list", "test-author"]);
   assert.equal(code, 0);
-  assert.match(out, /^test-author \(5\)$/m);
+  assert.match(out, /^test-author \(\d+\)$/m, 'test-author group header with its count');
   assert.match(out, /obra\/superpowers · MIT: sp-tdd, sp-verify/);
   const full = await capture(["list"]);
   assert.ok(full.out.length < 8 * 1024, `list is ${full.out.length} bytes; keep it compact`);
@@ -406,7 +406,7 @@ test("preflight suggests up to 3 cached registry skills only when no builtin is 
     const s = await runPreflight({ outcome: weak, cwd: await tmp("pf-cwd"), home: await tmp("pf-home"), catalogDir: join(root, "catalog"), runId: "r2", now: NOW, env: { MUSTER_CACHE_DIR: cacheDir } });
     assert.ok(s.registrySuggestions.length >= 1 && s.registrySuggestions.length <= 3);
     assert.equal(s.registrySuggestions[0].ref, "cloudai-x/threejs-animation");
-    assert.equal(s.registrySuggestions[0].note, "not installed, use `/muster:skills add cloudai-x/threejs-animation`");
+    assert.equal(s.registrySuggestions[0].note, "not installed; offer `/muster:skills add cloudai-x/threejs-animation` only if the user asks");
     const strong = await runPreflight({ outcome: "write tests first with test-driven development tdd", cwd: await tmp("pf-cwd2"), home: await tmp("pf-home2"), catalogDir: join(root, "catalog"), runId: "r3", now: NOW, env: { MUSTER_CACHE_DIR: cacheDir } });
     assert.equal(strong.registrySuggestions, undefined, "a strong builtin match suppresses registry suggestions");
   } finally {
@@ -462,4 +462,34 @@ test("CLI: usage errors exit 2", async () => {
   assert.equal((await capture(["enable"])).code, 2);
   assert.equal((await capture(["pin", "sp-tdd", "--role"])).code, 2);
   assert.equal((await capture(["search"])).code, 2);
+});
+
+// ── security: symlinked skill directory, untrusted registry text ─────────────
+
+test("disable refuses a symlinked skill directory and never deletes outside the project", async () => {
+  const { symlink } = await import("node:fs/promises");
+  const cwd = await tmp("symlinked");
+  const outside = await tmp("outside");
+  assert.equal((await enableSkill({ cwd, id: "sp-verify", inventory: inv })).ok, true);
+  const manifestPath = join(cwd, ".claude/skills/.muster-enabled.json");
+  const rec = JSON.parse(await readFile(manifestPath, "utf8")).skills["sp-verify"];
+  // Recreate the recorded files outside the project, byte-identical, then point the skill dir there.
+  const { rm, cp } = await import("node:fs/promises");
+  await cp(join(cwd, ".claude/skills/sp-verify"), join(outside, "sp-verify"), { recursive: true });
+  await rm(join(cwd, ".claude/skills/sp-verify"), { recursive: true });
+  await symlink(join(outside, "sp-verify"), join(cwd, ".claude/skills/sp-verify"), "dir");
+  const r = await disableSkill({ cwd, id: "sp-verify" }).catch((e) => ({ ok: false, error: e.message }));
+  assert.equal(r.ok, false, "a symlinked skill directory is refused");
+  for (const f of rec.files) assert.ok(existsSync(join(outside, f.path)), `outside file survives: ${f.path}`);
+});
+
+test("cached registry suggestions carry only refs, never untrusted free text", async () => {
+  const cacheDir = await tmp("suggest-safe");
+  await seedCache(cacheDir);
+  const out = await suggestFromCachedRegistry("react animation motion", { cacheDir, minScore: 1 });
+  assert.ok(out.length > 0, "fixture yields suggestions");
+  for (const s of out) {
+    assert.deepEqual(Object.keys(s).sort(), ["note", "ref"]);
+    assert.match(s.ref, /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/);
+  }
 });

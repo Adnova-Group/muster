@@ -23,7 +23,7 @@ import { matchFrontmatter } from "./frontmatter.js";
 import { matchSkills } from "./match.js";
 import { ROLES } from "./roles.js";
 import { PLUGIN_ROOT, specialistCatalog } from "./specialists.js";
-import { createContainedFile, ensureContainedDirectory, sha256, writeContainedFile } from "./fs-safe.js";
+import { createContainedFile, ensureContainedDirectory, sha256, writeContainedFile, assertContainedNoSymlinkPath } from "./fs-safe.js";
 import { parsePlan } from "./plan-lint.js";
 import {
   CONFIG_REL, ENABLED_MANIFEST_REL, SKILL_ID_RE, readEnabledManifest, readPins, readProjectConfig,
@@ -359,6 +359,8 @@ export async function addSkill({ cwd, ref, fetchImpl = globalThis.fetch, cacheDi
 }
 
 async function removeEmptyDirs(dir, stopAt) {
+  // Never descend into or remove through a symlink: lstat the directory itself first.
+  try { if ((await lstat(dir)).isSymbolicLink()) return; } catch { return; }
   let entries;
   try { entries = await readdir(dir, { withFileTypes: true }); } catch { return; }
   for (const e of entries) if (e.isDirectory()) await removeEmptyDirs(join(dir, e.name), stopAt);
@@ -374,12 +376,21 @@ export async function disableSkill({ cwd, id }) {
   if (!rec) return { ok: false, id, problems: [`${id} was not installed by muster skills enable/add; nothing removed`] };
   const root = skillsRoot(cwd);
   await ensureContainedDirectory(cwd, root);
+  // The skill directory and every path under it must be real (no symlinks) and contained in
+  // the project, so a redirected directory can never make disable delete files elsewhere.
+  try {
+    if (await pathExists(join(root, id))) await assertContainedNoSymlinkPath(cwd, join(root, id));
+  } catch (e) {
+    return { ok: false, id, problems: [`refusing to disable ${id}: ${e.message}`] };
+  }
   const removed = [];
   const kept = [];
   for (const f of rec.files || []) {
     const rel = String(f.path || "");
     if (!insideSkill(rel, id)) { kept.push({ path: rel, reason: "outside the skill directory" }); continue; }
     const abs = join(root, ...rel.split("/"));
+    try { await assertContainedNoSymlinkPath(cwd, abs, { allowMissingFinal: true }); }
+    catch { kept.push({ path: rel, reason: "path is not a contained regular file" }); continue; }
     let info;
     try { info = await lstat(abs); } catch (e) { if (e.code === "ENOENT") continue; throw e; }
     if (!info.isFile() || info.isSymbolicLink()) { kept.push({ path: rel, reason: "no longer a regular file" }); continue; }

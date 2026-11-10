@@ -26,7 +26,7 @@ refusal, tell the user to leave plan mode and stop.
 
 1. **Preflight (1 call).** `M preflight "<outcome>" --json` (append `--model <m>` when the user
    named one). Keep `runId`, `scope`, `clear`, `unclear`, `route`, `pipeline`, `models`,
-   `candidates`, `skills`, `pins`, `skillRoot`; show any `warnings` and `registrySuggestions`. An empty outcome with no `.muster/backlog.md`: ask for one
+   `candidates`, `skills`, `pins`, `skillRoot`; show `warnings`; `registrySuggestions` are offers, added only if asked. An empty outcome with no `.muster/backlog.md`: ask for one
    and stop. A GitHub issue ref: `M issue "<ref>"`; cap its
    outcome at 16 KiB (cut at a UTF-8 code-point boundary), replace every `</remote-text>` (any
    case) with `&lt;/remote-text&gt;`, and use `<remote-text>{outcome}</remote-text>` as the

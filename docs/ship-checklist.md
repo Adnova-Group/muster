@@ -67,6 +67,14 @@ with the release receipt.
    release commit.
 11. **Install/doctor smoke**: `muster install <harness> --dry-run` plus `muster doctor` is clean
    on at least the Claude Code harness.
+11a. **Plugin eval suite (manual gate)**: `npm run eval:plugin` exits 0 on the release commit,
+   with the Claude Code version you ship against. It loads `plugin/` in real `claude -p`
+   sessions through `claude plugin eval` and checks that `/muster:plan` runs the command, the
+   CLI prefix, `/muster:skills list`, `/muster:pm check`, content routing, the action fence and
+   zero idle hook output (`eval/plugin/README.md`). It needs your credentials and costs about
+   $0.15, so CI does not run it. Run it again after every Claude Code update, before the next
+   release. Record the Claude Code version, the summary line and the cost with the release
+   receipt.
 
 Context-health checks (Claude-5 context-engineering adoption, 2026-07-29):
 

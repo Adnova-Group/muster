@@ -48,79 +48,68 @@ sources:
   - id: superpowers
     kind: github
     repo: obra/superpowers
-    # pinned SHA — resolve a new one deliberately when updating, and review the regenerated diff before committing
-    # (was kind:local, tracking whatever superpowers plugin version was already
-    # installed; pinned here for reproducible vendoring, matching wshobson's shape).
-    # ref = obra/superpowers Superpowers 6 release (2026-06-16), commit 8e1262a
-    # "writing-plans: task right-sizing, Global Constraints header, per-task
-    # Interfaces blocks" — rolled into sp-plan/SKILL.md (muster-local frontmatter
-    # + intro paragraphs preserved):
-    #   1. Task Right-Sizing guidance (tasks sized to one reviewable slice).
-    #   2. Global Constraints header (plan-level constraints stated once,
-    #      inherited by every task).
-    #   3. Per-task Interfaces blocks (each task declares interfaces it
-    #      exposes/consumes).
+    # Merge-tracked since 2026-11-10 (src/vendor-sync.js, same model as gsd): plain `muster vendor`
+    # never regenerates these items. `muster vendor update superpowers --to <tag> [--dry-run]`
+    # 3-way merges every item against the byte-exact base copies in vendor/upstream/superpowers/
+    # and moves this pin, the base copies and every baseBlob only when nothing conflicts;
+    # `muster provenance --write` then restamps each SKILL.md's `upstream:` block.
+    # Items: one builtin per skill (SKILL.md) plus one file item per supporting file the skill
+    # loads from its own directory (scripts, references, prompt templates).
     #
-    # Re-pinned 2026-07-06: 8e1262a -> 284be590 (v6.0.0 tag commit), so the pin
-    # covers all three sp-subagents mechanisms rolled into sp-subagents/SKILL.md
-    # below (muster-local frontmatter + intro paragraphs preserved):
-    #   1. Pre-flight plan-conflict review (b61b550) — batch conflicts into one
-    #      question before Task 1 dispatch instead of interrupting mid-plan.
-    #   2. Tiered implementer dispatch (cfe48c28ac) — cheapest tier when the
-    #      plan already carries complete code; mid-tier floor for prose-only
-    #      task text.
-    #   3. Reviewer risk-budget (de4672b171) — constraints as the reviewer's
-    #      attention lens; named risks get one focused check, not an open
-    #      sweep.
-    # 284be590 pulls in 11 commits past 8e1262a, not just these three; the 9
-    # skills/ paths below still resolve at 284be590 (verified). Spot-diffed
-    # upstream against the vendored copies (2026-07-06): writing-plans is
-    # byte-identical. subagent-driven-development's remaining upstream-only
-    # text is resolved as of 2026-07-06 (zero undecided divergence):
-    #   - Final-review model-choice note (e97faafb5) — adapted: folded into
-    #     the existing "review tasks -> most capable model" bullet as an
-    #     explicit-dispatch clarification for the final code reviewer, a
-    #     step muster's process already has.
-    #   - Red Flags plan-mandated-finding clause (530476fd0) — adapted: added
-    #     to the Never list; mirrors muster's Pre-Flight Plan Review
-    #     escalation ("ask which governs"), just triggered mid-task instead
-    #     of pre-flight.
-    #   - Narration-cadence line (e97faafb5) — accepted-divergent: cites "the
-    #     ledger" (upstream's progress.md/Durable-Progress file), a structure
-    #     muster's single-file SKILL.md deliberately doesn't carry; narration
-    #     cadence here is already governed globally by
-    #     plugin/output-styles/muster.md.
-    ref: 284be5905ed540d34ce5bcde24728b9b7f413ea0
+    # Re-pinned 2026-11-10: 284be59 (v6.0.0) -> 22f0b46 (v7.0.2). The vendored bodies actually
+    # forked from the locally installed plugin on 2026-06-07 (pre-v6.0.0; brainstorm's supporting
+    # files from v6.1.1 d884ae0 via the Codex assets), so each item was merged with base = that
+    # fork point, ours = muster, theirs = v7.0.2: every upstream change since the fork was taken,
+    # including the v6.0.0 harness-neutral rewrites muster had never picked up (sp-parallel's
+    # dispatch example, sp-review's template links, sp-review-recv's instruction-file wording).
+    # sp-brainstorm adopts the v7.0.0-7.0.2 rebuild whole (new description, builder check).
+    # Upstream now carries the four fixes muster had hand-ported (#2380, #2361, #2489, #2657),
+    # so their "hand-ported" notes are gone.
+    #
+    # Kept muster divergence (deliberate; re-check on every update):
+    #   - every SKILL.md: muster frontmatter (muster_builtin, license, generated upstream:) and
+    #     the role + output-format lines after the H1 (prompt-lint ANTH-ROLE-001/ANTH-FMT-001).
+    #   - sp-debug, sp-parallel, sp-review, sp-tdd: positive rephrasings of upstream's
+    #     prohibitions (prompt-lint ANTH-POS-001 negative budget, 064fb78f); sp-debug keeps its
+    #     ANTH-POS-001 disable comment for the epistemic-honesty rules.
+    #   - supporting Markdown files: the packaging-only prompt-lint-disable header the Codex
+    #     asset sync also adds (scripts/sync-codex-skill-assets.mjs REFERENCE_DIRECTIVE).
+    #   - sp-brainstorm/scripts (server.cjs, helper.js, start-server.sh) and visual-companion.md:
+    #     muster's local security hardening (pinned content reads, opaque-origin sandbox, view
+    #     capability, owner-only session files, loopback-only + SSH tunnel for remote use instead
+    #     of --host 0.0.0.0, the native-Windows Git Bash note); test/brainstorm-server-security.test.js
+    #     pins it. Upstream's own changes to these files merge around it.
+    # Accepted as upstream (not adapted): `superpowers:<skill>` cross-references
+    # (writing-plans, test-driven-development, verification-before-completion) name the
+    # upstream plugin's skills, matching the Codex lane's "prefer the enabled superpowers
+    # plugin" strategy (codex/upstreams.json).
+    ref: 22f0b463e7a5e579904dd6211a520321035526f7
+    tag: v7.0.2
     license: MIT
     copyright: "Copyright (c) 2025 Jesse Vincent"
     relation: vendored
     items:
-      - from: skills/brainstorming/SKILL.md
-        id: sp-brainstorm
-        relation: adapted
-        roles: [brainstorm]
-      - from: skills/test-driven-development/SKILL.md
-        id: sp-tdd
-        roles: [test-author]
-      - from: skills/requesting-code-review/SKILL.md
-        id: sp-review
-        relation: adapted
-        roles: [code-review]
-      - from: skills/receiving-code-review/SKILL.md
-        id: sp-review-recv
-        roles: [code-review]
-        rank: 48
-      - from: skills/systematic-debugging/SKILL.md
-        id: sp-debug
-        relation: adapted
-        roles: [debug]
-      - from: skills/verification-before-completion/SKILL.md
-        id: sp-verify
-        roles: [test-author]
-      - from: skills/dispatching-parallel-agents/SKILL.md
-        id: sp-parallel
-        relation: adapted
-        roles: [plan]
+      - { id: sp-brainstorm, kind: builtin, from: skills/brainstorming/SKILL.md, to: plugin/builtins/sp-brainstorm/SKILL.md, mode: adapted, relation: adapted, baseBlob: 9eb0edc7fedf26e1d3e2f3f223e5bcc5058aed6a, roles: [brainstorm] }
+      - { from: skills/brainstorming/visual-companion.md, to: plugin/builtins/sp-brainstorm/visual-companion.md, mode: adapted, baseBlob: 8dca065bd9adb9d4fa82a66acbb4176ea23259c6 }
+      - { from: skills/brainstorming/builder-check-prompt.md, to: plugin/builtins/sp-brainstorm/builder-check-prompt.md, mode: adapted, baseBlob: 136e9c1d516ee1852abc5e556e76ce1b085d3827 }
+      - { from: skills/brainstorming/scripts/server.cjs, to: plugin/builtins/sp-brainstorm/scripts/server.cjs, mode: adapted, baseBlob: fdc796122583f5d6687d9582eb265c2fa0cb7781 }
+      - { from: skills/brainstorming/scripts/helper.js, to: plugin/builtins/sp-brainstorm/scripts/helper.js, mode: adapted, baseBlob: e11d26489ce248f37af3e4dd01ddec6a4e88287f }
+      - { from: skills/brainstorming/scripts/start-server.sh, to: plugin/builtins/sp-brainstorm/scripts/start-server.sh, mode: adapted, baseBlob: f6d538a47b14aed925a856e34411ba8258ec54c9 }
+      - { from: skills/brainstorming/scripts/stop-server.sh, to: plugin/builtins/sp-brainstorm/scripts/stop-server.sh, mode: adapted, baseBlob: 7cacfe9440043f7a46eac555cd835fad0769c425 }
+      - { from: skills/brainstorming/scripts/frame-template.html, to: plugin/builtins/sp-brainstorm/scripts/frame-template.html, mode: adapted, baseBlob: f540bb8a4f88107e2b37b2871a4c1a55a3b6f720 }
+      - { id: sp-tdd, kind: builtin, from: skills/test-driven-development/SKILL.md, to: plugin/builtins/sp-tdd/SKILL.md, mode: adapted, baseBlob: 46838cc9e893c06259e3bdad0fc2425b36242f15, roles: [test-author] }
+      - { from: skills/test-driven-development/writing-good-tests.md, to: plugin/builtins/sp-tdd/writing-good-tests.md, mode: adapted, baseBlob: d3c4482fd30b4f9084bb61545fe73939a7502c28 }
+      - { id: sp-review, kind: builtin, from: skills/requesting-code-review/SKILL.md, to: plugin/builtins/sp-review/SKILL.md, mode: adapted, relation: adapted, baseBlob: 68d338a58ecdd8b77bfbb519b781ef223dbbb842, roles: [code-review] }
+      - { from: skills/requesting-code-review/code-reviewer.md, to: plugin/builtins/sp-review/code-reviewer.md, mode: adapted, baseBlob: 6d358b5d7d450c83cacbe450b7dbd4e673b694ad }
+      - { id: sp-review-recv, kind: builtin, from: skills/receiving-code-review/SKILL.md, to: plugin/builtins/sp-review-recv/SKILL.md, mode: adapted, baseBlob: 950da7b74bf6dbed6b8726d12ddadd65a9f5fda7, roles: [code-review], rank: 48 }
+      - { id: sp-debug, kind: builtin, from: skills/systematic-debugging/SKILL.md, to: plugin/builtins/sp-debug/SKILL.md, mode: adapted, relation: adapted, baseBlob: 62fc752aaef59a8bbed5d305f4cadc60f8ae07ed, roles: [debug] }
+      - { from: skills/systematic-debugging/root-cause-tracing.md, to: plugin/builtins/sp-debug/root-cause-tracing.md, mode: adapted, baseBlob: 0e72e8f9566b7ef85e814633d1feacad9d0c5868 }
+      - { from: skills/systematic-debugging/defense-in-depth.md, to: plugin/builtins/sp-debug/defense-in-depth.md, mode: adapted, baseBlob: e2483354dc2b62478a2624e34ca18bc0efe887b2 }
+      - { from: skills/systematic-debugging/condition-based-waiting.md, to: plugin/builtins/sp-debug/condition-based-waiting.md, mode: adapted, baseBlob: 70994f777c586f7d4c43033aac34c7cf0da6688b }
+      - { from: skills/systematic-debugging/condition-based-waiting-example.ts, to: plugin/builtins/sp-debug/condition-based-waiting-example.ts, mode: adapted, baseBlob: 703a06b653160d060bbf46ab5c6e0cd7446bd592 }
+      - { from: skills/systematic-debugging/find-polluter.sh, to: plugin/builtins/sp-debug/find-polluter.sh, mode: adapted, baseBlob: 985f5d08ccf8a3f2d40739cfcaf4413bb24bf1cb }
+      - { id: sp-verify, kind: builtin, from: skills/verification-before-completion/SKILL.md, to: plugin/builtins/sp-verify/SKILL.md, mode: adapted, baseBlob: 7d45333cc4a49c57a80df6c1fe2fa777a207afbc, roles: [test-author] }
+      - { id: sp-parallel, kind: builtin, from: skills/dispatching-parallel-agents/SKILL.md, to: plugin/builtins/sp-parallel/SKILL.md, mode: adapted, relation: adapted, baseBlob: 3fa091b348bbe0a18eaa0e17e9092c97f7005cbe, roles: [plan] }
   - id: wshobson
     kind: github
     repo: wshobson/agents

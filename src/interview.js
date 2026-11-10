@@ -60,6 +60,23 @@ const MEASURABLE_WORD_NEARBY = new RegExp(`\\b${NUMBER_WORD}\\b|\\b(?:at least|a
 // "enumerated concrete behaviors" verb-counting heuristic, for the identical reason.
 const CRITERIA_FAIL_LOUD = /\bfail(?:s|ing)?[\s-]loud(?:ly)?\b/i;
 
+// An explicitly labeled acceptance clause ("Acceptance:", "Acceptance criteria:", "Done when:",
+// "Success criteria:", "Definition of done:") followed by a substantive statement is the author
+// stating the criteria outright (live e2e 2026-11-10: "... Acceptance: node:test tests cover both
+// features including an empty CSV, `npm test` passes, and the README documents both commands"
+// was flagged no-success-criteria). Unlike the open label:value pairs dropped above, the label set
+// is closed and names criteria by definition. The clause must carry at least three words and must
+// not be a placeholder, so "Acceptance: TBD" still flags.
+const CRITERIA_LABEL = /(?:^|[\s.;,(\-])(?:acceptance(?:\s+criteria)?|done\s+when|success\s+criteria|definition\s+of\s+done)\s*:\s*(.+)/i;
+const PLACEHOLDER = /^(?:tbd|tba|todo|n\/?a|none|\?+|-+|later|see below)\b/i;
+
+function hasLabeledCriteria(text) {
+  const m = CRITERIA_LABEL.exec(text);
+  if (!m) return false;
+  const clause = m[1].trim();
+  return !PLACEHOLDER.test(clause) && clause.split(/\s+/).filter((w) => /[a-z0-9]/i.test(w)).length >= 3;
+}
+
 // Bare imperative verbs that, on their own with no concrete object, signal a hand-wavy ask.
 const VAGUE_VERB = /^(make|do|build|fix|improve|help|handle|update|change)\b/i;
 
@@ -78,7 +95,7 @@ export function assessOutcome(text, { codex = false } = {}) {
   const hasQuantified = CRITERIA_QUANTIFIED.test(trimmed) || (codex && CRITERIA_QUANTIFIED_WORDS.test(trimmed));
   const hasKeyword = CRITERIA_KEYWORD.test(trimmed);
   const hasMeasurable = MEASURABLE_NEARBY.test(trimmed) || (codex && MEASURABLE_WORD_NEARBY.test(trimmed));
-  const hasProseCriteria = CRITERIA_FAIL_LOUD.test(trimmed);
+  const hasProseCriteria = CRITERIA_FAIL_LOUD.test(trimmed) || hasLabeledCriteria(trimmed);
   const noCriteria = !(hasQuantified || (hasKeyword && hasMeasurable) || hasProseCriteria);
 
   const signals = [];

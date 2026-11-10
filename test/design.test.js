@@ -24,7 +24,7 @@ import {
 const tmp = () => mkdtemp(join(tmpdir(), "muster-design-"));
 const DESIGN = "# Design System\n\n<!-- muster:design-schema 1 -->\n\n## Direction\nPrecise and calm.\n";
 
-test("the bundled design vocabulary exposes exactly 24 pinned Impeccable-inspired workflows", () => {
+test("the bundled design vocabulary exposes exactly 24 pinned Impeccable workflows", () => {
   assert.equal(DESIGN_WORKFLOWS.length, 24);
   assert.equal(new Set(DESIGN_WORKFLOWS.map((entry) => entry.id)).size, 24);
   assert.deepEqual(

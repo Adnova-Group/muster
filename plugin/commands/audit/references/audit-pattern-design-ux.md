@@ -1,6 +1,6 @@
 ---
 name: audit-pattern-design-ux
-description: Hunt-list pattern skill for muster's UX/design audit dimension -- points into the pinned Impeccable design-workflow vocabulary, the uupm priority table and pre-delivery checklist, and muster's design-gate machinery rather than duplicating them. Loaded by the audit orchestrator as a REQUIRED SKILLS binding on the frontend (design-ux) dimension task; read on demand, never dispatched standalone.
+description: Hunt-list pattern skill for muster's UX/design audit dimension -- leads with the vendored impeccable critique and audit skills, then points into the uupm priority table and pre-delivery checklist, the supporting UX skills and muster's design-gate machinery rather than duplicating them. Loaded by the audit orchestrator as a REQUIRED SKILLS binding on the frontend (design-ux) dimension task; read on demand, never dispatched standalone.
 upstream:
   - repo: pbakaus/impeccable
     ref: 035c8f319edd019936525a062fe99e83ca8d12c6
@@ -29,24 +29,26 @@ role-anchored frontend dispatch; a second "You are..." opener here would duplica
 
 # Audit pattern: UX/design
 
-**Version:** 2
+**Version:** 3
 
 Hunt-list for the **design-ux** audit dimension (`buildAuditManifest`, `src/audit.js`, role
 `frontend`, conditional on real UI/design evidence in the audited scope).
 
-**Single-source rule**: this pillar's pattern source is RICH (a full pinned vendored vocabulary)
--- this file POINTS INTO it rather than duplicating it. Do not copy workflow descriptions here;
-read the cited files directly, they are the canonical source.
+**Single-source rule**: this pillar's pattern source is RICH (impeccable's vendored skills plus a
+searchable data layer) -- this file POINTS INTO them rather than duplicating them. Do not copy
+their checklists here; read the cited files directly, they are the canonical source.
 
 ## Where to dig
 
-- Run `muster design workflows` (or read `src/design.js`'s `WORKFLOW_METADATA`) for the complete
-  list of 24 pinned Impeccable-inspired workflows (`vendor/impeccable.json`, upstream
+- impeccable is muster's main UX skill (vendored, merge-tracked, upstream
   `github.com/pbakaus/impeccable` @ `035c8f319edd019936525a062fe99e83ca8d12c6`, Apache-2.0). The
-  two READ-ONLY workflows this audit dimension actually maps to are `audit` ("Audit
-  accessibility, performance, theming, responsiveness, touch interaction, and anti-patterns") and
-  `critique` ("Evaluate hierarchy, information architecture, resonance, and cognitive load") -- read their full
-  descriptions in `src/design.js` before dispatching, don't paraphrase from memory.
+  two READ-ONLY workflows this audit dimension maps to are `audit` and `critique`; their
+  playbooks are `<plugin root>/builtins/impeccable-audit/SKILL.md` (technical quality:
+  accessibility, performance, theming, responsive, anti-patterns) and
+  `<plugin root>/builtins/impeccable-critique/SKILL.md` (UX review: hierarchy, information
+  architecture, heuristic scoring, personas, cognitive load), both run under
+  `<plugin root>/builtins/impeccable-core/SKILL.md`. Read them before dispatching; don't
+  paraphrase from memory. `muster design workflows` lists all 24 workflows.
 - Read `plugin/commands/design.md` end to end for the full workflow vocabulary, the `design gate`
   contract, and how a missing `DESIGN.md` is handled during a read-only audit (it is a FINDING,
   never a blocker -- see that file's own "Read-only audit is different" paragraph).
@@ -61,19 +63,21 @@ read the cited files directly, they are the canonical source.
 
 ## UX review sources and precedence
 
-The design-ux reviewer applies two primary checklists together, then the specialist depth below.
-`<plugin root>` is `${CLAUDE_PLUGIN_ROOT}`; every builtin is read by path (none is in the slash menu).
+The design-ux reviewer leads with impeccable, uses uupm as the data and checklist layer, then
+adds the specialist depth below. `<plugin root>` is `${CLAUDE_PLUGIN_ROOT}`; every builtin is read
+by path (none is in the slash menu).
 
-1. **impeccable's critique dimensions**: the `audit` and `critique` workflows above (hierarchy,
-   information architecture, resonance, cognitive load; accessibility, performance,
-   responsiveness, design quality).
-2. **uupm's priority table and pre-delivery checklist** (`uupm-ui-ux-pro-max`, muster's default
-   UX review skill): the "Rule Categories by Priority" table in
+1. **impeccable's critique dimensions** (the primary review, `impeccable-critique` and
+   `impeccable-audit` above): hierarchy, information architecture, resonance and cognitive load,
+   then accessibility, performance, theming, responsiveness and anti-patterns. Every finding
+   starts from one of these dimensions.
+2. **uupm's priority table and pre-delivery checklist** (`uupm-ui-ux-pro-max`, the data and
+   checklist layer under impeccable): the "Rule Categories by Priority" table in
    `<plugin root>/builtins/uupm-ui-ux-pro-max/SKILL.md` sets the ORDER of the sweep (priority 1
    first) and the default severity band; each category's full rules are in its
    `references/quick-reference.md`, and the canonical pre-delivery checklist is the
-   "Pre-Delivery Checklist" section of its `references/pro-rules.md`. Read those files; do not
-   restate them. Its `scripts/search.py "<one outcome>" --domain ux` confirms a specific guideline
+   "Pre-Delivery Checklist" section of its `references/pro-rules.md`. Use them to order a sweep
+   and to confirm nothing on the checklist was missed. Read those files; do not restate them. Its `scripts/search.py "<one outcome>" --domain ux` confirms a specific guideline
    when a finding needs a citation.
 
 **Deduplicate before reporting.** The two checklists overlap (accessibility, responsiveness,
@@ -99,10 +103,18 @@ A uupm or supporting-skill suggestion that contradicts `DESIGN.md` is not a find
   states; `intent-include` for screen-reader, cognitive and motor depth beyond WCAG.
 - `pfd`: a separately licensed (CC BY-SA 4.0) design method about how people first take in an
   interface; read that builtin itself when first-impression quality is in scope, and cite it by id.
-<!-- INTEGRATION SLOT (UX skills track): the sibling best-of-breed UX skills track (anthropic-*,
-taste-*, addy-*, emil-*, hallmark, gsap-*, elaya-*, jk-*) reports which of its builtin ids belong
-in this specialist list; add them here at integration, one bullet each, ranked below the two
-primary checklists and placed in the precedence above (they sit with the supporting skills). -->
+- `jk-interface-review`: a second-pass interface review; `jk-better-accessibility` for
+  component-level accessibility fixes; `jk-better-interface` and `jk-better-ui` for interface
+  detail and polish findings.
+- `emil-review-animations` for motion quality; `emil-animation-performance` and
+  `gsap-performance` when animation cost is in scope.
+- `emil-break-ui` and `jk-break` for stress-testing states and edge cases.
+- `addy-browser-testing-with-devtools` when a finding needs runtime evidence (console, network,
+  rendered layout) rather than a source read.
+
+The taste-* and other build-direction skills (`taste-*`, `hallmark`, `anthropic-frontend-design`,
+`elaya-*`) shape new work and are not audit sources. These best-of-breed ids are vendored by a
+sibling track; they sit with the supporting skills in the precedence above.
 
 ## Repo-specific conventions to enforce
 

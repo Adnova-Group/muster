@@ -117,7 +117,7 @@ accessibility, responsive, visual, or other human-facing implementation.
 npx -y @adnova-group/muster design status .
 ```
 
-Muster exposes 24 pinned Impeccable-inspired workflows without requiring the
+Muster exposes 24 pinned Impeccable workflows without requiring the
 Impeccable CLI: `craft`, `init`, `document`, `extract`, `live`, `generate`,
 `adapt`, `animate`, `audit`, `bolder`, `clarify`, `colorize`, `critique`, `delight`,
 `distill`, `harden`, `onboard`, `layout`, `optimize`, `overdrive`, `polish`,

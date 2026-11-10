@@ -150,10 +150,13 @@ const VERCEL_NEXT_SKILLS = [
   { id: "shadcn", reason: "Next.js projects commonly pair with shadcn/ui components" },
   { id: "ai-sdk", reason: "Next.js projects commonly integrate the Vercel AI SDK" },
 ];
-// uupm-ui-ux-pro-max leads: it is muster's default UX review skill (priority table +
-// pre-delivery checklist), the first reviewer skill bound for a UI surface.
+// impeccable leads: impeccable-critique is muster's default UX review skill and impeccable-audit
+// its technical UI audit, so the first reviewer skill bound for a UI surface is impeccable's.
+// uupm-ui-ux-pro-max follows as the data and checklist layer (priority table + pre-delivery checklist).
 const DESIGN_UX_SKILLS = [
-  { id: "uupm-ui-ux-pro-max", reason: "user-facing UI work gets muster's default UX review: the uupm priority table and pre-delivery checklist" },
+  { id: "impeccable-critique", reason: "user-facing UI work gets muster's default UX review: impeccable's critique (heuristics, hierarchy, cognitive load)" },
+  { id: "impeccable-audit", reason: "user-facing UI work gets impeccable's technical audit: accessibility, performance, theming, responsive" },
+  { id: "uupm-ui-ux-pro-max", reason: "user-facing UI work is checked against the uupm priority table and pre-delivery checklist" },
   { id: "frontend-design", reason: "user-facing UI work benefits from a dedicated frontend-design pass" },
   { id: "wsh-design-system-patterns", reason: "user-facing UI work benefits from design-system consistency" },
   { id: "wsh-responsive-design", reason: "user-facing UI work benefits from a responsive-design review" },

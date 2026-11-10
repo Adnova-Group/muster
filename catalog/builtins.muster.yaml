@@ -19,7 +19,7 @@
   kind: builtin
   roles: [humanize]
   rank: 50
-  provenance: { license: MIT, upstream: [blader/humanizer, rudra496/StealthHumanizer, conorbronsdon/avoid-ai-writing, jalaalrd/anti-ai-slop-writing, aaaronmiller/humanize-writing, linexjlin/GPTs] }
+  provenance: { license: MIT, upstream: [blader/humanizer, rudra496/StealthHumanizer, conorbronsdon/avoid-ai-writing, jalaalrd/anti-ai-slop-writing, aaaronmiller/humanize-writing, linexjlin/GPTs, hardikpandya/stop-slop, petergyang/no-ai-slop] }
 - id: muster-prompt-smith
   kind: builtin
   roles: [prompt-quality]
@@ -36,103 +36,184 @@
   rank: 50
   provenance: { license: Apache-2.0, upstream: [] }
 
+# ----- impeccable (vendor/manifest.yaml source impeccable, merge-tracked): the main UX skill.
+# Top family rank for each role it serves; uupm-* and the other UX skills rank below it.
+- id: impeccable-critique
+  kind: builtin
+  roles: [frontend]
+  rank: 49
+  keywords: [critique, review, ux, usability, heuristics, hierarchy, accessibility, page]
+  description: "Impeccable's critique reference (vendored): UX design review with heuristic scoring, personas and cognitive-load checks."
+  provenance: { license: Apache-2.0, upstream: [pbakaus/impeccable] }
+- id: impeccable-audit
+  kind: builtin
+  roles: [frontend]
+  rank: 48
+  keywords: [audit, accessibility, performance, theming, responsive, antipatterns]
+  description: "Impeccable's audit reference (vendored): Technical quality checks: accessibility, performance, theming, responsive, anti-patterns."
+  provenance: { license: Apache-2.0, upstream: [pbakaus/impeccable] }
+- id: impeccable-core
+  kind: builtin
+  roles: [frontend]
+  rank: 47
+  keywords: [design, frontend, interface, craft, build, landing, ui]
+  description: "Impeccable's core design skill (vendored): principles, surface modes and the command index for designing, critiquing, auditing and polishing frontends. Every muster design workflow loads it."
+  provenance: { license: Apache-2.0, upstream: [pbakaus/impeccable] }
+- id: impeccable-harden
+  kind: builtin
+  roles: [frontend]
+  rank: 46
+  keywords: [harden, edge, overflow, i18n, errors]
+  description: "Impeccable's harden reference (vendored): Production readiness: errors, i18n, overflow and edge cases."
+  provenance: { license: Apache-2.0, upstream: [pbakaus/impeccable] }
+- id: impeccable-polish
+  kind: builtin
+  roles: [frontend]
+  rank: 45
+  keywords: [polish, finish, ship, details]
+  description: "Impeccable's polish reference (vendored): Final quality pass before shipping."
+  provenance: { license: Apache-2.0, upstream: [pbakaus/impeccable] }
+- id: impeccable-layout
+  kind: builtin
+  roles: [frontend]
+  rank: 44
+  keywords: [layout, spacing, rhythm, grid]
+  description: "Impeccable's layout reference (vendored): Fix spacing, rhythm and visual hierarchy."
+  provenance: { license: Apache-2.0, upstream: [pbakaus/impeccable] }
+- id: impeccable-typeset
+  kind: builtin
+  roles: [frontend]
+  rank: 43
+  keywords: [typeset, typography, fonts, readability]
+  description: "Impeccable's typeset reference (vendored): Improve typography hierarchy, fonts and readability."
+  provenance: { license: Apache-2.0, upstream: [pbakaus/impeccable] }
+- id: impeccable-colorize
+  kind: builtin
+  roles: [frontend]
+  rank: 42
+  keywords: [colorize, color, colour, palette]
+  description: "Impeccable's colorize reference (vendored): Add strategic color to monochromatic or flat interfaces."
+  provenance: { license: Apache-2.0, upstream: [pbakaus/impeccable] }
+- id: impeccable-animate
+  kind: builtin
+  roles: [frontend]
+  rank: 41
+  keywords: [animate, animation, motion, transitions]
+  description: "Impeccable's animate reference (vendored): Add purposeful animation and motion."
+  provenance: { license: Apache-2.0, upstream: [pbakaus/impeccable] }
+- id: impeccable-adapt
+  kind: builtin
+  roles: [frontend]
+  rank: 40
+  keywords: [adapt, responsive, mobile, breakpoints]
+  description: "Impeccable's adapt reference (vendored): Adapt a design for different devices, screen sizes and contexts."
+  provenance: { license: Apache-2.0, upstream: [pbakaus/impeccable] }
+- id: impeccable-clarify
+  kind: builtin
+  roles: [author]
+  rank: 47
+  keywords: [clarify, copy, microcopy, labels, errors]
+  description: "Impeccable's clarify reference (vendored): Improve UX copy, labels, instructions and error messages."
+  provenance: { license: Apache-2.0, upstream: [pbakaus/impeccable] }
+
 # ----- UX skill family: merge-tracked vendored builtins (vendor/manifest.yaml sources uupm,
 # intent, typeui, pfd). Listed here, not in builtins.generated.yaml, because plain
 # `muster vendor` regenerates that file from non-merge-tracked sources only and would drop them.
-# Roles complement rather than compete: /muster:design (impeccable) stays the design-workflow
-# engine and owns DESIGN.md; uupm-ui-ux-pro-max is the default UX review and design-data skill
-# (highest family rank on frontend, below the rank-50 frontend agent so implementation routing
-# is unchanged); targeted fixers, intent's discipline skills and the canvases sit below it.
+# Roles complement rather than compete: impeccable (the impeccable-* entries above) is the main
+# UX skill. /muster:design runs its workflows and owns DESIGN.md, impeccable-critique leads UX
+# review and impeccable-audit the technical UI audit, all below the rank-50 frontend entries so
+# implementation routing is unchanged. uupm-ui-ux-pro-max is the design-data and checklist layer
+# just below impeccable; targeted fixers, intent's discipline skills and the canvases sit below it.
 # Every family entry has a distinct rank per role, so equal match scores resolve the same way
 # every time, and distinct keywords (searched by `muster match` and `match --skills`).
 - id: uupm-ui-ux-pro-max
   kind: builtin
   roles: [frontend]
-  rank: 49
+  rank: 39
   keywords: [ux, ui, usability, accessibility, landing, palette, typography, font, checklist]
   description: "Default UX review and design-data lookup: priority table, pre-delivery checklist, page and component review, searchable styles, palettes, fonts, UX guidelines and stack rules."
   provenance: { license: MIT, upstream: [nextlevelbuilder/ui-ux-pro-max-skill] }
 - id: uupm-ui-styling
   kind: builtin
   roles: [frontend]
-  rank: 44
+  rank: 36
   keywords: [shadcn, tailwind, styling, theme]
   description: "shadcn/ui, Tailwind and canvas styling recipes with scripts for adding components and generating a Tailwind config."
   provenance: { license: MIT, upstream: [nextlevelbuilder/ui-ux-pro-max-skill] }
 - id: uupm-design-system
   kind: builtin
   roles: [frontend]
-  rank: 43
+  rank: 35
   keywords: [tokens, tokenization, cssvars, specs]
   description: "Three-layer design tokens, component specs and token validation, plus BM25 slide decision data; output proposes DESIGN.md changes."
   provenance: { license: MIT, upstream: [nextlevelbuilder/ui-ux-pro-max-skill] }
 - id: intent-evaluate
   kind: builtin
   roles: [frontend]
-  rank: 41
+  rank: 34
   keywords: [heuristic, heuristics, nielsen, walkthrough, darkpatterns]
   description: "Heuristic UX evaluation: Nielsen heuristics, cognitive walkthroughs and dark-pattern detection, findings ranked by severity."
   provenance: { license: CC0-1.0, upstream: [ghaida/intent] }
 - id: intent-include
   kind: builtin
   roles: [frontend]
-  rank: 40
+  rank: 33
   keywords: [inclusive, inclusion, screenreader, cognitive, motor]
   description: "Inclusive design depth: screen reader, keyboard, cognitive and motor accessibility and accessibility test methods."
   provenance: { license: CC0-1.0, upstream: [ghaida/intent] }
 - id: intent-journey
   kind: builtin
   roles: [frontend]
-  rank: 39
+  rank: 32
   keywords: [journey, flows, onboarding, checkout, signup]
   description: "Experience flows: task flows, multi-step journeys, onboarding, checkout, settings and cross-platform adaptation."
   provenance: { license: CC0-1.0, upstream: [ghaida/intent] }
 - id: intent-organize
   kind: builtin
   roles: [frontend]
-  rank: 38
+  rank: 31
   keywords: [navigation, taxonomy, sitemap, labeling, findability]
   description: "Information architecture: navigation, taxonomy, labeling, search and browse, card sorting and tree tests."
   provenance: { license: CC0-1.0, upstream: [ghaida/intent] }
 - id: intent-fortify
   kind: builtin
   roles: [frontend]
-  rank: 37
+  rank: 30
   keywords: [edge, resilience, empty, loading, offline]
   description: "Edge-case hardening: state inventories, error recovery, empty, loading and first-run states, stress tests."
   provenance: { license: CC0-1.0, upstream: [ghaida/intent] }
 - id: intent-wireframe
   kind: builtin
   roles: [frontend]
-  rank: 36
+  rank: 29
   keywords: [wireframe, wireframes, lofi]
   description: "Wireframes: low-to-high fidelity HTML wireframe ladders with a viewer and a styleguide."
   provenance: { license: CC0-1.0, upstream: [ghaida/intent] }
 - id: intent-transpose
   kind: builtin
   roles: [frontend]
-  rank: 34
+  rank: 28
   keywords: [crossplatform, transpose, tvos]
   description: "Cross-platform translation of a design between web, mobile, TV and other surfaces."
   provenance: { license: CC0-1.0, upstream: [ghaida/intent] }
 - id: intent-localize
   kind: builtin
   roles: [frontend]
-  rank: 33
+  rank: 27
   keywords: [localization, localize, i18n, culture, rtl]
   description: "Cultural adaptation: localization beyond translation, density, formats, trust signals and market assumptions."
   provenance: { license: CC0-1.0, upstream: [ghaida/intent] }
 - id: pfd
   kind: builtin
   roles: [frontend, author]
-  rank: 29
+  rank: 25
   keywords: [perception, persuasion, conversion, fluency]
   description: "Perception-First Design: a five-layer, perception-grounded method to evaluate, derive or analyze design, copy and communication."
   provenance: { license: CC-BY-SA-4.0, upstream: [skovalik/perception-first-design] }
 - id: typeui
   kind: builtin
   roles: [frontend]
-  rank: 28
+  rank: 24
   keywords: [typeui, brandkit]
   description: "TypeUI MCP context (project design skills, brand kits, UI prompts, layout variations); use only when the TypeUI MCP server is connected."
   provenance: { license: MIT, upstream: [bergside/typeui] }

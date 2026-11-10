@@ -29,7 +29,8 @@ const uxSources = manifest.sources.filter(s => UX_SOURCES.includes(s.id));
 const frontmatter = text => parseYaml(text.match(/^---\r?\n([\s\S]*?)\r?\n---/)[1]);
 const bare = { skills: [], agents: [], plugins: [], mcpServers: [] };
 
-const builtinIds = (await readdir(join(root, "plugin/builtins"))).filter(isCodexFrozenOutBuiltin).sort();
+// The UX family only: impeccable-* builtins are also kept out of the frozen Codex lane but are their own source.
+const builtinIds = (await readdir(join(root, "plugin/builtins"))).filter(n => isCodexFrozenOutBuiltin(n) && !n.startsWith("impeccable-")).sort();
 const agentIds = (await readdir(join(root, "plugin/agents"))).filter(f => /^intent-/.test(f)).map(f => f.slice(0, -3)).sort();
 
 // ---- provenance --------------------------------------------------------------
@@ -137,7 +138,9 @@ test("the design-ux audit pattern applies impeccable and uupm by reference, dedu
   assert.match(text, /references\/pro-rules\.md/);
   assert.match(text, /Deduplicate before reporting/);
   assert.match(text, /1\. the project's canonical `DESIGN\.md`[\s\S]*2\. accessibility \/ WCAG 2\.2[\s\S]*3\. impeccable[\s\S]*4\. the supporting skills/);
-  assert.match(text, /INTEGRATION SLOT \(UX skills track\)/);
+  assert.doesNotMatch(text, /INTEGRATION SLOT/, "the best-of-breed slot is filled");
+  assert.match(text, /builtins\/impeccable-critique\/SKILL\.md[\s\S]*builtins\/uupm-ui-ux-pro-max\/SKILL\.md/, "impeccable leads, uupm follows");
+  for (const id of ["jk-interface-review", "emil-review-animations", "addy-browser-testing-with-devtools"]) assert.match(text, new RegExp(`\`${id}\``));
   assert.doesNotMatch(text, /pre-verbal|five layers|Perception-First/i, "no PFD wording in a muster-authored file");
   assert.doesNotMatch(text, /\| Priority \| Category \|/, "uupm's table is referenced, not copied");
 });
@@ -164,17 +167,36 @@ test("each UX builtin and agent has one catalog entry with a role, single-token 
   const { roles } = resolveCapabilities(catalog, bare);
   for (const [role, id] of Object.entries({ frontend: "wsh-frontend-developer", author: "wsh-content-marketer", image: "muster-image", plan: "muster-strategist", brainstorm: "sp-brainstorm" }))
     assert.equal(roles[role].chosen.id, id, `${role} keeps its default provider`);
-  assert.equal(roles.frontend.chain.find(c => builtinIds.includes(c.id)).id, "uupm-ui-ux-pro-max", "uupm leads the family on frontend");
+  assert.equal(roles.frontend.chain.find(c => builtinIds.includes(c.id)).id, "uupm-ui-ux-pro-max", "uupm leads the UX family on frontend");
+  // impeccable is the main UX skill: every impeccable-* entry outranks every UX-family entry on its role.
+  const impeccable = catalog.filter(e => e.id.startsWith("impeccable-"));
+  assert.ok(impeccable.some(e => e.id === "impeccable-critique") && impeccable.some(e => e.id === "impeccable-audit"));
+  for (const e of impeccable)
+    for (const role of e.roles)
+      for (const f of family.filter(x => x.roles.includes(role)))
+        assert.ok(e.rank > f.rank, `${e.id} (${e.rank}) outranks ${f.id} (${f.rank}) on ${role}`);
+  const ladder = catalog.filter(e => e.roles.includes("frontend") && (e.id.startsWith("impeccable-") || builtinIds.includes(e.id) || agentIds.includes(e.id)));
+  assert.equal(new Set(ladder.map(e => e.rank)).size, ladder.length, "no two UX entries tie on frontend");
+  const chainIds = roles.frontend.chain.map(c => c.id);
+  assert.ok(chainIds.indexOf("impeccable-critique") < chainIds.indexOf("uupm-ui-ux-pro-max"), "impeccable-critique precedes uupm on frontend");
 });
 
-test("routing: uupm-ui-ux-pro-max is the default UX review skill and surfaces for UI outcomes", async () => {
+test("routing: impeccable-critique is the default UX review skill; uupm-ui-ux-pro-max follows as the data layer", async () => {
   const catalog = await loadCatalog(join(root, "catalog"));
   const { skills } = resolveCapabilities(catalog, bare);
   const task = "review the settings page UX and accessibility";
-  assert.equal(matchSkills(task, skills)[0].id, "uupm-ui-ux-pro-max");
-  assert.equal(suggestSkillsForStack(signalsFromTask(task), skills)[0].id, "uupm-ui-ux-pro-max");
+  const ranked = matchSkills(task, skills).map(m => m.id);
+  assert.equal(ranked[0], "impeccable-critique");
+  assert.ok(ranked.indexOf("uupm-ui-ux-pro-max") > 0, "uupm still surfaces, after impeccable");
+  const stack = suggestSkillsForStack(signalsFromTask(task), skills).map(s => s.id);
+  assert.deepEqual(stack.slice(0, 3), ["impeccable-critique", "impeccable-audit", "uupm-ui-ux-pro-max"]);
+  assert.equal(impliedSurfaceForSkillId("impeccable-critique"), "ui");
   assert.equal(impliedSurfaceForSkillId("uupm-ui-ux-pro-max"), "ui");
-  assert.equal(matchProviders("build a landing page", catalog, bare)[0].id, "uupm-ui-ux-pro-max");
+  assert.equal(matchProviders("audit the dashboard UI for accessibility and performance", catalog, bare)[0].id, "impeccable-audit");
+  assert.equal(matchProviders("rewrite the error messages and button labels", catalog, bare)[0].id, "impeccable-clarify");
+  const landing = matchProviders("build a landing page", catalog, bare).map(m => m.id);
+  assert.equal(landing[0], "impeccable-core");
+  assert.ok(landing.includes("uupm-ui-ux-pro-max"));
   assert.equal(matchProviders("build a landing page", catalog, bare).filter(m => agentIds.includes(m.id)).length, 0, "no intent agent claims a generic build task");
   // The evaluator agent and the evaluation skill complement each other: both surface, never tied.
   const evalTop = matchProviders("run a heuristic evaluation of the settings screens", catalog, bare).slice(0, 2);

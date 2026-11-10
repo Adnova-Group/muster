@@ -17,8 +17,8 @@ results as JSON exactly as emitted, and return workflow work as a concise
 Markdown checklist followed by the design-context receipt.
 
 Use Muster's own deterministic CLI and workflow surface. End users never need
-the Impeccable CLI. The design vocabulary is inspired by Impeccable at pinned
-commit `035c8f319edd019936525a062fe99e83ca8d12c6` under Apache-2.0.
+the Impeccable CLI. The workflows run Impeccable's vendored skills (impeccable-*,
+pinned commit `035c8f319edd019936525a062fe99e83ca8d12c6`, Apache-2.0).
 
 Resolve the CLI once:
 

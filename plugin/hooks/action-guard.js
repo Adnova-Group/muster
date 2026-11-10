@@ -33,6 +33,12 @@
 
 const TOOL_NAME_CLASSES = ["send", "submit", "publish", "sign", "purchase"];
 
+// Claude Desktop's own side-effect-free turn tools, called many times per Desktop session.
+// hooks.json's matcher already skips exactly these names; the hook skips them again so a
+// matcher mistake cannot widen the exclusion. EXACT names only, never a server or prefix: a
+// user-configured server named ccd_<anything> (or any other ccd_turn tool) is still classified.
+export const DESKTOP_HOST_TOOLS = new Set(["mcp__ccd_turn__update_plan", "mcp__ccd_turn__wrap_up"]);
+
 // True if `word` appears in `str` as its own token: bounded on both sides by a
 // non-letter character (or the string's start/end). Prevents "sign" firing
 // inside "assign"/"assignments" while still matching "sign_document",

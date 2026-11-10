@@ -51,10 +51,12 @@ test("hooks.json top-level keys are all valid hook event names", () => {
 // keyword matcher never reached the hook for an MCP tool with other casing or wording, so the
 // fence was dead for it. classifyToolName's word-boundary, case-insensitive match
 // (action-guard.js) narrows the class; the matcher only routes calls to the hook. PowerShell is
-// the primary Windows shell tool, so it rides with Bash. Edit/Write/NotebookEdit and Claude
-// Desktop's own mcp__ccd_* tools (mcp__ccd_turn__update_plan runs many times per Desktop
-// session) are deliberately absent: the fence never classifies them, and spawning node for each
-// is pure always-on cost. The matcher is anchored because Claude Code tests it unanchored.
+// the primary Windows shell tool, so it rides with Bash. Edit/Write/NotebookEdit and exactly two
+// Claude Desktop turn tools (mcp__ccd_turn__update_plan runs many times per Desktop session, and
+// wrap_up) are deliberately absent: the fence never classifies them, and spawning node for each
+// is pure always-on cost. The Desktop exclusion names full tool names, never a server or prefix,
+// so a user server named ccd_<anything> still reaches the fence. The matcher is anchored because
+// Claude Code tests it unanchored.
 test("hooks.json: PreToolUse matcher routes shell and external mcp__* calls only", () => {
   const parsed = JSON.parse(readFileSync(HOOKS_JSON, "utf8"));
   const entry = parsed.hooks.PreToolUse.find((e) =>
@@ -64,10 +66,11 @@ test("hooks.json: PreToolUse matcher routes shell and external mcp__* calls only
   for (const tool of [
     "Bash", "PowerShell", "mcp__gmail__send_email", "mcp__docusign__sign_document",
     "mcp__plugin_acme_db__publish_release", "mcp__Stripe__Purchase", "mcp__ccdx__send",
-    "mcp__claude_ai_Slack__slack_send_message",
+    "mcp__claude_ai_Slack__slack_send_message", "mcp__ccd_evil__publish_post", "mcp__ccd_turn__publish",
+    "mcp__ccd_turn__update_plan_and_send", "mcp__ccd_session__mark_chapter", "mcp__ccd_turn__wrap_up__x",
   ]) assert.ok(matches(entry.matcher, tool), `matcher must route ${tool} to the fence`);
   for (const tool of [
-    "mcp__ccd_turn__update_plan", "mcp__ccd_session__mark_chapter", "Read", "Edit", "Write",
+    "mcp__ccd_turn__update_plan", "mcp__ccd_turn__wrap_up", "Read", "Edit", "Write",
     "NotebookEdit", "BashOutput", "KillBash", "Monitor",
   ]) assert.ok(!matches(entry.matcher, tool), `matcher must not spawn the fence for ${tool}`);
 });
@@ -111,4 +114,24 @@ test("every hook command's script path exists on disk", () => {
       }
     }
   }
+});
+
+// The matcher's Desktop exclusion and the hook's own skip list name the same exact tools, so a
+// matcher edit cannot silently widen the hole past what the hook skips (or vice versa).
+test("hooks.json: the matcher excludes exactly the hook's DESKTOP_HOST_TOOLS", async () => {
+  const { DESKTOP_HOST_TOOLS } = await import("../plugin/hooks/action-guard.js");
+  const parsed = JSON.parse(readFileSync(HOOKS_JSON, "utf8"));
+  const { matcher } = parsed.hooks.PreToolUse[0];
+  for (const tool of DESKTOP_HOST_TOOLS) {
+    assert.ok(!matches(matcher, tool), `${tool} is in DESKTOP_HOST_TOOLS but the matcher still spawns it`);
+    for (const near of [`${tool}x`, `${tool}_send`, tool.replace("mcp__ccd_turn__", "mcp__ccd_turnx__")]) {
+      assert.ok(matches(matcher, near), `matcher must still route ${near}`);
+    }
+  }
+  const excluded = /\(\?!ccd_turn__\(\?:([a-z_|]+)\)\$\)/.exec(matcher);
+  assert.ok(excluded, "matcher's Desktop exclusion must be an anchored alternation of ccd_turn tool names");
+  assert.deepEqual(
+    excluded[1].split("|").map((name) => `mcp__ccd_turn__${name}`).sort(),
+    [...DESKTOP_HOST_TOOLS].sort(),
+  );
 });

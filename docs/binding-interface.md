@@ -122,7 +122,7 @@ never named as harness degradation before now.
 the model chooses to comply.
 
 **Claude Code binding.** `plugin/hooks/hooks.json` registers one script, and it does nothing
-outside a muster run's scope: a single `PreToolUse` matched against `^(Bash|PowerShell|mcp__(?!ccd_).*)$`
+outside a muster run's scope: a single `PreToolUse` matched against `^(Bash|PowerShell|mcp__(?!ccd_turn__(?:update_plan|wrap_up)$).*)$`
 (`plugin/hooks/pre-tool-use.js`, the action-class fence). The `TaskCompleted` gate was removed
 in revival stage 2b with the native task board. There is no `SessionStart` or `UserPromptSubmit` hook
 and no warn-only nudge: muster costs nothing in a session that never invokes a verb. The

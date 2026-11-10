@@ -230,6 +230,31 @@ test("vendor update leaves conflict markers, lists them, and moves neither base 
   } finally { await rm(up.dir, { recursive: true, force: true }); await rm(tree.dir, { recursive: true, force: true }); }
 });
 
+test("vendor update --resolved refuses leftover markers, then takes the hand resolution and moves base copies and pin", async () => {
+  const up = await fixtureUpstream({ conflicting: true });
+  const tree = await fixtureMuster(up);
+  const file = join(tree.dir, "plugin/agents/muster-x.md");
+  await write(tree.dir, "plugin/agents/muster-x.md", tree.adapted.replace("MUSTER HEADER\n", "MUSTER HEADER\nagent line 5 (muster)\n"));
+  const run = (resolved) => runVendorUpdate({ root: tree.dir, manifest: tree.manifest, manifestText: tree.manifestText, sourceId: "up", toTag: "v1.1.0", resolved, upstream: gitUpstream(up.dir) });
+  try {
+    assert.equal((await run(false)).pinMoved, false);
+    const marked = await readFile(file, "utf8");
+    const early = await run(true);
+    assert.equal(early.pinMoved, false, "markers still present");
+    assert.deepEqual(early.conflicts.map(c => c.kind), ["markers"]);
+    assert.equal(await readFile(file, "utf8"), marked, "--resolved never rewrites the working file");
+    // Keep muster's side of the hunk.
+    const resolvedText = marked.replace(/<<<<<<< muster\n([\s\S]*?)=======\n[\s\S]*?>>>>>>> [^\n]*\n/, "$1");
+    await write(tree.dir, "plugin/agents/muster-x.md", resolvedText);
+    const res = await run(true);
+    assert.deepEqual(res.conflicts, []);
+    assert.equal(res.pinMoved, true);
+    assert.equal(await readFile(file, "utf8"), resolvedText);
+    assert.equal(await readFile(join(tree.dir, baseCopyPath("up", "agents/a.md")), "utf8"), up.a2, "base copy moved to the target");
+    assert.match(await readFile(join(tree.dir, "vendor/manifest.yaml"), "utf8"), new RegExp(`ref: ${up.target}`));
+  } finally { await rm(up.dir, { recursive: true, force: true }); await rm(tree.dir, { recursive: true, force: true }); }
+});
+
 test("vendor update --dry-run writes nothing and returns the report text", async () => {
   const up = await fixtureUpstream();
   const tree = await fixtureMuster(up);

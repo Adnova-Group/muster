@@ -155,7 +155,7 @@ const USAGE = [
   // harness-native dispatch packets (codex lane)
   "codex-audit-provider --role <role> --task-id <id> --callable-apis <v1,v2> --callable-agent-ids <id,...> [--api-override <v1|v2>] [--message <text>|--message-file <f>]|codex-spawn-packet --task-id <id> --agent-type <id> [--message <text>|--message-file <f>] [--version v1|v2] [--fork-turns <none|N>]|codex-wait-packet [--version v1|v2] [--targets a,b] [--timeout-ms N]|",
   // memory + vendor + init lifecycle
-  "memory read|write ...|vendor [update <source> --to <tag|commit> [--dry-run]|report <source> --to <tag|commit> [--stdout]|check|outdated [--offline]]|provenance [--write]|init [dir]|init transition [dir] --to <handoff|attempted|completed>|init normalize [dir] --approve CLAUDE.md|init acknowledge [dir] --reason unavailable|init finalize [dir]|init pm-link [dir] [--approve pm-link]|setup [dir]|design <init|status|resolve|detect|ignores|provider|gate|workflows|run> ...|",
+  "memory read|write ...|vendor [update <source> --to <tag|commit> [--dry-run] [--resolved]|report <source> --to <tag|commit> [--stdout]|check|outdated [--offline]]|provenance [--write]|init [dir]|init transition [dir] --to <handoff|attempted|completed>|init normalize [dir] --approve CLAUDE.md|init acknowledge [dir] --reason unavailable|init finalize [dir]|init pm-link [dir] [--approve pm-link]|setup [dir]|design <init|status|resolve|detect|ignores|provider|gate|workflows|run> ...|",
   // planning + routing artifacts
   "plan-checklist <file>|domain <outcome>|pipeline <domain|id|--list>|route <outcome>|score <file>|",
   // skill discovery: browse builtins, registry search, per-project enable/add, pins, usage
@@ -1042,7 +1042,7 @@ async function handleCoreCommandPart3(cmd, rest) {
         if (!res.ok) process.exitCode = 1;
         return true;
       }
-      const usage = `vendor ${sub} <source> --to <tag|commit>${sub === "update" ? " [--dry-run]" : " [--stdout]"}`;
+      const usage = `vendor ${sub} <source> --to <tag|commit>${sub === "update" ? " [--dry-run] [--resolved]" : " [--stdout]"}`;
       const sourceId = rest[1] && !rest[1].startsWith("-") ? rest[1] : null;
       const toTag = flagValue(rest, "--to");
       if (!sourceId || !toTag) fail(`${usage}: missing ${sourceId ? "--to <tag|commit>" : "<source>"}`);
@@ -1052,7 +1052,7 @@ async function handleCoreCommandPart3(cmd, rest) {
         else { const { text, ...summary } = res; out(summary); }
         return true;
       }
-      const res = await runVendorUpdate({ root: repoRoot, manifest, manifestText, sourceId, toTag, dryRun: rest.includes("--dry-run") });
+      const res = await runVendorUpdate({ root: repoRoot, manifest, manifestText, sourceId, toTag, dryRun: rest.includes("--dry-run"), resolved: rest.includes("--resolved") });
       out(res);
       if (res.conflicts.length) process.exitCode = 1;
       return true;

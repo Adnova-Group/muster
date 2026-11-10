@@ -27,7 +27,9 @@
 // Byte-exact base copies live under vendor/upstream/<source>/<from>, the merge base.
 // `muster vendor update <source> --to <tag>` merges, writes conflict markers where it
 // cannot, and moves the base copies and the manifest pin only when every item merged
-// cleanly.
+// cleanly. After resolving the markers by hand, `--resolved` re-runs it taking the working
+// files as the merge result: it checks them (no markers left, verbatim content equal to the
+// target) and moves the base copies and the pin without merging again.
 //
 // Everything that touches git or the network goes through an injectable
 // `upstream` object ({ resolve, readFile, fileHistory, commitsCiting }), so the
@@ -43,6 +45,7 @@ import { parseVerbatimRegions, checkVerbatimRegions, linesOf, gsdCouplingHits, V
 const pexec = promisify(execFile);
 export const SYNC_MODES = Object.freeze(["adapted", "verbatim", "watch"]);
 const SHA40_RE = /^[0-9a-f]{40}$/;
+const CONFLICT_MARKER_RE = /^(<{7}|>{7})( |$)/m;
 // Release tags only: no leading dash (git would read an option), no refspec characters.
 export const TAG_RE = /^v?\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.]+)?$/;
 // A pin between releases records `git describe --tags --long` of its ref
@@ -463,7 +466,7 @@ async function writeText(root, rel, text) {
 // Run the 3-way update of one merge-tracked source. `manifestText` is the raw
 // manifest (needed to rewrite the pin without reformatting); `upstream` is
 // injected (tests) or fetched. With dryRun nothing is written.
-export async function runVendorUpdate({ root, manifest, manifestText, sourceId, toTag, dryRun = false, upstream, exec = pexec }) {
+export async function runVendorUpdate({ root, manifest, manifestText, sourceId, toTag, dryRun = false, resolved = false, upstream, exec = pexec }) {
   const source = (manifest?.sources || []).find(s => s.id === sourceId);
   if (!source) throw new Error(`unknown vendor source: ${sourceId}`);
   if (!isSyncSource(source)) throw new Error(`source ${sourceId} is not merge-tracked (no item has a mode)`);
@@ -500,9 +503,24 @@ export async function runVendorUpdate({ root, manifest, manifestText, sourceId, 
       byFile.get(item.to).push(item);
     }
     const regionBases = new Map([...bases].filter(([from, b]) => b.prev !== null && items.some(i => i.from === from && i.mode !== "watch" && i.id !== undefined)));
+    // --resolved: verbatim regions must already equal the target, so check them against it as the base.
+    const resolvedBases = new Map([...regionBases].filter(([, b]) => b.next !== null).map(([from, b]) => [from, { ...b, prev: b.next }]));
     for (const [to, fileItems] of byFile) {
       const current = await readText(join(root, to));
       if (current === null) { conflicts.push({ file: to, kind: "missing", detail: `${to} does not exist` }); continue; }
+      if (resolved) {
+        const found = [];
+        if (CONFLICT_MARKER_RE.test(current)) found.push({ kind: "markers", detail: `${to} still has conflict markers` });
+        const regen = regenerateRegions(current, resolvedBases, { source: source.id });
+        for (const c of regen.conflicts) found.push(c);
+        if (!regen.conflicts.length && regen.text !== current) found.push({ kind: "region", detail: `${to}: a verbatim region differs from ${toTag}` });
+        const wholeFile = fileItems.find(i => isWholeFileVerbatim(i, items));
+        if (wholeFile && bases.get(wholeFile.from).next !== null && current !== bases.get(wholeFile.from).next)
+          found.push({ kind: "verbatim", detail: `${to} differs from ${wholeFile.from} at ${toTag}` });
+        for (const c of found) conflicts.push({ file: to, ...c });
+        files.push({ path: to, changed: false, conflicts: found.length, notes: [] });
+        continue;
+      }
       const regen = regenerateRegions(current, regionBases, { source: source.id });
       let text = regen.text;
       let mergeConflicts = 0;

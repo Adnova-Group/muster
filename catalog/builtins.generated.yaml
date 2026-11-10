@@ -62,6 +62,26 @@
     license: MIT
     upstream:
       - obra/superpowers
+- id: anthropic-frontend-design
+  kind: builtin
+  roles:
+    - frontend
+  rank: 42
+  provenance:
+    license: Apache-2.0
+    upstream:
+      - anthropics/skills
+  description: "Supporting visual-direction pass (Anthropic): commit to a distinctive, subject-grounded aesthetic for palette, type and hero instead of templated defaults."
+- id: anthropic-canvas-design
+  kind: builtin
+  roles:
+    - frontend
+  rank: 30
+  provenance:
+    license: Apache-2.0
+    upstream:
+      - anthropics/skills
+  description: Create original static visual art (posters, PNG or PDF canvases) from a written design philosophy; not for product UI.
 - id: wsh-stride-analysis-patterns
   kind: builtin
   roles:

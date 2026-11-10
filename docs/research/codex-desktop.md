@@ -262,7 +262,7 @@ surface tests pin the current inventory [src: build-codex] [src: codex-js]. The 
   CLI, and the IDE extension"; the CLI adds `/agent` for thread switching; the IDE shows a
   background-agent panel above the composer [DOCUMENTED] [src: subagents].
 
-Current generated surface: 67 skills (8 public + 59 internal) and 30 MCP tools, plus 27
+Current generated surface: 69 skills (8 public + 61 internal) and 30 MCP tools, plus 27
 profiles. The public skills include `$muster-init`, `$muster-design`, the other five primary
 `$muster-*` modes, and the root `$muster` router (revival stage 2b removed the plan-backlog,
 go-backlog and runner modes); the legacy command aliases were retired in

@@ -38,6 +38,7 @@ Every non-vendored source, generated from the manifest. Each row lists the items
 | [pbakaus/impeccable](https://github.com/pbakaus/impeccable) @ `32930818a109` | Apache-2.0 | `design`, `audit-pattern-design-ux` | inspired-by |
 | [obra/superpowers](https://github.com/obra/superpowers) @ `22f0b463e7a5` | MIT | 21 vendored builtins and agents | adapted, vendored |
 | [wshobson/agents](https://github.com/wshobson/agents) @ `9c61ab243def` | MIT | 61 vendored builtins and agents | adapted, vendored |
+| [anthropics/skills](https://github.com/anthropics/skills) @ `2c5958ecac7c` | Apache-2.0 | 4 vendored builtins and agents | adapted, vendored |
 | [open-gsd/gsd-core](https://github.com/open-gsd/gsd-core) @ `9385f4618b52` | MIT | 40 vendored builtins and agents | adapted, vendored |
 | [open-gsd/gsd-core](https://github.com/open-gsd/gsd-core) @ `1c352d1ea37b` | MIT | `muster-gsd-plan-phase`, `muster-gsd-execute-phase`, `muster-gsd-verify-work` | mechanism-port |
 | [wshobson/agents](https://github.com/wshobson/agents) @ `2de74ac1c8f6` | MIT | `wsh-signed-audit-trails-recipe` | mechanism-port |

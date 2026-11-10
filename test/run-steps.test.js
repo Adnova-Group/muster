@@ -80,6 +80,13 @@ test("merge-wave: merges --no-ff in plan order, re-runs planned verify, removes 
   assert.doesNotMatch(await readFile(join(root, ".muster/runs/r1/SUMMARY-B.md"), "utf8"), /builder:|skill/);
 });
 
+test("merge-wave: accepts the Workflow tool's {summary, agentCount, logs, result} envelope", async () => {
+  const { root, result } = await repoWithTasks();
+  const report = await mergeWave({ cwd: root, runId: "r1", result: { summary: "build", agentCount: 5, logs: [], result }, now: NOW });
+  assert.equal(report.ok, true, JSON.stringify(report.problems));
+  assert.deepEqual(report.merged.map((m) => m.taskId), ["A", "B"]);
+});
+
 test("merge-wave: agent-reported testsRun and verify are never executed", async () => {
   const { root, result } = await repoWithTasks();
   const marker = join(root, "..", `${root.split("/").pop()}-pwned`);

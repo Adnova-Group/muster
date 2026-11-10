@@ -6,6 +6,10 @@ import { join } from "node:path";
 import { readState, runDir, writeStateHead } from "./run-dir.js";
 import { parsePlan } from "./plan-lint.js";
 
+// The Workflow tool returns `{summary, agentCount, logs, result}`; the main thread may save that
+// envelope instead of the bare result (seen in the stage-3 content smoke).
+const unwrap = (j) => (j && j.result && typeof j.result === "object" && !Array.isArray(j.tasks) && j.verdict === undefined ? j.result : j);
+
 async function readOrNull(path) {
   try { return await readFile(path, "utf8"); } catch { return null; }
 }
@@ -52,7 +56,7 @@ export async function nextForRun({ cwd, runId }) {
   const merged = mergedTasks(state);
   let built = [];
   if (has("build-result.json")) {
-    try { built = (JSON.parse(await readOrNull(join(dir, "build-result.json"))).tasks || []).map((t) => t.taskId); } catch { built = []; }
+    try { built = (unwrap(JSON.parse(await readOrNull(join(dir, "build-result.json")))).tasks || []).map((t) => t.taskId); } catch { built = []; }
   }
   const verdict = has("VERIFICATION.md") ? verificationVerdict(await readOrNull(join(dir, "VERIFICATION.md")) || "") : null;
   const rel = `.muster/runs/${runId}`;
@@ -60,7 +64,7 @@ export async function nextForRun({ cwd, runId }) {
   // Content runs (muster:pipeline) have pipeline-args.json instead of PLAN.md.
   let pipelineVerdict = null;
   if (has("pipeline-result.json")) {
-    try { pipelineVerdict = JSON.parse(await readOrNull(join(dir, "pipeline-result.json"))).verdict || "ERROR"; } catch { pipelineVerdict = "ERROR"; }
+    try { pipelineVerdict = unwrap(JSON.parse(await readOrNull(join(dir, "pipeline-result.json")))).verdict || "ERROR"; } catch { pipelineVerdict = "ERROR"; }
   }
 
   let position, action, why;

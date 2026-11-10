@@ -72,6 +72,9 @@ test("writePipelineArgs reads preflight.json, refuses a code-routed run, and nex
   const done = await nextForRun({ cwd: root, runId: "r1" });
   assert.equal(done.position, "verified");
   assert.equal(done.artifacts.pipeline, "PASS");
+  // The Workflow tool's envelope, saved verbatim by the main thread in the live smoke.
+  await writeFile(join(dir, "pipeline-result.json"), JSON.stringify({ summary: "s", agentCount: 13, logs: [], result: { verdict: "FAIL" } }));
+  assert.equal((await nextForRun({ cwd: root, runId: "r1" })).artifacts.pipeline, "FAIL");
 });
 
 // ── plugin/workflows/pipeline.js, run the way the Workflow runtime runs it ──

@@ -22,11 +22,23 @@ test("plan.md runs the gap-check + interview before the planner", async () => {
   assert.ok(plan.indexOf("AskUserQuestion built from `unclear`") < plan.indexOf('Workflow({name:"muster:make-plan"'), "the interview must come before planning");
 });
 
+// Plugin eval 2026-11-10: under `claude -p` an unclear outcome made /muster:plan print its
+// questions as plain text and stop. Like pm.md, it takes the recommended defaults instead.
+test("plan.md takes defaults instead of asking when AskUserQuestion is unavailable", async () => {
+  const plan = await readFile(new URL("../plugin/commands/plan.md", import.meta.url), "utf8");
+  const rule = plan.match(/\*\*Unattended\*\* \(no AskUserQuestion[^)]*\):([\s\S]*?)\n\n/);
+  assert.ok(rule, "plan.md must define unattended as no AskUserQuestion, like pm.md");
+  assert.match(rule[1], /never ask in\s+plain text/);
+  assert.match(rule[1], /`unclear`[\s\S]*CONTEXT\.md[\s\S]*ASSUMPTION/, "unclear gaps become recorded assumptions");
+  assert.match(rule[1], /`scope`[\s\S]*`route: "ask"`/, "the scope and route questions take defaults too");
+  assert.ok(plan.indexOf(rule[0]) < plan.indexOf("1. **Preflight"), "the rule must precede the first question");
+});
+
 test("go.md triggers the interview on a gap, but never blocks when unattended", async () => {
   const go = await readFile(new URL("../plugin/commands/go.md", import.meta.url), "utf8");
   assert.match(go, /M preflight/, "go must run the gap-check via preflight");
   assert.match(go, /`clear` is false and a human is present[\s\S]{0,200}AskUserQuestion/, "go must interview attended gaps");
-  assert.match(go, /Unattended: write the gaps as assumptions/, "unattended gap must be recorded, not block");
+  assert.match(go, /Unattended \(no AskUserQuestion\): never ask in plain text; write the gaps as assumptions/, "unattended gap must be recorded, not block");
 });
 
 test("the interview skill uses AskUserQuestion and holds a hard approval gate", async () => {

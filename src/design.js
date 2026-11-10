@@ -82,7 +82,7 @@ const WORKFLOW_GUIDANCE = {
 //   lookup     domain or stack implementation guidance
 // `mobbin` marks the workflows that choose a pattern, flow or screen structure: when the session
 // has Mobbin MCP tools (detect-and-use, never bundled) they search Mobbin for real references first.
-// plugin/commands/design/references/supporting-skills.md records why each skill serves its workflows.
+// plugin/references/design/supporting-skills.md records why each skill serves its workflows.
 export const DESIGN_PRECEDENCE = Object.freeze(["project DESIGN.md", "accessibility/WCAG",
   "Impeccable workflow guidance",
   "supporting skills and references (uupm, typeui, intent, pfd, emil, gsap, taste, hallmark, anthropic, jk, elaya, addy, Mobbin)"]);

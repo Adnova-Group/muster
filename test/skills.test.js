@@ -3,7 +3,7 @@
 // call goes through an injected fetch; nothing here touches the real network or the user cache.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import { trackedMkdtemp } from "../test-support/helpers.js";
 import {
   SKILLS_PAGE_PATH, addSkill, builtinInventory, disableSkill, enableSkill, generateSkillsBlock, groupBuiltins,
-  pinSkill, runSkillsCli, searchSkills, skillUsage, stampSkillsPage, unpinSkill,
+  pinSkill, runSkillsCli, searchSkills, skillUsage, skillsCommand, stampSkillsPage, unpinSkill,
 } from "../src/skills.js";
 import {
   REGISTRY_URL, githubSource, licenseVerdict, loadRegistry, matchRegistry, normalizeRegistry, referencedFiles,
@@ -81,6 +81,25 @@ test("list: grouped by role, filter by role or family, unrouted last; CLI prints
   assert.ok(full.out.length < 8 * 1024, `list is ${full.out.length} bytes; keep it compact`);
   const json = JSON.parse((await capture(["list", "--json"])).out);
   assert.equal(json.total, inv.length);
+});
+
+// Plugin eval 2026-11-10: /muster:skills list relayed "ids: muster skills list <role>", but
+// `muster` is not on a plugin user's PATH. plugin/runtime/muster.sh sets MUSTER_VIA, and the
+// hints then name the slash command; an npm-global install keeps `muster skills`.
+test("list, search and refusal hints name /muster:skills under the plugin and `muster skills` from npm", async () => {
+  const plugin = { env: { MUSTER_VIA: "claude-plugin" } };
+  const npm = { env: {} };
+  assert.equal(skillsCommand(plugin.env), "/muster:skills");
+  assert.equal(skillsCommand(npm.env), "muster skills");
+  const viaPlugin = (await capture(["list"], plugin)).out;
+  assert.match(viaPlugin.split("\n")[0], /ids: \/muster:skills list <role>; details: \/muster:skills show <id>/);
+  assert.doesNotMatch(viaPlugin, /(^|[^/])muster skills (list|show)/);
+  assert.match((await capture(["list"], npm)).out.split("\n")[0], /ids: muster skills list <role>; details: muster skills show <id>/);
+  assert.match((await capture(["list", "test-author"], plugin)).out, /details: \/muster:skills show <id>/);
+  const cwd = await tmp("hint");
+  assert.match((await capture(["enable", "no-such-skill"], { ...plugin, cwd })).out, /see \/muster:skills list/);
+  // The runtime script itself exports the signal for every CLI call it makes.
+  assert.match(readFileSync(join(root, "plugin/runtime/muster.sh"), "utf8"), /^export MUSTER_VIA=claude-plugin$/m);
 });
 
 test("show: description, source, license, roles, path and project status; unknown ids exit 1 with suggestions", async () => {

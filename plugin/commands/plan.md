@@ -24,6 +24,11 @@ the branch, CONTEXT.md, PLAN.md): if the session is in plan mode, first call Exi
 "Run /muster:plan: preflight, branch, write and check PLAN.md, then stop for approval"; on a
 refusal, tell the user to leave plan mode and stop.
 
+**Unattended** (no AskUserQuestion, e.g. `claude -p` or a cloud scheduled task): never ask in
+plain text and never stop for an answer. Take the recommended default at every question below:
+preflight's `scope`, a code change for `route: "ask"`, and for each `unclear` gap the most
+reasonable answer, recorded in CONTEXT.md as a `D-NN [ASSUMPTION]` decision. Then plan as usual.
+
 1. **Preflight (1 call).** `M preflight "<outcome>" --json` (append `--model <m>` when the user
    named one). Keep `runId`, `scope`, `clear`, `unclear`, `route`, `pipeline`, `models`,
    `candidates`, `skills`, `pins`, `skillRoot`, `cli`; show `warnings`; `registrySuggestions` are offers, added only if asked. An empty outcome with no `.muster/backlog.md`: ask for one
@@ -44,7 +49,8 @@ refusal, tell the user to leave plan mode and stop.
      skips the interview; one that is not ready gets one round on `spec.openQuestions` only.
 2. **Branch + context (1 call).** When `clear` is false, first ask up to 4 questions in ONE
    AskUserQuestion built from `unclear` (scope, success criteria, constraints) and record the
-   answers as numbered decisions `D-01..` in `.muster/runs/<runId>/CONTEXT.md`. Then in one Bash
+   answers as numbered decisions `D-01..` in `.muster/runs/<runId>/CONTEXT.md` (unattended:
+   the defaults above). Then in one Bash
    call: refuse a dirty tree, `git switch -c muster/<runId>`, write CONTEXT.md if any (a spec run
    runs `M spec-clarify` when it asked, then `M spec-context <runId>`, instead of writing it).
    Planning writes only under `.muster/runs/<runId>/`, so no run-active marker is needed yet.
@@ -72,5 +78,5 @@ refusal, tell the user to leave plan mode and stop.
      .muster/runs/<runId>/PLAN.md`, and show step 4 again. build-args reads the edited file.
    - **Cancel:** stop. Leave the branch and run directory for the user to delete or resume.
 
-Unattended (cloud scheduled task, `claude -p`): never block on the approval; write the plan, report the
-verdict, and stop. Building needs `/muster:go`.
+Unattended: never block on the approval; write the plan, report the verdict and the assumptions,
+and stop. Building needs `/muster:go`.

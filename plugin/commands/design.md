@@ -87,7 +87,7 @@ checklist. Without Python 3, read uupm's reference files instead. When the
 session has Mobbin MCP tools, pattern- and flow-choosing workflows search
 Mobbin for cited references first; without them, skip that silently. The
 workflow map and the reasons for it are in
-`${CLAUDE_PLUGIN_ROOT}/commands/design/references/supporting-skills.md`; read
+`${CLAUDE_PLUGIN_ROOT}/references/design/supporting-skills.md`; read
 it when a packet's skills need explaining.
 
 When sources disagree: project DESIGN.md > accessibility/WCAG > Impeccable workflow guidance > supporting skills and references (uupm, typeui, intent, pfd, emil, gsap, taste, hallmark, anthropic, jk, elaya, addy, Mobbin).

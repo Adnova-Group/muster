@@ -119,13 +119,18 @@ export function groupBuiltins(inventory, filter = null) {
   return [...groups].sort(([a], [b]) => roleOrder(a) - roleOrder(b)).map(([role, skills]) => ({ role, skills }));
 }
 
-function renderList(groups, total, filter) {
+// How the reader runs a skills verb. `muster` is not on a plugin user's PATH: the plugin's
+// commands call the CLI through plugin/runtime/muster.sh, which sets MUSTER_VIA=claude-plugin,
+// and the user types /muster:skills. An npm-global install (no MUSTER_VIA) types `muster skills`.
+export const skillsCommand = (env = process.env) => (env.MUSTER_VIA === "claude-plugin" ? "/muster:skills" : "muster skills");
+
+function renderList(groups, total, filter, cmd = "muster skills") {
   const shown = groups.reduce((n, g) => n + g.skills.length, 0);
-  const lines = [`muster builtins: ${shown}${filter ? ` matching "${filter}"` : ""} of ${total}, as role: source · license: ids (details: muster skills show <id>)`];
+  const lines = [`muster builtins: ${shown}${filter ? ` matching "${filter}"` : ""} of ${total}, as role: source · license: ids (details: ${cmd} show <id>)`];
   if (!filter) {
     // Unfiltered: one line per role naming its sources, so the list stays small however many
     // builtins are vendored (its output is model context). `list <role>` gives the ids.
-    lines[0] = `muster builtins: ${total}, by role: sources (ids: muster skills list <role>; details: muster skills show <id>)`;
+    lines[0] = `muster builtins: ${total}, by role: sources (ids: ${cmd} list <role>; details: ${cmd} show <id>)`;
     for (const g of groups) {
       const sources = [...new Set(g.skills.map((b) => sourceLabel(b.upstream)))];
       const note = g.role === UNROUTED ? "; not in the catalog, so the planner never binds these" : "";
@@ -200,13 +205,13 @@ export async function searchSkills({ query, inventory, cacheDir, fetchImpl, now 
 
 const clip = (s, n = 110) => (s.length > n ? `${s.slice(0, n - 3)}...` : s);
 
-function renderSearch(r) {
+function renderSearch(r, cmd = "muster skills") {
   const lines = [`builtins for "${r.query}":`];
   if (!r.builtins.length) lines.push("  (none)");
   for (const b of r.builtins) lines.push(`  ${b.id} [${b.roles.join(",") || UNROUTED}] ${b.source} · ${b.license} - ${clip(b.description)}`);
   lines.push(`ui-skills.com registry${r.registrySource === "none" ? "" : ` (${r.registrySource}${r.registryFetchedAt ? `, ${r.registryFetchedAt}` : ""})`}:`);
   if (!r.registry.length) lines.push("  (none)");
-  for (const m of r.registry) lines.push(`  ${m.ref} - ${clip(m.description)} (not installed: muster skills add ${m.ref})`);
+  for (const m of r.registry) lines.push(`  ${m.ref} - ${clip(m.description)} (not installed: ${cmd} add ${m.ref})`);
   if (r.note) lines.push(`note: ${r.note}`);
   return lines.join("\n") + "\n";
 }
@@ -272,9 +277,9 @@ async function preflightTarget(cwd, id) {
   return null;
 }
 
-export async function enableSkill({ cwd, id, inventory, now = new Date(), version = PACKAGE_VERSION }) {
+export async function enableSkill({ cwd, id, inventory, now = new Date(), version = PACKAGE_VERSION, cmd = "muster skills" }) {
   const b = inventory.find((x) => x.id === id);
-  if (!b) return { ok: false, id, problems: [`unknown builtin ${JSON.stringify(id)}; see muster skills list`] };
+  if (!b) return { ok: false, id, problems: [`unknown builtin ${JSON.stringify(id)}; see ${cmd} list`] };
   const refusal = await preflightTarget(cwd, id);
   if (refusal) return { ok: false, id, problems: [refusal] };
   const srcDir = join(b.path, "..");
@@ -303,11 +308,11 @@ export async function enableSkill({ cwd, id, inventory, now = new Date(), versio
   return { ok: true, id, dir: `.claude/skills/${id}/`, files: records.length, license: b.license, ...(notes.length ? { notes } : {}) };
 }
 
-export async function addSkill({ cwd, ref, fetchImpl = globalThis.fetch, cacheDir, now = new Date(), env = process.env }) {
+export async function addSkill({ cwd, ref, fetchImpl = globalThis.fetch, cacheDir, now = new Date(), env = process.env, cmd = "muster skills" }) {
   if (!/^[^/\s]+\/[^/\s]+$/.test(String(ref || ""))) return { ok: false, ref, problems: ["add <publisher>/<skill>: expected a registry ref such as ibelick/ui-skills-root"] };
   const reg = await loadRegistry({ fetchImpl, cacheDir, now });
   const entry = findRegistryEntry(reg.skills, ref);
-  if (!entry) return { ok: false, ref, problems: [reg.skills.length ? `${ref} is not in the ui-skills.com registry; try muster skills search` : reg.note || "registry unavailable"] };
+  if (!entry) return { ok: false, ref, problems: [reg.skills.length ? `${ref} is not in the ui-skills.com registry; try ${cmd} search` : reg.note || "registry unavailable"] };
   const id = entry.slug.toLowerCase();
   const refusal = await preflightTarget(cwd, id);
   if (refusal) return { ok: false, ref, problems: [refusal] };
@@ -422,11 +427,11 @@ async function writeProjectConfig(cwd, config) {
   await writeContainedFile(cwd, join(cwd, CONFIG_REL), JSON.stringify(config, null, 2) + "\n");
 }
 
-export async function pinSkill({ cwd, id, role = null, inventory }) {
+export async function pinSkill({ cwd, id, role = null, inventory, cmd = "muster skills" }) {
   const b = inventory.find((x) => x.id === id);
   let installed = false;
   try { installed = !!readEnabledManifest(cwd).skills[id]; } catch { /* treated as not installed */ }
-  if (!b && !installed) return { ok: false, id, problems: [`unknown skill ${JSON.stringify(id)}: pin a builtin or a skill installed with muster skills add`] };
+  if (!b && !installed) return { ok: false, id, problems: [`unknown skill ${JSON.stringify(id)}: pin a builtin or a skill installed with ${cmd} add`] };
   if (b && !b.cataloged && !installed) return { ok: false, id, problems: [`${id} is not in the catalog, so build-args cannot bind it; enable it per project instead`] };
   if (role !== null && !ROLES.includes(role)) return { ok: false, id, problems: [`unknown role ${JSON.stringify(role)}; roles: ${ROLES.join(", ")}`] };
   const config = readProjectConfig(cwd);
@@ -598,6 +603,7 @@ export async function runSkillsCli(argv, { cwd = process.cwd(), env = process.en
   const inv = inventory || builtinInventory();
   const cacheDir = userCacheDir(env, home);
   const emit = (obj, text) => { stdout.write(json ? JSON.stringify(obj, null, 2) + "\n" : text); return obj.ok === false ? 1 : 0; };
+  const cmd = skillsCommand(env);
   const refuse = (r) => emit(r, `muster skills ${verb}: ${(r.problems || []).join("; ")}\n`);
   const usage = (msg) => { stderr.write(`muster: ${msg}\nusage: muster ${SKILLS_USAGE}\n`); return 2; };
 
@@ -605,7 +611,7 @@ export async function runSkillsCli(argv, { cwd = process.cwd(), env = process.en
     case "list": case undefined: {
       const groups = groupBuiltins(inv, args[0] || null);
       const obj = { total: inv.length, groups: groups.map((g) => ({ role: g.role, skills: g.skills.map((b) => ({ id: b.id, source: sourceLabel(b.upstream), license: b.license, routed: b.cataloged })) })) };
-      return emit(obj, renderList(groups, inv.length, args[0] || null));
+      return emit(obj, renderList(groups, inv.length, args[0] || null, cmd));
     }
     case "show": {
       if (!args[0]) return usage("skills show <id>: missing id");
@@ -621,11 +627,11 @@ export async function runSkillsCli(argv, { cwd = process.cwd(), env = process.en
       const query = args.join(" ");
       if (!query.trim()) return usage("skills search <query>: missing query");
       const r = await searchSkills({ query, inventory: inv, cacheDir, fetchImpl, now, network: !offline });
-      return emit(r, renderSearch(r));
+      return emit(r, renderSearch(r, cmd));
     }
     case "enable": {
       if (!args[0]) return usage("skills enable <id>: missing id");
-      const r = await enableSkill({ cwd, id: args[0], inventory: inv, now });
+      const r = await enableSkill({ cwd, id: args[0], inventory: inv, now, cmd });
       return r.ok ? emit(r, `enabled ${r.id}: ${r.files} file${r.files === 1 ? "" : "s"} in ${r.dir} (${r.license}); Claude Code offers it in this project from the next session${r.notes ? `\nnote: ${r.notes.join("; ")}` : ""}\n`) : refuse(r);
     }
     case "disable": {
@@ -635,13 +641,13 @@ export async function runSkillsCli(argv, { cwd = process.cwd(), env = process.en
     }
     case "add": {
       if (!args[0]) return usage("skills add <publisher>/<skill>: missing ref");
-      const r = await addSkill({ cwd, ref: args[0], fetchImpl, cacheDir, now, env });
+      const r = await addSkill({ cwd, ref: args[0], fetchImpl, cacheDir, now, env, cmd });
       return r.ok ? emit(r, `added ${r.ref} as ${r.dir}: ${r.files} file${r.files === 1 ? "" : "s"}, ${r.license}, from ${r.upstream}; review it before relying on it${r.notes ? `\nnote: ${r.notes.join("; ")}` : ""}\n`) : refuse(r);
     }
     case "pin": {
       if (!args[0]) return usage("skills pin <id> [--role <role>]: missing id");
       if (role === "") return usage("skills pin: --role needs a role");
-      const r = await pinSkill({ cwd, id: args[0], role, inventory: inv });
+      const r = await pinSkill({ cwd, id: args[0], role, inventory: inv, cmd });
       return r.ok ? emit(r, `pinned ${r.id}${r.role ? ` for role ${r.role}` : " for every task"} in ${r.config}; build-args binds it from the next plan\n`) : refuse(r);
     }
     case "unpin": {

@@ -33,7 +33,7 @@
 // `upstream` object ({ resolve, readFile, fileHistory, commitsCiting }), so the
 // merge and report logic is unit-tested against a local fixture repository.
 import { createHash } from "node:crypto";
-import { readFile, writeFile, mkdir, mkdtemp, rm, readdir } from "node:fs/promises";
+import { readFile, writeFile, mkdir, mkdtemp, rm, readdir, stat } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { execFile } from "node:child_process";
@@ -54,11 +54,28 @@ export const isDescribePin = source => {
   return Boolean(m && String(source.ref ?? "").startsWith(m[3]));
 };
 
+// A target for report/update: a release tag, or a 40-hex commit (an untagged upstream's
+// default-branch HEAD). Network values are checked against these before reaching git.
+export const isCommitRef = ref => SHA40_RE.test(String(ref));
+export const isTargetRef = ref => TAG_RE.test(String(ref)) || isCommitRef(ref);
+// Untagged and describe pins are fetched by commit; a release pin by its tag.
+const pinnedByCommit = source => source?.tag === null || isDescribePin(source);
+export const pinLabel = source => source.tag ?? String(source.ref).slice(0, 12);
+export const targetLabel = ref => (isCommitRef(ref) ? ref.slice(0, 12) : ref);
+const targetRevision = ref => (isCommitRef(ref) ? ref : `refs/tags/${ref}`);
+
+// Base copies are maintainer data: the npm package and the bundled plugin runtime do not
+// ship vendor/upstream/, so the commands that read them need a source checkout.
+export const BASE_COPIES_ABSENT = "base copies not shipped in the package";
+export async function baseCopiesPresent(root) {
+  try { return (await stat(join(root, "vendor/upstream"))).isDirectory(); } catch { return false; }
+}
+
 export const isSyncItem = item => item != null && item.mode !== undefined;
 export const isSyncSource = source => (source?.items || []).some(isSyncItem);
 export const syncItemsOf = source => (source?.items || []).filter(isSyncItem);
 export const baseCopyPath = (sourceId, from) => `vendor/upstream/${sourceId}/${from}`;
-export const reportPath = (sourceId, tag) => `vendor/reports/${sourceId}-${tag}.md`;
+export const reportPath = (sourceId, ref) => `vendor/reports/${sourceId}-${targetLabel(ref)}.md`;
 
 // The git blob id of `content` (what `git hash-object` prints), without git.
 export function gitBlobSha(content) {
@@ -336,25 +353,29 @@ export function gitUpstream(dir, { exec = pexec } = {}) {
   };
 }
 
-// Production fetch: a blobless temp clone holding the pin tag and the target tag.
+// Production fetch: a blobless temp clone holding the pin and the target. A release pin and
+// a tag target are fetched by tag; an untagged or describe pin and a commit target by sha.
 // Network. Returns { upstream, cleanup }.
 export async function fetchUpstream(source, toTag, { exec = pexec } = {}) {
-  if (!TAG_RE.test(toTag)) throw new Error(`invalid tag ${toTag}`);
-  const describe = isDescribePin(source);
-  if (!describe && !TAG_RE.test(String(source.tag))) throw new Error(`source ${source.id} records no valid pin tag`);
+  if (!isTargetRef(toTag)) throw new Error(`invalid tag or commit ${toTag}`);
+  const byCommit = pinnedByCommit(source);
+  if (!byCommit && !TAG_RE.test(String(source.tag))) throw new Error(`source ${source.id} records no valid pin tag`);
+  if (byCommit && !SHA40_RE.test(String(source.ref))) throw new Error(`source ${source.id} records no valid pin ref`);
   const url = source.url || `https://github.com/${source.repo}.git`;
   const root = await mkdtemp(join(tmpdir(), "muster-upstream-"));
   const dir = join(root, "repo");
   try {
     await exec("git", ["init", "-q", dir]);
     await exec("git", ["-C", dir, "remote", "add", "origin", url]);
-    // A describe pin is fetched by commit (GitHub serves any reachable sha) instead of by tag.
-    const refspecs = [...new Set(describe ? [toTag] : [source.tag, toTag])].map(t => `+refs/tags/${t}:refs/tags/${t}`);
-    if (describe) refspecs.push(`+${source.ref}:refs/muster/pin`);
+    // Commits are fetched by sha (GitHub serves any reachable sha) instead of by tag.
+    const tags = [...new Set([...(byCommit ? [] : [source.tag]), ...(isCommitRef(toTag) ? [] : [toTag])])];
+    const refspecs = tags.map(t => `+refs/tags/${t}:refs/tags/${t}`);
+    if (isCommitRef(toTag)) refspecs.push(`+${toTag}:refs/muster/target`);
+    if (byCommit) refspecs.push(`+${source.ref}:refs/muster/pin`);
     await exec("git", ["-C", dir, "fetch", "-q", "--filter=blob:none", "--no-tags", "origin", ...refspecs], { maxBuffer: 64 << 20 });
     const upstream = gitUpstream(dir, { exec });
-    const pinned = await upstream.resolve(describe ? "refs/muster/pin" : `refs/tags/${source.tag}`);
-    if (pinned !== source.ref) throw new Error(`pin ${source.tag} resolves to ${pinned}, but the manifest pins ${source.ref}`);
+    const pinned = await upstream.resolve(byCommit ? "refs/muster/pin" : `refs/tags/${source.tag}`);
+    if (pinned !== source.ref) throw new Error(`pin ${pinLabel(source)} resolves to ${pinned}, but the manifest pins ${source.ref}`);
     return { upstream, cleanup: () => rm(root, { recursive: true, force: true }) };
   } catch (error) {
     await rm(root, { recursive: true, force: true });
@@ -390,9 +411,9 @@ export async function buildReport({ source, toTag, toSha, upstream }) {
   const touched = rows.filter(r => r.touched);
   const table = rows.map(({ item, history, exists, citing }) =>
     `| ${item.from} | ${item.mode} | ${item.to ?? "-"} | ${exists ? history.commits.length : "removed"} | +${history.added}/-${history.deleted} | ${citing.length} |`).join("\n");
-  const text = `# ${source.id} upstream report: ${source.tag} -> ${toTag}\n\n` +
+  const text = `# ${source.id} upstream report: ${pinLabel(source)} -> ${targetLabel(toTag)}\n\n` +
     `Generated by \`muster vendor report ${source.id} --to ${toTag}\` from vendor/manifest.yaml. ` +
-    `Pin ${source.ref} (${source.tag}); target ${toSha} (${toTag}). ` +
+    `Pin ${source.ref} (${source.tag ?? "untagged"}); target ${toSha} (${isCommitRef(toTag) ? "commit" : toTag}). ` +
     `${touched.length} of ${rows.length} tracked item(s) changed upstream. ` +
     "Adapted items merge with `muster vendor update`; verbatim regions regenerate; watch items are read for mechanism changes and never merged.\n\n" +
     "| Upstream path | Mode | Muster file | Commits | Lines | Issue-citing commits |\n| --- | --- | --- | --- | --- | --- |\n" +
@@ -446,11 +467,15 @@ export async function runVendorUpdate({ root, manifest, manifestText, sourceId, 
   const source = (manifest?.sources || []).find(s => s.id === sourceId);
   if (!source) throw new Error(`unknown vendor source: ${sourceId}`);
   if (!isSyncSource(source)) throw new Error(`source ${sourceId} is not merge-tracked (no item has a mode)`);
-  if (!TAG_RE.test(String(toTag))) throw new Error(`invalid tag ${toTag}`);
+  if (!isTargetRef(toTag)) throw new Error(`invalid tag or commit ${toTag}`);
+  // A commit target records `tag: null`, which is only true of an untagged upstream; a commit
+  // between releases of a tagged upstream needs its git describe pin, written by hand.
+  if (isCommitRef(toTag) && source.tag !== null)
+    throw new Error(`source ${sourceId} is release-tagged: update it to a release tag (a commit between releases needs a hand-written git describe pin)`);
   let cleanup;
   if (!upstream) ({ upstream, cleanup } = await fetchUpstream(source, toTag, { exec }));
   try {
-    const toSha = await upstream.resolve(`refs/tags/${toTag}`);
+    const toSha = await upstream.resolve(targetRevision(toTag));
     const items = syncItemsOf(source);
     const bases = new Map();
     const conflicts = [];
@@ -491,7 +516,7 @@ export async function runVendorUpdate({ root, manifest, manifestText, sourceId, 
       if (adapted) {
         const { prev, next } = bases.get(adapted.from);
         if (next !== null) {
-          const merged = await mergeFile({ ours: text, base: prev, theirs: next, labels: ["muster", `${source.tag} ${adapted.from}`, `${toTag} ${adapted.from}`], exec });
+          const merged = await mergeFile({ ours: text, base: prev, theirs: next, labels: ["muster", `${pinLabel(source)} ${adapted.from}`, `${targetLabel(toTag)} ${adapted.from}`], exec });
           text = merged.text;
           mergeConflicts = merged.conflicts;
         }
@@ -511,12 +536,12 @@ export async function runVendorUpdate({ root, manifest, manifestText, sourceId, 
           blobs.set(from, gitBlobSha(next));
           if (prev !== null && !whole) await writeText(root, baseCopyPath(source.id, from), next);
         }
-        const nextManifest = updateManifestText(manifestText, source.id, { ref: toSha, tag: toTag, blobs });
+        const nextManifest = updateManifestText(manifestText, source.id, { ref: toSha, tag: isCommitRef(toTag) ? "null" : toTag, blobs });
         await writeText(root, "vendor/manifest.yaml", nextManifest);
       }
     }
     return {
-      source: source.id, from: { ref: source.ref, tag: source.tag }, to: { ref: toSha, tag: toTag }, dryRun,
+      source: source.id, from: { ref: source.ref, tag: source.tag }, to: { ref: toSha, tag: isCommitRef(toTag) ? null : toTag }, dryRun,
       files, conflicts, ports, report: { path: reportPath(source.id, toTag), touched: report.touched, items: report.items, ...(dryRun ? { text: report.text } : {}) },
       pinMoved: !dryRun && clean
     };
@@ -528,14 +553,14 @@ export async function runVendorUpdate({ root, manifest, manifestText, sourceId, 
 export async function runVendorReport({ root, manifest, sourceId, toTag, upstream, exec = pexec, write = true }) {
   const source = (manifest?.sources || []).find(s => s.id === sourceId);
   if (!source || !isSyncSource(source)) throw new Error(`source ${sourceId} is not merge-tracked`);
-  if (!TAG_RE.test(String(toTag))) throw new Error(`invalid tag ${toTag}`);
+  if (!isTargetRef(toTag)) throw new Error(`invalid tag or commit ${toTag}`);
   let cleanup;
   if (!upstream) ({ upstream, cleanup } = await fetchUpstream(source, toTag, { exec }));
   try {
-    const toSha = await upstream.resolve(`refs/tags/${toTag}`);
+    const toSha = await upstream.resolve(targetRevision(toTag));
     const report = await buildReport({ source, toTag, toSha, upstream });
     if (write) await writeText(root, reportPath(source.id, toTag), report.text);
-    return { source: source.id, from: source.tag, to: toTag, path: reportPath(source.id, toTag), touched: report.touched, items: report.items, text: report.text };
+    return { source: source.id, from: pinLabel(source), to: targetLabel(toTag), toSha, path: reportPath(source.id, toTag), touched: report.touched, items: report.items, text: report.text };
   } finally {
     await cleanup?.();
   }
@@ -543,8 +568,8 @@ export async function runVendorReport({ root, manifest, sourceId, toTag, upstrea
 
 // ---- offline check (doctor) -----------------------------------------------
 
-const versionKey = tag => String(tag).replace(/^v/, "").split(/[-.]/).map(p => (/^\d+$/.test(p) ? Number(p) : p));
-function tagNewer(a, b) {
+export const versionKey = tag => String(tag).replace(/^v/, "").split(/[-.]/).map(p => (/^\d+$/.test(p) ? Number(p) : p));
+export function tagNewer(a, b) {
   const x = versionKey(a), y = versionKey(b);
   for (let i = 0; i < Math.max(x.length, y.length); i++) {
     if (x[i] === y[i]) continue;
@@ -592,7 +617,7 @@ export async function checkVendorSync({ root, manifest }) {
     const reports = await readdir(join(root, "vendor/reports")).catch(() => []);
     for (const name of reports) {
       const m = name.match(new RegExp(`^${source.id}-(.+)\\.md$`));
-      if (m && TAG_RE.test(m[1]) && tagNewer(m[1], source.tag)) behind.push(`${source.id} pin ${source.tag} is behind ${m[1]} (${reportPath(source.id, m[1])})`);
+      if (m && source.tag !== null && TAG_RE.test(m[1]) && tagNewer(m[1], source.tag)) behind.push(`${source.id} pin ${source.tag} is behind ${m[1]} (${reportPath(source.id, m[1])})`);
     }
   }
   return { ok: problems.length === 0, checked, problems, behind };

@@ -259,6 +259,54 @@ test("fetchUpstream clones the pin and target tags (file:// fixture) and rejects
   } finally { await rm(up.dir, { recursive: true, force: true }); }
 });
 
+// An untagged upstream (tag: null) is pinned and targeted by commit: the watch hands
+// `vendor report` the default-branch HEAD, and `vendor update` records `tag: null` again.
+async function untaggedTree(up) {
+  const tree = await fixtureMuster(up);
+  const manifestText = tree.manifestText.replace("    tag: v1.0.0\n", "    tag: null\n");
+  await write(tree.dir, "vendor/manifest.yaml", manifestText);
+  return { ...tree, manifestText, manifest: parseYaml(manifestText) };
+}
+
+test("an untagged pin and a commit target: fetch by sha, report to <source>-<sha12>.md, update keeps tag null", async () => {
+  const up = await fixtureUpstream();
+  await git(up.dir, "config", "uploadpack.allowAnySHA1InWant", "true");
+  const tree = await untaggedTree(up);
+  try {
+    assert.deepEqual(validateVendorManifest(tree.manifest), { ok: true, errors: [] });
+    const source = { ...tree.manifest.sources[0], url: `file://${up.dir}` };
+    const { upstream, cleanup } = await fetchUpstream(source, up.target);
+    try {
+      assert.equal(await upstream.resolve("refs/muster/pin"), up.pin, "the untagged pin is fetched by commit");
+      assert.equal(await upstream.resolve(up.target), up.target, "the commit target is fetched by sha");
+    } finally { await cleanup(); }
+    await assert.rejects(fetchUpstream(source, "abc123"), /invalid tag or commit/);
+
+    const rep = await runVendorReport({ root: tree.dir, manifest: tree.manifest, sourceId: "up", toTag: up.target, upstream: gitUpstream(up.dir) });
+    assert.deepEqual([rep.path, rep.from, rep.to, rep.toSha, rep.touched], [`vendor/reports/up-${up.target.slice(0, 12)}.md`, up.pin.slice(0, 12), up.target.slice(0, 12), up.target, 3]);
+    assert.match(rep.text, new RegExp(`^# up upstream report: ${up.pin.slice(0, 12)} -> ${up.target.slice(0, 12)}\\n`));
+    assert.match(rep.text, new RegExp(`Pin ${up.pin} \\(untagged\\); target ${up.target} \\(commit\\)`));
+    assert.deepEqual((await checkVendorSync({ root: tree.dir, manifest: tree.manifest })).behind, [], "a commit report never reads as a newer release");
+
+    const res = await runVendorUpdate({ root: tree.dir, manifest: tree.manifest, manifestText: tree.manifestText, sourceId: "up", toTag: up.target, upstream: gitUpstream(up.dir) });
+    assert.deepEqual([res.conflicts, res.pinMoved, res.to], [[], true, { ref: up.target, tag: null }]);
+    const after = parseYaml(await readFile(join(tree.dir, "vendor/manifest.yaml"), "utf8"));
+    assert.deepEqual([after.sources[0].ref, after.sources[0].tag], [up.target, null]);
+  } finally { await rm(up.dir, { recursive: true, force: true }); await rm(tree.dir, { recursive: true, force: true }); }
+});
+
+test("vendor update refuses a commit target for a release-tagged source", async () => {
+  const up = await fixtureUpstream();
+  const tree = await fixtureMuster(up);
+  try {
+    await assert.rejects(
+      runVendorUpdate({ root: tree.dir, manifest: tree.manifest, manifestText: tree.manifestText, sourceId: "up", toTag: up.target, upstream: gitUpstream(up.dir) }),
+      /release-tagged: update it to a release tag/);
+    const rep = await runVendorReport({ root: tree.dir, manifest: tree.manifest, sourceId: "up", toTag: up.target, upstream: gitUpstream(up.dir), write: false });
+    assert.equal(rep.touched, 3, "a report to a commit is fine for any pin kind");
+  } finally { await rm(up.dir, { recursive: true, force: true }); await rm(tree.dir, { recursive: true, force: true }); }
+});
+
 test("vendor report writes vendor/reports/<source>-<tag>.md and a newer report shows as behind", async () => {
   const up = await fixtureUpstream();
   const tree = await fixtureMuster(up);
@@ -417,10 +465,31 @@ test("toAgent and the agents.generated drift check share vendoredAgentModel", ()
 
 test("the CLI routes vendor update/report/check and never falls through to the regenerate path", async () => {
   const cli = join(root, "src/cli.js");
-  await assert.rejects(pexec(process.execPath, [cli, "vendor", "update", "gsd"]), e => /missing --to <tag>/.test(e.stderr));
+  await assert.rejects(pexec(process.execPath, [cli, "vendor", "update", "gsd"]), e => /missing --to <tag\|commit>/.test(e.stderr));
   await assert.rejects(pexec(process.execPath, [cli, "vendor", "report"]), e => /missing <source>/.test(e.stderr));
   const { stdout } = await pexec(process.execPath, [cli, "vendor", "check"]);
   assert.equal(JSON.parse(stdout).ok, true);
+  const offline = JSON.parse((await pexec(process.execPath, [cli, "vendor", "outdated", "--offline"])).stdout);
+  assert.equal(offline.sources.length, manifest.sources.filter(s => s.items?.some(i => i.mode !== undefined)).length);
+  assert.deepEqual(offline.sources.find(s => s.id === "gsd").pin, { kind: "release", tag: "v1.20.1", ref: manifest.sources.find(s => s.id === "gsd").ref });
+});
+
+// The npm package and the bundled plugin runtime ship no vendor/upstream/: the maintainer verbs
+// say they need a source checkout, and doctor skips vendor-sync instead of failing it.
+test("without base copies: vendor check/report/update need a source checkout and doctor skips vendor-sync", async () => {
+  const bundled = join(root, "plugin/runtime/cli/bin/muster.mjs");
+  for (const args of [["check"], ["report", "gsd", "--to", "v9.9.9"], ["update", "gsd", "--to", "v9.9.9", "--dry-run"]])
+    await assert.rejects(pexec(process.execPath, [bundled, "vendor", ...args]), e => /needs a source checkout: base copies not shipped in the package/.test(e.stderr), args.join(" "));
+  const { stdout } = await pexec(process.execPath, [bundled, "vendor", "outdated", "--offline"]);
+  assert.ok(JSON.parse(stdout).sources.length > 0, "outdated runs from the package");
+  const { runDoctor } = await import("../src/doctor.js");
+  const pkg = await mkdtemp(join(tmpdir(), "muster-packaged-"));
+  try {
+    await write(pkg, "vendor/manifest.yaml", await readFile(join(root, "vendor/manifest.yaml"), "utf8"));
+    const check = (await runDoctor({ root: pkg, home: pkg, exec: async () => ({ stdout: "ahead\n" }) })).checks.find(c => c.name === "vendor-sync");
+    assert.equal(check.ok, true);
+    assert.match(check.detail, /^base copies not shipped in the package \(vendor\/upstream\/ is absent\) — skip/);
+  } finally { await rm(pkg, { recursive: true, force: true }); }
 });
 
 // ---- superpowers: the second merge-tracked source (generic sync) -------------------------

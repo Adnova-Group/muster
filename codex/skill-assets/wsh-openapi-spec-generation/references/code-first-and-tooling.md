@@ -1,5 +1,3 @@
-<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001, ANTH-POS-001, GUARD-IDK-001, GUARD-CITE-002, ANTH-XML-001, GUARD-SEP-003: Pinned upstream supporting asset loaded inside its parent skill; the parent supplies role, output, evidence, and input boundaries. -->
-
 # OpenAPI Code-First Generation and Tooling
 
 Advanced patterns for generating OpenAPI specs from code (Python/FastAPI, TypeScript/tsoa), validation, linting, and SDK generation.

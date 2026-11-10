@@ -88,11 +88,17 @@
     {
       "id": "wsh-api-design-principles",
       "source": "wshobson-agents:plugins/backend-development/skills/api-design-principles",
-      "adaptation": "packaging-only prompt-lint annotations on Markdown supporting assets",
+      "adaptation": "upstream supporting assets with prompt-lint annotations on Markdown; intentional local supporting-asset overlay",
       "files": [
         "assets",
         "references"
-      ]
+      ],
+      "overlay": {
+        "source": "plugin/builtins/wsh-api-design-principles",
+        "files": [
+          "references/details.md"
+        ]
+      }
     },
     {
       "id": "wsh-architecture-decision-records",
@@ -112,26 +118,45 @@
     {
       "id": "wsh-architecture-patterns",
       "source": "wshobson-agents:plugins/backend-development/skills/architecture-patterns",
-      "adaptation": "packaging-only prompt-lint annotations on Markdown supporting assets",
+      "adaptation": "upstream supporting assets with prompt-lint annotations on Markdown; intentional local supporting-asset overlay",
       "files": [
         "references"
-      ]
+      ],
+      "overlay": {
+        "source": "plugin/builtins/wsh-architecture-patterns",
+        "files": [
+          "references/advanced-patterns.md",
+          "references/details.md"
+        ]
+      }
     },
     {
       "id": "wsh-async-python-patterns",
       "source": "wshobson-agents:plugins/python-development/skills/async-python-patterns",
-      "adaptation": "packaging-only prompt-lint annotations on Markdown supporting assets",
+      "adaptation": "upstream supporting assets with prompt-lint annotations on Markdown; intentional local supporting-asset overlay",
       "files": [
         "references"
-      ]
+      ],
+      "overlay": {
+        "source": "plugin/builtins/wsh-async-python-patterns",
+        "files": [
+          "references/details.md"
+        ]
+      }
     },
     {
       "id": "wsh-attack-tree-construction",
       "source": "wshobson-agents:plugins/security-scanning/skills/attack-tree-construction",
-      "adaptation": "packaging-only prompt-lint annotations on Markdown supporting assets",
+      "adaptation": "upstream supporting assets with prompt-lint annotations on Markdown; intentional local supporting-asset overlay",
       "files": [
         "references"
-      ]
+      ],
+      "overlay": {
+        "source": "plugin/builtins/wsh-attack-tree-construction",
+        "files": [
+          "references/details.md"
+        ]
+      }
     },
     {
       "id": "wsh-code-review-excellence",
@@ -165,42 +190,72 @@
     {
       "id": "wsh-design-system-patterns",
       "source": "wshobson-agents:plugins/ui-design/skills/design-system-patterns",
-      "adaptation": "packaging-only prompt-lint annotations on Markdown supporting assets",
+      "adaptation": "upstream supporting assets with prompt-lint annotations on Markdown; intentional local supporting-asset overlay",
       "files": [
         "references"
-      ]
+      ],
+      "overlay": {
+        "source": "plugin/builtins/wsh-design-system-patterns",
+        "files": [
+          "references/details.md"
+        ]
+      }
     },
     {
       "id": "wsh-e2e-testing-patterns",
       "source": "wshobson-agents:plugins/developer-essentials/skills/e2e-testing-patterns",
-      "adaptation": "packaging-only prompt-lint annotations on Markdown supporting assets",
+      "adaptation": "upstream supporting assets with prompt-lint annotations on Markdown; intentional local supporting-asset overlay",
       "files": [
         "references"
-      ]
+      ],
+      "overlay": {
+        "source": "plugin/builtins/wsh-e2e-testing-patterns",
+        "files": [
+          "references/details.md"
+        ]
+      }
     },
     {
       "id": "wsh-go-concurrency-patterns",
       "source": "wshobson-agents:plugins/systems-programming/skills/go-concurrency-patterns",
-      "adaptation": "packaging-only prompt-lint annotations on Markdown supporting assets",
+      "adaptation": "upstream supporting assets with prompt-lint annotations on Markdown; intentional local supporting-asset overlay",
       "files": [
         "references"
-      ]
+      ],
+      "overlay": {
+        "source": "plugin/builtins/wsh-go-concurrency-patterns",
+        "files": [
+          "references/details.md"
+        ]
+      }
     },
     {
       "id": "wsh-javascript-testing-patterns",
       "source": "wshobson-agents:plugins/javascript-typescript/skills/javascript-testing-patterns",
-      "adaptation": "packaging-only prompt-lint annotations on Markdown supporting assets",
+      "adaptation": "upstream supporting assets with prompt-lint annotations on Markdown; intentional local supporting-asset overlay",
       "files": [
         "references"
-      ]
+      ],
+      "overlay": {
+        "source": "plugin/builtins/wsh-javascript-testing-patterns",
+        "files": [
+          "references/advanced-testing-patterns.md"
+        ]
+      }
     },
     {
       "id": "wsh-microservices-patterns",
       "source": "wshobson-agents:plugins/backend-development/skills/microservices-patterns",
-      "adaptation": "packaging-only prompt-lint annotations on Markdown supporting assets",
+      "adaptation": "upstream supporting assets with prompt-lint annotations on Markdown; intentional local supporting-asset overlay",
       "files": [
         "references"
-      ]
+      ],
+      "overlay": {
+        "source": "plugin/builtins/wsh-microservices-patterns",
+        "files": [
+          "references/details.md"
+        ]
+      }
     },
     {
       "id": "wsh-multi-reviewer-patterns",
@@ -213,26 +268,46 @@
     {
       "id": "wsh-nextjs-app-router-patterns",
       "source": "wshobson-agents:plugins/frontend-mobile-development/skills/nextjs-app-router-patterns",
-      "adaptation": "packaging-only prompt-lint annotations on Markdown supporting assets",
+      "adaptation": "upstream supporting assets with prompt-lint annotations on Markdown; intentional local supporting-asset overlay",
       "files": [
         "references"
-      ]
+      ],
+      "overlay": {
+        "source": "plugin/builtins/wsh-nextjs-app-router-patterns",
+        "files": [
+          "references/details.md"
+        ]
+      }
     },
     {
       "id": "wsh-nodejs-backend-patterns",
       "source": "wshobson-agents:plugins/javascript-typescript/skills/nodejs-backend-patterns",
-      "adaptation": "packaging-only prompt-lint annotations on Markdown supporting assets",
+      "adaptation": "upstream supporting assets with prompt-lint annotations on Markdown; intentional local supporting-asset overlay",
       "files": [
         "references"
-      ]
+      ],
+      "overlay": {
+        "source": "plugin/builtins/wsh-nodejs-backend-patterns",
+        "files": [
+          "references/advanced-patterns.md",
+          "references/details.md"
+        ]
+      }
     },
     {
       "id": "wsh-openapi-spec-generation",
       "source": "wshobson-agents:plugins/documentation-generation/skills/openapi-spec-generation",
-      "adaptation": "packaging-only prompt-lint annotations on Markdown supporting assets",
+      "adaptation": "upstream supporting assets with prompt-lint annotations on Markdown; intentional local supporting-asset overlay",
       "files": [
         "references"
-      ]
+      ],
+      "overlay": {
+        "source": "plugin/builtins/wsh-openapi-spec-generation",
+        "files": [
+          "references/code-first-and-tooling.md",
+          "references/details.md"
+        ]
+      }
     },
     {
       "id": "wsh-performance-engineer",
@@ -247,42 +322,73 @@
     {
       "id": "wsh-python-design-patterns",
       "source": "wshobson-agents:plugins/python-development/skills/python-design-patterns",
-      "adaptation": "packaging-only prompt-lint annotations on Markdown supporting assets",
+      "adaptation": "upstream supporting assets with prompt-lint annotations on Markdown; intentional local supporting-asset overlay",
       "files": [
         "references"
-      ]
+      ],
+      "overlay": {
+        "source": "plugin/builtins/wsh-python-design-patterns",
+        "files": [
+          "references/details.md"
+        ]
+      }
     },
     {
       "id": "wsh-python-testing-patterns",
       "source": "wshobson-agents:plugins/python-development/skills/python-testing-patterns",
-      "adaptation": "packaging-only prompt-lint annotations on Markdown supporting assets",
+      "adaptation": "upstream supporting assets with prompt-lint annotations on Markdown; intentional local supporting-asset overlay",
       "files": [
         "references"
-      ]
+      ],
+      "overlay": {
+        "source": "plugin/builtins/wsh-python-testing-patterns",
+        "files": [
+          "references/advanced-patterns.md",
+          "references/details.md"
+        ]
+      }
     },
     {
       "id": "wsh-react-modernization",
       "source": "wshobson-agents:plugins/framework-migration/skills/react-modernization",
-      "adaptation": "packaging-only prompt-lint annotations on Markdown supporting assets",
+      "adaptation": "upstream supporting assets with prompt-lint annotations on Markdown; intentional local supporting-asset overlay",
       "files": [
         "references"
-      ]
+      ],
+      "overlay": {
+        "source": "plugin/builtins/wsh-react-modernization",
+        "files": [
+          "references/details.md"
+        ]
+      }
     },
     {
       "id": "wsh-react-state-management",
       "source": "wshobson-agents:plugins/frontend-mobile-development/skills/react-state-management",
-      "adaptation": "packaging-only prompt-lint annotations on Markdown supporting assets",
+      "adaptation": "upstream supporting assets with prompt-lint annotations on Markdown; intentional local supporting-asset overlay",
       "files": [
         "references"
-      ]
+      ],
+      "overlay": {
+        "source": "plugin/builtins/wsh-react-state-management",
+        "files": [
+          "references/details.md"
+        ]
+      }
     },
     {
       "id": "wsh-responsive-design",
       "source": "wshobson-agents:plugins/ui-design/skills/responsive-design",
-      "adaptation": "packaging-only prompt-lint annotations on Markdown supporting assets",
+      "adaptation": "upstream supporting assets with prompt-lint annotations on Markdown; intentional local supporting-asset overlay",
       "files": [
         "references"
-      ]
+      ],
+      "overlay": {
+        "source": "plugin/builtins/wsh-responsive-design",
+        "files": [
+          "references/details.md"
+        ]
+      }
     },
     {
       "id": "wsh-seo-structure-architect",
@@ -315,42 +421,73 @@
     {
       "id": "wsh-stride-analysis-patterns",
       "source": "wshobson-agents:plugins/security-scanning/skills/stride-analysis-patterns",
-      "adaptation": "packaging-only prompt-lint annotations on Markdown supporting assets",
+      "adaptation": "upstream supporting assets with prompt-lint annotations on Markdown; intentional local supporting-asset overlay",
       "files": [
         "references"
-      ]
+      ],
+      "overlay": {
+        "source": "plugin/builtins/wsh-stride-analysis-patterns",
+        "files": [
+          "references/details.md"
+        ]
+      }
     },
     {
       "id": "wsh-tailwind-design-system",
       "source": "wshobson-agents:plugins/frontend-mobile-development/skills/tailwind-design-system",
-      "adaptation": "packaging-only prompt-lint annotations on Markdown supporting assets",
+      "adaptation": "upstream supporting assets with prompt-lint annotations on Markdown; intentional local supporting-asset overlay",
       "files": [
         "references"
-      ]
+      ],
+      "overlay": {
+        "source": "plugin/builtins/wsh-tailwind-design-system",
+        "files": [
+          "references/advanced-patterns.md",
+          "references/details.md"
+        ]
+      }
     },
     {
       "id": "wsh-threat-mitigation-mapping",
       "source": "wshobson-agents:plugins/security-scanning/skills/threat-mitigation-mapping",
-      "adaptation": "packaging-only prompt-lint annotations on Markdown supporting assets",
+      "adaptation": "upstream supporting assets with prompt-lint annotations on Markdown; intentional local supporting-asset overlay",
       "files": [
         "references"
-      ]
+      ],
+      "overlay": {
+        "source": "plugin/builtins/wsh-threat-mitigation-mapping",
+        "files": [
+          "references/details.md"
+        ]
+      }
     },
     {
       "id": "wsh-typescript-advanced-types",
       "source": "wshobson-agents:plugins/javascript-typescript/skills/typescript-advanced-types",
-      "adaptation": "packaging-only prompt-lint annotations on Markdown supporting assets",
+      "adaptation": "upstream supporting assets with prompt-lint annotations on Markdown; intentional local supporting-asset overlay",
       "files": [
         "references"
-      ]
+      ],
+      "overlay": {
+        "source": "plugin/builtins/wsh-typescript-advanced-types",
+        "files": [
+          "references/details.md"
+        ]
+      }
     },
     {
       "id": "wsh-wcag-audit-patterns",
       "source": "wshobson-agents:plugins/accessibility-compliance/skills/wcag-audit-patterns",
-      "adaptation": "packaging-only prompt-lint annotations on Markdown supporting assets",
+      "adaptation": "upstream supporting assets with prompt-lint annotations on Markdown; intentional local supporting-asset overlay",
       "files": [
         "references"
-      ]
+      ],
+      "overlay": {
+        "source": "plugin/builtins/wsh-wcag-audit-patterns",
+        "files": [
+          "references/details.md"
+        ]
+      }
     }
   ]
 }

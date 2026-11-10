@@ -513,3 +513,10 @@
   keywords: [plain, plainenglish, ste, simplified, controlled, jargon, readability]
   description: "Plain, ASD-STE100-style controlled English for docs, runbooks, procedures, error messages and release notes, with a Strict mode and a rule-catalog CHECK mode."
   provenance: { license: MIT, upstream: [AminBlg/SimpleEnglish] }
+- id: mp-writing-for-agents
+  kind: builtin
+  roles: [prompt-quality]
+  rank: 45
+  keywords: [agentsmd, claudemd, skill, pointer, disclosure, pruning]
+  description: "Write documents agents consume (skills, AGENTS.md, CLAUDE.md): context pointers, information hierarchy, completion criteria, leading words and pruning."
+  provenance: { license: MIT, upstream: [mattpocock/skills] }

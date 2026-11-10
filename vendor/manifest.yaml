@@ -1845,6 +1845,11 @@ sources:
     # tool with <name>" to the builtin paths and the unvendored grilling skill to the pinned
     # upstream file. Not vendored: every other skill, agents/openai.yaml, docs/, scripts/.
     # Wiring: audit-pattern-architecture names all three by id.
+    # 2026-11-10 (complements part 2): skills/productivity/writing-for-agents added as
+    # mp-writing-for-agents with the SKILL-MECHANICS.md it links, adapted with base copies in
+    # vendor/upstream/mattpocock-skills/ (frontmatter swap, a prompt-lint-disable comment at the top
+    # of the body since upstream has no H1, the packaging-only header on SKILL-MECHANICS.md). Wired
+    # into muster-prompt-smith and the prompt-quality audit pattern.
     ref: 4ae2317ddb22b046e26455e4f9c9b3aaaf62212d
     tag: v1.3.2-3-g4ae2317
     license: MIT
@@ -1861,6 +1866,8 @@ sources:
       - { id: mp-domain-modeling, kind: builtin, from: skills/engineering/domain-modeling/SKILL.md, to: plugin/builtins/mp-domain-modeling/SKILL.md, mode: adapted, relation: adapted, baseBlob: a4438c6879c517d1a08e2b5fbca049b632688dfe }
       - { from: skills/engineering/domain-modeling/ADR-FORMAT.md, to: plugin/builtins/mp-domain-modeling/ADR-FORMAT.md, mode: verbatim, baseBlob: d7e61f30a9fd8ca70d9ee68f019c2a9ebf2d13f7 }
       - { from: skills/engineering/domain-modeling/GLOSSARY-FORMAT.md, to: plugin/builtins/mp-domain-modeling/GLOSSARY-FORMAT.md, mode: verbatim, baseBlob: 9c0b4c7a2e8507c23cbb5e0baa66d81699321cc6 }
+      - { id: mp-writing-for-agents, kind: builtin, from: skills/productivity/writing-for-agents/SKILL.md, to: plugin/builtins/mp-writing-for-agents/SKILL.md, mode: adapted, baseBlob: a37608daf6e835e767deecfb498facecaaba82ba }
+      - { from: skills/productivity/writing-for-agents/SKILL-MECHANICS.md, to: plugin/builtins/mp-writing-for-agents/SKILL-MECHANICS.md, mode: adapted, baseBlob: 9cdbdb22aadc438755392216e75ad9a14cc9832e }
 
   - id: superpowers-lab
     kind: github

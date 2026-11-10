@@ -190,3 +190,19 @@ burning rounds. The model proposes; this controller owns the stop decision.
 
 Glass box: record the chosen rules fixed, the winning technique, and the per-version scores
 in the run STATE. Ship the winner only when it passes the floor and beats the baseline.
+
+## 4. Rewrite an agent-facing document — when the fix is structural
+
+Some findings are not one-rule patches: the skill, agent definition, `AGENTS.md` or `CLAUDE.md`
+needs restructuring. Load `mp-writing-for-agents` for that rewrite:
+
+- treat the description and every "read X when Y" line as a **context pointer**: its wording
+  decides when the material is reached, so sharpen it before inlining anything;
+- place each piece on the information hierarchy (in-file step, in-file reference, disclosed file)
+  and disclose what only some branches need;
+- end every step on a checkable completion criterion;
+- state the positive target behaviour instead of the prohibition (the lever behind
+  `ANTH-POS-001`), keeping a prohibition only as a hard guardrail paired with its positive form;
+- prune no-ops, duplicated meaning and restated environment facts.
+
+Re-lint the rewrite with step 1 and compare totals against the original before shipping it.

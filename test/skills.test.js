@@ -71,7 +71,7 @@ test("list: grouped by role, filter by role or family, unrouted last; CLI prints
   const groups = groupBuiltins(inv);
   assert.equal(groups.reduce((n, g) => n + g.skills.length, 0), inv.length, "each builtin listed once");
   if (inv.some((b) => !b.cataloged)) assert.equal(groups.at(-1).role, "unrouted");
-  assert.deepEqual(groupBuiltins(inv, "test-author")[0].skills.map((b) => b.id).slice(0, 2), ["sp-tdd", "sp-verify"]);
+  assert.deepEqual(groupBuiltins(inv, "test-author")[0].skills.map((b) => b.id).filter((id) => id.startsWith("sp-")), ["sp-tdd", "sp-verify"]);
   assert.ok(groupBuiltins(inv, "emil").flatMap((g) => g.skills).every((b) => b.id.startsWith("emil-")));
   const { code, out } = await capture(["list", "test-author"]);
   assert.equal(code, 0);

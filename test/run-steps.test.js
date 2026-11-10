@@ -312,6 +312,8 @@ test("next --run derives the position from the run files", async () => {
   assert.equal(await step(), "discussed");
   assert.match((await nextForRun({ cwd, runId: "r9" })).next, /Workflow\(\{name:"muster:make-plan"/, "the planning workflow, never the /muster:plan command's name");
   await writeFile(join(dir, "PLAN.md"), '<task id="T1">a</task>\n<task id="T2">b</task>\n');
+  assert.equal(await step(), "plan-unchecked", "a plan with no gate record is re-checked, never built");
+  await writeFile(join(dir, "plan-check.json"), JSON.stringify({ runId: "r9", verdict: "PASS", revisions: 0, issues: [], escalated: null }));
   assert.equal(await step(), "planned");
   await writeFile(join(dir, "build-result.json"), JSON.stringify({ runId: "r9", tasks: [{ taskId: "T1" }, { taskId: "T2" }] }));
   const built = await nextForRun({ cwd, runId: "r9" });
@@ -333,6 +335,48 @@ test("next --run derives the position from the run files", async () => {
   const state = await readFile(join(dir, "STATE.md"), "utf8");
   assert.match(state, /^# Run r9\n[\s\S]*- position: paused\n[\s\S]*## Log\n- t merge-wave: merged T1 [\s\S]*merged T2 /, "the derived head is rewritten and the log preserved");
   assert.equal(state.match(/## Log/g).length, 1);
+});
+
+test("next --run after a stalled plan reports the escalation instead of the build (live e2e 2026-11-10)", async () => {
+  const cwd = await trackedMkdtemp(join(tmpdir(), "muster-next-stall-"));
+  const dir = join(cwd, ".muster/runs/r3");
+  await mkdir(dir, { recursive: true });
+  await writeFile(join(dir, "CONTEXT.md"), "# ctx\n");
+  await writeFile(join(dir, "PLAN.md"), '<task id="01">a</task>\n<task id="02">b</task>\n');
+  // Run 3's make-plan result, as the Workflow tool's envelope the main thread may save verbatim.
+  const stalled = { summary: "Write and check a muster PLAN.md", logs: ["blocking issue count stalled at 1; escalating"], result: {
+    runId: "r3", planPath: ".muster/runs/r3/PLAN.md", verdict: "ISSUES", revisions: 2, escalated: "stall",
+    issues: [{ dimension: "requirement_coverage", severity: "blocker", summary: "x" }, { dimension: "key_links", severity: "info", summary: "y" }] } };
+  await writeFile(join(dir, "plan-check.json"), JSON.stringify(stalled));
+  const r = await nextForRun({ cwd, runId: "r3" });
+  assert.equal(r.position, "plan-escalated");
+  assert.match(r.next, /^escalate: the plan never passed the checker \(escalated: stall\)/);
+  assert.match(r.next, /Revise[\s\S]*re-run muster:make-plan[\s\S]*or Abort; never build it/);
+  assert.doesNotMatch(r.next, /muster:build/);
+  assert.equal(r.why, "plan-check.json escalated: stall, 1 blocker(s)");
+  assert.equal(r.artifacts.planCheck, "ISSUES");
+  assert.match(await readFile(join(dir, "STATE.md"), "utf8"), /- position: plan-escalated\n- next: escalate:/);
+  // An ERROR result or an unreadable record is not a pass either.
+  await writeFile(join(dir, "plan-check.json"), JSON.stringify({ verdict: "ERROR", escalated: "checker", issues: [] }));
+  assert.equal((await nextForRun({ cwd, runId: "r3" })).position, "plan-escalated");
+  await writeFile(join(dir, "plan-check.json"), "{not json");
+  assert.equal((await nextForRun({ cwd, runId: "r3" })).position, "plan-escalated");
+  // A re-plan that passes (the main thread overwrites the record) unblocks the build.
+  await writeFile(join(dir, "plan-check.json"), JSON.stringify({ verdict: "PASS", escalated: null, issues: [{ severity: "warning", dimension: "malicious_implementer", summary: "w" }] }));
+  const ok = await nextForRun({ cwd, runId: "r3" });
+  assert.equal(ok.position, "planned");
+  assert.match(ok.next, /^build: /);
+  // A committed build-args.json means the plan was approved: the gate record no longer matters.
+  await writeFile(join(dir, "plan-check.json"), JSON.stringify(stalled));
+  await writeFile(join(dir, "build-args.json"), JSON.stringify({ runId: "r3", waves: [] }));
+  assert.equal((await nextForRun({ cwd, runId: "r3" })).position, "planned");
+});
+
+test("the main thread records every make-plan result where next reads it, and go stops on escalate", async () => {
+  const read = (p) => readFile(new URL(`../plugin/${p}`, import.meta.url), "utf8");
+  assert.match(await read("skills/orchestrator/SKILL.md"), /Write every\s+`muster:make-plan` result to `plan-check\.json` the moment it returns, PASS included/);
+  assert.match(await read("commands/plan.md"), /Write its\s+result to `\.muster\/runs\/<runId>\/plan-check\.json`/);
+  assert.match(await read("commands/go.md"), /`escalate` -> stop\)/);
 });
 
 test("next --run helpers parse the common PLAN.md and VERIFICATION.md shapes", () => {

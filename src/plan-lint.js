@@ -93,6 +93,32 @@ export function blankFencedBlocks(text) {
   return { text: out.join("\n"), unclosedFence: inFence };
 }
 
+/**
+ * Closing tags with no opener anywhere in the (fence-blanked) body: `</output>` after
+ * `</success_criteria>` and the like. Inline code spans are ignored, so prose that names a tag in
+ * backticks is not counted. Only a close with zero openers is reported: a stray tag misleads an
+ * executor about where the plan ends, while an unmatched opener in prose is harmless.
+ * Live e2e 2026-11-10: the checker reported a stray `</output>` that the file never contained
+ * (tool-output framing); this is the deterministic check it defers to.
+ */
+export function strayClosingTags(body) {
+  const lines = String(body ?? "").split("\n").map(l => l.replace(/`[^`\n]*`/g, ""));
+  const opens = new Map();
+  const closes = new Map();
+  lines.forEach((line, i) => {
+    for (const m of line.matchAll(/<([A-Za-z][\w-]{0,63})(?:\s[^<>]{0,1000})?>/g)) {
+      if (m[0].endsWith("/>")) continue;
+      const tag = m[1].toLowerCase();
+      opens.set(tag, (opens.get(tag) || 0) + 1);
+    }
+    for (const m of line.matchAll(/<\/([A-Za-z][\w-]{0,63})\s*>/g)) {
+      const tag = m[1].toLowerCase();
+      if (!closes.has(tag)) closes.set(tag, i + 1);
+    }
+  });
+  return [...closes].filter(([tag]) => !opens.has(tag)).map(([tag, line]) => ({ tag, line }));
+}
+
 function escapeRegex(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -835,6 +861,10 @@ export function lintPlan(rawText, options = {}) {
   if (tasks.length === 0) {
     add(DIMENSIONS.PLAN_STRUCTURE, SEVERITY.BLOCKER, "The plan declares at least one `<task>`", "no <task> elements found");
   }
+  const bodyLineOffset = plan.text.split("\n").length - plan.body.split("\n").length;
+  for (const { tag, line } of strayClosingTags(plan.body)) {
+    add(DIMENSIONS.PLAN_STRUCTURE, SEVERITY.WARNING, "Every closing tag in PLAN.md has an opener", `line ${line + bodyLineOffset}: </${tag}> closes nothing (no <${tag}> anywhere in the plan); delete it`);
+  }
   for (const t of tasks) {
     if (!t.closed) add(DIMENSIONS.PLAN_STRUCTURE, SEVERITY.BLOCKER, "Every `<task>` is closed by `</task>`", `${label(t)} is opened but never closed`);
     if (t.kind !== "checkpoint" && t.type !== null && !KNOWN_TASK_TYPES.includes(t.type)) {
@@ -1021,16 +1051,21 @@ export function lintPlan(rawText, options = {}) {
   const executable = tasks.filter(t => t.kind !== "checkpoint");
   if (!tracerOptOut && executable.length > 0) {
     const tracers = executable.filter(t => t.type === "tracer");
-    const req = "The plan leads with exactly one `type=\"tracer\"` task that every expansion task follows (or sets `tracer: false`)";
+    const req = "The plan leads with exactly one `type=\"tracer\"` task and no task runs in an earlier wave (or sets `tracer: false`)";
     if (tracers.length === 0) {
       add(DIMENSIONS.TRACER, SEVERITY.WARNING, req, "no task has type=\"tracer\"; set `tracer: false` in frontmatter to opt out deliberately");
     } else {
       if (tracers.length > 1) add(DIMENSIONS.TRACER, SEVERITY.WARNING, req, `${tracers.length} tracer tasks (${tracers.map(label).join(", ")}); a plan has one`);
       const tracer = tracers[0];
       if (executable[0] !== tracer) add(DIMENSIONS.TRACER, SEVERITY.WARNING, req, `${label(tracer)} is the tracer but ${label(executable[0])} comes first`);
+      // A task in the tracer's own wave is independent of it: it cannot depend on the tracer
+      // (dependency_correctness) or share a file with it (same-wave overlap is a blocker). Forcing
+      // it a wave later serialized small plans of independent tasks (live e2e 2026-11-10: two
+      // helpers a locked decision declared independent ran in two waves, so the integration
+      // check never ran). Only a task that runs BEFORE the tracer is out of order.
       if (tracer.wave !== null) {
-        const early = executable.filter(t => t !== tracer && t.wave !== null && t.wave <= tracer.wave);
-        if (early.length > 0) add(DIMENSIONS.TRACER, SEVERITY.WARNING, req, `${early.map(label).join(", ")} run${early.length === 1 ? "s" : ""} no later than the tracer (wave ${tracer.wave}), before the slice is proven`);
+        const early = executable.filter(t => t !== tracer && t.wave !== null && t.wave < tracer.wave);
+        if (early.length > 0) add(DIMENSIONS.TRACER, SEVERITY.WARNING, req, `${early.map(label).join(", ")} run${early.length === 1 ? "s" : ""} before the tracer (wave ${tracer.wave}), before the slice is proven`);
       }
     }
   }

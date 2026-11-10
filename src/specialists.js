@@ -114,9 +114,28 @@ export function skillLanguage(id) {
   return null;
 }
 
+// UI and design builtins (live e2e 2026-11-10: a CLI-only `--json` outcome was offered
+// uupm-ui-ux-pro-max and emil-break-ui on description words like "empty" and "counts"). The
+// families are UI by construction; the token list catches the rest by id.
+const UI_SKILL = /^(?:impeccable|emil|gsap|taste|uupm|elaya|jk|intent)-|^(?:hallmark|typeui|pfd)$|(?:^|-)(?:ui|ux|frontend|css|tailwind|responsive|wcag|figma|react|nextjs|vue|svelte|angular|browser)(?:-|$)|(?:^|-)(?:canvas|frontend|landing-page)-design$|(?:^|-)design-system(?:-|$)/;
+// An outcome that names a UI surface keeps the UI skills whatever the project looks like.
+// Deliberately broad: a false keep costs a skill the planner ignores, a false drop costs the skill.
+const UI_OUTCOME = /\b(?:ui|ux|gui|user interface|page|pages|screen|screens|component|components|css|scss|html|design|designs|frontend|front-end|layout|styling|styles?heet|theme|button|buttons|modal|dialog|form|forms|animation|animations|animate|responsive|accessibility|a11y|wcag|web ?app|website|landing|dashboard|figma|react|vue|svelte|angular|next\.js|tailwind|browser)\b/i;
+
+export function isUiSkill(id) {
+  return UI_SKILL.test(String(id));
+}
+
+export function outcomeNamesUi(outcome) {
+  return UI_OUTCOME.test(String(outcome));
+}
+
 // A language-specific skill fits when the project's detected languages include its language, or the
 // outcome names that language. With no detected languages (unknown stack) every skill fits.
-export function skillFitsStack(id, languages = [], outcome = "") {
+// A UI skill also needs a UI: `projectUi: false` (the project shows none) drops it unless the
+// outcome names one; `projectUi` unknown (undefined) keeps it.
+export function skillFitsStack(id, languages = [], outcome = "", { projectUi } = {}) {
+  if (projectUi === false && isUiSkill(id) && !outcomeNamesUi(outcome)) return false;
   const language = skillLanguage(id);
   if (!language || !languages.length) return true;
   const detected = new Set(languages.map((l) => LANGUAGE_FAMILY[String(l).toLowerCase()] || String(l).toLowerCase()));

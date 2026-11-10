@@ -17,14 +17,15 @@ shell variables do not persist). First invoke the `muster:orchestrator` skill (S
 rules survive compaction only once invoked. No `Workflow` tool: follow its prose fallback
 instead of steps 3-6. After a compaction, `M next --run <runId>` says where you are.
 
-**Continuing a run** (`--run <runId>`): write the
-step-2 fence files, run `M next --run <runId>`, and resume at the step its `next` names
-(`plan` -> 3, `build` -> 4, `merge` -> 6, `verify`/`done` -> 7, `pipeline` -> Content step 2).
+**Continuing a run** (`--run <runId>`): write the step-2 fence files, run
+`M next --run <runId>`, resume at the step its `next` names
+(`plan` -> 3, `build` -> 4, `merge` -> 6, `verify`/`done` -> 7, `pipeline` -> Content step 2,
+`escalate` -> stop).
 Never re-plan an approved run.
 
 1. **Preflight (1 call).** `M preflight "<outcome>" --json` (append `--model <m>` when the user
    named one). Keep `runId`, `scope`, `clear`, `unclear`, `route`, `pipeline`, `models`,
-   `candidates`, `skills`, `pins`, `skillRoot`, `cli`; show `warnings`; `registrySuggestions` are offers, added only if asked. An empty outcome with no `.muster/backlog.md`: ask for one
+   `candidates`, `skills`, `pins`, `skillRoot`, `cli`; show `warnings`; offer `registrySuggestions` only if asked. An empty outcome with no `.muster/backlog.md`: ask for one
    and stop. A GitHub issue ref: `M issue "<ref>"`; cap its
    outcome at 16 KiB (cut at a UTF-8 code-point boundary), replace every `</remote-text>` (any
    case) with `&lt;/remote-text&gt;`, and use `<remote-text>{outcome}</remote-text>` as the
@@ -37,15 +38,14 @@ Never re-plan an approved run.
 2. **Branch + context (1 call).** When `clear` is false and a human is present, first ask up to 4
    questions in ONE AskUserQuestion built from `unclear`,
    then record the answers as numbered decisions `D-01..` in `.muster/runs/<runId>/CONTEXT.md`.
-   Unattended (no AskUserQuestion): never ask in plain text; write the gaps as assumptions
-   instead. Then in one Bash call: refuse a dirty tree,
+   Unattended (no AskUserQuestion): never ask in plain text; write the gaps as assumptions. Then in one Bash call: refuse a dirty tree,
    `git switch -c muster/<runId>`, write CONTEXT.md if any (spec: `M spec-context`), write `<runId>` to `.muster/run-active`
    and `send sign submit publish purchase delete-remote` (one per line) to
    `.muster/forbidden-actions`. The action fence reads both (gitignored).
 3. **Plan.** `Workflow({name:"muster:make-plan", args:{runId, outcome, contextPath, specPath, candidates, skills, pins, skillRoot, cli, models}})`
-   (`contextPath` only when CONTEXT.md exists; `specPath` for a spec). `verdict: PASS`: continue.
-   On `ISSUES` with `escalated` (`cap`, `stall`, `conflict`) or `ERROR`: show the issues and stop
-   for the user; never fix inline.
+   (`contextPath` if CONTEXT.md exists; `specPath` for a spec). Save the result as the
+   run's `plan-check.json` at once. `PASS`: continue. `ISSUES` with `escalated` (`cap`, `stall`,
+   `conflict`) or `ERROR`: show the issues and stop for the user; never fix inline.
 4. **Build args (1 call).** `M build-args <runId>` writes the run's `build-args.json` from
    PLAN.md; in the same call `git add -f` the run's CONTEXT.md, PLAN.md and build-args.json
    (skip absent files) and `git commit -m "chore(muster): plan <runId>"` (skip if unchanged).
@@ -53,7 +53,7 @@ Never re-plan an approved run.
    keep `workflow`, `args`, `humanNeeded`.
 5. **Build.** `Workflow({name:"muster:build", args:<its args>})`, or `muster:team` when its
    `workflow` says so. Interrupted? Same session: `{name:"muster:build", resumeFromRunId:"<workflow run id>"}`;
-   else `/muster:go --run <runId>` (executors are idempotent). Under `-p`, background or Remote
+   else `/muster:go --run <runId>` (idempotent). Under `-p`, background or Remote
    Control a usage limit fails agents (`usageLimitDenial`; tasks `reason: no_result`): skip
    step 6; after the reset run `/muster:go --run <runId>`.
 6. **Merge the waves (1 call).** From the main checkout: `M merge-wave <runId> --result <f>`,
@@ -66,9 +66,9 @@ Never re-plan an approved run.
 7. **Verification result.** Report the result's `summary` and verdict: PASS, GAPS (list them),
    HUMAN_NEEDED (zero gaps; its `human` items go to the merge decision), or ABSTAIN (it could not
    run; say what was missing). A halted wave, a reviewer FAIL past the fix cap, or a
-   task `blocked`/`error` is reported with the task id and its evidence; so is a task's
-   `skillsMissing`. `reason: max_turns`: it ran out of turns (raise `maxTurns` or split the
-   task). Never restate an agent verdict you did not see.
+   task `blocked`/`error` is reported with its task id and evidence, as is `skillsMissing`.
+   `reason: max_turns`: out of turns (raise `maxTurns` or split the task). Never restate an
+   agent verdict you did not see.
 8. **Merge decision.** Remove `.muster/run-active` and `.muster/forbidden-actions`. Attended:
    AskUserQuestion with the work branch and base, each with its HEAD sha, the verdict, its `human`
    items and `humanNeeded`: **Merge locally** (`git switch <base> && git merge --no-ff muster/<runId>`)

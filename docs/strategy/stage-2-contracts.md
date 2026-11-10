@@ -157,8 +157,9 @@ re-runs `testsRun` before merging, through `muster merge-wave`.
 4. **Agent types** are `muster:muster-<name>`. Fixers reuse `muster-executor` with a fix brief.
    `agentHint` goes into the brief as a domain lens, not as the agent type.
 5. **plan.js** returns `{runId, planPath, verdict: PASS|ISSUES|ERROR, revisions, issues, escalated:
-   null|cap|stall|planner|checker|conflict, conflict?}`. Only blocker and warning issues bind a
-   revision or count toward the stall rule, so info-only results PASS. A planner summary starting
+   null|cap|stall|planner|checker|conflict, conflict?}`. Only blocker issues bind a revision or
+   count toward the stall rule, so warning- and info-only results PASS (amendment after the
+   2026-11-10 live e2e: warnings are shown and handed downstream, never block). A planner summary starting
    `REVISION_CONFLICT` escalates as `conflict` for the user. The planner returns
    `{status, planPath, taskCount, summary}`.
    The checker runs `muster plan-lint` itself; there is no separate lint stage.

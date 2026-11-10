@@ -212,3 +212,35 @@ test("a vague verb with a concrete quoted token rescues vague-only (too-short/no
   assert.ok(r.signals.includes("no-success-criteria"), "no metric/keyword must still flag no-success-criteria");
   assert.ok(!r.signals.includes("vague-only"), "a quoted span ('Login') is a concrete token that must rescue vague-only");
 });
+
+// WHY (live e2e 2026-11-10, run 1): an outcome with an explicit "Acceptance:" clause was flagged
+// no-success-criteria, so preflight recorded the author's own criteria as "assumptions". A closed
+// set of criteria labels followed by a substantive clause states the criteria outright.
+test("labeled criteria: 'Acceptance:', 'Done when:' and 'Success criteria:' clear no-success-criteria", () => {
+  const run1 =
+    "Add a `--json` flag to `tally report` that prints {\"rows\":[{\"category\",\"total\"}],\"total\"} as JSON " +
+    "instead of the table, and a new `tally stats <file.csv>` subcommand that prints count, sum, mean, median, " +
+    "min and max of the amounts (also honouring `--json`). Acceptance: node:test tests cover both features " +
+    "including an empty CSV, `npm test` passes, and the README documents both commands.";
+  for (const outcome of [
+    run1,
+    "Refactor the parser module into smaller files. Done when: every parser test passes unchanged",
+    "Rework the export flow for admins.\nSuccess criteria: admins can export a CSV of all users",
+    "Rework the export flow for admins. Acceptance criteria: the export button downloads a CSV",
+    "Rework the export flow for admins (definition of done: an admin downloads the CSV)",
+  ]) {
+    const r = assessOutcome(outcome);
+    assert.ok(!r.signals.includes("no-success-criteria"), `${outcome.slice(0, 60)}...: ${JSON.stringify(r.signals)}`);
+  }
+});
+
+test("labeled criteria: a placeholder or one-word clause, or the word without a label, still flags", () => {
+  for (const outcome of [
+    "Rework the export flow for admins. Acceptance: TBD",
+    "Rework the export flow for admins. Acceptance: yes",
+    "Rework the export flow for admins. Done when: n/a for now",
+    "Rework the export flow for admins so the acceptance team likes it",
+  ]) {
+    assert.ok(assessOutcome(outcome).signals.includes("no-success-criteria"), outcome);
+  }
+});

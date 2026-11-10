@@ -328,6 +328,10 @@ test("manifest validation rejects malformed merge-tracked items", () => {
   const noTag = src([{ from: "a.md", mode: "watch", baseBlob: blob }]);
   delete noTag.sources[0].tag;
   assert.match(validateVendorManifest(noTag).errors.join("\n"), /tag: a merge-tracked source records the release tag/);
+  // An upstream with no release tags (wshobson/agents) records tag: null and pins by SHA alone.
+  const untagged = src([{ from: "a.md", mode: "watch", baseBlob: blob }]);
+  untagged.sources[0].tag = null;
+  assert.deepEqual(validateVendorManifest(untagged).errors, []);
 });
 
 test("updateManifestText on the real manifest: an identity update is byte-identical", async () => {

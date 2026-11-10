@@ -489,6 +489,15 @@ export async function runVendor({ home = homedir(), repoRoot = process.cwd(), ma
     }
   }
   const allEntries = [...builtinEntries, ...agentEntries];
+  // Merge-tracked sources are never regenerated here, so a rewritten generated catalog keeps
+  // their current entries instead of dropping them (wshobson's builtins share the builtins file).
+  const tracked = new Set(manifest.sources.filter(isSyncSource).flatMap(s => s.items.filter(isSyncItem).map(i => i.id)).filter(Boolean));
+  const carried = async path => {
+    const bytes = await readOutputRegular(join(outputRoot, path));
+    return bytes ? (parse(bytes.toString("utf8")) || []).filter(e => tracked.has(e?.id)) : [];
+  };
+  if (builtinEntries.length > 0) builtinEntries.push(...await carried("catalog/builtins.generated.yaml"));
+  if (agentEntries.length > 0) agentEntries.push(...await carried("catalog/agents.generated.yaml"));
   if (allEntries.length === 0) {
     return { count: 0, warnings: [...warnings, "no items vendored — refusing to overwrite NOTICE/builtins.generated.yaml"] };
   }

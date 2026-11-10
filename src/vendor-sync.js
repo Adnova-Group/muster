@@ -90,7 +90,10 @@ export function isMergeable(item, items) {
 export function validateSyncSource(source, at) {
   const errors = [];
   if (!SHA40_RE.test(String(source.ref))) errors.push(`${at}.ref: a merge-tracked source pins a 40-hex commit SHA`);
-  if (!TAG_RE.test(String(source.tag))) errors.push(`${at}.tag: a merge-tracked source records the release tag of its ref`);
+  // An upstream that publishes no release tags (wshobson/agents) records `tag: null` and is
+  // pinned by its commit SHA alone. `vendor update/report` still resolve targets by tag.
+  if (source.tag !== null && !TAG_RE.test(String(source.tag)))
+    errors.push(`${at}.tag: a merge-tracked source records the release tag of its ref (null for an untagged upstream)`);
   return errors;
 }
 

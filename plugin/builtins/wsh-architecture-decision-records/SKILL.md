@@ -5,7 +5,7 @@ muster_builtin: true
 license: MIT
 upstream:
   - repo: wshobson/agents
-    ref: cf6059d030bf4fe96623ae2e596d2f31e35fedc0
+    ref: 9c61ab243def98f72da12abd41cfcf5bcd91af9d
     path: plugins/documentation-generation/skills/architecture-decision-records/SKILL.md
     license: MIT
     relation: vendored
@@ -86,10 +86,10 @@ This directory contains Architecture Decision Records (ADRs) for [Project Name].
 
 | ADR                                   | Title                              | Status     | Date       |
 | ------------------------------------- | ---------------------------------- | ---------- | ---------- |
-| [0001](https://github.com/wshobson/agents/tree/cf6059d030bf4fe96623ae2e596d2f31e35fedc0/plugins/documentation-generation/skills/architecture-decision-records)        | Use PostgreSQL as Primary Database | Accepted   | 2024-01-10 |
-| [0002](https://github.com/wshobson/agents/tree/cf6059d030bf4fe96623ae2e596d2f31e35fedc0/plugins/documentation-generation/skills/architecture-decision-records)      | Caching Strategy with Redis        | Accepted   | 2024-01-12 |
-| [0003](https://github.com/wshobson/agents/tree/cf6059d030bf4fe96623ae2e596d2f31e35fedc0/plugins/documentation-generation/skills/architecture-decision-records) | MongoDB for User Profiles          | Deprecated | 2023-06-15 |
-| [0020](https://github.com/wshobson/agents/tree/cf6059d030bf4fe96623ae2e596d2f31e35fedc0/plugins/documentation-generation/skills/architecture-decision-records)     | Deprecate MongoDB                  | Accepted   | 2024-01-15 |
+| [0001](https://github.com/wshobson/agents/tree/9c61ab243def98f72da12abd41cfcf5bcd91af9d/plugins/documentation-generation/skills/architecture-decision-records)        | Use PostgreSQL as Primary Database | Accepted   | 2024-01-10 |
+| [0002](https://github.com/wshobson/agents/tree/9c61ab243def98f72da12abd41cfcf5bcd91af9d/plugins/documentation-generation/skills/architecture-decision-records)      | Caching Strategy with Redis        | Accepted   | 2024-01-12 |
+| [0003](https://github.com/wshobson/agents/tree/9c61ab243def98f72da12abd41cfcf5bcd91af9d/plugins/documentation-generation/skills/architecture-decision-records) | MongoDB for User Profiles          | Deprecated | 2023-06-15 |
+| [0020](https://github.com/wshobson/agents/tree/9c61ab243def98f72da12abd41cfcf5bcd91af9d/plugins/documentation-generation/skills/architecture-decision-records)     | Deprecate MongoDB                  | Accepted   | 2024-01-15 |
 
 ## Creating a New ADR
 

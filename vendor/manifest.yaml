@@ -124,8 +124,15 @@ sources:
   - id: wshobson
     kind: github
     repo: wshobson/agents
-    # pinned SHA — resolve a new one deliberately when updating, and review the regenerated diff before committing
-    ref: cf6059d030bf4fe96623ae2e596d2f31e35fedc0
+    # Merge-tracked (every item has a `mode`), so plain `muster vendor` never regenerates it; the
+    # same contract as gsd below. Base copies at the pin live in vendor/upstream/wshobson/<from>;
+    # every item is `adapted` (muster frontmatter, role lines and local fixes over the upstream
+    # text), so an update 3-way merges each muster file against its base copy. Upstream publishes
+    # no release tags, so the source records `tag: null` and is pinned by commit SHA alone.
+    # Re-pinned 2026-11-10: cf6059d (2026-06-05) -> 9c61ab2 (upstream HEAD, 2026-11-08). Model
+    # bumps upstream (e.g. legacy-modernizer `model: fable`) are not taken: tier policy decides.
+    ref: 9c61ab243def98f72da12abd41cfcf5bcd91af9d
+    tag: null
     license: MIT
     copyright: "Copyright (c) 2024 Seth Hobson"
     relation: vendored
@@ -133,161 +140,321 @@ sources:
       # security-review
       - from: plugins/security-scanning/skills/stride-analysis-patterns/SKILL.md
         id: wsh-stride-analysis-patterns
+        kind: builtin
+        to: plugin/builtins/wsh-stride-analysis-patterns/SKILL.md
+        mode: adapted
+        baseBlob: 458a8074cda1ef9b24fa8cbbda6dc0a7498426d2
         relation: adapted
         roles: [security-review]
       - from: plugins/security-scanning/skills/attack-tree-construction/SKILL.md
         id: wsh-attack-tree-construction
+        kind: builtin
+        to: plugin/builtins/wsh-attack-tree-construction/SKILL.md
+        mode: adapted
+        baseBlob: b58a37e6dabcbda17838e0300bd27183f6d860e0
         relation: adapted
         roles: [security-review]
       - from: plugins/security-scanning/skills/sast-configuration/SKILL.md
         id: wsh-sast-configuration
+        kind: builtin
+        to: plugin/builtins/wsh-sast-configuration/SKILL.md
+        mode: adapted
+        baseBlob: 3dd02c74b2a4f1b7702c154213d79a7a04b1e720
         roles: [security-review]
       - from: plugins/security-scanning/skills/threat-mitigation-mapping/SKILL.md
         id: wsh-threat-mitigation-mapping
+        kind: builtin
+        to: plugin/builtins/wsh-threat-mitigation-mapping/SKILL.md
+        mode: adapted
+        baseBlob: c1efac0676bf9754b163aae1dded7be7696c8bf1
         roles: [security-review]
       - from: plugins/signed-audit-trails/skills/signed-audit-trails-recipe/SKILL.md
         id: wsh-signed-audit-trails-recipe
-        # adapted: later upstream correctness/security fixes were hand-ported into the
-        # body (2026-11-09) without moving this pin; the item body records them.
+        kind: builtin
+        to: plugin/builtins/wsh-signed-audit-trails-recipe/SKILL.md
+        mode: adapted
+        baseBlob: 1f6c8fd42ec381b4c2690d6d9f5b142c5f95bf12
+        # adapted: the fixes hand-ported on 2026-11-09 arrived upstream by 9c61ab2, so the
+        # body is now a merge of that pin (references/ split back out, see the file items below).
         relation: adapted
         roles: [security-review]
       # code-review
       - from: plugins/developer-essentials/skills/code-review-excellence/SKILL.md
         id: wsh-code-review-excellence
+        kind: builtin
+        to: plugin/builtins/wsh-code-review-excellence/SKILL.md
+        mode: adapted
+        baseBlob: 7ffef3d96996eaaa6ee7e1d17dd5ed7681969bb1
         roles: [code-review]
       - from: plugins/agent-teams/skills/multi-reviewer-patterns/SKILL.md
         id: wsh-multi-reviewer-patterns
+        kind: builtin
+        to: plugin/builtins/wsh-multi-reviewer-patterns/SKILL.md
+        mode: adapted
+        baseBlob: 282bd5d9fe81d801346c461ce262a4b407944c2f
         roles: [code-review]
       # test-author
       - from: plugins/developer-essentials/skills/e2e-testing-patterns/SKILL.md
         id: wsh-e2e-testing-patterns
+        kind: builtin
+        to: plugin/builtins/wsh-e2e-testing-patterns/SKILL.md
+        mode: adapted
+        baseBlob: b3f258d2afc635866a7d264d6f817b467c037e2b
         roles: [test-author]
       - from: plugins/javascript-typescript/skills/javascript-testing-patterns/SKILL.md
         id: wsh-javascript-testing-patterns
+        kind: builtin
+        to: plugin/builtins/wsh-javascript-testing-patterns/SKILL.md
+        mode: adapted
+        baseBlob: 9102d72c46491ba9b36886fc10603e4583e524d9
         roles: [test-author]
       - from: plugins/python-development/skills/python-testing-patterns/SKILL.md
         id: wsh-python-testing-patterns
+        kind: builtin
+        to: plugin/builtins/wsh-python-testing-patterns/SKILL.md
+        mode: adapted
+        baseBlob: 4fe8a4245c55e9e79e70b5f75ab387e2349f91dc
         roles: [test-author]
       # frontend
       - from: plugins/frontend-mobile-development/skills/nextjs-app-router-patterns/SKILL.md
         id: wsh-nextjs-app-router-patterns
+        kind: builtin
+        to: plugin/builtins/wsh-nextjs-app-router-patterns/SKILL.md
+        mode: adapted
+        baseBlob: 571bf12ba83ee25891bac1a5762a8b9e3d822057
         roles: [frontend]
       - from: plugins/frontend-mobile-development/skills/react-state-management/SKILL.md
         id: wsh-react-state-management
+        kind: builtin
+        to: plugin/builtins/wsh-react-state-management/SKILL.md
+        mode: adapted
+        baseBlob: da38fd61487b59664025faaa7937e56e624e7877
         relation: adapted
         roles: [frontend]
       - from: plugins/frontend-mobile-development/skills/tailwind-design-system/SKILL.md
         id: wsh-tailwind-design-system
+        kind: builtin
+        to: plugin/builtins/wsh-tailwind-design-system/SKILL.md
+        mode: adapted
+        baseBlob: 17c4fd0ec99c26254e58288b7219dfe44d0a20ba
         roles: [frontend]
       - from: plugins/ui-design/skills/design-system-patterns/SKILL.md
         id: wsh-design-system-patterns
+        kind: builtin
+        to: plugin/builtins/wsh-design-system-patterns/SKILL.md
+        mode: adapted
+        baseBlob: 6c1763c811e37a918938dbd6e18b7d5a38bcf46a
         roles: [frontend]
       # implement (backend/api/language)
       - from: plugins/backend-development/skills/api-design-principles/SKILL.md
         id: wsh-api-design-principles
+        kind: builtin
+        to: plugin/builtins/wsh-api-design-principles/SKILL.md
+        mode: adapted
+        baseBlob: e914fb423af914a6213a72ea537df179a7768233
         roles: [implement]
       - from: plugins/backend-development/skills/architecture-patterns/SKILL.md
         id: wsh-architecture-patterns
+        kind: builtin
+        to: plugin/builtins/wsh-architecture-patterns/SKILL.md
+        mode: adapted
+        baseBlob: d893cabeab6a84c17bd0dd4ea9f56b3c4d02c0f5
         roles: [implement, architecture-review]
       - from: plugins/backend-development/skills/microservices-patterns/SKILL.md
         id: wsh-microservices-patterns
+        kind: builtin
+        to: plugin/builtins/wsh-microservices-patterns/SKILL.md
+        mode: adapted
+        baseBlob: 75a6a593db94fa00ea0601e385ea839180ebc2a7
         roles: [implement]
       - from: plugins/javascript-typescript/skills/typescript-advanced-types/SKILL.md
         id: wsh-typescript-advanced-types
+        kind: builtin
+        to: plugin/builtins/wsh-typescript-advanced-types/SKILL.md
+        mode: adapted
+        baseBlob: 5057af799047bbae1a066ffead0b6e298f0ef7ff
         roles: [implement]
       - from: plugins/javascript-typescript/skills/nodejs-backend-patterns/SKILL.md
         id: wsh-nodejs-backend-patterns
+        kind: builtin
+        to: plugin/builtins/wsh-nodejs-backend-patterns/SKILL.md
+        mode: adapted
+        baseBlob: 516bae620afc0afa257fed08e3def7549e6a33fb
         relation: adapted
         roles: [implement]
       - from: plugins/python-development/skills/python-design-patterns/SKILL.md
         id: wsh-python-design-patterns
+        kind: builtin
+        to: plugin/builtins/wsh-python-design-patterns/SKILL.md
+        mode: adapted
+        baseBlob: 93e8a7daf8187c11d0a798fde87d86b1fc7c6449
         relation: adapted
         roles: [implement]
       - from: plugins/python-development/skills/async-python-patterns/SKILL.md
         id: wsh-async-python-patterns
+        kind: builtin
+        to: plugin/builtins/wsh-async-python-patterns/SKILL.md
+        mode: adapted
+        baseBlob: 15905ae02e745a00cd235dfb18665344ca76d7d0
         roles: [implement]
       - from: plugins/systems-programming/skills/go-concurrency-patterns/SKILL.md
         id: wsh-go-concurrency-patterns
+        kind: builtin
+        to: plugin/builtins/wsh-go-concurrency-patterns/SKILL.md
+        mode: adapted
+        baseBlob: fc7af5d97cb508ddd04d0e19985cca6e5ed2ff65
         relation: adapted
         roles: [implement]
       - from: plugins/developer-essentials/skills/debugging-strategies/SKILL.md
         id: wsh-debugging-strategies
+        kind: builtin
+        to: plugin/builtins/wsh-debugging-strategies/SKILL.md
+        mode: adapted
+        baseBlob: 2ea9e9ce7420c26faba5635522e0d0c6e1aa65d6
         roles: [implement, debug]
       # refactor / tech-debt
       - from: plugins/framework-migration/skills/react-modernization/SKILL.md
         id: wsh-react-modernization
+        kind: builtin
+        to: plugin/builtins/wsh-react-modernization/SKILL.md
+        mode: adapted
+        baseBlob: bf9a545b589b4ad0fb9fb0a4440f965023fe0c88
         roles: [refactor, tech-debt]
       - from: plugins/framework-migration/skills/dependency-upgrade/SKILL.md
         id: wsh-dependency-upgrade
+        kind: builtin
+        to: plugin/builtins/wsh-dependency-upgrade/SKILL.md
+        mode: adapted
+        baseBlob: 88aa04a8df13e5382f79ab86364a2f219177d6a5
         roles: [refactor, tech-debt]
       - from: plugins/python-development/skills/python-anti-patterns/SKILL.md
         id: wsh-python-anti-patterns
+        kind: builtin
+        to: plugin/builtins/wsh-python-anti-patterns/SKILL.md
+        mode: adapted
+        baseBlob: ee62f8c14f15fbcb5b83d9d0417ef72b53416d72
         roles: [refactor, tech-debt]
       # documentation / architecture
       - from: plugins/documentation-generation/skills/architecture-decision-records/SKILL.md
         id: wsh-architecture-decision-records
+        kind: builtin
+        to: plugin/builtins/wsh-architecture-decision-records/SKILL.md
+        mode: adapted
+        baseBlob: c3170c4044880480f2c4c0ee8f2b3b3df1006f31
         roles: [implement, architecture-review]
       - from: plugins/documentation-generation/skills/openapi-spec-generation/SKILL.md
         id: wsh-openapi-spec-generation
+        kind: builtin
+        to: plugin/builtins/wsh-openapi-spec-generation/SKILL.md
+        mode: adapted
+        baseBlob: 6f86431cdd092ff5edfc8b70b2a0d30481428da8
         relation: adapted
         roles: [implement]
       # accessibility (frontend)
       - from: plugins/accessibility-compliance/skills/wcag-audit-patterns/SKILL.md
         id: wsh-wcag-audit-patterns
+        kind: builtin
+        to: plugin/builtins/wsh-wcag-audit-patterns/SKILL.md
+        mode: adapted
+        baseBlob: c071acee41a2a2c7d4df04da7281d193215dfca7
         roles: [frontend]
       - from: plugins/ui-design/skills/responsive-design/SKILL.md
         id: wsh-responsive-design
+        kind: builtin
+        to: plugin/builtins/wsh-responsive-design/SKILL.md
+        mode: adapted
+        baseBlob: caec2b194f22e940260a3b697919884c15b346e8
         relation: adapted
         roles: [frontend]
       # performance (no skills/ dir — using primary agent file)
       - from: plugins/application-performance/agents/performance-engineer.md
         id: wsh-performance-engineer
+        kind: builtin
+        to: plugin/builtins/wsh-performance-engineer/SKILL.md
+        mode: adapted
+        baseBlob: 18d056d909d41a96d8d1628a4463c1b048cf11c7
         roles: [performance]
       # seo (no skills/ dir — using primary agent file)
       - from: plugins/seo-technical-optimization/agents/seo-structure-architect.md
         id: wsh-seo-structure-architect
+        kind: builtin
+        to: plugin/builtins/wsh-seo-structure-architect/SKILL.md
+        mode: adapted
+        baseBlob: b1a2944bb8ce67b47914edd8e7b8e7e5214aa38f
         roles: [seo]
       # === Curated wshobson AGENTS (kind: agent, not skills) ===
       # `as: agent` routes these to catalog/agents.generated.yaml + plugin/agents/<id>.md.
       # Mapped to muster roles, one agent per role gap. perf + seo already vendored above — not duplicated.
       - from: plugins/backend-development/agents/backend-architect.md
         id: wsh-backend-architect
+        kind: agent
+        to: plugin/agents/wsh-backend-architect.md
+        mode: adapted
+        baseBlob: 9458d181e01418a29804994877a52d735075c03d
         roles: [architecture-review]
         as: agent
         description: "Backend architecture: API design, service boundaries, resilience and observability."
       - from: plugins/code-documentation/agents/code-reviewer.md
         id: wsh-code-reviewer
+        kind: agent
+        to: plugin/agents/wsh-code-reviewer.md
+        mode: adapted
+        baseBlob: 7972beb0d273d258c463ab30a78601701f76fb5a
         roles: [code-review]
         as: agent
         description: Code review for quality, security and production reliability.
       - from: plugins/debugging-toolkit/agents/debugger.md
         id: wsh-debugger
+        kind: agent
+        to: plugin/agents/wsh-debugger.md
+        mode: adapted
+        baseBlob: 621f8d246a8ca1abc9b6e6c19a41f901a806bc41
         relation: adapted
         roles: [debug]
         as: agent
         description: Debugging errors, test failures and unexpected behavior.
       - from: plugins/backend-development/agents/security-auditor.md
         id: wsh-security-auditor
+        kind: agent
+        to: plugin/agents/wsh-security-auditor.md
+        mode: adapted
+        baseBlob: c8ff11472a000b0fed2181986f43da3cdc1d3feb
         roles: [security-review]
         as: agent
         description: "Security review: OWASP Top 10, auth flaws and compliance."
       - from: plugins/frontend-mobile-development/agents/frontend-developer.md
         id: wsh-frontend-developer
+        kind: agent
+        to: plugin/agents/wsh-frontend-developer.md
+        mode: adapted
+        baseBlob: 01b212677f075d1cc1fed742272fbefd6e02b4c1
         roles: [frontend]
         as: agent
         description: "Frontend work: React components, layouts, state, performance and accessibility."
       - from: plugins/backend-development/agents/test-automator.md
         id: wsh-test-automator
+        kind: agent
+        to: plugin/agents/wsh-test-automator.md
+        mode: adapted
+        baseBlob: e8d094e36f1c4da55ef8225d2c8c21ff7a6eb1df
         roles: [test-author]
         as: agent
         description: "Test suites: unit, integration and E2E, with TDD/BDD support."
       - from: plugins/framework-migration/agents/legacy-modernizer.md
         id: wsh-legacy-modernizer
+        kind: agent
+        to: plugin/agents/wsh-legacy-modernizer.md
+        mode: adapted
+        baseBlob: 5047a2e6987d6f496f31699eec0bbb367c5bea7d
         roles: [refactor, tech-debt]
         as: agent
         description: Legacy refactoring, framework migrations and gradual modernization.
       - from: plugins/code-documentation/agents/docs-architect.md
         id: wsh-docs-architect
+        kind: agent
+        to: plugin/agents/wsh-docs-architect.md
+        mode: adapted
+        baseBlob: f00cb829cdc3f3121adc28f10622ade6ff4c3cf1
         roles: [architecture-review]
         as: agent
         description: Long-form technical documentation from an existing codebase.
@@ -295,41 +462,73 @@ sources:
       # software
       - from: plugins/machine-learning-ops/agents/data-scientist.md
         id: wsh-data-scientist
+        kind: agent
+        to: plugin/agents/wsh-data-scientist.md
+        mode: adapted
+        baseBlob: afa7c912c207df2c59e02266164b5c1dd729bc1a
         roles: [research]
         as: agent
         description: Analytics, statistical modeling and machine-learning analysis.
       - from: plugins/data-engineering/agents/data-engineer.md
         id: wsh-data-engineer
+        kind: agent
+        to: plugin/agents/wsh-data-engineer.md
+        mode: adapted
+        baseBlob: d38ac20b997d46bb981175b444fc5f5f4115df6a
         roles: [research]
         as: agent
         description: Data pipelines, warehouses and streaming (Spark, dbt, Airflow).
       - from: plugins/cicd-automation/agents/devops-troubleshooter.md
         id: wsh-devops-troubleshooter
+        kind: agent
+        to: plugin/agents/wsh-devops-troubleshooter.md
+        mode: adapted
+        baseBlob: 3c65e1752dc977e694a6f908bc4bf524cca8161a
         roles: [implement]
         as: agent
         description: Incident response and debugging with logs, traces and Kubernetes.
       - from: plugins/cloud-infrastructure/agents/cloud-architect.md
         id: wsh-cloud-architect
+        kind: agent
+        to: plugin/agents/wsh-cloud-architect.md
+        mode: adapted
+        baseBlob: 4505772ae550f40d570e9d9b0aaa4f2c2abbc94e
         roles: [architecture-review]
         as: agent
         description: "Cloud architecture on AWS, Azure and GCP: IaC, cost, security and disaster recovery."
       - from: plugins/database-cloud-optimization/agents/database-optimizer.md
         id: wsh-database-optimizer
+        kind: agent
+        to: plugin/agents/wsh-database-optimizer.md
+        mode: adapted
+        baseBlob: 3785e05d27796caa609a0e79b4157ba5779fbe0c
         roles: [performance]
         as: agent
         description: "Database performance: query tuning, indexing, caching and migrations."
       - from: plugins/documentation-generation/agents/api-documenter.md
         id: wsh-api-documenter
+        kind: agent
+        to: plugin/agents/wsh-api-documenter.md
+        mode: adapted
+        baseBlob: 5791aa1fa07b0a5e97be991e650b92597257732e
         roles: [docs-research]
         as: agent
         description: "API documentation: OpenAPI 3.1, developer portals and SDK docs."
       - from: plugins/machine-learning-ops/agents/ml-engineer.md
         id: wsh-ml-engineer
+        kind: agent
+        to: plugin/agents/wsh-ml-engineer.md
+        mode: adapted
+        baseBlob: 9bc0521f7852c75a72c58f80d200fafefc82e9b1
         roles: [implement]
         as: agent
         description: "Production ML systems: model serving, feature pipelines and monitoring."
       - from: plugins/llm-application-dev/agents/prompt-engineer.md
         id: wsh-prompt-engineer
+        kind: agent
+        to: plugin/agents/wsh-prompt-engineer.md
+        mode: adapted
+        baseBlob: 557f948f55b8449644aabe74c5bc7c9473eeb96a
         relation: adapted
         roles: [implement]
         as: agent
@@ -337,24 +536,51 @@ sources:
       # knowledge-work (PM/business/content)
       - from: plugins/business-analytics/agents/business-analyst.md
         id: wsh-business-analyst
+        kind: agent
+        to: plugin/agents/wsh-business-analyst.md
+        mode: adapted
+        baseBlob: 23f3398c904ed7f2c534482393bcb5e990fdee9a
         roles: [research]
         as: agent
         description: "Business analysis: KPI frameworks, dashboards and data-driven recommendations."
       - from: plugins/content-marketing/agents/content-marketer.md
         id: wsh-content-marketer
+        kind: agent
+        to: plugin/agents/wsh-content-marketer.md
+        mode: adapted
+        baseBlob: 60af65e1d74303b965587f7d43ed7beb53e84d84
         roles: [author]
         as: agent
         description: "Content marketing: strategy, SEO, distribution and performance."
       - from: plugins/documentation-generation/agents/tutorial-engineer.md
         id: wsh-tutorial-engineer
+        kind: agent
+        to: plugin/agents/wsh-tutorial-engineer.md
+        mode: adapted
+        baseBlob: d134ffeeb85365be4a9250de3350dca030a91a8b
         roles: [docs-research]
         as: agent
         description: Step-by-step tutorials and onboarding guides from code.
       - from: plugins/customer-sales-automation/agents/customer-support.md
         id: wsh-customer-support
+        kind: agent
+        to: plugin/agents/wsh-customer-support.md
+        mode: adapted
+        baseBlob: f2a7ac6689f5e3857e297f9f57ff570a2fe910ba
         roles: [author]
         as: agent
         description: "Customer support experience: ticketing, support content and CX."
+      # references/ split (upstream 13703c9): file items mapping each upstream reference onto the
+      # file shipped beside its builtin. Carried verbatim today; merged like any adapted file.
+      - { from: plugins/developer-essentials/skills/code-review-excellence/references/review-patterns.md, to: plugin/builtins/wsh-code-review-excellence/references/review-patterns.md, mode: adapted, baseBlob: 29fecc5581fd84045120c50e9be31780ea17a6b3 }
+      - { from: plugins/developer-essentials/skills/code-review-excellence/references/review-techniques.md, to: plugin/builtins/wsh-code-review-excellence/references/review-techniques.md, mode: adapted, baseBlob: 67932abf9c28d092b640924676e4e67ea77a349a }
+      - { from: plugins/developer-essentials/skills/debugging-strategies/references/tools-and-techniques.md, to: plugin/builtins/wsh-debugging-strategies/references/tools-and-techniques.md, mode: adapted, baseBlob: 602ca4b64b8a51868ab382e3b33ec02249484a29 }
+      - { from: plugins/documentation-generation/skills/architecture-decision-records/references/decision-templates.md, to: plugin/builtins/wsh-architecture-decision-records/references/decision-templates.md, mode: adapted, baseBlob: 4ac5c42dc4426a5e0cc3239a2bfdb9f54dcad083 }
+      - { from: plugins/documentation-generation/skills/architecture-decision-records/references/deprecation-rfc-templates.md, to: plugin/builtins/wsh-architecture-decision-records/references/deprecation-rfc-templates.md, mode: adapted, baseBlob: d80bbf91d10abf828c14a4f15b3e490bc296e446 }
+      - { from: plugins/signed-audit-trails/skills/signed-audit-trails-recipe/references/cedar-policy.md, to: plugin/builtins/wsh-signed-audit-trails-recipe/references/cedar-policy.md, mode: adapted, baseBlob: abb5e6af77bfdf69af29127e7de1a89a596bc280 }
+      - { from: plugins/signed-audit-trails/skills/signed-audit-trails-recipe/references/ci-cd.md, to: plugin/builtins/wsh-signed-audit-trails-recipe/references/ci-cd.md, mode: adapted, baseBlob: 14120325b61d9d08e8f29d0d11fbdebe85af18b1 }
+      - { from: plugins/signed-audit-trails/skills/signed-audit-trails-recipe/references/hook-wiring.md, to: plugin/builtins/wsh-signed-audit-trails-recipe/references/hook-wiring.md, mode: adapted, baseBlob: 2dc4534a8b9c811fcd9f886479c2f38e10e476ec }
+      - { from: plugins/signed-audit-trails/skills/signed-audit-trails-recipe/references/receipt-format.md, to: plugin/builtins/wsh-signed-audit-trails-recipe/references/receipt-format.md, mode: adapted, baseBlob: ac8b02d938f1227f3f82a581e8c94f3088fc98ac }
   - id: gsd
     kind: github
     repo: open-gsd/gsd-core

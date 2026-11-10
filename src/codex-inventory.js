@@ -22,10 +22,10 @@ export const CODEX_COUNTS = Object.freeze({
   // codex/frozen/skills/; coordination, domain-router, sp-plan, sp-subagents and the gsd-*
   // builtins were deleted (the muster-gsd-* Codex fallbacks stay in codex/fallback-skills).
   nativeSkills: 7,
-  builtinSkills: 78,
+  builtinSkills: 80,
   publicSkills: 8,
-  // 91: nativeSkills (7) + builtinSkills (78) + 3 frozen skills + 3 muster-gsd-* fallbacks.
-  internalSkills: 91,
+  // 93: nativeSkills (7) + builtinSkills (80) + 3 frozen skills + 3 muster-gsd-* fallbacks.
+  internalSkills: 93,
   pipelines: 20,
   mcpTools: 30,
   primaryModes: 7,

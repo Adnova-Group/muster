@@ -24,6 +24,8 @@ Per-item detail (upstream path, ref, relation) is in each item's `upstream:` fie
   Copyright (c) 2026 Hallmark contributors
 - greensock/gsap-skills @ aed9cfd3277740755f6bfc1155c7aa645403b760 (MIT)
   Copyright (c) 2026 GreenSock
+- elayadesign/ai-design-skills @ 456d9e0d3e2d84c748bb143c6ca3d90c45e16213 (MIT)
+  Copyright (c) 2026 Elaya
 - open-gsd/gsd-core @ 9385f4618b52ef68ed8a5e8bdd93cfb25bd87765, 1c352d1ea37b010e99b8353905eb5def4f784100 (MIT)
   Copyright (c) 2026 Open GSD
 - blader/humanizer @ 1b48564898e999219882660237fde01bf4843a0f (MIT)

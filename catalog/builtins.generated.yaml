@@ -382,6 +382,26 @@
     upstream:
       - greensock/gsap-skills
   description: "Official gsap.utils helpers: clamp, mapRange, normalize, interpolate, random, snap, toArray, wrap and pipe."
+- id: elaya-landing-page-design
+  kind: builtin
+  roles:
+    - frontend
+  rank: 42
+  provenance:
+    license: MIT
+    upstream:
+      - elayadesign/ai-design-skills
+  description: "Landing page system: intake, section structure, conversion copy, SEO and strict visual rules for high-converting marketing pages."
+- id: elaya-figma-designer
+  kind: builtin
+  roles:
+    - frontend
+  rank: 42
+  provenance:
+    license: MIT
+    upstream:
+      - elayadesign/ai-design-skills
+  description: Design inside Figma through the Figma MCP with real variables, text styles, auto layout, components and token rules.
 - id: wsh-stride-analysis-patterns
   kind: builtin
   roles:

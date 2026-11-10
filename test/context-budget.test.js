@@ -16,7 +16,9 @@ const KB = 1024;
 const COMMAND_BUDGET = 8 * KB;
 const ORCHESTRATOR_BUDGET = 18 * KB;
 // Measured 3,670 bytes at revival stage 2b (18,116 before it); the result sits ~8% under the budget.
-const DESCRIPTION_BUDGET = 4_000;
+// +102 at revival stage 3 for exactly the three prt-* pr-review-toolkit agent descriptions
+// (41 + 33 + 28 bytes; 3,964 -> 4,066 measured), kept minimal because they are always-on.
+const DESCRIPTION_BUDGET = 4_102;
 
 function frontmatter(text) {
   const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);

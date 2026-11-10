@@ -39,6 +39,18 @@ Per-item detail (upstream path, ref, relation) is in each item's `upstream:` fie
 - skovalik/perception-first-design @ 1704ff61c18872a66d969e860c9b6e45a8f50f16 (CC-BY-SA-4.0)
   Copyright 2025-2026 Stefan Kovalik / Aurochs
   "Perception-First Design" is a trademark of Stefan Kovalik / Aurochs (Serial 99686343). The methodology is open; the name requires attribution.
+- ai-evals-course/evals-skills @ 80d5f7b0127c7572ed9e9339937adbfd7240ffeb (Apache-2.0)
+- getsentry/skills @ e94f22214528d69899d09c627b3315ddc3544816 (Apache-2.0 AND CC-BY-SA-4.0)
+  Copyright 2025 Functional Software, Inc. dba Sentry
+  skills/security-review: reference material derived from the OWASP Cheat Sheet Series (https://cheatsheetseries.owasp.org/), CC BY-SA 4.0
+- openai/skills @ 49f948faa9258a0c61caceaf225e179651397431 (Apache-2.0)
+- trailofbits/skills @ e4dd0bb5b15535f7c5a0834187dffba6ac37e4ff (CC-BY-SA-4.0)
+  Copyright Trail of Bits (https://www.trailofbits.com/)
+- anthropics/claude-plugins-official @ dceb15d50832e6adf380bedc26dde03d251324b9 (Apache-2.0)
+- mattpocock/skills @ 4ae2317ddb22b046e26455e4f9c9b3aaaf62212d (MIT)
+  Copyright (c) 2026 Matt Pocock
+- obra/superpowers-lab @ 51111f74f24058117752d9aa917cb19859f8ec86 (MIT)
+  Copyright (c) 2025 Jesse Vincent
 - blader/humanizer @ b48c832f0f809c1b5658edbb838c2521b72f2413 (MIT)
   Copyright (c) 2025 Siqi Chen
 - rudra496/StealthHumanizer @ 8b0e90874c6137c68476d5f4a7139e0ef30e198f (MIT)

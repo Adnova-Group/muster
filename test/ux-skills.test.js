@@ -18,7 +18,7 @@ import { checkShareAlike, isShareAlikeLicense, projectManifest } from "../src/pr
 import { loadCatalog } from "../src/catalog.js";
 import { resolveCapabilities } from "../src/capabilities.js";
 import { matchProviders, matchSkills, suggestSkillsForStack, signalsFromTask, impliedSurfaceForSkillId } from "../src/match.js";
-import { isCodexFrozenOutBuiltin } from "../src/codex-inventory.js";
+import { isUxFamilyBuiltin } from "../src/codex-inventory.js";
 
 const pexec = promisify(execFile);
 const root = join(import.meta.dirname, "..");
@@ -29,8 +29,7 @@ const uxSources = manifest.sources.filter(s => UX_SOURCES.includes(s.id));
 const frontmatter = text => parseYaml(text.match(/^---\r?\n([\s\S]*?)\r?\n---/)[1]);
 const bare = { skills: [], agents: [], plugins: [], mcpServers: [] };
 
-// The UX family only: impeccable-* builtins are also kept out of the frozen Codex lane but are their own source.
-const builtinIds = (await readdir(join(root, "plugin/builtins"))).filter(n => isCodexFrozenOutBuiltin(n) && !n.startsWith("impeccable-")).sort();
+const builtinIds = (await readdir(join(root, "plugin/builtins"))).filter(isUxFamilyBuiltin).sort();
 const agentIds = (await readdir(join(root, "plugin/agents"))).filter(f => /^intent-/.test(f)).map(f => f.slice(0, -3)).sort();
 
 // ---- provenance --------------------------------------------------------------

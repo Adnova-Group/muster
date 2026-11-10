@@ -1,7 +1,12 @@
 ---
 name: audit-pattern-coverage
 description: Hunt-list pattern skill for muster's coverage audit dimension -- untested exported behavior, missing TDD/mutant-kill evidence, and gap classes in muster's own repo. Loaded by the audit orchestrator as a REQUIRED SKILLS binding on the test-author dimension task; read on demand, never dispatched standalone.
-upstream: []
+upstream:
+  - repo: trailofbits/skills
+    ref: e4dd0bb5b15535f7c5a0834187dffba6ac37e4ff
+    path: null
+    license: CC-BY-SA-4.0
+    relation: inspired-by
 ---
 
 <!-- prompt-lint-disable ANTH-ROLE-001: reference hunt-list loaded ON DEMAND into an already
@@ -33,6 +38,14 @@ Hunt-list for the **coverage** audit dimension (`buildAuditManifest`, `src/audit
   file that has grown past ~500 lines covering multiple unrelated concerns is itself a coverage
   organization smell (see the `split-codex-test-monolith` precedent, backlog item, which split
   `test/codex.test.js` for exactly this reason).
+
+**Specialist depth** (read only when the scope calls for it; a builtin under
+`<plugin root>/builtins/<id>/SKILL.md`, cited by id):
+
+- `tob-property-based-testing`: when an uncovered or thinly covered function has an algebraic
+  shape (parser, serializer, normalizer, validator, comparator) that a few example tests only
+  sample; name the property the missing test should assert. Separately licensed (CC BY-SA 4.0);
+  cite it, never copy it.
 
 ## Repo-specific conventions to enforce
 

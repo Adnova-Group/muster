@@ -4,6 +4,11 @@ description: Built-in prompt-quality provider — lint, eval, and optimize promp
 muster_builtin: true
 license: Apache-2.0
 upstream:
+  - repo: ai-evals-course/evals-skills
+    ref: 80d5f7b0127c7572ed9e9339937adbfd7240ffeb
+    path: null
+    license: Apache-2.0
+    relation: inspired-by
   - repo: hermes-labs-ai/lintlang
     ref: 645f57879ff5dbe3bbff37e9696834fb00371194
     path: src/lintlang/patterns.py
@@ -110,11 +115,18 @@ If `passing` is already true and only `info` findings remain, stop here — a pr
 
 1. Build (or generate) a small dataset of test cases with <prompt-template>`{{VARIABLE}}`</prompt-template> slots. Generate
    synthetic cases with prefill (` ```json `) + a `` ``` `` stop sequence; prioritise volume
-   and edge-case diversity over polish.
+   and edge-case diversity over polish. To build the dataset, follow
+   [evals-generate-synthetic-data](../evals-generate-synthetic-data/SKILL.md): pick the axes where the
+   prompt is likely to fail, confirm a first batch of combinations with the user, then expand and
+   filter them into cases; prefer real inputs when 100+ representative ones already exist.
 2. For each case: interpolate the prompt, call the model, collect the output. For subjective
    quality, also call the model with an LLM-judge grader prompt that asks for
    strengths/weaknesses/reasoning **before** a 0–10 score (so it doesn't anchor on a
-   middling default). Code-gradable cases carry a `format` (`json|regex|python|tool-call|trajectory`). Note
+   middling default). Before trusting that grader, write it per
+   [evals-write-judge-prompt](../evals-write-judge-prompt/SKILL.md) (one failure mode per judge) and
+   check it against human labels per [evals-validate-evaluator](../evals-validate-evaluator/SKILL.md);
+   to review an eval setup you inherited, start with [evals-eval-audit](../evals-eval-audit/SKILL.md).
+   Code-gradable cases carry a `format` (`json|regex|python|tool-call|trajectory`). Note
 `json`/`regex`/`tool-call`/`trajectory` are real validity checks; `python` is a best-effort smoke test
 (balanced delimiters + a Python signal), not a guarantee — don't lean on it as the sole gate. Use
 `tool-call` for a prompt that must emit one function call (validates an object naming a tool + an

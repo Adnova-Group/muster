@@ -1,7 +1,12 @@
 ---
 name: audit-pattern-dead-code-duplication
 description: Hunt-list pattern skill for the dead-code/duplication pillar -- zero-reference exports, orphaned modules, and repeated helper shapes in muster's own repo. Loaded by the audit orchestrator as a REQUIRED SKILLS binding on BOTH the tech-debt and simplification dimension tasks (this pillar composes with two existing dimensions rather than adding a third); read on demand, never dispatched standalone.
-upstream: []
+upstream:
+  - repo: obra/superpowers-lab
+    ref: 51111f74f24058117752d9aa917cb19859f8ec86
+    path: null
+    license: MIT
+    relation: inspired-by
 ---
 
 <!-- prompt-lint-disable ANTH-ROLE-001: reference hunt-list loaded ON DEMAND into an already
@@ -68,6 +73,13 @@ survey briefs seeded as a skill (the other is `audit-pattern-readability`).
 - Duplicated-lock/lifecycle reimplementation is the SAME class at a coarser grain -- see
   `audit-pattern-readability`'s `codex-install-lock-unification` citation for a worked example
   (a hand-rolled lock duplicating an existing shared primitive rather than importing it).
+
+**Specialist depth** (read only when the scope calls for it; a builtin under
+`<plugin root>/builtins/<id>/SKILL.md`, cited by id):
+
+- `splab-finding-duplicate-functions`: when the grep shapes above run dry but helpers plausibly
+  repeat under different names and code (same intent, different implementation); file each
+  HIGH-confidence cluster as one finding naming its survivor, and give MEDIUM ones to a human.
 
 ## Repo-specific conventions to enforce
 

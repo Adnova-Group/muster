@@ -4,6 +4,11 @@ description: Built-in scoring provider — evidence-cited rubric scoring with th
 muster_builtin: true
 license: Apache-2.0
 upstream:
+  - repo: ai-evals-course/evals-skills
+    ref: 80d5f7b0127c7572ed9e9339937adbfd7240ffeb
+    path: null
+    license: Apache-2.0
+    relation: inspired-by
   - repo: felipelobomotta-blip/book-genesis-studio
     ref: c2fc628fd5d1266b63e98ed962f6a2db37518a53
     path: null
@@ -66,6 +71,10 @@ take a third reading or record the criterion as low confidence; never average a 
 **Cross-judge calibration** (optional): different judge models drift on the same rubric. `calibrateScores(scores, offsets)`
 (`src/score.js`) applies per-criterion offsets before gating so scores are comparable across providers. The offsets are
 **empirical** — measure them against human labels per judge model; until populated the table is empty and calibration is
-a deterministic no-op (it never silently distorts an un-calibrated run).
+a deterministic no-op (it never silently distorts an un-calibrated run). To populate it, follow
+[evals-validate-evaluator](../evals-validate-evaluator/SKILL.md): hold out human-labeled examples, measure the judge's
+agreement per criterion on a dev split, check it once on a test split, and record the measured gap as that criterion's
+offset. When a criterion needs a new judge prompt rather than an offset, draft it with
+[evals-write-judge-prompt](../evals-write-judge-prompt/SKILL.md) first; this rubric's 0–3 scale and floor still govern.
 
 Glass box: record the per-criterion scores + the evidence in the run STATE.

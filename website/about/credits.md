@@ -51,6 +51,15 @@ Every non-vendored source, generated from the manifest. Each row lists the items
 | [ghaida/intent](https://github.com/ghaida/intent) @ `1806110106a4` | CC0-1.0 | 42 vendored builtins and agents | vendored, inspired-by, adapted |
 | [bergside/typeui](https://github.com/bergside/typeui) @ `efc5f21dff38` | MIT | 4 vendored builtins and agents | adapted |
 | [skovalik/perception-first-design](https://github.com/skovalik/perception-first-design) @ `1704ff61c188` | CC-BY-SA-4.0 | 40 vendored builtins and agents | vendored, adapted |
+| [ai-evals-course/evals-skills](https://github.com/ai-evals-course/evals-skills) @ `80d5f7b0127c` | Apache-2.0 | 7 vendored builtins and agents | vendored, inspired-by, adapted |
+| [getsentry/skills](https://github.com/getsentry/skills) @ `e94f22214528` | Apache-2.0 | 12 vendored builtins and agents | vendored, inspired-by, adapted |
+| [getsentry/skills](https://github.com/getsentry/skills) @ `e94f22214528` | CC-BY-SA-4.0 | 23 vendored builtins and agents | inspired-by, adapted, vendored |
+| [openai/skills](https://github.com/openai/skills) @ `49f948faa925` | Apache-2.0 | 5 vendored builtins and agents | inspired-by, adapted, vendored |
+| [trailofbits/skills](https://github.com/trailofbits/skills) @ `e4dd0bb5b155` | CC-BY-SA-4.0 | 26 vendored builtins and agents | vendored, inspired-by, adapted |
+| [anthropics/claude-plugins-official](https://github.com/anthropics/claude-plugins-official) @ `dceb15d50832` | Apache-2.0 | 4 vendored builtins and agents | vendored, adapted |
+| [mattpocock/skills](https://github.com/mattpocock/skills) @ `4ae2317ddb22` | MIT | 10 vendored builtins and agents | vendored, inspired-by, adapted |
+| [obra/superpowers-lab](https://github.com/obra/superpowers-lab) @ `51111f74f240` | MIT | 8 vendored builtins and agents | vendored, inspired-by, adapted |
+| [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills) @ `301b02b12bff` | MIT | 1 vendored builtins and agents | adapted |
 | [open-gsd/gsd-core](https://github.com/open-gsd/gsd-core) @ `1c352d1ea37b` | MIT | `muster-gsd-plan-phase`, `muster-gsd-execute-phase`, `muster-gsd-verify-work` | mechanism-port |
 | [wshobson/agents](https://github.com/wshobson/agents) @ `2de74ac1c8f6` | MIT | `wsh-signed-audit-trails-recipe`, `wsh-code-reviewer` | mechanism-port, vendored |
 | [blader/humanizer](https://github.com/blader/humanizer) @ `b48c832f0f80` | MIT | `muster-humanizer` | adapted |

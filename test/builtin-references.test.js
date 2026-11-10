@@ -38,6 +38,7 @@ const PROJECT_ROOT_FILES = {
 // Per builtin: project paths it reads or writes, and example names for deliverables it writes.
 const deliverable = "example name of the deliverable the skill writes into the user's working directory";
 const tokens = "the project's design-token file (upstream ships no assets/ directory; the scripts read and write it at the project root)";
+const glossary = "the project's domain glossary at its repository root, read and written by the mp-* skills";
 const PROJECT_FILES = {
   "jk-better-interface": { "CONTRIBUTING.md": "the project's contributing guide, read from the user's project", "CODING_STANDARDS.md": "the project's coding standards, read from the user's project if present" },
   "emil-improve-animations": { "NNN-short-slug.md": deliverable },
@@ -59,7 +60,14 @@ const PROJECT_FILES = {
   "uupm-design": { "assets/design-tokens.json": tokens },
   "uupm-design-system": { "assets/design-tokens.json": tokens, "assets/design-tokens.css": tokens, "assets/css/slide-animations.css": "the project's slide animation stylesheet, listed as a project source of truth" },
   "uupm-slides": { "assets/design-tokens.json": tokens },
-  "uupm-ui-styling": { "assets/design-tokens.json": tokens }
+  "uupm-ui-styling": { "assets/design-tokens.json": tokens },
+  // Complementary skills: files in the repository under review or the project being designed.
+  "mp-codebase-design": { "GLOSSARY.md": glossary },
+  "mp-improve-codebase-architecture": { "GLOSSARY.md": glossary },
+  "mp-domain-modeling": { "GLOSSARY.md": glossary, "GLOSSARY-MAP.md": "the project's map of per-context glossaries in a multi-context repository" },
+  "splab-finding-duplicate-functions": { "report.md": "the duplicates report its generate-report.sh writes into the user's working directory" },
+  "tob-supply-chain-risk-auditor": { "report.md": "the report its render.py writes into an output directory outside the audited repository" },
+  "sentry-gha-security-review": Object.fromEntries(["CLAUDE.md", "AGENTS.md"].map(f => [f, "an agent-instruction file in the reviewed repository that its workflows load (a prompt-injection surface)"]))
 };
 const projectFile = (id, target) => Object.hasOwn(PROJECT_ROOT_FILES, target) || Object.hasOwn(PROJECT_FILES[id] || {}, target);
 

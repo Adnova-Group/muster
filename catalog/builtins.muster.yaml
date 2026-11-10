@@ -14,7 +14,7 @@
   kind: builtin
   roles: [score]
   rank: 50
-  provenance: { license: Apache-2.0, upstream: [felipelobomotta-blip/book-genesis-studio, CSHaitao/Awesome-LLMs-as-Judges, llm-as-a-judge/Awesome-LLM-as-a-judge, microsoft/LLM-Rubric] }
+  provenance: { license: Apache-2.0, upstream: [ai-evals-course/evals-skills, felipelobomotta-blip/book-genesis-studio, CSHaitao/Awesome-LLMs-as-Judges, llm-as-a-judge/Awesome-LLM-as-a-judge, microsoft/LLM-Rubric] }
 - id: muster-humanizer
   kind: builtin
   roles: [humanize]
@@ -24,7 +24,7 @@
   kind: builtin
   roles: [prompt-quality]
   rank: 50
-  provenance: { license: Apache-2.0, upstream: [hermes-labs-ai/lintlang, promptfoo/promptfoo, shobrook/promptimal, gepa-ai/gepa] }
+  provenance: { license: Apache-2.0, upstream: [ai-evals-course/evals-skills, hermes-labs-ai/lintlang, promptfoo/promptfoo, shobrook/promptimal, gepa-ai/gepa] }
 - id: muster-image
   kind: builtin
   roles: [image]
@@ -315,3 +315,115 @@
   keywords: [metrics, experiment, funnel, kpi]
   description: "UX measurement: goal-signal-metric chains, A/B test design, funnels and counter-metrics."
   provenance: { license: CC0-1.0, upstream: [ghaida/intent] }
+
+# ----- Complementary skills: merge-tracked vendored builtins (vendor/manifest.yaml sources
+# evals-skills, sentry-skills, sentry-security-review, openai-skills, trailofbits-skills,
+# mattpocock-skills, superpowers-lab, addy-agent-skills). Every rank sits below its role's
+# default provider (muster-scorer and muster-prompt-smith 50, the wsh builtins 50, the
+# installed-first externals), so a role's chosen provider is unchanged; pipelines, the audit
+# patterns and `muster match --skills` reach them by id and keywords.
+- id: evals-validate-evaluator
+  kind: builtin
+  roles: [score, prompt-quality]
+  rank: 46
+  keywords: [judge, calibration, calibrate, tpr, tnr, labels, evaluator]
+  description: "Calibrate an LLM judge against human labels: train/dev/test splits, TPR and TNR, Rogan-Gladen bias correction and a bootstrap interval."
+  provenance: { license: Apache-2.0, upstream: [ai-evals-course/evals-skills] }
+- id: evals-write-judge-prompt
+  kind: builtin
+  roles: [score, prompt-quality]
+  rank: 45
+  keywords: [judge, llm-as-judge, grader, rubric, passfail]
+  description: "Write a binary Pass/Fail LLM-as-judge prompt for one failure mode: criterion, definitions, few-shot critiques and structured output."
+  provenance: { license: Apache-2.0, upstream: [ai-evals-course/evals-skills] }
+- id: evals-generate-synthetic-data
+  kind: builtin
+  roles: [prompt-quality, score]
+  rank: 44
+  keywords: [synthetic, dataset, test-cases, tuples, eval-set]
+  description: "Generate diverse synthetic eval inputs from failure-targeted dimension tuples when real traces are sparse."
+  provenance: { license: Apache-2.0, upstream: [ai-evals-course/evals-skills] }
+- id: evals-eval-audit
+  kind: builtin
+  roles: [score, prompt-quality]
+  rank: 43
+  keywords: [evals, eval, pipeline, audit, metrics]
+  description: "Audit an LLM eval pipeline for missing error analysis, unvalidated judges and vanity metrics, then rank the fixes."
+  provenance: { license: Apache-2.0, upstream: [ai-evals-course/evals-skills] }
+- id: sentry-security-review
+  kind: builtin
+  roles: [security-review]
+  rank: 46
+  keywords: [security, vulnerability, vulnerabilities, owasp, injection, xss, ssrf, authz]
+  description: "High-confidence security code review: trace attacker-controlled input before flagging injection, XSS, auth, crypto, SSRF or deserialization findings."
+  provenance: { license: CC-BY-SA-4.0, upstream: [getsentry/skills] }
+- id: sentry-gha-security-review
+  kind: builtin
+  roles: [security-review]
+  rank: 45
+  keywords: [github-actions, gha, workflow, workflows, ci, pwn-request]
+  description: "Exploitation-focused GitHub Actions workflow review: pwn requests, expression injection, credential escalation, unpinned actions and CI prompt injection."
+  provenance: { license: Apache-2.0, upstream: [getsentry/skills] }
+- id: openai-security-threat-model
+  kind: builtin
+  roles: [security-review, architecture-review]
+  rank: 44
+  keywords: [threat, threat-model, stride, abuse-paths, trust-boundaries, appsec]
+  description: "Repository-grounded AppSec threat model: trust boundaries, assets, attacker capabilities, ranked abuse paths and mitigations, written as Markdown."
+  provenance: { license: Apache-2.0, upstream: [openai/skills] }
+- id: tob-supply-chain-risk-auditor
+  kind: builtin
+  roles: [security-review]
+  rank: 43
+  keywords: [supply-chain, dependencies, dependency, npm, pypi, advisories, lockfile]
+  description: "Script-measured dependency supply-chain audit for npm, PyPI and Go: advisories, abandoned upstreams, publisher concentration and install scripts."
+  provenance: { license: CC-BY-SA-4.0, upstream: [trailofbits/skills] }
+- id: tob-fp-check
+  kind: builtin
+  roles: [security-review]
+  rank: 42
+  keywords: [false-positive, triage, exploitable, verify, finding, poc]
+  description: "Verify suspected security findings to a TRUE or FALSE POSITIVE verdict with data-flow, exploitability and PoC evidence; not for hunting bugs."
+  provenance: { license: CC-BY-SA-4.0, upstream: [trailofbits/skills] }
+- id: tob-property-based-testing
+  kind: builtin
+  roles: [test-author]
+  rank: 44
+  keywords: [property-based, properties, hypothesis, fast-check, proptest, fuzz, invariants]
+  description: "Write, review and triage property-based tests (Hypothesis, fast-check, proptest, Echidna): roundtrip, invariant and oracle properties."
+  provenance: { license: CC-BY-SA-4.0, upstream: [trailofbits/skills] }
+- id: mp-codebase-design
+  kind: builtin
+  roles: [refactor, architecture-review]
+  rank: 45
+  keywords: [deep-module, modules, interface, seam, depth, testability]
+  description: "Deep-module design vocabulary (module, interface, depth, seam, adapter, leverage, locality) for designing or reshaping a module's interface."
+  provenance: { license: MIT, upstream: [mattpocock/skills] }
+- id: mp-improve-codebase-architecture
+  kind: builtin
+  roles: [refactor, tech-debt, architecture-review]
+  rank: 44
+  keywords: [architecture, deepening, restructure, hotspots, shallow]
+  description: "Opt-in architecture review: find deepening opportunities in recently changed code, report them as HTML, then grill the chosen one."
+  provenance: { license: MIT, upstream: [mattpocock/skills] }
+- id: mp-domain-modeling
+  kind: builtin
+  roles: [plan, architecture-review]
+  rank: 43
+  keywords: [domain, ddd, glossary, ubiquitous-language, terminology, adr]
+  description: "Sharpen a project's domain language as you design: challenge terms, keep GLOSSARY.md current, and record hard-to-reverse decisions as ADRs."
+  provenance: { license: MIT, upstream: [mattpocock/skills] }
+- id: splab-finding-duplicate-functions
+  kind: builtin
+  roles: [refactor, tech-debt]
+  rank: 46
+  keywords: [duplicate, duplicates, duplication, dedupe, semantic, consolidate]
+  description: "Find semantic duplicate functions (same intent, different names or code) by extracting a function catalog, clustering it by domain, then judging each cluster."
+  provenance: { license: MIT, upstream: [obra/superpowers-lab] }
+- id: addy-source-driven-development
+  kind: builtin
+  roles: [docs-research, implement]
+  rank: 40
+  keywords: [docs, documentation, official, framework, citations, version, api]
+  description: "Ground framework-specific code in current official documentation: detect versions, fetch the docs, implement the documented pattern and cite each source."
+  provenance: { license: MIT, upstream: [addyosmani/agent-skills] }

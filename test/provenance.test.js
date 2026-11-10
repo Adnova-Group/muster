@@ -88,7 +88,11 @@ test("NOTICE names every manifest source with its license and copyright line", a
   const missing = [];
   for (const s of manifest.sources.filter(s => !isWorkSource(s))) {
     const line = notice.split("\n").find(l => l.startsWith(`- ${s.repo} `));
-    if (!line || !line.includes(`(${s.license})`)) missing.push(s.repo);
+    // A repository several sources record under different licenses lists them all, joined
+    // with AND (getsentry/skills: Apache-2.0 AND CC-BY-SA-4.0); each source's own must appear.
+    const paren = line?.match(/\(([^()]*)\)$/)?.[1] ?? "";
+    const listed = paren.split(" AND ");
+    if (!line || !(paren === s.license || s.license.split(" AND ").every(l => listed.includes(l)))) missing.push(s.repo);
     if (s.ref && !line?.includes(s.ref)) missing.push(`${s.repo}@${s.ref}`);
     if (s.copyright && !notice.includes(s.copyright)) missing.push(`${s.repo} copyright`);
   }

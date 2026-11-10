@@ -185,6 +185,27 @@
       "effort": "judgment",
       "readOnly": true,
       "codex": false
+    },
+    "prt-silent-failure-hunter": {
+      "source": "plugin/agents/prt-silent-failure-hunter.md",
+      "tier": "core",
+      "effort": "judgment",
+      "readOnly": true,
+      "codex": false
+    },
+    "prt-type-design-analyzer": {
+      "source": "plugin/agents/prt-type-design-analyzer.md",
+      "tier": "core",
+      "effort": "judgment",
+      "readOnly": true,
+      "codex": false
+    },
+    "prt-pr-test-analyzer": {
+      "source": "plugin/agents/prt-pr-test-analyzer.md",
+      "tier": "core",
+      "effort": "judgment",
+      "readOnly": true,
+      "codex": false
     }
   }
 }

@@ -80,6 +80,10 @@ const CLASS_MAP = {
     "intent-noor",
     "intent-vigil",
     "intent-sage",
+    // pr-review-toolkit specialist reviewers (read-only verdict-style reviews).
+    "prt-silent-failure-hunter",
+    "prt-type-design-analyzer",
+    "prt-pr-test-analyzer",
   ],
   // security -- the one rare, high-consequence xhigh lane, coherent with Codex's
   // own 14-heartbeat wsh-security-auditor-specific extension ceiling (PR #83).

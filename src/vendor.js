@@ -313,7 +313,7 @@ export function toAgent(sourceText, item, source) {
   })();
   const fm = {
     name: data.name || item.id,
-    description: data.description || `Agent for ${item.roles.join(", ")} (adapted from ${source.repo})`,
+    description: item.description || data.description || `Agent for ${item.roles.join(", ")} (adapted from ${source.repo})`,
     model,
     tools: filteredTools,
     muster_builtin: true,

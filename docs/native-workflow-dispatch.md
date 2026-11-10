@@ -1,5 +1,7 @@
 # Native Workflow dispatch (backlog item `workflow-tool-delegation`)
 
+> **Superseded (revival stage 2b, 2026-11-09).** This records the pre-revival prose lifecycle (router, review-gate, tournament and coordination skills, plan-backlog/go-backlog/runner verbs). Claude Code's plan and go now run on the Workflow scripts in `plugin/workflows/`; see [architecture](architecture.md) and `docs/strategy/stage-2-contracts.md`. The Codex lane still builds from that prose, frozen in `codex/frozen/`. Kept as history.
+
 Seed context: `docs/strategy/native-delegation.md` Part B item 1 named the orchestrator's
 prose wave loop (`plugin/skills/orchestrator/SKILL.md` step 4) as the strongest available
 native-replacement target on Claude Code CLI -- the harness's agent-teams surface exposes a

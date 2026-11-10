@@ -32,7 +32,7 @@ test("plan + go resolve an issue ref before routing", async () => {
   // plan.md/go.md are the canonical homes; the run.md/autopilot.md aliases were
   // retired in 0.7.0.
   const plan = await readFile(new URL("../plugin/commands/plan.md", import.meta.url), "utf8");
-  assert.match(plan, /(?:muster|\$MUSTER_CLI) issue/, "plan must resolve issue refs");
+  assert.match(plan, /(?:muster|\$MUSTER_CLI|`M) issue/, "plan must resolve issue refs");
   const go = await readFile(new URL("../plugin/commands/go.md", import.meta.url), "utf8");
-  assert.match(go, /(?:muster|\$MUSTER_CLI) issue/, "go must resolve issue refs");
+  assert.match(go, /(?:muster|\$MUSTER_CLI|`M) issue/, "go must resolve issue refs");
 });

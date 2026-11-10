@@ -1,6 +1,6 @@
 ---
 name: muster-reviewer
-description: Read-only diff/branch reviewer for one task's commit range. Adversarial review, one severity-tagged line per finding, re-runs the stated tests, ends with an explicit verdict.
+description: "Read-only reviewer of one task's commits; re-runs its tests and returns a PASS/FAIL ReviewResult."
 tools: Read, Bash, Grep, Glob
 model: sonnet
 effort: high

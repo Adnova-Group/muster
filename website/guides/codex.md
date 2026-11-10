@@ -101,7 +101,7 @@ $muster Add rate limiting to the public API with tests
 | `$muster-init` | Prepare repository state and coordinate Codex native Init evidence. |
 | `$muster-design` | Run context-gated Muster Design workflows with explicit `DESIGN.md` provenance. |
 
-All ten modes have a skill: the six above plus `$muster-plan-backlog`, `$muster-go-backlog`, `$muster-diagnose`, and `$muster-runner`.
+All seven modes have a skill: the six above plus `$muster-diagnose`. The plan-backlog, go-backlog and runner skills were removed in revival stage 2b. The Codex lane is frozen: its plan, go, audit and diagnose workflows are the pre-revival prose kept in `codex/frozen/`, so Codex does not use the Workflow-based core.
 
 Codex native Init uses the canonical instruction pair: `AGENTS.md` is authoritative, and `CLAUDE.md` contains exactly:
 
@@ -113,7 +113,7 @@ Codex native Init uses the canonical instruction pair: `AGENTS.md` is authoritat
 
 If conflicting instruction files existed at the preparation baseline, Init leaves a HUMAN-HOLD instead of overwriting or merging them. A request to run Init, an existing file, or a refusal to overwrite does not prove completion. Muster finalizes only from an artifact delta, an explicit pre-existing confirmation, or an attempt-bound call-result receipt.
 
-For annotated go-backlog files, Codex dispatches every ready implementation/review leg in the dependency wave up to the emitted concurrency bound. Completion notifications are not a reason to wait for a user turn: after each wake, the orchestrator drains all available receipts, runs `sprint-reconcile`, dispatches every returned action, and reconciles again before waiting. Integration remains backlog-ordered after the full wave build/review barrier. There is no special three-runner ceiling; the current backlog control defaults to 5 and clamps at 10, while the shared Codex thread floor remains 12.
+For annotated backlog files driven through the sprint protocol, Codex dispatches every ready implementation/review leg in the dependency wave up to the emitted concurrency bound. Completion notifications are not a reason to wait for a user turn: after each wake, the orchestrator drains all available receipts, runs `sprint-reconcile`, dispatches every returned action, and reconciles again before waiting. Integration remains backlog-ordered after the full wave build/review barrier. There is no special three-runner ceiling; the current backlog control defaults to 5 and clamps at 10, while the shared Codex thread floor remains 12.
 
 ## What the Codex plugin bundles
 
@@ -121,10 +121,10 @@ For annotated go-backlog files, Codex dispatches every ready implementation/revi
 | --- | --- |
 | Deterministic CLI | the full `muster` verb surface |
 | Pipelines | all of them |
-| MCP tools | 31 tools: 30 CLI-wrapper tools plus `muster_sprint_protocol` |
+| MCP tools | 30 tools: 29 CLI-wrapper tools plus `muster_sprint_protocol` |
 | Custom-agent profiles | 27 |
-| Skills | 84 total: 11 public + 73 internal |
-| Internal skill breakdown | 22 native orchestration + 51 capability |
+| Skills | 67 total: 8 public + 59 internal |
+| Internal skill breakdown | 7 native + 46 capability + 3 frozen lifecycle (router, review-gate, tournament) + 3 `muster-gsd-*` fallbacks |
 
 ## Inspecting a Codex install
 
@@ -175,6 +175,6 @@ Some controls are weaker on Codex:
 - **The action fence is not a Codex sandbox.** Codex does not register a blocking hook event for Muster. Forbidden action classes still travel in run state and worker briefs, but that is instruction-level policy on this runtime. Keep Codex permissions and human approval in place for external effects.
 - **Every production wave uses the process lane.** Muster builds one `codex-wave` manifest and runs each member through an isolated `codex exec -C` process. Every member needs a distinct pristine registered linked worktree; the runtime authenticates the trusted repository, exact base SHA, registration, and clean state before probes and again immediately before launch.
 - **Fix-loop performance is measured honestly.** The 10-case production benchmark for exact-thread resume measured 62.2% lower median uncached input and 22.9% lower median time-to-fix than a fresh repair turn. Raw total input, which includes cached context reprocessing, improved 16.8% and did not meet the branch's original 25% raw-total target; the evidence remains recorded rather than being tuned away.
-- **Receipt verification proves one narrow fact.** Format validation alone is insufficient. `muster receipt-verify <sha> --cwd <repo>` confirms that the SHA resolves to a real commit object in the explicit repository. It does not prove that a worker used the assigned worktree, stayed on a branch, forked from that commit, respected ownership, or produced a clean diff. Those checks remain separate dispatch and review duties.
+- **Base-SHA receipts are claims.** Format validation alone is insufficient, and the `receipt-verify` command that confirmed a SHA was a real commit object was removed in revival stage 2b (the Claude lane re-checks commits in `muster merge-wave`). On the frozen Codex lane, re-check a receipt yourself with `git cat-file -t <sha>`. A real commit still does not prove that a worker used the assigned worktree, stayed on a branch, forked from that commit, respected ownership, or produced a clean diff; those checks remain separate dispatch and review duties.
 
 Next: [Troubleshooting](/guides/troubleshooting) and the [CLI commands](/reference/commands) reference.

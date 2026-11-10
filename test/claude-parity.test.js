@@ -40,7 +40,7 @@ test("Claude orchestration surface remains byte-identical outside release metada
     hash.update(await readFile(join(root, path)));
     hash.update("\0");
   }
-  assert.equal(paths.length, 154); // 0.7.0 retired the run/autopilot/sprint command files; 2026-11-09 removed five always-on hook files; stage 1 removed references/kimi-dispatch.md; stage 2 adds plugin/workflows (plan, build, backlog, schemas) and gsd-derived agents (planner, plan-checker, verifier, executor replacing builder).
+  assert.equal(paths.length, 137); // 0.7.0 retired the run/autopilot/sprint command files; 2026-11-09 removed five always-on hook files; stage 1 removed references/kimi-dispatch.md; stage 2 adds plugin/workflows (plan, build, backlog, schemas) and gsd-derived agents (planner, plan-checker, verifier, executor replacing builder); stage 2b deletes the backlog/runner verbs and router-era skills (see the 2026-11-09e re-pin below).
   // Previous 159-file surface +1: audit-pattern-batch2's new
   // plugin/skills/audit-pattern-documentation/SKILL.md (the 10th pattern skill, approved via the
   // second improver batch, composed onto readability + design-ux). The batch also appended 19
@@ -1516,5 +1516,14 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // generator writes; and the humanizer, PRD/epic pipeline and audit-pattern quotes are rewritten
   // clean-room, with every item's upstream: block regenerated from vendor/manifest.yaml.
   // Contracts: docs/strategy/stage-2-contracts.md. Deliberate, not drift.
-  assert.equal(hash.digest("hex"), "633efebe1d85180383883d7c508f99f856e524bad552fcef20eec081c980ee6d");
+  // Re-pin 2026-11-09e (revival stage 2b, 154 -> 137 files): plan.md and go.md run on the
+  // Workflow core and the orchestrator keeps only the compaction-proof rules; plan-backlog,
+  // go-backlog and runner, the router, domain-router, review-gate, tournament and coordination
+  // skills, the sp-plan, sp-subagents and gsd-* builtins, muster-runner and the TaskCompleted
+  // gate are deleted (router, review-gate, tournament and muster-runner survive only as frozen
+  // Codex inputs under codex/frozen/); the ten audit-pattern skills move to
+  // plugin/commands/audit/references/; plugin/runtime/muster.sh is added; every description is
+  // one line and internal skills set user-invocable: false; receipt-verify leaves mcp/server.mjs.
+  // Owner decisions in docs/strategy/2026-11-revival-review.md. Deliberate, not drift.
+  assert.equal(hash.digest("hex"), "1174ad557ebc48b92a302b07f5cebf4d41743832655ef40b1c74faee5f74b73e");
 });

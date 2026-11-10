@@ -120,7 +120,7 @@ test("docs/architecture.md points at the binding-interface doc", async () => {
 for (const [label, re] of Object.entries(TERMS)) {
   test(`grep audit stays live: doc's stated ${label} counts match a re-scan of plugin prose`, async () => {
     const files = await proseFiles();
-    assert.ok(files.length >= 25, `sanity: expected ~30 prose files in scope, found ${files.length}`);
+    assert.ok(files.length >= 15, `sanity: expected ~20 prose files in scope, found ${files.length}`);
     const { mentions, fileCount } = await grepAudit(files, re);
 
     const text = await read(DOC);

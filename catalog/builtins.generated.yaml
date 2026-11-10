@@ -8,15 +8,6 @@
     license: MIT
     upstream:
       - obra/superpowers
-- id: sp-plan
-  kind: builtin
-  roles:
-    - plan
-  rank: 50
-  provenance:
-    license: MIT
-    upstream:
-      - obra/superpowers
 - id: sp-tdd
   kind: builtin
   roles:
@@ -57,15 +48,6 @@
   kind: builtin
   roles:
     - test-author
-  rank: 50
-  provenance:
-    license: MIT
-    upstream:
-      - obra/superpowers
-- id: sp-subagents
-  kind: builtin
-  roles:
-    - plan
   rank: 50
   provenance:
     license: MIT
@@ -374,28 +356,3 @@
     license: MIT
     upstream:
       - wshobson/agents
-- id: gsd-plan-phase
-  kind: builtin
-  roles:
-    - plan
-  rank: 50
-  provenance:
-    license: MIT
-    upstream: []
-- id: gsd-execute-phase
-  kind: builtin
-  roles:
-    - implement
-  rank: 50
-  provenance:
-    license: MIT
-    upstream: []
-- id: gsd-verify-work
-  kind: builtin
-  roles:
-    - plan
-  rank: 50
-  provenance:
-    license: MIT
-    upstream: []
-  description: Built-in for verify — UAT + gap-closure verification of completed work

@@ -56,16 +56,16 @@ function packagedMcpTools() {
 
 test("Codex capability catalog prefers enabled native upstream skills and namespaces GSD fallback", () => {
   const catalog = [
-    { id: "sp-plan", kind: "builtin", roles: ["plan"], rank: 50, provenance: { license: "MIT" } },
+    { id: "sp-tdd", kind: "builtin", roles: ["test-author"], rank: 50, provenance: { license: "MIT" } },
     { id: "wsh-code-review-excellence", kind: "builtin", roles: ["code-review"], rank: 50, provenance: { license: "MIT" } },
     { id: "gsd-execute-phase", kind: "builtin", roles: ["implement"], rank: 50, provenance: { license: "MIT" } }
   ];
-  const adapted = adaptCatalogForCodex(catalog, { skills: ["writing-plans", "code-review-excellence", "gsd-execute-phase"] });
-  assert.ok(adapted.some(entry => entry.id === "writing-plans" && entry.kind === "external"));
+  const adapted = adaptCatalogForCodex(catalog, { skills: ["test-driven-development", "code-review-excellence", "gsd-execute-phase"] });
+  assert.ok(adapted.some(entry => entry.id === "test-driven-development" && entry.kind === "external"));
   assert.ok(adapted.some(entry => entry.id === "code-review-excellence" && entry.kind === "external"));
   assert.ok(adapted.some(entry => entry.id === "gsd-execute-phase" && entry.kind === "external"));
   assert.ok(adapted.some(entry => entry.id === "muster-gsd-execute-phase" && entry.kind === "builtin"));
-  assert.equal(codexFallbackSkillId("sp-plan"), "sp-plan");
+  assert.equal(codexFallbackSkillId("sp-tdd"), "sp-tdd");
   assert.equal(codexFallbackSkillId("gsd-plan-phase"), "muster-gsd-plan-phase");
 });
 

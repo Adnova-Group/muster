@@ -1,3 +1,4 @@
+// Revival stage 2b: this pins the frozen Codex lane input; the Claude command/skill moved to the Workflow core.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -15,7 +16,7 @@ test("the documented steering actions classify end-to-end", () => {
 });
 
 test("the orchestrator skill wires channel steering through classifySteer", async () => {
-  const text = await readFile(new URL("../plugin/skills/orchestrator/SKILL.md", import.meta.url), "utf8");
+  const text = await readFile(new URL("../codex/frozen/skills/orchestrator/SKILL.md", import.meta.url), "utf8");
   assert.match(text, /classifySteer/, "orchestrator must classify channel events via classifySteer");
   // the canonical invocation is the CLI form; src/steer.js may appear as an implementation note
   assert.match(text, /muster steer/, "orchestrator must reference the CLI steer subcommand");
@@ -27,7 +28,7 @@ test("the orchestrator skill wires channel steering through classifySteer", asyn
 });
 
 test("steering never silently re-scopes the run (iron rule)", async () => {
-  const text = await readFile(new URL("../plugin/skills/orchestrator/SKILL.md", import.meta.url), "utf8");
+  const text = await readFile(new URL("../codex/frozen/skills/orchestrator/SKILL.md", import.meta.url), "utf8");
   // retarget is logged as a follow-up, not applied; the manifest stays the single source
   assert.match(text, /re-scope|rescope|single source/i, "orchestrator must forbid silent re-scoping via channel");
 });

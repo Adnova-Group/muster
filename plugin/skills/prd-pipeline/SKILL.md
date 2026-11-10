@@ -1,6 +1,7 @@
 ---
 name: prd-pipeline
-description: Produce a PRD via a phased pipeline (intake -> research -> draft -> review -> score) with an adversarial review gate and a floor-principle score gate.
+description: Produces a PRD through intake, research, draft, adversarial review and score gates.
+user-invocable: false
 upstream: []
 ---
 
@@ -18,7 +19,7 @@ Load the pipeline: `npx -y @adnova-group/muster pipeline prd`. Run its phases in
    plugin or context7/web) for market, competitor, and customer evidence. Cite sources.
 3. **draft** (role: author) — draft the PRD sections: problem, goals, non-goals, scope, requirements,
    success metrics. Use the chosen author provider; else built-in/inline.
-4. **review** (role: code-review) — run the **review-gate** skill adversarially over the draft.
+4. **review** (role: code-review) — dispatch `muster:muster-reviewer` adversarially over the draft.
 5. **score** (role: score) — a judge scores each `gate.criteria` dimension 0-3 with evidence; write
    `{scores, gate}` to `.muster/prd-score.json`; run `npx -y @adnova-group/muster score .muster/prd-score.json`.
    - If not `passing` (floor or total), loop draft+review addressing the `weakest` dimension. Cap 3,

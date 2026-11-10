@@ -17,18 +17,18 @@ const startupCodexHome = process.env.CODEX_HOME;
 // inventory/build validation; model adapters only translate tiers to models.
 export const CODEX_COUNTS = Object.freeze({
   agents: 27,
-  // audit-pillar-pattern-library item: 9 new plugin/skills/audit-pattern-<pillar>/ hunt-list
-  // pattern skills (one dir + SKILL.md each), ported into internal-skills like any other
-  // native skill dir -- 12 -> 21. audit-pattern-batch2 item: 1 more (the approved
-  // documentation pillar, composed onto readability + design-ux) -- 21 -> 22.
-  nativeSkills: 22,
-  builtinSkills: 51,
-  publicSkills: 11,
-  // 72 -> 73: nativeSkills (22) + builtinSkills (51).
-  internalSkills: 73,
+  // Revival stage 2b: the 10 audit-pattern skills moved to plugin/commands/audit/references/
+  // (read by path, not listed per session); router/review-gate/tournament feed Codex from
+  // codex/frozen/skills/; coordination, domain-router, sp-plan, sp-subagents and the gsd-*
+  // builtins were deleted (the muster-gsd-* Codex fallbacks stay in codex/fallback-skills).
+  nativeSkills: 7,
+  builtinSkills: 46,
+  publicSkills: 8,
+  // 59: nativeSkills (7) + builtinSkills (46) + 3 frozen skills + 3 muster-gsd-* fallbacks.
+  internalSkills: 59,
   pipelines: 20,
-  mcpTools: 31,
-  primaryModes: 10,
+  mcpTools: 30,
+  primaryModes: 7,
   aliases: 0
 });
 

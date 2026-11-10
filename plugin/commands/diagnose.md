@@ -1,7 +1,7 @@
 ---
 name: diagnose
-description: "Failure-first bug fix. Reproduce, find root cause (systematic debugging via the best available debug provider — installed wshobson/external else built-in), fix, add a regression test, verify. No symptom-patching. Usage: /muster:diagnose <symptom | paste failing test/CI output>"
-argument-hint: "<symptom | paste failing test/CI output>"
+description: "Failure-first bug fix: reproduce, root cause, fix, regression test, verify. Usage: /muster:diagnose <symptom | failing output>"
+argument-hint: "<symptom | failing output>"
 upstream: []
 ---
 
@@ -29,7 +29,7 @@ If the failure description is empty, ask for a symptom or failing output and sto
      MUSTER_CLI="npx -y @adnova-group/muster"
    fi
    ```
-   Every `muster` CLI call for the rest of this run (steps 1-7, and the orchestrator/review-gate skills this mode invokes) uses `$MUSTER_CLI` — never re-invoke `npx` directly.
+   Every `muster` CLI call for the rest of this run (steps 1-7) uses `$MUSTER_CLI` — never re-invoke `npx` directly.
 1. **Seed**: `$MUSTER_CLI diagnose "<symptom>"` (or `--ci <file>` for pasted output) -> `{mode, manifest}`.
    Write the manifest to `.muster/manifest.json`; validate (`$MUSTER_CLI manifest validate`).
 2. **Reproduce** (plan: `repro`) — confirm the failure reproduces. If it can't be reproduced, report and stop.
@@ -39,8 +39,8 @@ If the failure description is empty, ask for a symptom or failing output and sto
 4. **Fix** (plan: `fix`, role `implement`) — apply the minimal fix targeting the root cause.
 5. **Regression** (plan: `regression`, role `test-author`) — add a test that fails before the fix and
    passes after. A fix without a regression test is not done.
-6. **Verify** (plan: `verify`, role `code-review`) — run the **review-gate** + the full suite; must be green.
+6. **Verify** (plan: `verify`, role `code-review`) — dispatch `muster:muster-reviewer` (read-only) on the fix commits; a FAIL loops back to step 4 at most twice; then the full suite; must be green.
    Tick progress: `$MUSTER_CLI plan-checklist .muster/manifest.json --done <ids>` into STATE.
 7. Escalate if the root cause can't be found or the gate can't pass within the cap. Then present merge.
 
-Reuses the orchestrator + review-gate; glass box records hypotheses, the chosen debug provider, and the root cause.
+Follows the orchestrator skill's run rules; glass box records hypotheses, the chosen debug provider, and the root cause.

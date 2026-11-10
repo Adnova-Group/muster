@@ -441,7 +441,7 @@ async function prepareRuntimeAssets() {
     cli: join(dir, "muster.mjs"),
     server: join(dir, "chatgpt-work-server.mjs"),
     worker: join(dir, "in-process-worker.mjs"),
-    verdictSchema: join(root, "plugin", "skills", "review-gate", "verdict.schema.json"),
+    verdictSchema: join(root, "src", "verdict.schema.json"),
     sprintProtocol: join(root, "cowork", "sprint-protocol.md"),
     catalog: join(root, "catalog"),
     pipelines: join(root, "pipelines"),

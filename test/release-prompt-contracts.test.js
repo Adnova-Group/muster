@@ -1,3 +1,5 @@
+// Revival stage 2b: these release prompt contracts now guard the frozen Codex lane's inputs
+// (codex/frozen/); the Claude plan/go/orchestrator run on plugin/workflows/ instead.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -7,9 +9,9 @@ const read = (path) => readFile(new URL(path, root), "utf8");
 
 test("review advancement requires a recorded explicit PASS and human input cannot substitute", async () => {
   for (const file of [
-    "plugin/skills/orchestrator/SKILL.md",
-    "plugin/skills/review-gate/SKILL.md",
-    "plugin/agents/muster-runner.md",
+    "codex/frozen/skills/orchestrator/SKILL.md",
+    "codex/frozen/skills/review-gate/SKILL.md",
+    "codex/frozen/agents/muster-runner.md",
   ]) {
     const text = await read(file);
     assert.match(text, /recorded `VERDICT: PASS`/i, `${file} must require the recorded verdict`);
@@ -21,7 +23,7 @@ test("review advancement requires a recorded explicit PASS and human input canno
 });
 
 test("security review fires on semantic risk independent of diff size", async () => {
-  const text = await read("plugin/skills/review-gate/SKILL.md");
+  const text = await read("codex/frozen/skills/review-gate/SKILL.md");
   assert.match(text, /semantic security/i);
   assert.match(text, /auth(?:entication|orization)|authorization/i);
   assert.match(text, /secret|credential/i);
@@ -32,7 +34,7 @@ test("security review fires on semantic risk independent of diff size", async ()
 });
 
 test("parallel execution keeps liveness while Codex projects one visible in-progress item", async () => {
-  const text = await read("plugin/skills/orchestrator/SKILL.md");
+  const text = await read("codex/frozen/skills/orchestrator/SKILL.md");
   assert.match(text, /parallel execution remains live|parallel work remains in flight/i);
   assert.match(text, /exactly one.*`in_progress`.*projection|project exactly one.*`in_progress`/is);
   assert.match(text, /remaining.*`pending`.*not.*queued|`pending`.*does not mean.*not running/is);
@@ -40,7 +42,7 @@ test("parallel execution keeps liveness while Codex projects one visible in-prog
 });
 
 test("runner uses a focused item baseline and reserves the broad suite for the final barrier", async () => {
-  const text = await read("plugin/agents/muster-runner.md");
+  const text = await read("codex/frozen/agents/muster-runner.md");
   assert.match(text, /focused per-item baseline/i);
   assert.match(text, /affected tests|nearest relevant tests/i);
   assert.match(text, /broad (?:project |test )?suite.*final barrier/i);
@@ -48,7 +50,7 @@ test("runner uses a focused item baseline and reserves the broad suite for the f
 });
 
 test("prompt contracts resolve neutral profiles instead of embedding model/version catalogs", async () => {
-  const orchestrator = await read("plugin/skills/orchestrator/SKILL.md");
+  const orchestrator = await read("codex/frozen/skills/orchestrator/SKILL.md");
   assert.match(orchestrator, /canonical `\{tier, effort\?\}` profile/i);
   assert.match(orchestrator, /captured capabilities.*resolved dispatch profile/is);
   assert.doesNotMatch(orchestrator, /observed live \d|current Claude Code builds|on \d+\.\d+\.\d+/i);

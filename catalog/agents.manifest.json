@@ -24,7 +24,7 @@
       "readOnly": true
     },
     "muster-runner": {
-      "source": "plugin/agents/muster-runner.md",
+      "source": "codex/frozen/agents/muster-runner.md",
       "tier": "prime",
       "effort": "workhorse"
     },

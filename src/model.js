@@ -20,7 +20,7 @@ import { isTruthyFlag } from "./env-util.js";
 
 const SCOUT = new Set(["code-navigation", "docs-research", "research"]);
 // "judge" is an intentional conceptual role OUTSIDE the resolved ROLES enum
-// (roles.js): the tournament skill (plugin/skills/tournament/SKILL.md) dispatches
+// (roles.js): the tournament skill (codex/frozen/skills/tournament/SKILL.md) dispatches
 // a judge agent to score candidates. "architecture-review" is a canonical ROLES
 // member. "improve" is the retrospective self-improvement role (muster-improver):
 // peak-judgment, runs rarely (post-run), edits to muster's own skills/rules are

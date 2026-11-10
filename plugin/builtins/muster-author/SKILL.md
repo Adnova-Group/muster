@@ -78,4 +78,4 @@ Draft the artifact for the current phase, anchored to the outcome + audience.
 - **De-slop before handing off.** Run the [[muster-humanizer]] tells over your own draft — strip em-dash
   tics, hedging, and "in today's world" filler — so the humanize phase polishes rather than salvages.
 
-Respond with the draft only. The review-gate + scorer judge it next.
+Respond with the draft only. The reviewer + scorer judge it next.

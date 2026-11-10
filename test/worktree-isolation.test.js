@@ -23,13 +23,9 @@
 // validation alone "proves nothing" -- a fabricated-but-well-formed SHA passed the same
 // regex a real commit does). buildBaseShaReceipt now takes an optional injected `verify`
 // function so the receipt can carry an honest `verified`/`verificationMechanism` pair
-// instead of just a shape check; `makeGitShaVerifier` is the git-backed default
-// ("reachable" == resolves to a real commit object at an EXPLICIT cwd via
-// `git rev-parse --verify --quiet <sha>^{commit}`, never `process.cwd()` -- Codex's
-// `spawn_agent` has no cwd field, so the caller must always state the repo). The tests
-// below cover the injected-verifier contract hermetically (a fake `verify`, no shell-out)
-// AND against real git state from this checkout (a fabricated well-formed SHA that is
-// provably not an object here, and this checkout's own live HEAD).
+// instead of just a shape check. The tests below cover the injected-verifier contract
+// hermetically (a fake `verify`, no shell-out). The git-backed verifier and its
+// `receipt-verify` CLI were removed in revival stage 2b: merge-wave re-checks commits.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -39,7 +35,6 @@ import {
   WORKTREE_ISOLATION_MECHANISMS,
   resolveWorktreeIsolation,
   buildBaseShaReceipt,
-  makeGitShaVerifier,
 } from "../src/wave-dispatch.js";
 
 const REPO_ROOT = fileURLToPath(new URL("../", import.meta.url));
@@ -56,15 +51,6 @@ function realHeadSha() {
 
 function branchName() {
   return execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: REPO_ROOT, encoding: "utf8" }).trim();
-}
-
-function runReceiptVerify(args) {
-  try {
-    const stdout = execFileSync(process.execPath, [CLI, "receipt-verify", ...args], { encoding: "utf8" });
-    return { status: 0, stdout };
-  } catch (e) {
-    return { status: e.status, stdout: e.stdout ?? "", stderr: e.stderr ?? "" };
-  }
 }
 
 // ── per-harness mechanism selection ────────────────────────────────────────
@@ -218,7 +204,7 @@ test("buildBaseShaReceipt: an injected verify function that rejects the SHA reco
   assert.equal(receipt.verificationMechanism, "custom");
 });
 
-test("buildBaseShaReceipt: honors the verify function's own .mechanism label when present (e.g. makeGitShaVerifier tags \"git-object\")", () => {
+test("buildBaseShaReceipt: honors the verify function's own .mechanism label when present", () => {
   const verify = (sha) => sha.startsWith("ca");
   verify.mechanism = "git-object";
   const receipt = buildBaseShaReceipt({ taskId: "task-v3", mechanism: WORKTREE_ISOLATION_MECHANISMS.AGENT_TOOL, baseSha: "cafefeed", verify });
@@ -241,112 +227,3 @@ test("buildBaseShaReceipt: a malformed SHA still fails loud exactly as today, ev
   );
 });
 
-// ── makeGitShaVerifier: the git-backed default verifier factory ────────────────────
-
-test("makeGitShaVerifier: requires an explicit cwd -- never defaults to process.cwd()", () => {
-  assert.throws(() => makeGitShaVerifier({}), /cwd is required/);
-  assert.throws(() => makeGitShaVerifier(), /cwd is required/);
-});
-
-test("makeGitShaVerifier: injected exec is honored -- hermetic, no real git shell-out", () => {
-  let called = null;
-  const fakeExec = (cmd, args, opts) => { called = { cmd, args, opts }; return ""; };
-  const verify = makeGitShaVerifier({ cwd: "/fake/repo", exec: fakeExec });
-  assert.equal(verify("deadbeef"), true);
-  assert.equal(called.cmd, "git");
-  assert.deepEqual(called.args, ["rev-parse", "--verify", "--quiet", "deadbeef^{commit}"]);
-  assert.equal(called.opts.cwd, "/fake/repo");
-});
-
-test("makeGitShaVerifier: an injected exec that throws (simulated git rejection) resolves false", () => {
-  const fakeExec = () => { throw new Error("not a valid object name"); };
-  const verify = makeGitShaVerifier({ cwd: "/fake/repo", exec: fakeExec });
-  assert.equal(verify("deadbeef"), false);
-});
-
-test("makeGitShaVerifier: tags its returned function with mechanism \"git-object\"", () => {
-  const verify = makeGitShaVerifier({ cwd: "/fake/repo", exec: () => "" });
-  assert.equal(verify.mechanism, "git-object");
-});
-
-test("makeGitShaVerifier: a REAL SHA from this checkout resolves to a commit object -- verified:true end to end", () => {
-  const realSha = realHeadSha();
-  const verify = makeGitShaVerifier({ cwd: REPO_ROOT });
-  assert.equal(verify(realSha), true);
-  const receipt = buildBaseShaReceipt({ taskId: "task-real-verify", mechanism: WORKTREE_ISOLATION_MECHANISMS.HERMES_W, baseSha: realSha, verify });
-  assert.equal(receipt.verified, true);
-  assert.equal(receipt.verificationMechanism, "git-object");
-});
-
-test("makeGitShaVerifier: a fabricated well-formed SHA that is not a real object here resolves false -- verified:false end to end (the gate's finding: format alone proves nothing)", () => {
-  const verify = makeGitShaVerifier({ cwd: REPO_ROOT });
-  assert.equal(verify(FABRICATED_SHA), false);
-  const receipt = buildBaseShaReceipt({ taskId: "task-fabricated-verify", mechanism: WORKTREE_ISOLATION_MECHANISMS.RECEIPTS_ONLY, baseSha: FABRICATED_SHA, verify });
-  assert.equal(receipt.verified, false);
-  assert.equal(receipt.verificationMechanism, "git-object");
-});
-
-test("makeGitShaVerifier: a non-SHA revision expression (branch, tag, HEAD, relative ref) is rejected, never treated as reachable (review fix -- git rev-parse resolves more than SHAs)", () => {
-  const verify = makeGitShaVerifier({ cwd: REPO_ROOT });
-  // Every one of these genuinely resolves via `git rev-parse --verify` in this checkout
-  // (this is itself the bug the review caught) -- the shape guard must reject all of them
-  // before a single one ever reaches git.
-  for (const revision of ["main", "HEAD", "HEAD~1", branchName()]) {
-    assert.equal(verify(revision), false, `expected "${revision}" to be rejected as not SHA-shaped`);
-  }
-});
-
-test("makeGitShaVerifier: the shape guard runs before any shell-out -- an injected exec proves git is never invoked for non-SHA input", () => {
-  let execCalled = false;
-  const fakeExec = () => { execCalled = true; return ""; };
-  const verify = makeGitShaVerifier({ cwd: "/fake/repo", exec: fakeExec });
-  assert.equal(verify("main"), false);
-  assert.equal(verify("HEAD~1"), false);
-  assert.equal(execCalled, false, "git must never be invoked for a non-SHA-shaped revision expression");
-});
-
-// ── executable consumer: `muster receipt-verify <sha> --cwd <repo>` CLI ────────────
-
-test("receipt-verify CLI: a REAL SHA from this checkout verifies true and exits 0", () => {
-  const realSha = realHeadSha();
-  const { status, stdout } = runReceiptVerify([realSha, "--cwd", REPO_ROOT]);
-  assert.equal(status, 0);
-  const parsed = JSON.parse(stdout);
-  assert.deepEqual(parsed, { sha: realSha, cwd: REPO_ROOT, verified: true, mechanism: "git-object" });
-});
-
-test("receipt-verify CLI: a fabricated well-formed SHA fails verification and exits 2", () => {
-  const { status, stdout } = runReceiptVerify([FABRICATED_SHA, "--cwd", REPO_ROOT]);
-  assert.equal(status, 2);
-  const parsed = JSON.parse(stdout);
-  assert.deepEqual(parsed, { sha: FABRICATED_SHA, cwd: REPO_ROOT, verified: false, mechanism: "git-object" });
-});
-
-test("receipt-verify CLI: a real revision expression that is NOT a SHA (branch name, HEAD, relative ref) is correctly reported unverified, not a false positive (review fix)", () => {
-  // `git rev-parse --verify` genuinely resolves each of these in this checkout -- proving
-  // the CLI's own shape guard (routed through makeGitShaVerifier), not git's own failure,
-  // is what rejects them.
-  for (const revision of ["main", "HEAD", "HEAD~1", branchName()]) {
-    const { status, stdout } = runReceiptVerify([revision, "--cwd", REPO_ROOT]);
-    assert.equal(status, 2, `expected "${revision}" to exit 2 (not verified)`);
-    const parsed = JSON.parse(stdout);
-    assert.equal(parsed.verified, false, `expected "${revision}" to report verified:false`);
-  }
-});
-
-test("receipt-verify CLI: a malformed sha argument still fails verification (exits 2, not a crash) -- no behavior regression on the not-a-real-object path", () => {
-  const { status, stdout } = runReceiptVerify(["not-a-sha", "--cwd", REPO_ROOT]);
-  assert.equal(status, 2);
-  const parsed = JSON.parse(stdout);
-  assert.equal(parsed.verified, false);
-});
-
-test("receipt-verify CLI: missing sha is a usage error (exit 1)", () => {
-  const { status } = runReceiptVerify([]);
-  assert.equal(status, 1);
-});
-
-test("receipt-verify CLI: missing --cwd is a usage error (exit 1) -- never silently defaults to process.cwd()", () => {
-  const { status } = runReceiptVerify([realHeadSha()]);
-  assert.equal(status, 1);
-});

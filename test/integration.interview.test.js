@@ -12,25 +12,21 @@ test("assessOutcome gates the interview: thin -> not clear, rich -> clear", () =
   assert.equal(assessOutcome("reduce checkout API p95 latency to under 300ms for mobile users").clear, true);
 });
 
-test("plan.md runs the gap-check + interview as its front half, before routing", async () => {
-  // plan.md is the canonical home; the run.md alias was retired in 0.7.0.
+// Revival stage 2b: `muster preflight` runs the assess gap-check (its `clear`/`unclear` fields),
+// and the commands ask the interview questions in one AskUserQuestion that writes CONTEXT.md.
+test("plan.md runs the gap-check + interview before the planner", async () => {
   const plan = await readFile(new URL("../plugin/commands/plan.md", import.meta.url), "utf8");
-  assert.match(plan, /muster assess/, "plan must run the assess gap-check");
-  assert.match(plan, /\binterview\b/, "plan must invoke the interview skill");
-  // the assess/interview must precede the router invocation (anchor on the invocation,
-  // not the bare word "router" which also appears in the frontmatter description)
-  assert.ok(plan.indexOf("muster assess") < plan.indexOf("the **router** skill"), "assess must come before routing");
+  assert.match(plan, /M preflight/, "plan must run preflight (scope + assess in one call)");
+  assert.match(plan, /`clear` is false[\s\S]{0,200}AskUserQuestion/, "plan must interview on a gap");
+  assert.match(plan, /CONTEXT\.md/, "interview answers must land in CONTEXT.md");
+  assert.ok(plan.indexOf("AskUserQuestion built from `unclear`") < plan.indexOf('Workflow({name:"muster:plan"'), "the interview must come before planning");
 });
 
 test("go.md triggers the interview on a gap, but never blocks when unattended", async () => {
-  // go.md is the canonical hands-off runner; the autopilot.md alias was retired
-  // in 0.7.0.
   const go = await readFile(new URL("../plugin/commands/go.md", import.meta.url), "utf8");
-  assert.match(go, /muster assess/, "go must run the gap-check");
-  assert.match(go, /\binterview\b/, "go must reference the interview for attended gaps");
-  // unattended path records the gap rather than interviewing
-  assert.match(go, /Unattended|Routine/, "go must keep the unattended subsection");
-  assert.match(go, /run report|STATE/, "unattended gap must be recorded, not block");
+  assert.match(go, /M preflight/, "go must run the gap-check via preflight");
+  assert.match(go, /`clear` is false and a human is present[\s\S]{0,200}AskUserQuestion/, "go must interview attended gaps");
+  assert.match(go, /Unattended: write the gaps as assumptions/, "unattended gap must be recorded, not block");
 });
 
 test("the interview skill uses AskUserQuestion and holds a hard approval gate", async () => {

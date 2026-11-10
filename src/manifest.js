@@ -223,7 +223,7 @@ export function manifestWarnings(m, skillsInventory, opts = {}) {
     // crew composition says it needs. A task with NO surface field at all, or a
     // ui/copy/integration task-text signal with no corresponding skill bound, is a
     // real gap this cannot catch (no per-task stack signal lives in the manifest) --
-    // see plugin/skills/router/SKILL.md's Surface assignment note for that residual limit.
+    // see codex/frozen/skills/router/SKILL.md's Surface assignment note for that residual limit.
     if (p.surface === "none") {
       const implied = [...new Set(
         skills

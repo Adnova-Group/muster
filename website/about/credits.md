@@ -36,7 +36,7 @@ Every non-vendored source, generated from the manifest. Each row lists the items
 | Source | License | Basis for | Relation |
 | --- | --- | --- | --- |
 | [pbakaus/impeccable](https://github.com/pbakaus/impeccable) @ `32930818a109` | Apache-2.0 | `design`, `audit-pattern-design-ux` | inspired-by |
-| [obra/superpowers](https://github.com/obra/superpowers) @ `284be5905ed5` | MIT | 9 vendored builtins and agents | adapted, vendored |
+| [obra/superpowers](https://github.com/obra/superpowers) @ `284be5905ed5` | MIT | 7 vendored builtins and agents | adapted, vendored |
 | [wshobson/agents](https://github.com/wshobson/agents) @ `cf6059d030bf` | MIT | 52 vendored builtins and agents | adapted, vendored |
 | [open-gsd/gsd-core](https://github.com/open-gsd/gsd-core) @ `9385f4618b52` | MIT | 40 vendored builtins and agents | adapted, vendored |
 | [open-gsd/gsd-core](https://github.com/open-gsd/gsd-core) @ `1c352d1ea37b` | MIT | `muster-gsd-plan-phase`, `muster-gsd-execute-phase`, `muster-gsd-verify-work` | mechanism-port |
@@ -93,7 +93,7 @@ Articles, books, papers, standards, talks and people whose ideas, frameworks or 
 
 | Work | Kind | Basis for |
 | --- | --- | --- |
-| [Unlock AI: Open Engine and Open Skills](https://unlock-ai.natebjones.com/), Nate B. Jones | person | `coordination`, `go-backlog`, `runner`, `review-gate`, `muster-humanizer`, `muster-image`, `muster-research`, `prd`, `case-study`, `newsletter`, `blog-post`, `social-post` |
+| [Unlock AI: Open Engine and Open Skills](https://unlock-ai.natebjones.com/), Nate B. Jones | person | `review-gate`, `muster-humanizer`, `muster-image`, `muster-research`, `prd`, `case-study`, `newsletter`, `blog-post`, `social-post` |
 | [Building effective agents](https://www.anthropic.com/research/building-effective-agents), Erik Schluntz and Barry Zhang (Anthropic) | article | `muster-runner` |
 | [Create custom subagents (Claude Code docs)](https://code.claude.com/docs/en/sub-agents), Anthropic | article | `muster-runner` |
 | [LLM-Blender: Ensembling Large Language Models with Pairwise Ranking and Generative Fusion](https://arxiv.org/abs/2306.02561), Dongfu Jiang, Xiang Ren and Bill Yuchen Lin (ACL 2023) | paper | `tournament` |
@@ -173,13 +173,14 @@ The bundled `sp-*`, `wsh-*`, and `muster-gsd-*` skills are deterministic **fallb
 
 ## Clean-room specialists
 
-Alongside the vendored material, Muster ships its own specialists in `plugin/agents/`, authored fresh from atomic-claude's role concept (muster-runner from the lifecycle mechanisms listed above):
+Alongside the vendored material, Muster ships its own specialists in `plugin/agents/`, authored fresh from atomic-claude's role concept:
 
 - **muster-surgeon**: precise 1-2 file edits
 - **muster-investigator**: read-only locator
 - **muster-strategist**: heavyweight reasoning
 - **muster-improver**: read-only post-run retrospective that proposes self-improvement edits
-- **muster-runner**: single-item lifecycle driver — TDD build, explicit-PASS review gate, receipts-backed PR (the dispatchable subagent form of the runner mode)
+
+The `muster-runner` agent (built from the lifecycle mechanisms credited above) left the Claude plugin in revival stage 2b. It survives only as the frozen Codex lane's production-wave policy, in `codex/frozen/agents/muster-runner.md`.
 
 ## Lifecycle seats adapted from GSD
 

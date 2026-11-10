@@ -64,7 +64,7 @@ test("skill-catalog pressure fails closed when host evidence omits an expected l
 });
 
 test("MCP contract comparison covers initialize, tools/list, and representative tools/call", () => {
-  const toolNames = ["muster_detect", ...Array.from({ length: 30 }, (_, index) => `muster_tool_${index}`)];
+  const toolNames = ["muster_detect", ...Array.from({ length: 29 }, (_, index) => `muster_tool_${index}`)];
   const before = {
     protocolVersion: "2025-06-18",
     toolNames,
@@ -80,7 +80,7 @@ test("MCP contract comparison covers initialize, tools/list, and representative 
     status: "PASS",
     reason: "mcp-contract-stable-across-rebuild",
     protocolVersion: "2025-06-18",
-    toolCount: 31,
+    toolCount: 30,
     representativeTool: "muster_detect",
   });
 
@@ -118,16 +118,15 @@ test("duplicate MCP tool names cannot satisfy the 31-tool contract", () => {
   assert.deepEqual(result.failures, ["unexpected-tool-count"]);
 });
 
-test("generated skill inventory is pinned to the canonical 11 public skills", () => {
+test("generated skill inventory is pinned to the canonical 8 public skills", () => {
   const empty = validateGeneratedSkillInventory([]);
   assert.equal(empty.status, "FAIL");
-  assert.equal(empty.expectedCount, 11);
+  assert.equal(empty.expectedCount, 8);
   assert.equal(empty.observedCount, 0);
 
   const canonical = [
     "muster", "muster-audit", "muster-capture", "muster-design", "muster-diagnose",
-    "muster-go", "muster-go-backlog", "muster-init", "muster-plan",
-    "muster-plan-backlog", "muster-runner",
+    "muster-go", "muster-init", "muster-plan",
   ];
   assert.equal(validateGeneratedSkillInventory(canonical).status, "PASS");
 });

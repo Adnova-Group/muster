@@ -1,6 +1,7 @@
 ---
 name: advisor
-description: Worker-signaled advice escalation -- a dispatched worker that hits a FLAGGED hard decision returns an advice-request instead of guessing; the orchestrator services it by validating the request, checking the consult budget, dispatching a native advisor agent on the peak model, and feeding the advice back to the worker so the worker owns the final decision.
+description: "Services a worker's advice-request: validate it, resolve the advisor model, return one bounded answer."
+user-invocable: false
 upstream: []
 ---
 

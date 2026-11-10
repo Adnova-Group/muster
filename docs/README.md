@@ -26,13 +26,9 @@ authoritative and `CLAUDE.md` only imports it.
   scoped harness bindings.
 - [Binding interface](binding-interface.md): adapter primitives and runtime
   mappings.
-- [Native workflow dispatch](native-workflow-dispatch.md): dispatch capability
-  boundaries.
 
 ## Binding
 
-- [Skill thinning](skill-thinning.md): prompt ownership and progressive
-  disclosure.
 - [Anti-patterns](anti-patterns.md): failure classes and their current guards.
 
 ## Operations
@@ -45,7 +41,6 @@ authoritative and `CLAUDE.md` only imports it.
   expectations.
 - [QA runbook](qa/RUNBOOK.md): verification procedures.
 - [Ship checklist](ship-checklist.md): release checks.
-- [Performance pass](performance-pass.md): performance measurement.
 
 ## Research
 
@@ -56,9 +51,17 @@ inputs, not runtime contracts.
 
 - [2026-11 revival review](strategy/2026-11-revival-review.md): owner decisions
   and the staged revival plan.
+- [Stage 2 contracts](strategy/stage-2-contracts.md): the Workflow-based core's
+  agents, scripts, run directory and CLI steps.
 
 ## Historical
 
 Decision records, superseded plans, and prior design work live under
 [`decisions/`](decisions/) and [`superpowers/`](superpowers/). Read them as
 history unless a current executable source links to them as an active contract.
+
+The pre-revival lifecycle design notes are history too, superseded by revival
+stage 2b: [native workflow dispatch](native-workflow-dispatch.md),
+[skill thinning](skill-thinning.md), [performance pass](performance-pass.md),
+[speed tuning](speed-tuning.md), [weight reduction](weight-reduction.md) and
+[fast-path token gap](fast-path-token-gap.md).

@@ -21,7 +21,7 @@ This matrix describes the verified MCP-only distribution in this directory. It d
 | Design | MCP protocol | Use `muster_design` for canonical context, attended initialization, write gates, and pinned workflows. |
 | Runner | Not provided | There is no Runner-mode MCP protocol or tool in this distribution. |
 | Capture | Not provided | There is no Capture-mode MCP protocol or tool in this distribution. |
-| Init | CLI-only | Run `npx -y @adnova-group/muster@0.7.1 init [dir]`; Init is not one of the 31 MCP tools. |
+| Init | CLI-only | Run `npx -y @adnova-group/muster@0.7.1 init [dir]`; Init is not one of the 30 MCP tools. |
 
 ## What you get
 
@@ -46,7 +46,7 @@ Thirty-one deterministic tools, plus an execution protocol that teaches the agen
 | `muster_next` | Single-agent driver: next runnable task given the ids completed so far |
 | `muster_gate_cadence` | Compute review-gate cadence (spec-gate rounds, batched review passes, reviewer count) from a manifest's waves |
 | `muster_score` / `muster_prioritize` | Score against a gate / rank a backlog |
-| `muster_pick` / `muster_tally` | Tournament winner / review-gate decision |
+| `muster_pick` / `muster_tally` | Tournament winner / review-verdict tally |
 | `muster_fuse` | Fusion decision engine -- apply the agreement gate, select top-K for synthesis (mode fuse) or fall back to single best (mode fallback). Deterministic, no LLM. |
 | `muster_advise` | Validate an advice-request and resolve the advisor model (apex degrades to prime). Deterministic, no LLM. |
 | `muster_receipt_verify` | Verify a base-SHA is a real, resolvable git commit object in an explicit repo |
@@ -240,7 +240,7 @@ Phase 3 passing means parallel fan-out plus per-call model override work, so the
 
 This directory is the Claude Cowork MCP package; it is not ChatGPT Work's plugin. ChatGPT Work is available on the web and in the ChatGPT desktop app with Work selected, and uses the universal Plugins Directory plus a registered MCP connection. Work does not inherit this Cowork package or Codex Desktop configuration. Follow [`website/guides/chatgpt-work.md`](../website/guides/chatgpt-work.md) for the private/local Work lane.
 
-The recommended Work profile (`pro-safe`) is exactly one titled, read-only `muster_prioritize` tool after a successful native Scan Tools gate; the installer requires an explicit `--profile`. Its `full` profile is the existing 31-tool deterministic surface, not write support, and requires a full-MCP workspace entitlement and both installer/server opt-ins. Secure MCP Tunnel is outbound-only private transport and is not a public plugin-submission path.
+The recommended Work profile (`pro-safe`) is exactly one titled, read-only `muster_prioritize` tool after a successful native Scan Tools gate; the installer requires an explicit `--profile`. Its `full` profile is the existing 30-tool deterministic surface, not write support, and requires a full-MCP workspace entitlement and both installer/server opt-ins. Secure MCP Tunnel is outbound-only private transport and is not a public plugin-submission path.
 
 ## Troubleshooting
 

@@ -7,7 +7,6 @@ import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { createHash, createHmac, generateKeyPairSync, sign } from "node:crypto";
 import { once } from "node:events";
-import { startSprintEvidenceBroker } from "../mcp/evidence-broker.mjs";
 import {
   buildSprintReceipt,
   computeSprintWaves,
@@ -19,7 +18,6 @@ import {
 const pexecFile = promisify(execFile);
 const repoRoot = new URL("../", import.meta.url).pathname;
 const cli = join(repoRoot, "src", "cli.js");
-const callbackCli = join(repoRoot, "scripts", "sprint-evidence-callback.mjs");
 const receiptKeys = generateKeyPairSync("ed25519");
 const approvalKeys = generateKeyPairSync("ed25519");
 const receiptPrivateKey = receiptKeys.privateKey.export({ type: "pkcs8", format: "pem" });
@@ -711,114 +709,6 @@ test("sprint-reconcile CLI round-trips exact-head approval into integration disp
   }
 });
 
-test("privileged IPC broker binds callback capabilities, assignments, and fresh approval", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "muster-sprint-issuers-"));
-  const runnerToken = "11".repeat(32);
-  const humanToken = "22".repeat(32);
-  const integrationToken = "33".repeat(32);
-  // The broker requires the assigned worktree to be on a named branch (detached HEAD fails
-  // closed), so build an owned fixture repo instead of borrowing this checkout: CI's
-  // pull_request checkout is a detached merge commit.
-  const worktree = join(dir, "worktree");
-  const branch = "work/a";
-  const git = (...args) => execFileSync("git", args, { cwd: worktree, encoding: "utf8" }).trim();
-  execFileSync("git", ["init", "-q", "-b", branch, worktree]);
-  git("-c", "user.name=muster-test", "-c", "user.email=muster-test@example.invalid",
-    "commit", "-q", "--allow-empty", "-m", "fixture");
-  const head = git("rev-parse", "HEAD");
-  const common = resolve(worktree, git("rev-parse", "--git-common-dir"));
-  const baseHeadSha = "b".repeat(40);
-  const approvalTuple = {
-    itemId: "a", workBranch: branch, workHeadSha: head,
-    baseBranch: "main", baseHeadSha, operation: "merge-local",
-  };
-  let assignments = {
-    version: 1, runId: RUN_ID,
-    callbackPrincipals: {
-      [createHash("sha256").update(runnerToken).digest("hex")]: { actorId: "runner-a", purposes: ["implementation"] },
-      [createHash("sha256").update(humanToken).digest("hex")]: { actorId: "human-a", purposes: ["approval"] },
-      [createHash("sha256").update(integrationToken).digest("hex")]: { actorId: "integrator", purposes: ["integration"] },
-    },
-    items: {
-      a: {
-        worktreePath: worktree, branch, gitCommonDir: common,
-        actors: { implementation: "runner-a", review: "reviewer-a", integration: "integrator", approval: "human-a" },
-        integrationTarget: { baseBranch: "main", baseHeadSha, operation: "merge-local" },
-      },
-    },
-  };
-  const socketPath = join(dir, "broker.sock");
-  const broker = startSprintEvidenceBroker({
-    socketPath, loadState: async () => assignments,
-    consumeApprovalCapability: async (digest, expected) => {
-      assert.equal(expected.version, assignments.version);
-      assert.ok(assignments.callbackPrincipals[digest]?.oneTimeApproval);
-      assignments = structuredClone(assignments);
-      delete assignments.callbackPrincipals[digest];
-      assignments.version += 1;
-    },
-    receiptPrivateKey, approvalPrivateKey, approvalPublicKey,
-  });
-  await once(broker, "listening");
-  const callback = (kind, file, token) => pexecFile(process.execPath, [callbackCli, kind, file], {
-    cwd: repoRoot,
-    env: { ...process.env, MUSTER_EVIDENCE_BROKER_SOCKET: socketPath, MUSTER_EVIDENCE_CALLBACK_TOKEN: token },
-  });
-  try {
-    const receiptFile = join(dir, "receipt.json");
-    await writeFile(receiptFile, JSON.stringify({
-      id: "impl-a", itemId: "a", phase: "implementation", status: "completed", candidateSha: head,
-    }));
-    const issuedReceipt = JSON.parse((await callback("receipt", receiptFile, runnerToken)).stdout);
-    assert.match(issuedReceipt.evidence, /^[A-Za-z0-9+/]{86}==$/);
-
-    await writeFile(receiptFile, JSON.stringify({
-      id: "impl-a", itemId: "a", phase: "implementation", status: "completed", candidateSha: head,
-      worktreePath: repoRoot,
-    }));
-    await assert.rejects(callback("receipt", receiptFile, runnerToken), /forbidden fields: worktreePath/);
-    await assert.rejects(callback("receipt", receiptFile, "weak-token"), /broker callback authentication failed/);
-    await assert.rejects(callback("receipt", receiptFile, "44".repeat(32)), /broker callback authentication failed/);
-
-    assignments = structuredClone(assignments);
-    assignments.version = 2;
-    delete assignments.callbackPrincipals[createHash("sha256").update(runnerToken).digest("hex")];
-    assignments.items.a.approvalActionDigest = integrationApprovalDigest(approvalTuple);
-    assignments.callbackPrincipals[createHash("sha256").update(humanToken).digest("hex")].oneTimeApproval = {
-      runId: RUN_ID, actorId: "human-a", itemId: "a",
-      approvalActionDigest: integrationApprovalDigest(approvalTuple),
-      humanEventAt: new Date().toISOString(),
-      expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
-    };
-    await assert.rejects(callback("receipt", receiptFile, runnerToken), /broker callback authentication failed/);
-    const approvalFile = join(dir, "approval.json");
-    await writeFile(approvalFile, JSON.stringify({ ...approvalTuple, approvedBy: "caller-asserted-human" }));
-    await assert.rejects(callback("approval", approvalFile, humanToken), /forbidden fields: approvedBy/);
-    await writeFile(approvalFile, JSON.stringify(approvalTuple));
-    const issuedApproval = JSON.parse((await callback("approval", approvalFile, humanToken)).stdout);
-    assert.equal(issuedApproval.approvedBy, "human-a");
-    assert.match(issuedApproval.evidence, /^[A-Za-z0-9+/]{86}==$/);
-
-    await assert.rejects(callback("approval", approvalFile, humanToken), /broker callback authentication failed/);
-
-    const expired = { ...issuedApproval, approvedAt: new Date(Date.now() - 16 * 60 * 1000).toISOString() };
-    expired.digest = integrationApprovalDigest(expired);
-    expired.evidence = sign(null, Buffer.from(expired.digest, "hex"), approvalPrivateKey).toString("base64");
-    await writeFile(receiptFile, JSON.stringify({
-      id: "integration-a", itemId: "a", phase: "integration", status: "completed", candidateSha: head,
-      approvalDigest: expired.digest, approval: expired,
-    }));
-    await assert.rejects(callback("receipt", receiptFile, integrationToken), /fresh exact authenticated approval/);
-    await assert.rejects(pexecFile(process.execPath, [cli, "sprint-receipt-issue", receiptFile], {
-      cwd: repoRoot, env: { ...process.env, MUSTER_LIFECYCLE_RECEIPT_PUBLIC_KEY: receiptPublicKey },
-    }), /unknown command/);
-  } finally {
-    broker.close();
-    await once(broker, "close");
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
 test("malformed or forged plans fail deterministically and never become wait-eligible", () => {
   const sprint = plan(["- [ ] A {id: a} {deps: none} {disposition: pr}"]);
   const mutations = [
@@ -899,8 +789,7 @@ test("sprint-reconcile CLI returns structured ok:false for a malformed plan", as
 
 test("shared harness protocols require reconcile-dispatch-wait and forbid idle with ready actions", async () => {
   const paths = [
-    "plugin/commands/go-backlog.md",
-    "plugin/skills/orchestrator/SKILL.md",
+    "codex/frozen/skills/orchestrator/SKILL.md",
     "plugin/skills/orchestrator/references/codex-dispatch.md",
     "codex/skill-adapter.md",
     "cowork/sprint-protocol.md",

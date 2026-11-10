@@ -1,10 +1,10 @@
 // fast-path-token-gap item, lever 1: which reviewer BRIEF a single (reviewerCount:1, diff
-// under DEFAULT_REVIEW_DIFF_THRESHOLD) dispatch gets. The full plugin/skills/review-gate/
+// under DEFAULT_REVIEW_DIFF_THRESHOLD) dispatch gets. The full codex/frozen/skills/review-gate/
 // SKILL.md carries three content-conditioned gates that most small diffs never touch at all
 // -- the citation guard (docs/weight-reduction.md and docs/speed-tuning.md's own named
 // follow-up), the mutant-kill gate, and the 3 surface-type definition-of-done gates -- yet
 // EVERY reviewer dispatch loads the whole file regardless (see eval/perf/replay-fast-path.mjs
-// step 1's comment). plugin/skills/review-gate/fast-path-brief.md is a real, smaller,
+// step 1's comment). codex/frozen/skills/review-gate/fast-path-brief.md is a real, smaller,
 // standalone brief carrying only the essential correctness+security checks (never a subset of
 // what the full brief also always includes: the verdict/escalation contract and the intent-
 // vs-implementation check) -- used ONLY when this module's `lightBriefEligible` says so.

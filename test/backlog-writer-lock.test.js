@@ -302,10 +302,7 @@ test("every instruction-driven production backlog writer requires the shared CAS
   const writers = [
     "plugin/commands/audit.md",
     "plugin/commands/capture.md",
-    "plugin/commands/go-backlog.md",
-    "plugin/commands/plan-backlog.md",
-    "plugin/commands/runner.md",
-    "plugin/skills/coordination/SKILL.md",
+    "plugin/commands/go.md",
     "plugin/skills/interview/SKILL.md",
     "cowork/sprint-protocol.md",
   ];

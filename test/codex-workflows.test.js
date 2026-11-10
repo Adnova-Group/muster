@@ -21,13 +21,10 @@ test("packaged Codex workflows use the bundled CLI and Codex-native mode names",
   const router = await readFile(join(selectedPluginRoot, "internal-skills", "router", "SKILL.md"), "utf8");
   assert.match(router, /runtime\/muster\.mjs match --codex --skills/);
   assert.match(router, /compact Codex capability snapshot intentionally omits the global skill inventory/);
-  const runner = await readFile(join(commands, "runner.md"), "utf8");
-  assert.match(runner, /Usage: \$muster-runner/);
-  assert.match(runner, /codex exec "\$muster-runner/);
-  assert.doesNotMatch(runner, /\$muster-planner|Claude Code Routine|claude -p/);
-  const coordination = await readFile(join(selectedPluginRoot, "internal-skills", "coordination", "SKILL.md"), "utf8");
-  assert.match(coordination, /plugin cache is not a Git checkout/);
-  assert.doesNotMatch(coordination, /git log -1 --format/);
+  // Revival stage 2b deleted the runner, plan-backlog and go-backlog modes and the coordination skill.
+  for (const gone of ["runner.md", "plan-backlog.md", "go-backlog.md"]) {
+    await assert.rejects(readFile(join(commands, gone), "utf8"), /ENOENT/, `${gone} must not ship`);
+  }
   const orchestrator = await readFile(join(selectedPluginRoot, "internal-skills", "orchestrator", "SKILL.md"), "utf8");
   assert.match(orchestrator, /codex-wave <wave\.json> --fence-file <trusted no-follow action-fence\.json> --repository-root <trusted repo root> --base-sha <exact full base SHA>/);
   assert.match(orchestrator, /one process-wave member/);
@@ -50,7 +47,7 @@ test("packaged Codex workflows use the bundled CLI and Codex-native mode names",
   assert.doesNotMatch(orchestrator, /propagate the active action fence|receives this same action-fence propagation/i);
   assert.doesNotMatch(orchestrator, /generic-subagent fallback|isolation: "worktree"|hook-enforced -- these BLOCK/);
 
-  for (const command of ["plan", "go", "plan-backlog", "go-backlog", "diagnose", "audit", "runner", "capture"]) {
+  for (const command of ["plan", "go", "diagnose", "audit", "capture"]) {
     const commandText = await readFile(join(commands, `${command}.md`), "utf8");
     const skillText = await readFile(join(selectedPluginRoot, "skills", `muster-${command}`, "SKILL.md"), "utf8");
     assert.match(commandText, /runtime\/codex-skill-adapter\.md/, `${command} command must load the Codex adapter`);
@@ -69,22 +66,10 @@ test("packaged Codex workflows use the bundled CLI and Codex-native mode names",
     const text = await readFile(join(commands, `${command}.md`), "utf8");
     assert.doesNotMatch(text, /manifest validate --codex(?:`|\s+until)/, `${command} must name the manifest file`);
   }
-  for (const command of ["plan", "go", "plan-backlog"]) {
+  for (const command of ["plan", "go"]) {
     const text = await readFile(join(commands, `${command}.md`), "utf8");
     assert.match(text, /capabilities --codex --roles-only/, `${command} should route from compact role capabilities`);
   }
-  for (const command of ["plan-backlog", "go-backlog"]) {
-    const text = await readFile(join(commands, `${command}.md`), "utf8");
-    assert.match(
-      text,
-      /--max-concurrent-threads-per-session <effective agents\.max_concurrent_threads_per_session>/,
-      `${command} must carry the effective Codex ceiling into deterministic wave scheduling`,
-    );
-  }
-  const goBacklog = await readFile(join(commands, "go-backlog.md"), "utf8");
-  assert.match(goBacklog, /self-healing transition/i, "generated Codex go-backlog must bootstrap isolation from a primary checkout");
-  assert.match(goBacklog, /git worktree add/i, "generated Codex go-backlog must carry the driver-worktree recovery action");
-  assert.match(goBacklog, /Continue the batch automatically/i, "generated Codex go-backlog must not stop after successful isolation recovery");
 });
 
 test("generated Codex init binds the bundled runtime without Claude resolver leakage", async () => {
@@ -120,22 +105,15 @@ test("generated Codex package exposes the native-dispatch resolvers the orchestr
   // runtime authenticates repository/base/worktree identity before execution.
   assert.match(orchestrator, /Production waves do not use that weaker floor/);
   assert.match(orchestrator, /binds each member's absolute pristine worktree to the trusted common Git directory and exact base SHA/);
-
-  // The bundled runtime IS `src/cli.js` (esbuild-bundled, scripts/build-codex.mjs), so the
-  // `receipt-verify` command ships automatically once PR #78 lands -- prove the actual generated
-  // package's runtime carries it, not just the source repo's src/cli.js.
-  const runtimeSource = await readFile(runtimeCli, "utf8");
-  assert.match(runtimeSource, /receipt-verify/);
-  assert.match(runtimeSource, /makeGitShaVerifier/);
 });
 
 // Every generated surface that carries the agent watch protocol (adapter + orchestrator +
-// the root router and 11 mode skills), shared by the watch-invariant and dispatch-shape
+// the root router and 7 mode skills), shared by the watch-invariant and dispatch-shape
 // guards below and mirroring scripts/check-codex.mjs's own `watchSurfaces` list.
 const watchInvariantSurfaces = new Map([
   ["adapter", join(selectedPluginRoot, "runtime", "codex-skill-adapter.md")],
   ["orchestrator", join(selectedPluginRoot, "internal-skills", "orchestrator", "SKILL.md")],
-  ...["muster", "muster-init", "muster-design", "muster-plan", "muster-go", "muster-plan-backlog", "muster-go-backlog", "muster-diagnose", "muster-audit", "muster-runner", "muster-capture"]
+  ...["muster", "muster-init", "muster-design", "muster-plan", "muster-go", "muster-diagnose", "muster-audit", "muster-capture"]
     .map(name => [name, join(selectedPluginRoot, "skills", name, "SKILL.md")])
 ]);
 
@@ -151,7 +129,7 @@ async function generatedSpawnSurfaces(root) {
 
 test("every generated spawn-bearing production surface mandates codex-wave admission", async () => {
   const surfaces = await generatedSpawnSurfaces(selectedPluginRoot);
-  assert.ok(surfaces.length >= 14, "the global guard must cover every current explicit non-wave spawn surface");
+  assert.ok(surfaces.length >= 11, "the global guard must cover every current explicit non-wave spawn surface");
   for (const path of surfaces) {
     const text = await readFile(path, "utf8");
     assert.match(
@@ -169,16 +147,11 @@ test("generated production-wave steps contain process manifests, never direct su
   const production = orchestrator.slice(orchestrator.indexOf("## Iron rule"), orchestrator.indexOf("## Wave dispatch"));
   assert.match(production, /codex-wave <wave\.json>/);
   assert.doesNotMatch(production, /call `(?:collaboration|multi_agent_v1)\.spawn_agent`|Agent tool|Codex subagent dispatcher|spawns? a fresh agent|dispatched Codex subagent/i);
-
-  const goBacklog = await readFile(join(selectedPluginRoot, "commands", "go-backlog.md"), "utf8");
-  const waveMode = goBacklog.slice(goBacklog.indexOf("**Wave mode**"), goBacklog.indexOf("**Unattended", goBacklog.indexOf("**Wave mode**")));
-  assert.match(waveMode, /codex-wave <wave\.json>/);
-  assert.doesNotMatch(waveMode, /Agent tool|spawn_agent|actual Agent\/Workflow\/spawn/i);
 });
 
 test("generated Codex orchestration surfaces enforce the state-based agent watch invariant", async () => {
   const surfaces = watchInvariantSurfaces;
-  assert.equal(surfaces.size, 13, "every generated Codex watch-invariant surface must be covered");
+  assert.equal(surfaces.size, 10, "every generated Codex watch-invariant surface must be covered");
   for (const [name, path] of surfaces) {
     const text = await readFile(path, "utf8");
     assert.match(text, /collaboration\.list_agents/, `${name} must reconcile worker state`);
@@ -337,7 +310,7 @@ test("Codex exposes a bounded public skill surface while packaging internal work
   assert.equal(publicSkills.length, CODEX_COUNTS.publicSkills);
   assert.deepEqual(publicSkills, [
     "muster", "muster-audit", "muster-capture", "muster-design", "muster-diagnose", "muster-go",
-    "muster-go-backlog", "muster-init", "muster-plan", "muster-plan-backlog", "muster-runner"
+    "muster-init", "muster-plan"
   ]);
 
   const internalRoot = join(selectedPluginRoot, "internal-skills");
@@ -359,7 +332,7 @@ test("Codex exposes a bounded public skill surface while packaging internal work
 test("generated Codex public skill metadata stays within Muster's discovery budget", async () => {
   const expectedSkills = [
     "muster", "muster-audit", "muster-capture", "muster-design", "muster-diagnose", "muster-go",
-    "muster-go-backlog", "muster-init", "muster-plan", "muster-plan-backlog", "muster-runner"
+    "muster-init", "muster-plan"
   ];
   const metadata = [];
   for (const name of expectedSkills) {

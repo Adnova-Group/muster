@@ -4,6 +4,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { readState, runDir, writeStateHead } from "./run-dir.js";
+import { parsePlan } from "./plan-lint.js";
 
 async function readOrNull(path) {
   try { return await readFile(path, "utf8"); } catch { return null; }
@@ -19,7 +20,13 @@ export function planTaskIds(plan) {
   return [...ids];
 }
 
+// muster-verifier writes gsd's frontmatter status (passed | gaps_found | human_needed); the
+// live stage-2b smoke showed `human_needed` falling through to "no verdict".
+const GSD_STATUS = { passed: "PASS", gaps_found: "GAPS", human_needed: "HUMAN_NEEDED" };
+
 export function verificationVerdict(text) {
+  const status = text.match(/^status:\s*(passed|gaps_found|human_needed)\b/m);
+  if (status) return GSD_STATUS[status[1]];
   const m = text.match(/\b(?:verdict|status)\b[^A-Za-z\n]{0,6}\**\s*(PASS|GAPS|ABSTAIN)\b/i) || text.match(/\b(PASS|GAPS|ABSTAIN)\b/);
   return m ? m[1].toUpperCase() : null;
 }
@@ -37,7 +44,10 @@ export async function nextForRun({ cwd, runId }) {
   const has = (f) => !!files && files.includes(f);
   const plan = has("PLAN.md") ? await readOrNull(join(dir, "PLAN.md")) : null;
   const state = files ? await readState(cwd, runId) : "";
-  const planned = plan ? planTaskIds(plan) : [];
+  // Checkpoint tasks are human stops (build-args lists them as humanNeeded); they never get a
+  // SUMMARY, so they must not hold the run at "planned" forever.
+  const checkpoints = new Set(plan ? parsePlan(plan).tasks.filter((t) => t.kind === "checkpoint" && t.id).map((t) => t.id) : []);
+  const planned = plan ? planTaskIds(plan).filter((id) => !checkpoints.has(id)) : [];
   const summarized = (files || []).filter((f) => /^SUMMARY-.+\.md$/.test(f)).map((f) => f.slice(8, -3));
   const merged = mergedTasks(state);
   let built = [];
@@ -63,6 +73,8 @@ export async function nextForRun({ cwd, runId }) {
     [position, action, why] = ["executed", "verify: run muster-verifier against the merged work", has("VERIFICATION.md") ? "VERIFICATION.md has no verdict" : "every task has a SUMMARY, no VERIFICATION.md"];
   } else if (verdict === "PASS") {
     [position, action, why] = ["verified", "done: present the branch and the human_needed list for the merge decision", "VERIFICATION.md verdict PASS"];
+  } else if (verdict === "HUMAN_NEEDED") {
+    [position, action, why] = ["human_needed", "done: present the merge decision with VERIFICATION.md's human-check items", "VERIFICATION.md status human_needed"];
   } else if (verdict === "GAPS") {
     [position, action, why] = ["gaps", "replan: run muster:plan with the gaps from VERIFICATION.md as the outcome", "VERIFICATION.md verdict GAPS"];
   } else {

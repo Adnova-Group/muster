@@ -401,7 +401,7 @@ test("cli wire: plan-checklist shows task ids and names from the fixture", async
 // ---------------------------------------------------------------------------
 
 // .muster/verdicts.json is a structured-output-binding contract
-// (plugin/skills/review-gate/verdict.schema.json, loaded via src/verdict-schema.js).
+// (src/verdict.schema.json, loaded via src/verdict-schema.js).
 // The schema is the STRICT boundary validator; src/review.js's tallyReview is the
 // defensive floor (see test/verdict-schema.test.js's header). The CLI's tally verb
 // validates BEFORE tallying and splits violations into three pinned classes:

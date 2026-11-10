@@ -22,11 +22,8 @@ export const CODEX_0146_PUBLIC_SKILLS = Object.freeze([
   "muster-design",
   "muster-diagnose",
   "muster-go",
-  "muster-go-backlog",
   "muster-init",
   "muster-plan",
-  "muster-plan-backlog",
-  "muster-runner",
 ]);
 
 function sortedUnique(values) {

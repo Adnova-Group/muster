@@ -1,6 +1,6 @@
 ---
 name: muster-executor
-description: Implements one PLAN.md task or review-fix round in its worktree with tagged atomic commits, deviation rules and a self-checked ExecResult; refuses architectural work.
+description: Implements one PLAN.md task in its worktree with tagged atomic commits and a self-checked ExecResult.
 tools: Read, Write, Edit, Bash, Grep, Glob
 model: sonnet
 effort: medium

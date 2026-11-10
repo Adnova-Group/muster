@@ -68,10 +68,11 @@ test("hooks.json: PreToolUse matcher is exactly Bash|PowerShell|mcp__.* (not a k
 });
 
 // Zero cost until invoked: no hook may fire on session start or on every
-// prompt. Only the run-scoped action fence and task gate stay registered.
+// prompt. Only the run-scoped action fence stays registered (the TaskCompleted
+// gate went with the native task board in revival stage 2b).
 test("hooks.json registers no always-on SessionStart/UserPromptSubmit hooks", () => {
   const parsed = JSON.parse(readFileSync(HOOKS_JSON, "utf8"));
-  assert.deepEqual(Object.keys(parsed.hooks).sort(), ["PreToolUse", "TaskCompleted"]);
+  assert.deepEqual(Object.keys(parsed.hooks).sort(), ["PreToolUse"]);
 });
 
 test("every hook command's script path exists on disk", () => {

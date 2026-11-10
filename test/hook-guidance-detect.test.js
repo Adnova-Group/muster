@@ -147,23 +147,17 @@ test("ROUTING_POLICY carries the VOICE_NUDGE line (folded into the full-principl
   );
 });
 
-// ── all eight routed verbs enumerated under their canonical names ──────────
-test("VERBS names all eight routed verbs under their canonical names", () => {
-  assert.match(VERBS, /\/muster:plan\b(?!-backlog)/, "must name /muster:plan");
-  assert.match(VERBS, /\/muster:go\b(?!-backlog)/, "must name /muster:go");
-  assert.match(VERBS, /\/muster:plan-backlog\b/, "must name /muster:plan-backlog");
-  assert.match(VERBS, /\/muster:diagnose\b/);
-  assert.match(VERBS, /\/muster:audit\b/);
-  assert.match(VERBS, /\/muster:design\b/);
-  assert.match(VERBS, /\/muster:go-backlog\b/, "must name /muster:go-backlog");
-  assert.match(VERBS, /\/muster:runner\b/);
-  assert.doesNotMatch(VERBS, /\/muster:(?:run|autopilot|sprint)\b/);
+// ── the routed verbs under their canonical names (revival stage 2b folded the backlog
+// verbs into plan/go and deleted runner) ─────────────────────────────────────
+test("VERBS names the six routed verbs and none of the removed ones", () => {
+  for (const verb of ["plan", "go", "diagnose", "audit", "design", "capture"]) {
+    assert.match(VERBS, new RegExp(`/muster:${verb}\\b(?!-)`), `must name /muster:${verb}`);
+  }
+  assert.doesNotMatch(VERBS, /\/muster:(?:run|autopilot|sprint|plan-backlog|go-backlog|runner)\b/);
 });
 
-test("ROUTING_POLICY's verb enumeration includes the canonical plan-backlog/go-backlog names", () => {
-  assert.match(ROUTING_POLICY, /:plan-backlog\b/, "must name :plan-backlog");
-  assert.match(ROUTING_POLICY, /:go-backlog\b/, "must name :go-backlog");
-  assert.match(ROUTING_POLICY, /:design\b/);
-  assert.match(ROUTING_POLICY, /:runner\b/);
+test("ROUTING_POLICY's verb enumeration names the current verbs only", () => {
+  for (const verb of ["diagnose", "audit", "design", "capture"]) assert.match(ROUTING_POLICY, new RegExp(`:${verb}\\b`));
+  assert.doesNotMatch(ROUTING_POLICY, /:(?:plan-backlog|go-backlog|runner)\b/);
   assert.doesNotMatch(ROUTING_POLICY, /Legacy aliases still work/);
 });

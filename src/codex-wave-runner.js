@@ -138,7 +138,7 @@ function hermeticCodexEnv(env = {}) {
 async function loadTrustedRunnerPolicy() {
   const candidates = [
     { url: new URL("../agents/muster-runner.toml", import.meta.url), format: "toml" },
-    { url: new URL("../plugin/agents/muster-runner.md", import.meta.url), format: "markdown" },
+    { url: new URL("../codex/frozen/agents/muster-runner.md", import.meta.url), format: "markdown" },
   ];
   for (const candidate of candidates) {
     try {

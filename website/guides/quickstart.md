@@ -4,19 +4,16 @@ Muster turns an outcome into finished work. You give it a goal in plain language
 
 ## Choose a mode by task
 
-Muster has ten modes, including Design for human-facing work and Init for native repository
+Muster has seven modes, including Design for human-facing work and Init for native repository
 instruction setup. Start with the result you need:
 
 <div class="decision-grid">
 
-<article class="decision-card"><strong>Shape one outcome before work starts</strong><span>Use <a href="#plan-and-review-muster-plan">Plan</a> to inspect the crew and approve the plan.</span></article>
-<article class="decision-card"><strong>Deliver one outcome end to end</strong><span>Use <a href="#hands-off-delivery-muster-go">Go</a> for the hands-off lifecycle.</span></article>
-<article class="decision-card"><strong>Plan a batch without executing it</strong><span>Use <a href="#plan-a-whole-backlog-muster-plan-backlog">Plan-backlog</a>.</span></article>
-<article class="decision-card"><strong>Clear a batch of work</strong><span>Use <a href="#clear-a-backlog-muster-go-backlog">Go-backlog</a>, including dependency waves.</span></article>
+<article class="decision-card"><strong>Shape an outcome or a backlog before work starts</strong><span>Use <a href="#plan-and-review-muster-plan">Plan</a> to inspect the checked plan and approve it.</span></article>
+<article class="decision-card"><strong>Deliver an outcome or a backlog end to end</strong><span>Use <a href="#hands-off-delivery-muster-go">Go</a> for the hands-off lifecycle, attended or scheduled.</span></article>
 <article class="decision-card"><strong>Reproduce and fix one failure</strong><span>Use <a href="#fix-a-bug-muster-diagnose">Diagnose</a>.</span></article>
 <article class="decision-card"><strong>Find and fix broad codebase risks</strong><span>Use <a href="#sweep-the-codebase-muster-audit">Audit</a>.</span></article>
 <article class="decision-card"><strong>Create or improve a human-facing surface</strong><span>Use <a href="#design-a-human-facing-surface-muster-design">Design</a>.</span></article>
-<article class="decision-card"><strong>Run one scheduled backlog cycle</strong><span>Use <a href="#schedule-one-cycle-at-a-time-muster-runner">Runner</a>.</span></article>
 <article class="decision-card"><strong>Turn decisions into backlog items</strong><span>Use <a href="#turn-a-discussion-into-backlog-items-muster-capture">Capture</a>.</span></article>
 <article class="decision-card"><strong>Prepare a repository for Muster</strong><span>Use <a href="#initialize-a-repository-muster-init">Init</a>.</span></article>
 
@@ -30,29 +27,34 @@ Every mode below is available on Codex as a skill (`$muster-plan`, `$muster-go`,
 
 ## Plan and review: `/muster:plan`
 
-The approve-first router. It detects whether the invocation is one outcome or a backlog, confirming via AskUserQuestion (stating the signals verbatim) whenever it isn't a clear single item, announces the artifact it's about to produce, then -- for a single outcome -- assembles the crew and shows the glass-box manifest plus a plan, and **stops for your approval**. It plans and shows; selecting Approve & run chains into `/muster:go` in-session, while Adjust and Cancel stay plan-only.
+The approve-first planner. One `muster preflight` call sizes up the outcome; if it is unclear, Muster asks up to four questions in one prompt and records your answers as decisions in the run's `CONTEXT.md`. Then the `muster:plan` workflow writes PLAN.md and has a checker review it (revising at most three times), and Plan **stops for your approval**: Approve & build continues as `/muster:go` on the same branch, Revise re-plans with your feedback, Cancel stops.
 
 ```sh
 /muster:plan Add rate limiting to the public API with tests
 ```
 
-If the outcome is thin, Muster runs a deterministic gap-check (`muster assess`) and, if needed, an interview that asks one question at a time behind an approval gate before any crew is assembled.
+Plan also takes a backlog (`/muster:plan .muster/backlog.md`): every item gets its own checked plan, and you approve the batch once.
 
-Plan also takes a backlog ref (`/muster:plan .muster/backlog.md`, `issues:<label>`, or `linear:<key>`) and, once scope confirms, delegates to `/muster:plan-backlog` to plan the whole batch first: every item is routed up front into one batch plan -- per-item crews, run order, cross-item conflict flags -- and Approve & clear chains into the go-backlog clear; nothing executes before that approval.
+::: tip Skip the per-run Workflow prompt
+Plan and Go call Claude Code's Workflow tool, which asks for consent per run in manual and accept-edits modes. Add `Workflow(muster:plan)`, `Workflow(muster:build)` and `Workflow(muster:backlog)` to your allow rules to skip it.
+:::
 
 ## Hands-off delivery: `/muster:go`
 
-The full lifecycle, hands-off. It shares Plan's scope detection and confirm, then -- for a single outcome -- branches, routes, runs waves (parallel fan-out, tournaments, an adversarial review gate), commits per wave, then presents the merge decision. It only stops for the scope confirmation, that decision, or an escalation.
+The full lifecycle, hands-off. It plans like Plan, then commits the build arguments (`muster build-args`), runs the `muster:build` workflow (each wave's tasks in parallel isolated worktrees, a reviewer with at most two fix rounds, one verifier), merges the waves with `muster merge-wave` (which re-checks every claimed commit and re-runs the planned verify commands), reports the verification result, and asks how to merge. It only stops for an unclear outcome, an escalation, or that merge decision.
 
 ```sh
 /muster:go Resolve all open issues and update the README
 ```
 
-You can also hand it a GitHub issue reference as the outcome:
+You can also hand it a GitHub issue reference or a backlog:
 
 ```sh
 /muster:go #42
+/muster:go .muster/backlog.md
 ```
+
+For a scheduled run (a Claude Code Routine, cron with `claude -p "/muster:go <outcome>"`, or a cloud scheduled task), Go asks nothing, records gaps as assumptions, and ends at a pull request instead of merging into your base branch. If a run is interrupted, `muster next --run <runId>` tells you where it stopped and `/muster:go --run <runId>` picks it up.
 
 ## Fix a bug: `/muster:diagnose`
 
@@ -71,7 +73,7 @@ Breadth-first review and fix. It fans out six read-only dimension reviews in par
 /muster:audit src/payments
 ```
 
-Prefix with `backlog` to sweep read-only instead of fixing: `/muster:audit backlog` writes the ranked ledger to `.muster/backlog.md`, one item per finding-cluster, ready for `/muster:go-backlog` to clear later.
+Prefix with `backlog` to sweep read-only instead of fixing: `/muster:audit backlog` writes the ranked ledger to `.muster/backlog.md`, one item per finding-cluster, ready for `/muster:go .muster/backlog.md` to clear later.
 
 ## Design a human-facing surface: `/muster:design`
 
@@ -84,39 +86,6 @@ receipt; ordinary backend work never pays the design scan or provider cost.
 /muster:design polish src/App.tsx
 ```
 
-## Plan a whole backlog: `/muster:plan-backlog`
-
-The approve-first batch planner -- reached directly, or through `/muster:plan`'s confirmed-backlog delegation. It routes every item in a backlog up front into one batch plan (per-item crews, run order, cross-item conflict flags) and stops for approval before anything runs.
-
-```sh
-/muster:plan-backlog
-/muster:plan-backlog issues:bug
-```
-
-Given a raw intent instead of an existing backlog ref, it first decomposes the intent into backlog items behind a capture-style approval gate, then plans the freshly written backlog. Approve & clear chains into `/muster:go-backlog`.
-
-## Clear a backlog: `/muster:go-backlog`
-
-The batch counterpart to Go. Plain backlogs run sequentially; annotated file backlogs run dependency waves. An escalated item never aborts the batch -- it stays unchecked and go-backlog moves on. There is exactly one attended stop, at the end, for the batch report -- headlined "cleared N, escalated M."
-
-```sh
-/muster:go-backlog
-/muster:go-backlog issues:bug
-```
-
-A backlog item annotated with `{id}`/`{deps}` (the shape `/muster:audit backlog` and an accepted interview decomposition both emit by default) switches go-backlog into **wave mode**. Every ready item builds and reviews in its own worktree, concurrently up to `MUSTER_SPRINT_PARALLEL` (default 5, hard ceiling 10) when the harness supports it. After every completion wake, Muster reconciles all available receipts and dispatches every newly eligible action before waiting again. Disposition/integration remains backlog-ordered after the entire wave's build/review barrier; the next dependency wave waits for that lane. There is no fixed three-runner cap. Go-backlog re-resolves the file after the barrier and ordered lane so items added mid-batch can join the run instead of waiting for the next invocation.
-
-## Schedule one cycle at a time: `/muster:runner`
-
-The unattended counterpart to Go-backlog, meant to be fired repeatedly by a Claude Code Routine or cron rather than run once over a whole backlog: each cycle resumes an answered blocked item or claims exactly one available item, drives it through the full Go lifecycle force-coerced to a `pr` disposition, leaves a receipt, and stops.
-
-```sh
-/muster:runner
-/muster:runner issues:agent:todo
-```
-
-Runner and Go-backlog share a claim/receipt/ledger discipline (the **coordination** skill), so a scheduled runner can safely work the same backlog or `issues:<label>` alongside an attended go-backlog clear or a human.
-
 ## Turn a discussion into backlog items: `/muster:capture`
 
 Had a conversation that produced findings, decisions, or an explicit "add those 5" -- but nothing has written them down yet? `/muster:capture [hint]` mines the session (or just the part `hint` scopes) for candidate backlog items, each traced back to what was actually said. Nothing is written until you approve the list; it never assembles a crew or runs anything itself.
@@ -126,7 +95,7 @@ Had a conversation that produced findings, decisions, or an explicit "add those 
 /muster:capture the three findings from the audit we just discussed
 ```
 
-Approve, and the items land in `.muster/backlog.md` alongside anything `/muster:audit backlog` or an interview decomposition already wrote there, ready for `/muster:go-backlog` to clear.
+Approve, and the items land in `.muster/backlog.md` alongside anything `/muster:audit backlog` or an interview decomposition already wrote there, ready for `/muster:go .muster/backlog.md` to clear.
 
 ## Initialize a repository: `/muster:init`
 
@@ -145,7 +114,7 @@ Claude Code and Codex use one canonical instruction pair: `AGENTS.md` is authori
 @AGENTS.md
 ```
 
-If conflicting instruction files existed at the preparation baseline, Init leaves a HUMAN-HOLD instead of overwriting or merging them. See [The ten modes](/reference/modes#init) for the evidence and finalization states.
+If conflicting instruction files existed at the preparation baseline, Init leaves a HUMAN-HOLD instead of overwriting or merging them. See [The seven modes](/reference/modes#init) for the evidence and finalization states.
 
 ## Inspect the routing yourself
 

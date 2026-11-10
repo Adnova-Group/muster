@@ -70,7 +70,7 @@ function rankMemory(entries, outcome) {
     .sort((a, b) => b.score - a.score || a.slug.localeCompare(b.slug));
 }
 
-export async function runPreflight({ outcome, cwd, home, catalogDir, runId, now = new Date() }) {
+export async function runPreflight({ outcome, cwd, home, catalogDir, runId, model = null, now = new Date() }) {
   if (typeof outcome !== "string" || !outcome.trim()) throw new Error("preflight <outcome>: missing outcome");
   const id = assertRunId(runId || slugRunId(outcome, now));
   const [scope, project, catalog, installed] = await Promise.all([
@@ -83,6 +83,8 @@ export async function runPreflight({ outcome, cwd, home, catalogDir, runId, now 
   const fastPath = scoreOutcomeForFastPath(outcome);
   const capabilities = resolveCapabilities(catalog, installed, home);
   const models = seatModels(capabilities.roles);
+  // `--model` pins every Workflow seat to one model (cheap smoke runs, budget lanes); effort stays.
+  if (model) for (const seat of Object.keys(models)) models[seat] = { ...models[seat], model };
   // Specialists for agentHint; the muster-* agents are workflow seats, not task specialists.
   const agentIds = new Set([...Object.keys(agentProfiles()), ...(installed.agents || [])]);
   const matches = matchProviders(outcome, catalog, installed);

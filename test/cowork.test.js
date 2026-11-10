@@ -246,7 +246,7 @@ test("tools/list exposes exactly the 31 brain verbs, matching the MCPB manifest"
   const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/list" }]);
   const served = r[2].result.tools.map((t) => t.name).sort();
   const declared = manifest.tools.map((t) => t.name).sort();
-  assert.equal(served.length, 31, "31 tools served");
+  assert.equal(served.length, 30, "30 tools served");
   assert.deepEqual(served, declared, "manifest tool list must match the server's actual tools (drift guard)");
   for (const t of r[2].result.tools) assert.ok(t.description && t.inputSchema, `${t.name} has description + inputSchema`);
 });
@@ -429,8 +429,8 @@ test("Cowork distribution metadata and README document the exact MCP-only suppor
   assert.equal(manifest.license, pkg.license, "MCPB license must match the package license");
   assert.equal(packedLicense, rootLicense, "the packed cowork/ tree must carry the repository license");
   assert.equal(packedNotice, rootNotice, "the packed cowork/ tree must carry repository attributions");
-  assert.equal(manifest.tools.length, 31, "MCPB manifest declares the complete deterministic tool surface");
-  assert.match(manifest.long_description, /31 deterministic MCP tools/);
+  assert.equal(manifest.tools.length, 30, "MCPB manifest declares the complete deterministic tool surface");
+  assert.match(manifest.long_description, /30 deterministic MCP tools/);
   assert.match(manifest.long_description, /Plan, Go, Plan-backlog, Go-backlog, Diagnose, Audit, and Design/);
   assert.equal(manifest.server.entry_point, "mcp-server.mjs", "MCPB entry point is relative to the packed cowork/ root");
   assert.deepEqual(manifest.server.mcp_config.args, ["${__dirname}/mcp-server.mjs"]);
@@ -495,9 +495,9 @@ test("manifest: every user_config substitution is declared; apex/legacy keys car
   assert.ok(!("default" in manifest.user_config.run_id), "run_id must be adapter-provisioned per sprint");
 });
 
-// ── codex-mcp-surface-gaps: 4 deterministic ops the 2026-07-19 Codex dogfood ──
-// fell back to the bundled CLI for, closed as real MCP tools (receipt-verify,
-// roles-only capabilities, skill matching, gate-cadence) — see the per-op
+// ── codex-mcp-surface-gaps: deterministic ops the 2026-07-19 Codex dogfood ──
+// fell back to the bundled CLI for, closed as real MCP tools (roles-only
+// capabilities, skill matching, gate-cadence) — see the per-op
 // rationale on each TOOLS entry in cowork/mcp-server.mjs.
 test("tools/call: muster_capabilities_roles returns ONLY the lighter {roles} capture, no skills/providers", async () => {
   const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_capabilities_roles", arguments: {} } }]);
@@ -539,37 +539,11 @@ test("json verb: muster_gate_cadence with changedLines also folds in reviewerCou
   assert.equal(body.reviewerReasoning, "medium");
 });
 
-test("tools/call: muster_receipt_verify -- a REAL SHA from this checkout verifies true", async () => {
-  const { stdout } = await execFileP("git", ["rev-parse", "HEAD"], { cwd: rootDir });
-  const sha = stdout.trim();
-  const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_receipt_verify", arguments: { sha, cwd: rootDir } } }]);
-  const res = r[2].result;
-  assert.equal(res.isError, false, "a real SHA must not error");
-  const body = JSON.parse(res.content[0].text);
-  assert.equal(body.verified, true);
-  assert.equal(body.mechanism, "git-object");
-  assert.equal(body.sha, sha);
-});
-
-test("tools/call: muster_receipt_verify -- a fabricated well-formed SHA verifies false and surfaces isError", async () => {
-  const fabricated = "f".repeat(40);
-  const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_receipt_verify", arguments: { sha: fabricated, cwd: rootDir } } }]);
-  const res = r[2].result;
-  assert.equal(res.isError, true, "an unverified SHA's non-zero CLI exit surfaces as isError, matching muster_sprint_waves' ok:false convention");
-  const body = JSON.parse(res.content[0].text);
-  assert.equal(body.verified, false);
-});
-
 // Review-gate fix: omitting the required `sha` while `cwd` is present must NOT let the
 // "str" kind's trailing `flags` (--cwd <repo>) shift into the sha's positional slot --
 // that produced a misleading `{"sha":"--cwd","cwd":...,"verified":false}` diagnostic that
 // falsely implied a real git-object verification attempt occurred, instead of the CLI's
 // own clean "missing sha" usage error.
-test("tools/call: muster_receipt_verify -- omitting required sha is rejected before CLI dispatch", async () => {
-  const r = await rpc([INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_receipt_verify", arguments: { cwd: rootDir } } }]);
-  assert.equal(r[2].error.code, -32602);
-  assert.match(r[2].error.message, /arguments\.sha is required/);
-});
 
 // ── codex-mcp-surface-gaps round 2: 3 more deterministic ops the 2026-07-19 clean ──
 // Codex run's residual CLI-only list named (scope, fast-path, plan-checklist) — see

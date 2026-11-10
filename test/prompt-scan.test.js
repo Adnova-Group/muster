@@ -13,7 +13,8 @@ import {
   mkdirSync, writeFileSync, chmodSync, rmSync, symlinkSync,
   linkSync, renameSync, unlinkSync,
 } from "node:fs";
-import { lstat, writeFile } from "node:fs/promises";
+import { lstat, readFile, writeFile } from "node:fs/promises";
+import { parse as parseYaml } from "yaml";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { promisify } from "node:util";
@@ -536,10 +537,23 @@ test("C2c: collectScanFiles excludes files inside .agents (codex build-staging m
 // (not a synthetic fixture) since the deliverable is specifically "the live tree scans
 // clean", not "the scanner mechanism works on fixtures" (already covered by C2/C3/C5/C7
 // above).
+// Third-party prompt text carried under merge tracking (the UX family: vendor/manifest.yaml
+// sources uupm, intent, typeui, pfd) is excluded: its files are byte-exact upstream copies or
+// 3-way-merged adaptations, so rewriting them to satisfy muster's linter would turn verbatim
+// files into adapted ones and make every upstream update conflict. Muster-authored prompts and
+// the adapted gsd lifecycle seats stay in scope.
+const UPSTREAM_PROMPT_SOURCES = new Set(["uupm", "intent", "typeui", "pfd"]);
+async function upstreamPromptFiles(repoRoot) {
+  const manifest = parseYaml(await readFile(path.join(repoRoot, "vendor", "manifest.yaml"), "utf8"));
+  return new Set(manifest.sources.filter((s) => UPSTREAM_PROMPT_SOURCES.has(s.id))
+    .flatMap((s) => s.items.filter((i) => i.to && i.mode !== "watch").map((i) => i.to)));
+}
+
 test("repo-wide prompt-lint backlog is clean: scanRepoPrompts(repoRoot) reports zero failing files", async () => {
   const repoRoot = fileURLToPath(new URL("../", import.meta.url));
   const result = await scanRepoPrompts(repoRoot);
-  const failing = result.prompts.filter((p) => !p.passing);
+  const upstream = await upstreamPromptFiles(repoRoot);
+  const failing = result.prompts.filter((p) => !p.passing && !upstream.has(p.file.split(path.sep).join("/")));
   assert.deepEqual(
     failing.map((f) => f.file),
     [],

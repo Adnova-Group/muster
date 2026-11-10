@@ -29,6 +29,10 @@ test("muster agents credit their upstream (atomic-claude role concept, gsd-core 
       else if (GSD_SEATS.includes(a.id)) assert.deepEqual(a.provenance.upstream, ["open-gsd/gsd-core"], `${a.id} must credit gsd-core`);
       else if (a.id === "muster-reviewer") assert.deepEqual(a.provenance.upstream, ["open-gsd/gsd-core", "damusix/atomic-claude"], "muster-reviewer credits gsd-core and atomic-claude");
       else assert.deepEqual(a.provenance.upstream, ["damusix/atomic-claude"], `${a.id} must credit atomic-claude`);
+    } else if (a.id.startsWith("intent-")) {
+      // Merge-tracked from ghaida/intent (CC0-1.0 public-domain dedication).
+      assert.equal(a.provenance.license, "CC0-1.0", `${a.id} vendored intent agent should be CC0-1.0`);
+      assert.deepEqual(a.provenance.upstream, ["ghaida/intent"], `${a.id} must record its upstream source`);
     } else {
       assert.equal(a.provenance.license, "MIT", `${a.id} vendored agent should be MIT`);
       assert.deepEqual(a.provenance.upstream, ["wshobson/agents"], `${a.id} must record its upstream source`);

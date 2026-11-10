@@ -127,7 +127,9 @@ async function vendoredBuiltinIds(base) {
   // credit an upstream; their doc references are muster's own and stay checked.
   for (const s of (manifest?.sources || [])) {
     if (s?.fetch === false) continue;
-    for (const it of (s.items || [])) if (it?.id && !it.kind) ids.add(it.id);
+    // Fetched builtins carry no kind; merge-tracked builtins (items with a mode, e.g. the
+    // uupm/intent UX family) name kind: builtin. Both are upstream text, not muster's.
+    for (const it of (s.items || [])) if (it?.id && (!it.kind || (it.mode !== undefined && it.kind === "builtin"))) ids.add(it.id);
   }
   return ids;
 }

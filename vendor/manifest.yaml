@@ -23,6 +23,12 @@
 #                inspired-by     idea, structure or framework named, no text carried
 #              a work is always inspired-by
 #   copyright  the upstream copyright line, reproduced in NOTICE
+#   trademark  a trademark notice the upstream asks to travel with attribution, reproduced in NOTICE
+#   tag        merge-tracked sources only: the release tag of ref, or `git describe --tags --long`
+#              of ref when it sits between releases (e.g. v2.15.0-80-g4f2dbb6)
+#   ShareAlike a CC BY-SA source may be vendored or adapted (it is not a restricted license and
+#              needs no waiver), but every item carrying its text must declare that same license
+#              in its own frontmatter; `muster provenance` checks it (checkShareAlike)
 #   fetch      false = attribution only, never fetched by `muster vendor` (every work)
 #   licenseReview  required on a repository whose terms give Muster no right to reuse
 #              text (NONE, NC, ND, proprietary) when Muster carries none of its text:
@@ -671,6 +677,337 @@ sources:
       - { from: gsd-core/workflows/plan-phase.md, mode: watch, baseBlob: 115ed207b92c11178c5d8d0bf7804581e371434e, issues: [2401, 3172, 3724] }
       - { from: gsd-core/workflows/verify-work.md, mode: watch, baseBlob: 62d0b7c00b9567fad79162a35ec4fd148a1aca8d, issues: [3724] }
       - { from: gsd-core/workflows/code-review.md, mode: watch, baseBlob: 1090eafe9ab3814086c6a91b1eb23abfed0f1b13 }
+
+  # ===== UX skill family: merge-tracked vendored builtins (revival stage 3) ==========
+  # Same shape as gsd: `muster vendor update <source> --to <tag>` 3-way merges the adapted
+  # files against their byte-exact base copies in vendor/upstream/<source>/; a verbatim FILE
+  # item is a whole-file byte copy that is its own base copy (its blob must equal baseBlob,
+  # checked by the doctor's vendor-sync check; plugin/builtins/{uupm,intent}-*, typeui and
+  # pfd are -text in .gitattributes so Windows checkouts keep those bytes). An update to a
+  # newer tag replaces verbatim files and merges adapted ones; upstream files added after the
+  # pin show up only in `muster vendor report` and are vendored by hand. Pins sitting between
+  # releases record `git describe --tags --long` of the ref as their tag (src/vendor-sync.js
+  # DESCRIBE_RE), so the update fetch pins the commit itself.
+  # Precedence for every UX builtin (stated in each file's "In muster" note):
+  # project DESIGN.md > accessibility/WCAG > impeccable (/muster:design) > these skills.
+  # Catalog entries live in catalog/builtins.muster.yaml (plain `muster vendor` regenerates
+  # builtins.generated.yaml only from non-merge-tracked sources, which would drop them).
+  - id: uupm
+    kind: github
+    repo: nextlevelbuilder/ui-ux-pro-max-skill
+    # Pinned 2026-11-10 to upstream HEAD (newest commit, pushed 2026-11-07), 80 commits past
+    # the latest release v2.15.0 (2026-08-13, a38d04c3), touching 63 files under
+    # .claude/skills, so the release is not equivalent and HEAD is pinned.
+    # Vendored: all seven skills under .claude/skills/ as uupm-<skill>. Not vendored:
+    # cli/, gallery/, stack/, src/ (src/ui-ux-pro-max duplicates the skill's data and scripts),
+    # every scripts/tests/ tree and test fixture, ui-styling/scripts/.coverage, the
+    # 5.3 MB ui-styling/canvas-fonts/ (binary OFL fonts, separately licensed; the canvas
+    # reference now points at project fonts or the google-fonts search domain), and the
+    # catalog-refresh inputs data/phosphor-icons-upstream.json and data/google-font-licenses.json
+    # with their only reader scripts/validate_data.py (a maintainer validator; search.py,
+    # core.py and design_system.py never read them).
+    # Adapted: the seven SKILL.md (muster frontmatter, an "In muster" note, script paths
+    # rewritten from ${CLAUDE_PLUGIN_ROOT}/.claude/skills/ui-ux-pro-max/... to
+    # ${CLAUDE_PLUGIN_ROOT}/builtins/uupm-ui-ux-pro-max/..., python -> python3, sibling skill
+    # names -> uupm-* ids; uupm-ui-ux-pro-max's --persist step became "present the design
+    # system as a DESIGN.md proposal"), and 14 references whose ../design-system/, ../brand/
+    # sibling paths, skill names or the canvas-fonts directory changed. Everything else verbatim.
+    # uupm-ui-styling/LICENSE.txt is the Apache-2.0 text upstream ships beside that skill;
+    # it is carried verbatim with it.
+    ref: 4f2dbb67e64969a9a30ab00742f2d55d66ddec2b
+    tag: v2.15.0-80-g4f2dbb6
+    license: MIT
+    copyright: "Copyright (c) 2024 Next Level Builder"
+    relation: vendored
+    items:
+      - { from: LICENSE, mode: watch, baseBlob: 1e71cbf26660f31903807d099fe902c098fc7e4c }
+      # the design-ux audit pattern points at this source's review checklists by path (no text carried)
+      - { id: audit-pattern-design-ux, kind: audit-pattern, from: null, relation: inspired-by }
+      - { id: uupm-banner-design, kind: builtin, from: .claude/skills/banner-design/SKILL.md, to: plugin/builtins/uupm-banner-design/SKILL.md, mode: adapted, relation: adapted, baseBlob: 79fa5ee1884ce1b9f76627a1bea073d3dd67ee7b }
+      - { from: .claude/skills/banner-design/references/banner-sizes-and-styles.md, to: plugin/builtins/uupm-banner-design/references/banner-sizes-and-styles.md, mode: verbatim, baseBlob: f72727be2e44ea042195730a7ae04f1371418817 }
+      - { id: uupm-brand, kind: builtin, from: .claude/skills/brand/SKILL.md, to: plugin/builtins/uupm-brand/SKILL.md, mode: adapted, relation: adapted, baseBlob: 3eddf309084e6c4493fa19a6b31e755703ba5e86 }
+      - { from: .claude/skills/brand/references/approval-checklist.md, to: plugin/builtins/uupm-brand/references/approval-checklist.md, mode: verbatim, baseBlob: 0ce4bb69d7c14116f86fa37b53b1427efe78d9b7 }
+      - { from: .claude/skills/brand/references/asset-organization.md, to: plugin/builtins/uupm-brand/references/asset-organization.md, mode: verbatim, baseBlob: 5c69677e16b9abeb90f52c03d9ba59d83c4e0574 }
+      - { from: .claude/skills/brand/references/brand-guideline-template.md, to: plugin/builtins/uupm-brand/references/brand-guideline-template.md, mode: verbatim, baseBlob: 63c481efb19a1f4186118ad4a0bee2f596f4e2fe }
+      - { from: .claude/skills/brand/references/color-palette-management.md, to: plugin/builtins/uupm-brand/references/color-palette-management.md, mode: verbatim, baseBlob: 042e29c5a4b926692cd2bfa33fe993e1135165ee }
+      - { from: .claude/skills/brand/references/consistency-checklist.md, to: plugin/builtins/uupm-brand/references/consistency-checklist.md, mode: verbatim, baseBlob: 918f3ed9239aaa7ba52567a8c888fad1644db267 }
+      - { from: .claude/skills/brand/references/logo-usage-rules.md, to: plugin/builtins/uupm-brand/references/logo-usage-rules.md, mode: verbatim, baseBlob: 64d84cb984621e964d3a612168c4e24154df7e2b }
+      - { from: .claude/skills/brand/references/messaging-framework.md, to: plugin/builtins/uupm-brand/references/messaging-framework.md, mode: verbatim, baseBlob: 983e8431ccd58bcf132ef5990c6ac7f4f187b5f7 }
+      - { from: .claude/skills/brand/references/typography-specifications.md, to: plugin/builtins/uupm-brand/references/typography-specifications.md, mode: verbatim, baseBlob: 0e7b620bd97d55ddaed52c6963f25568ee0bb670 }
+      - { from: .claude/skills/brand/references/update.md, to: plugin/builtins/uupm-brand/references/update.md, mode: adapted, baseBlob: 23d3978e6a08353f30006a97eb1f45eade688d6b }
+      - { from: .claude/skills/brand/references/visual-identity.md, to: plugin/builtins/uupm-brand/references/visual-identity.md, mode: verbatim, baseBlob: 93f4ed1ccffd0a666ec60570e7e406600e5e5672 }
+      - { from: .claude/skills/brand/references/voice-framework.md, to: plugin/builtins/uupm-brand/references/voice-framework.md, mode: verbatim, baseBlob: cdc26ab51f444723d9b1de0b651e17416b3a2ae8 }
+      - { from: .claude/skills/brand/scripts/extract-colors.cjs, to: plugin/builtins/uupm-brand/scripts/extract-colors.cjs, mode: verbatim, baseBlob: 73aa6d4cb3cb235dfece6c98954dee46d87ae01d }
+      - { from: .claude/skills/brand/scripts/inject-brand-context.cjs, to: plugin/builtins/uupm-brand/scripts/inject-brand-context.cjs, mode: verbatim, baseBlob: 04073071934d7426ef18757a17f47de00bfea2b0 }
+      - { from: .claude/skills/brand/scripts/sync-brand-to-tokens.cjs, to: plugin/builtins/uupm-brand/scripts/sync-brand-to-tokens.cjs, mode: verbatim, baseBlob: c44b466afa4d6f14dfbcca793516811465d46eeb }
+      - { from: .claude/skills/brand/scripts/validate-asset.cjs, to: plugin/builtins/uupm-brand/scripts/validate-asset.cjs, mode: verbatim, baseBlob: 1bd4c929f98c89ee4dfe10d90505c2b7a359d8c7 }
+      - { from: .claude/skills/brand/templates/brand-guidelines-starter.md, to: plugin/builtins/uupm-brand/templates/brand-guidelines-starter.md, mode: verbatim, baseBlob: eb98dd0a525e3e82e897ec8ce4605d3c526ec30e }
+      - { id: uupm-design, kind: builtin, from: .claude/skills/design/SKILL.md, to: plugin/builtins/uupm-design/SKILL.md, mode: adapted, relation: adapted, baseBlob: 0dda90057cd5aa19b127c51ac1227fbf8a1465c2 }
+      - { id: uupm-design-system, kind: builtin, from: .claude/skills/design-system/SKILL.md, to: plugin/builtins/uupm-design-system/SKILL.md, mode: adapted, relation: adapted, baseBlob: 804e553325fedc49dd7e75c30c6cffeebaa6650b }
+      - { from: .claude/skills/design-system/data/slide-backgrounds.csv, to: plugin/builtins/uupm-design-system/data/slide-backgrounds.csv, mode: verbatim, baseBlob: 1150484c42bfc5fd23bcbe2611f384c6e7cc1806 }
+      - { from: .claude/skills/design-system/data/slide-charts.csv, to: plugin/builtins/uupm-design-system/data/slide-charts.csv, mode: verbatim, baseBlob: 373648eca29297d14f3a5f454cb6e4e58becfc25 }
+      - { from: .claude/skills/design-system/data/slide-color-logic.csv, to: plugin/builtins/uupm-design-system/data/slide-color-logic.csv, mode: verbatim, baseBlob: d9481d6a233ca3b83eb056014b99516917448a5d }
+      - { from: .claude/skills/design-system/data/slide-copy.csv, to: plugin/builtins/uupm-design-system/data/slide-copy.csv, mode: verbatim, baseBlob: ed448c056d8b9c6b19f8e5c86e2c7366fc80ef5f }
+      - { from: .claude/skills/design-system/data/slide-layout-logic.csv, to: plugin/builtins/uupm-design-system/data/slide-layout-logic.csv, mode: verbatim, baseBlob: a673bec60549ef6dd1b52a61452ee9e763e38a21 }
+      - { from: .claude/skills/design-system/data/slide-layouts.csv, to: plugin/builtins/uupm-design-system/data/slide-layouts.csv, mode: verbatim, baseBlob: 708be11b6a147b4acf35bfc18e68ef39f0cc1153 }
+      - { from: .claude/skills/design-system/data/slide-strategies.csv, to: plugin/builtins/uupm-design-system/data/slide-strategies.csv, mode: verbatim, baseBlob: 1aa276028569841312becbea790cb9ba1d768455 }
+      - { from: .claude/skills/design-system/data/slide-typography.csv, to: plugin/builtins/uupm-design-system/data/slide-typography.csv, mode: verbatim, baseBlob: 204243ce59a89fe35d8faf68efd2ba1dad06f3c5 }
+      - { from: .claude/skills/design-system/references/component-specs.md, to: plugin/builtins/uupm-design-system/references/component-specs.md, mode: verbatim, baseBlob: cc7821b33a86faa8200b9defb1c522401aa21cf9 }
+      - { from: .claude/skills/design-system/references/component-tokens.md, to: plugin/builtins/uupm-design-system/references/component-tokens.md, mode: verbatim, baseBlob: 912ab9da54b19c9ce631bacec8d17e96245f9dea }
+      - { from: .claude/skills/design-system/references/primitive-tokens.md, to: plugin/builtins/uupm-design-system/references/primitive-tokens.md, mode: verbatim, baseBlob: eb251a278ffa9769af03fb0e32dd0b25e1fb9088 }
+      - { from: .claude/skills/design-system/references/semantic-tokens.md, to: plugin/builtins/uupm-design-system/references/semantic-tokens.md, mode: verbatim, baseBlob: b441010e5a45bfc7bd61fdbb11b49651e44f3792 }
+      - { from: .claude/skills/design-system/references/states-and-variants.md, to: plugin/builtins/uupm-design-system/references/states-and-variants.md, mode: verbatim, baseBlob: 64b808a6aaf202c66527e3787d476bb84dc91f28 }
+      - { from: .claude/skills/design-system/references/tailwind-integration.md, to: plugin/builtins/uupm-design-system/references/tailwind-integration.md, mode: verbatim, baseBlob: c632788c9aafa347406b487ac2f18f734094aac8 }
+      - { from: .claude/skills/design-system/references/token-architecture.md, to: plugin/builtins/uupm-design-system/references/token-architecture.md, mode: verbatim, baseBlob: e13ed2bba5a9c6eb78d2e96b9ee888e8c3115dbf }
+      - { from: .claude/skills/design-system/scripts/embed-tokens.cjs, to: plugin/builtins/uupm-design-system/scripts/embed-tokens.cjs, mode: verbatim, baseBlob: e677f0cd768f0a87fbaef48a485a0f66a9a763d7 }
+      - { from: .claude/skills/design-system/scripts/fetch-background.py, to: plugin/builtins/uupm-design-system/scripts/fetch-background.py, mode: verbatim, baseBlob: b7d0480220fec03503742493a8ea1e12facb17fc }
+      - { from: .claude/skills/design-system/scripts/generate-slide.py, to: plugin/builtins/uupm-design-system/scripts/generate-slide.py, mode: verbatim, baseBlob: 51432552793267ff885b0a0978267d12c06bad0b }
+      - { from: .claude/skills/design-system/scripts/generate-tokens.cjs, to: plugin/builtins/uupm-design-system/scripts/generate-tokens.cjs, mode: verbatim, baseBlob: 73cc7d7ae98a3d053d618a1ae1756a025510b407 }
+      - { from: .claude/skills/design-system/scripts/html-token-validator.py, to: plugin/builtins/uupm-design-system/scripts/html-token-validator.py, mode: verbatim, baseBlob: 404cfadbf819abd3358e05a3ef536554709ef3b1 }
+      - { from: .claude/skills/design-system/scripts/search-slides.py, to: plugin/builtins/uupm-design-system/scripts/search-slides.py, mode: verbatim, baseBlob: fc9ce74b8f991ab8cc0943ec0b44001bc5b263a4 }
+      - { from: .claude/skills/design-system/scripts/slide_search_core.py, to: plugin/builtins/uupm-design-system/scripts/slide_search_core.py, mode: verbatim, baseBlob: 0c98e85baad80db673f2b74317a40a3cb5fd47b8 }
+      - { from: .claude/skills/design-system/scripts/slide-token-validator.py, to: plugin/builtins/uupm-design-system/scripts/slide-token-validator.py, mode: verbatim, baseBlob: 22548614b86ee9415c8d258aac1bc7b9bd2d59f9 }
+      - { from: .claude/skills/design-system/scripts/validate-tokens.cjs, to: plugin/builtins/uupm-design-system/scripts/validate-tokens.cjs, mode: verbatim, baseBlob: 9839ed2486c0dee8671140fc1e4ff24eb1c3e62a }
+      - { from: .claude/skills/design-system/templates/design-tokens-starter.json, to: plugin/builtins/uupm-design-system/templates/design-tokens-starter.json, mode: verbatim, baseBlob: 0c775e87ec1f5ec2ba863cdb764f95328c411aac }
+      - { from: .claude/skills/design/data/cip/deliverables.csv, to: plugin/builtins/uupm-design/data/cip/deliverables.csv, mode: verbatim, baseBlob: bf139ee1dfe28755428104a3821ef75686f7ad0c }
+      - { from: .claude/skills/design/data/cip/industries.csv, to: plugin/builtins/uupm-design/data/cip/industries.csv, mode: verbatim, baseBlob: ecb02b3f5bad70df2ea443d24f2b9d65e1f0a7a5 }
+      - { from: .claude/skills/design/data/cip/mockup-contexts.csv, to: plugin/builtins/uupm-design/data/cip/mockup-contexts.csv, mode: verbatim, baseBlob: a1592c2a3543aeb8456b925fba2446c44bc55b1a }
+      - { from: .claude/skills/design/data/cip/styles.csv, to: plugin/builtins/uupm-design/data/cip/styles.csv, mode: verbatim, baseBlob: 7ba7ee875ca88368f8ee5188be856b7b5da26cac }
+      - { from: .claude/skills/design/data/icon/styles.csv, to: plugin/builtins/uupm-design/data/icon/styles.csv, mode: verbatim, baseBlob: dad8bb1e649145fabe3923db8ad376887696a9da }
+      - { from: .claude/skills/design/data/logo/colors.csv, to: plugin/builtins/uupm-design/data/logo/colors.csv, mode: verbatim, baseBlob: e049e2397aef251430a900dc968258fc3050da32 }
+      - { from: .claude/skills/design/data/logo/industries.csv, to: plugin/builtins/uupm-design/data/logo/industries.csv, mode: verbatim, baseBlob: 2c259dee0e7aa80a8d4f2c1a4f654b6233064fab }
+      - { from: .claude/skills/design/data/logo/styles.csv, to: plugin/builtins/uupm-design/data/logo/styles.csv, mode: verbatim, baseBlob: a691812dec65dc08cd421a0cd9e6030aba2b8462 }
+      - { from: .claude/skills/design/references/banner-sizes-and-styles.md, to: plugin/builtins/uupm-design/references/banner-sizes-and-styles.md, mode: verbatim, baseBlob: f72727be2e44ea042195730a7ae04f1371418817 }
+      - { from: .claude/skills/design/references/cip-deliverable-guide.md, to: plugin/builtins/uupm-design/references/cip-deliverable-guide.md, mode: verbatim, baseBlob: 4c9524e17fdd707b7a60bbee8269082403e8a955 }
+      - { from: .claude/skills/design/references/cip-design.md, to: plugin/builtins/uupm-design/references/cip-design.md, mode: verbatim, baseBlob: 877ae712a89bf46880c57938499053997449c0f7 }
+      - { from: .claude/skills/design/references/cip-prompt-engineering.md, to: plugin/builtins/uupm-design/references/cip-prompt-engineering.md, mode: verbatim, baseBlob: 57bb178547e90bd5dd7bdfa2b357b681a38067ba }
+      - { from: .claude/skills/design/references/cip-style-guide.md, to: plugin/builtins/uupm-design/references/cip-style-guide.md, mode: verbatim, baseBlob: 76328be91ce6ac3cde23e220372a61e3614bdab2 }
+      - { from: .claude/skills/design/references/design-routing.md, to: plugin/builtins/uupm-design/references/design-routing.md, mode: adapted, baseBlob: 4d745bd267994d1500aa9ffe12577cf3350cc94b }
+      - { from: .claude/skills/design/references/icon-design.md, to: plugin/builtins/uupm-design/references/icon-design.md, mode: verbatim, baseBlob: 961cdacc20391d0ed43f29b0a34312596dbae4ad }
+      - { from: .claude/skills/design/references/logo-color-psychology.md, to: plugin/builtins/uupm-design/references/logo-color-psychology.md, mode: verbatim, baseBlob: 6ce29fb7b8148fd1a1db4d9e922823a40740ee56 }
+      - { from: .claude/skills/design/references/logo-design.md, to: plugin/builtins/uupm-design/references/logo-design.md, mode: adapted, baseBlob: 7b83120e510ec665ed6cd8a5b3758a983e7eb2dc }
+      - { from: .claude/skills/design/references/logo-prompt-engineering.md, to: plugin/builtins/uupm-design/references/logo-prompt-engineering.md, mode: verbatim, baseBlob: c91db39db3ea2fb6db0cd82b5a163ec5c5ec52e2 }
+      - { from: .claude/skills/design/references/logo-style-guide.md, to: plugin/builtins/uupm-design/references/logo-style-guide.md, mode: verbatim, baseBlob: 1db8aa1c278709b1f0b4855eed104d9574f50e90 }
+      - { from: .claude/skills/design/references/slides-copywriting-formulas.md, to: plugin/builtins/uupm-design/references/slides-copywriting-formulas.md, mode: adapted, baseBlob: 87352fc24996bbc268835d03e95a98a0ec9edcab }
+      - { from: .claude/skills/design/references/slides-create.md, to: plugin/builtins/uupm-design/references/slides-create.md, mode: adapted, baseBlob: 55b79a1349fb4c8b4e8f3a87dcfade9b08955290 }
+      - { from: .claude/skills/design/references/slides-html-template.md, to: plugin/builtins/uupm-design/references/slides-html-template.md, mode: verbatim, baseBlob: 8b5a178f6c28c3bacc4f411c587c1495a48c778c }
+      - { from: .claude/skills/design/references/slides-layout-patterns.md, to: plugin/builtins/uupm-design/references/slides-layout-patterns.md, mode: adapted, baseBlob: 0949ab0fa240b5ffb5ff823be521a647977c2614 }
+      - { from: .claude/skills/design/references/slides-strategies.md, to: plugin/builtins/uupm-design/references/slides-strategies.md, mode: adapted, baseBlob: eae5b131f596490f4bdef4aedaa80b4194eef95c }
+      - { from: .claude/skills/design/references/slides.md, to: plugin/builtins/uupm-design/references/slides.md, mode: adapted, baseBlob: 748577ddb3183189d0e22faba0ada84ba651b8ce }
+      - { from: .claude/skills/design/references/social-photos-design.md, to: plugin/builtins/uupm-design/references/social-photos-design.md, mode: adapted, baseBlob: 1dc1fdc533c16b1ef2adb13e167977e685b7d1a4 }
+      - { from: .claude/skills/design/scripts/cip/core.py, to: plugin/builtins/uupm-design/scripts/cip/core.py, mode: verbatim, baseBlob: 5e6b7a902ceabbc2f7a9ef425923774c9435f9da }
+      - { from: .claude/skills/design/scripts/cip/generate.py, to: plugin/builtins/uupm-design/scripts/cip/generate.py, mode: verbatim, baseBlob: 394b06de244392b9b13317f2097cbfd0087116d0 }
+      - { from: .claude/skills/design/scripts/cip/render-html.py, to: plugin/builtins/uupm-design/scripts/cip/render-html.py, mode: verbatim, baseBlob: 34e378261f642ea98303ee4a7718568b78ec8520 }
+      - { from: .claude/skills/design/scripts/cip/search.py, to: plugin/builtins/uupm-design/scripts/cip/search.py, mode: verbatim, baseBlob: 894f4841979ef66920e5b96b8f41c89c896b8f6a }
+      - { from: .claude/skills/design/scripts/icon/generate.py, to: plugin/builtins/uupm-design/scripts/icon/generate.py, mode: verbatim, baseBlob: 375f7896e531be6ad0c5719052f4a5ba50eaf166 }
+      - { from: .claude/skills/design/scripts/logo/core.py, to: plugin/builtins/uupm-design/scripts/logo/core.py, mode: verbatim, baseBlob: b3de30c5d7c4afecb1c8a51c52688184530ea300 }
+      - { from: .claude/skills/design/scripts/logo/generate.py, to: plugin/builtins/uupm-design/scripts/logo/generate.py, mode: verbatim, baseBlob: 3b5773f82d60464a769627ad0ba12670f2771f52 }
+      - { from: .claude/skills/design/scripts/logo/search.py, to: plugin/builtins/uupm-design/scripts/logo/search.py, mode: verbatim, baseBlob: e8437537b449cc96b3528703f2c025b7fa6e1d64 }
+      - { id: uupm-slides, kind: builtin, from: .claude/skills/slides/SKILL.md, to: plugin/builtins/uupm-slides/SKILL.md, mode: adapted, relation: adapted, baseBlob: 52d345d1f4ab5fde70b38fdd0601ad42ef0449f1 }
+      - { from: .claude/skills/slides/references/copywriting-formulas.md, to: plugin/builtins/uupm-slides/references/copywriting-formulas.md, mode: adapted, baseBlob: 87352fc24996bbc268835d03e95a98a0ec9edcab }
+      - { from: .claude/skills/slides/references/create.md, to: plugin/builtins/uupm-slides/references/create.md, mode: adapted, baseBlob: 55b79a1349fb4c8b4e8f3a87dcfade9b08955290 }
+      - { from: .claude/skills/slides/references/html-template.md, to: plugin/builtins/uupm-slides/references/html-template.md, mode: verbatim, baseBlob: 8b5a178f6c28c3bacc4f411c587c1495a48c778c }
+      - { from: .claude/skills/slides/references/layout-patterns.md, to: plugin/builtins/uupm-slides/references/layout-patterns.md, mode: adapted, baseBlob: 0949ab0fa240b5ffb5ff823be521a647977c2614 }
+      - { from: .claude/skills/slides/references/slide-strategies.md, to: plugin/builtins/uupm-slides/references/slide-strategies.md, mode: adapted, baseBlob: eae5b131f596490f4bdef4aedaa80b4194eef95c }
+      - { id: uupm-ui-styling, kind: builtin, from: .claude/skills/ui-styling/SKILL.md, to: plugin/builtins/uupm-ui-styling/SKILL.md, mode: adapted, relation: adapted, baseBlob: b5a9acb9643e10b3629c0b9cac7e616c1080b597 }
+      - { from: .claude/skills/ui-styling/LICENSE.txt, to: plugin/builtins/uupm-ui-styling/LICENSE.txt, mode: verbatim, baseBlob: 7a4a3ea2424c09fbe48d455aed1eaa94d9124835 }
+      - { from: .claude/skills/ui-styling/references/canvas-design-system.md, to: plugin/builtins/uupm-ui-styling/references/canvas-design-system.md, mode: adapted, baseBlob: 6f99bee54c461c435aea10135435e2defd085585 }
+      - { from: .claude/skills/ui-styling/references/shadcn-accessibility.md, to: plugin/builtins/uupm-ui-styling/references/shadcn-accessibility.md, mode: verbatim, baseBlob: d1cef4d9390e61c2887c0f80690bfb20e18c6be1 }
+      - { from: .claude/skills/ui-styling/references/shadcn-components.md, to: plugin/builtins/uupm-ui-styling/references/shadcn-components.md, mode: verbatim, baseBlob: b6c60b371f808116ea9e95a1199c86f56e5be5c2 }
+      - { from: .claude/skills/ui-styling/references/shadcn-theming.md, to: plugin/builtins/uupm-ui-styling/references/shadcn-theming.md, mode: verbatim, baseBlob: 989c5d363b6715d457b1d50359652284a7833cd5 }
+      - { from: .claude/skills/ui-styling/references/tailwind-customization.md, to: plugin/builtins/uupm-ui-styling/references/tailwind-customization.md, mode: verbatim, baseBlob: b77ff3e7fe4fbaf2c0170d4f80677c6bc80cab8d }
+      - { from: .claude/skills/ui-styling/references/tailwind-responsive.md, to: plugin/builtins/uupm-ui-styling/references/tailwind-responsive.md, mode: verbatim, baseBlob: f252e1857bb2f5f5a884711fcf983ea945ce45e7 }
+      - { from: .claude/skills/ui-styling/references/tailwind-utilities.md, to: plugin/builtins/uupm-ui-styling/references/tailwind-utilities.md, mode: verbatim, baseBlob: 7b7b12363f2dbe40961cd7a11446419046a921af }
+      - { from: .claude/skills/ui-styling/scripts/requirements.txt, to: plugin/builtins/uupm-ui-styling/scripts/requirements.txt, mode: verbatim, baseBlob: 75f72ca91d5c2eca4e9d3d1621a9db07f7d25dd3 }
+      - { from: .claude/skills/ui-styling/scripts/shadcn_add.py, to: plugin/builtins/uupm-ui-styling/scripts/shadcn_add.py, mode: verbatim, baseBlob: 983d5009ea9af4307c390e5a87d6b91146cfc69d }
+      - { from: .claude/skills/ui-styling/scripts/tailwind_config_gen.py, to: plugin/builtins/uupm-ui-styling/scripts/tailwind_config_gen.py, mode: verbatim, baseBlob: da94fc6bbed9ce72453131c07d406d646eef0f1b }
+      - { id: uupm-ui-ux-pro-max, kind: builtin, from: .claude/skills/ui-ux-pro-max/SKILL.md, to: plugin/builtins/uupm-ui-ux-pro-max/SKILL.md, mode: adapted, relation: adapted, baseBlob: 2cacc8756e816a1eb6bfa44307372f2aeb445902 }
+      - { from: .claude/skills/ui-ux-pro-max/data/app-interface.csv, to: plugin/builtins/uupm-ui-ux-pro-max/data/app-interface.csv, mode: verbatim, baseBlob: 95e328c807a23be02c9c32c736d0fa19109c6076 }
+      - { from: .claude/skills/ui-ux-pro-max/data/catalog-summary.json, to: plugin/builtins/uupm-ui-ux-pro-max/data/catalog-summary.json, mode: verbatim, baseBlob: 8e77f491a936aa4cc2161792eb71f8a2410bd360 }
+      - { from: .claude/skills/ui-ux-pro-max/data/charts.csv, to: plugin/builtins/uupm-ui-ux-pro-max/data/charts.csv, mode: verbatim, baseBlob: c6f4f875fd5b34379f24dbb541539492366a1058 }
+      - { from: .claude/skills/ui-ux-pro-max/data/colors.csv, to: plugin/builtins/uupm-ui-ux-pro-max/data/colors.csv, mode: verbatim, baseBlob: 5d2bf7389105f8a824b504b57cc93c00dc1d7e0a }
+      - { from: .claude/skills/ui-ux-pro-max/data/data-provenance.json, to: plugin/builtins/uupm-ui-ux-pro-max/data/data-provenance.json, mode: verbatim, baseBlob: e5b03dfbdae5c15ea42593f16360d0be9c42ac19 }
+      - { from: .claude/skills/ui-ux-pro-max/data/google-fonts.csv, to: plugin/builtins/uupm-ui-ux-pro-max/data/google-fonts.csv, mode: verbatim, baseBlob: d7f87e3e0159b1caba083b9954793d9852256aa0 }
+      - { from: .claude/skills/ui-ux-pro-max/data/icons.csv, to: plugin/builtins/uupm-ui-ux-pro-max/data/icons.csv, mode: verbatim, baseBlob: cfc3f1eccd7e5aee15d8d70f86d8fa17ba737958 }
+      - { from: .claude/skills/ui-ux-pro-max/data/landing.csv, to: plugin/builtins/uupm-ui-ux-pro-max/data/landing.csv, mode: verbatim, baseBlob: 34858160aa2789c49dca274d48bb116d51dd3f0a }
+      - { from: .claude/skills/ui-ux-pro-max/data/motion.csv, to: plugin/builtins/uupm-ui-ux-pro-max/data/motion.csv, mode: verbatim, baseBlob: 8e0ca9ceb0e4cd4832aee60ac74713e1e1830de8 }
+      - { from: .claude/skills/ui-ux-pro-max/data/products.csv, to: plugin/builtins/uupm-ui-ux-pro-max/data/products.csv, mode: verbatim, baseBlob: f5f747335cdc631359ed6705ede2906e93d41b19 }
+      - { from: .claude/skills/ui-ux-pro-max/data/react-performance.csv, to: plugin/builtins/uupm-ui-ux-pro-max/data/react-performance.csv, mode: verbatim, baseBlob: 425a8e76c6b3bae40e8c633ffbf7ad6222c9f73a }
+      - { from: .claude/skills/ui-ux-pro-max/data/styles.csv, to: plugin/builtins/uupm-ui-ux-pro-max/data/styles.csv, mode: verbatim, baseBlob: 7ed18d6ef06557b9a6f2285b87b458fd71e4722f }
+      - { from: .claude/skills/ui-ux-pro-max/data/typography.csv, to: plugin/builtins/uupm-ui-ux-pro-max/data/typography.csv, mode: verbatim, baseBlob: 70d107d107de30150863c965767320ec33ef29ad }
+      - { from: .claude/skills/ui-ux-pro-max/data/ui-reasoning.csv, to: plugin/builtins/uupm-ui-ux-pro-max/data/ui-reasoning.csv, mode: verbatim, baseBlob: 8931d4c809f8e22ddac00ce612ce0c35f34a59b6 }
+      - { from: .claude/skills/ui-ux-pro-max/data/ux-guidelines.csv, to: plugin/builtins/uupm-ui-ux-pro-max/data/ux-guidelines.csv, mode: verbatim, baseBlob: b81d5a2ff845e348af60f96262b67f941b8f506f }
+      - { from: .claude/skills/ui-ux-pro-max/data/stacks/angular.csv, to: plugin/builtins/uupm-ui-ux-pro-max/data/stacks/angular.csv, mode: verbatim, baseBlob: 5a1878dbee2b3c55c6468cbb18699b84d1a8c4d2 }
+      - { from: .claude/skills/ui-ux-pro-max/data/stacks/astro.csv, to: plugin/builtins/uupm-ui-ux-pro-max/data/stacks/astro.csv, mode: verbatim, baseBlob: 1fd2492420b20a0b311295ab883597fadb8245a6 }
+      - { from: .claude/skills/ui-ux-pro-max/data/stacks/avalonia.csv, to: plugin/builtins/uupm-ui-ux-pro-max/data/stacks/avalonia.csv, mode: verbatim, baseBlob: c67f4117105865587eda9020c57d8c209f3a929a }
+      - { from: .claude/skills/ui-ux-pro-max/data/stacks/flutter.csv, to: plugin/builtins/uupm-ui-ux-pro-max/data/stacks/flutter.csv, mode: verbatim, baseBlob: 731805c4076bd9f2755ca4bd7def5be6f6df7e9c }
+      - { from: .claude/skills/ui-ux-pro-max/data/stacks/html-tailwind.csv, to: plugin/builtins/uupm-ui-ux-pro-max/data/stacks/html-tailwind.csv, mode: verbatim, baseBlob: 9089eb0fc821ff0c8d135f8ee503be345e8fcb84 }
+      - { from: .claude/skills/ui-ux-pro-max/data/stacks/javafx.csv, to: plugin/builtins/uupm-ui-ux-pro-max/data/stacks/javafx.csv, mode: verbatim, baseBlob: 744bd80f437f12bfb5bb9c84630a58022604675a }
+      - { from: .claude/skills/ui-ux-pro-max/data/stacks/jetpack-compose.csv, to: plugin/builtins/uupm-ui-ux-pro-max/data/stacks/jetpack-compose.csv, mode: verbatim, baseBlob: 8daa0b8f9a2ca3f0f1711664d9d677cd1c38dd9e }
+      - { from: .claude/skills/ui-ux-pro-max/data/stacks/laravel.csv, to: plugin/builtins/uupm-ui-ux-pro-max/data/stacks/laravel.csv, mode: verbatim, baseBlob: ed11b0fba457e02857f996d1542fb0b8e1271756 }
+      - { from: .claude/skills/ui-ux-pro-max/data/stacks/nextjs.csv, to: plugin/builtins/uupm-ui-ux-pro-max/data/stacks/nextjs.csv, mode: verbatim, baseBlob: acdaf097dff26ba0d3b22ab4544bf6169c87afd4 }
+      - { from: .claude/skills/ui-ux-pro-max/data/stacks/nuxt-ui.csv, to: plugin/builtins/uupm-ui-ux-pro-max/data/stacks/nuxt-ui.csv, mode: verbatim, baseBlob: f6b8000e106aaf421a61da45134e35c8f03e18c6 }
+      - { from: .claude/skills/ui-ux-pro-max/data/stacks/nuxtjs.csv, to: plugin/builtins/uupm-ui-ux-pro-max/data/stacks/nuxtjs.csv, mode: verbatim, baseBlob: ceab9cf3358d2788af0bd7dc14cb3fab769740d0 }
+      - { from: .claude/skills/ui-ux-pro-max/data/stacks/react-native.csv, to: plugin/builtins/uupm-ui-ux-pro-max/data/stacks/react-native.csv, mode: verbatim, baseBlob: a5aea45dc1d0341b11ee42076a86db842d4d2a19 }
+      - { from: .claude/skills/ui-ux-pro-max/data/stacks/react.csv, to: plugin/builtins/uupm-ui-ux-pro-max/data/stacks/react.csv, mode: verbatim, baseBlob: fe8f001e695a978733449e04e99d7135af0f1bf3 }
+      - { from: .claude/skills/ui-ux-pro-max/data/stacks/shadcn.csv, to: plugin/builtins/uupm-ui-ux-pro-max/data/stacks/shadcn.csv, mode: verbatim, baseBlob: 0e8bedf3084e7a40d6310bcd3011c437efcb1700 }
+      - { from: .claude/skills/ui-ux-pro-max/data/stacks/svelte.csv, to: plugin/builtins/uupm-ui-ux-pro-max/data/stacks/svelte.csv, mode: verbatim, baseBlob: 51684fe70448e15333cd16207db7da8aea0508e6 }
+      - { from: .claude/skills/ui-ux-pro-max/data/stacks/swiftui.csv, to: plugin/builtins/uupm-ui-ux-pro-max/data/stacks/swiftui.csv, mode: verbatim, baseBlob: ea9b95e8922e663b2adf27a7346e2c2f44c7a215 }
+      - { from: .claude/skills/ui-ux-pro-max/data/stacks/threejs.csv, to: plugin/builtins/uupm-ui-ux-pro-max/data/stacks/threejs.csv, mode: verbatim, baseBlob: f62286320038beabbdc5e11e07ca2818d8e959a4 }
+      - { from: .claude/skills/ui-ux-pro-max/data/stacks/uno.csv, to: plugin/builtins/uupm-ui-ux-pro-max/data/stacks/uno.csv, mode: verbatim, baseBlob: 9cab32326b4ad3a3cf43451a3c24553a41126cc1 }
+      - { from: .claude/skills/ui-ux-pro-max/data/stacks/uwp.csv, to: plugin/builtins/uupm-ui-ux-pro-max/data/stacks/uwp.csv, mode: verbatim, baseBlob: 04a84ea092a7657fef11e5daa97982be52dc6f59 }
+      - { from: .claude/skills/ui-ux-pro-max/data/stacks/vue.csv, to: plugin/builtins/uupm-ui-ux-pro-max/data/stacks/vue.csv, mode: verbatim, baseBlob: 83997c515775170f22b638635aae0a67a46dfc87 }
+      - { from: .claude/skills/ui-ux-pro-max/data/stacks/winui.csv, to: plugin/builtins/uupm-ui-ux-pro-max/data/stacks/winui.csv, mode: verbatim, baseBlob: 107ecead11728a83ec0ea10d815a9d1f43a35792 }
+      - { from: .claude/skills/ui-ux-pro-max/data/stacks/wpf.csv, to: plugin/builtins/uupm-ui-ux-pro-max/data/stacks/wpf.csv, mode: verbatim, baseBlob: 4e88d6750833a74f85ba487cf2b8f4ff6ebd2f4a }
+      - { from: .claude/skills/ui-ux-pro-max/references/pro-rules.md, to: plugin/builtins/uupm-ui-ux-pro-max/references/pro-rules.md, mode: verbatim, baseBlob: b2ce233287e37ec9ca13476c4014b922e9d5a0e9 }
+      - { from: .claude/skills/ui-ux-pro-max/references/quick-reference.md, to: plugin/builtins/uupm-ui-ux-pro-max/references/quick-reference.md, mode: verbatim, baseBlob: ad9775068092fa9d2555d582db6c68b0548348cc }
+      - { from: .claude/skills/ui-ux-pro-max/scripts/core.py, to: plugin/builtins/uupm-ui-ux-pro-max/scripts/core.py, mode: verbatim, baseBlob: 02a3eee65462772dda9e0e56ae1dc1531b68c85a }
+      - { from: .claude/skills/ui-ux-pro-max/scripts/design_system.py, to: plugin/builtins/uupm-ui-ux-pro-max/scripts/design_system.py, mode: verbatim, baseBlob: d5fe1575f00d839f919603bd09b44fe7e9def4fb }
+      - { from: .claude/skills/ui-ux-pro-max/scripts/reasoning_contract.py, to: plugin/builtins/uupm-ui-ux-pro-max/scripts/reasoning_contract.py, mode: verbatim, baseBlob: 63652a666b130c249ea1e2954316f1ac8a5a73d5 }
+      - { from: .claude/skills/ui-ux-pro-max/scripts/search.py, to: plugin/builtins/uupm-ui-ux-pro-max/scripts/search.py, mode: verbatim, baseBlob: 9ce5e402c29f265e435481791a87cdef73c4a903 }
+  - id: intent
+    kind: github
+    repo: ghaida/intent
+    # Pinned 2026-11-10 to upstream HEAD = release v1.7.4 (2026-11-01). CC0-1.0 (public
+    # domain dedication). Vendored: the 18 skills/ as intent-<skill> builtins (with their
+    # references/) and the six agents/ as plugin agents intent-<name> (model and effort from
+    # muster's tier policy, maxTurns by role class, one-line role descriptions; the Skill tool
+    # dropped since builtins are read by path). Adapted: every SKILL.md and agent (frontmatter,
+    # an "In muster" note mapping /<skill> to ../intent-<skill>/SKILL.md; intent-noor's present
+    # paths point at ${CLAUDE_PLUGIN_ROOT}/builtins/intent-present/references/). Not vendored:
+    # the Cursor/Copilot ports, hooks/, docs/ site, tests/ and build scripts.
+    ref: 1806110106a472bc588d7a8a2b7e3d39aee4a4b8
+    tag: v1.7.4
+    license: CC0-1.0
+    copyright: "CC0 1.0 Universal dedication by Ghaida Zahran"
+    relation: vendored
+    items:
+      - { from: LICENSE, mode: watch, baseBlob: 0e259d42c996742e9e3cba14c677129b2c1b6311 }
+      # the design-ux audit pattern points at this source's review checklists by path (no text carried)
+      - { id: audit-pattern-design-ux, kind: audit-pattern, from: null, relation: inspired-by }
+      - { id: intent-ember, kind: agent, from: agents/ember.md, to: plugin/agents/intent-ember.md, mode: adapted, relation: adapted, baseBlob: 219bbbc11fee75143a8aa3e88b8c19f995a01687 }
+      - { id: intent-noor, kind: agent, from: agents/noor.md, to: plugin/agents/intent-noor.md, mode: adapted, relation: adapted, baseBlob: 0799094a7e91f1a61d417a24cf4a16b4e026a7ab }
+      - { id: intent-rune, kind: agent, from: agents/rune.md, to: plugin/agents/intent-rune.md, mode: adapted, relation: adapted, baseBlob: c525eb7c70d5ee9b0cd4de768df6855e1328a9b2 }
+      - { id: intent-sage, kind: agent, from: agents/sage.md, to: plugin/agents/intent-sage.md, mode: adapted, relation: adapted, baseBlob: d7f94a60315398e3a7f071c5feae1db1e717600a }
+      - { id: intent-vigil, kind: agent, from: agents/vigil.md, to: plugin/agents/intent-vigil.md, mode: adapted, relation: adapted, baseBlob: d8a2b5fb03715436b5df1c61516726c14e5d0abd }
+      - { id: intent-wren, kind: agent, from: agents/wren.md, to: plugin/agents/intent-wren.md, mode: adapted, relation: adapted, baseBlob: beb777946a12abd1851c4f9e2326b72bd5a24a6d }
+      - { id: intent-articulate, kind: builtin, from: skills/articulate/SKILL.md, to: plugin/builtins/intent-articulate/SKILL.md, mode: adapted, relation: adapted, baseBlob: 99567944d8599c247fe19a920ecab2f7af36af51 }
+      - { id: intent-blueprint, kind: builtin, from: skills/blueprint/SKILL.md, to: plugin/builtins/intent-blueprint/SKILL.md, mode: adapted, relation: adapted, baseBlob: fb3e49ff1052ea36757d5f253cf7decb43c27cbe }
+      - { id: intent-evaluate, kind: builtin, from: skills/evaluate/SKILL.md, to: plugin/builtins/intent-evaluate/SKILL.md, mode: adapted, relation: adapted, baseBlob: c4da46533e526a80fca1244ebaa2180939284000 }
+      - { id: intent-fortify, kind: builtin, from: skills/fortify/SKILL.md, to: plugin/builtins/intent-fortify/SKILL.md, mode: adapted, relation: adapted, baseBlob: 3e7de34cf4967143ac698c8cb63eb27409fe7081 }
+      - { id: intent-include, kind: builtin, from: skills/include/SKILL.md, to: plugin/builtins/intent-include/SKILL.md, mode: adapted, relation: adapted, baseBlob: 06dcbd128ff3f1eb8805e8ab22e294dd0fc289be }
+      - { id: intent-intent, kind: builtin, from: skills/intent/SKILL.md, to: plugin/builtins/intent-intent/SKILL.md, mode: adapted, relation: adapted, baseBlob: 9d83b4e5f76d61c6b1c5a420cb52cff07727e035 }
+      - { from: skills/intent/references/accessibility-foundations.md, to: plugin/builtins/intent-intent/references/accessibility-foundations.md, mode: verbatim, baseBlob: f02c42a14c0d23b0e3d4336b24472e1129858b6b }
+      - { from: skills/intent/references/content-strategy.md, to: plugin/builtins/intent-intent/references/content-strategy.md, mode: verbatim, baseBlob: 88d1f27c6551cca1fb706be3c1fd74c8f6262cdd }
+      - { from: skills/intent/references/ethical-design.md, to: plugin/builtins/intent-intent/references/ethical-design.md, mode: verbatim, baseBlob: c074527bddc57147d036413e61905464793698f9 }
+      - { from: skills/intent/references/information-architecture.md, to: plugin/builtins/intent-intent/references/information-architecture.md, mode: verbatim, baseBlob: 4ce2dda817a1bf658cc531d6b256a9dcc48d685d }
+      - { from: skills/intent/references/interaction-patterns.md, to: plugin/builtins/intent-intent/references/interaction-patterns.md, mode: verbatim, baseBlob: ae819134ca3aaf7bd9fb7a9a039873f2709f2364 }
+      - { from: skills/intent/references/measurement-frameworks.md, to: plugin/builtins/intent-intent/references/measurement-frameworks.md, mode: verbatim, baseBlob: dd48ffbc2a3b29a300ead639f7199e30937e6dbe }
+      - { from: skills/intent/references/research-methods.md, to: plugin/builtins/intent-intent/references/research-methods.md, mode: verbatim, baseBlob: 65aff592047a60810d6f8cadbce352fdc879656f }
+      - { from: skills/intent/references/service-design.md, to: plugin/builtins/intent-intent/references/service-design.md, mode: verbatim, baseBlob: 927caa1c82fe4f125abc71899856e0917611bb45 }
+      - { id: intent-investigate, kind: builtin, from: skills/investigate/SKILL.md, to: plugin/builtins/intent-investigate/SKILL.md, mode: adapted, relation: adapted, baseBlob: 55f9ad57fce1c56f222656735895dc979fe68266 }
+      - { id: intent-journey, kind: builtin, from: skills/journey/SKILL.md, to: plugin/builtins/intent-journey/SKILL.md, mode: adapted, relation: adapted, baseBlob: eeabbd8fdfa5ca52e328373b810c973627232123 }
+      - { id: intent-localize, kind: builtin, from: skills/localize/SKILL.md, to: plugin/builtins/intent-localize/SKILL.md, mode: adapted, relation: adapted, baseBlob: 797c7cfb0b72f57a391a30cc10a3c478ef95452b }
+      - { id: intent-measure, kind: builtin, from: skills/measure/SKILL.md, to: plugin/builtins/intent-measure/SKILL.md, mode: adapted, relation: adapted, baseBlob: 7bef280a352d185525859579abd7e56e3a0ec55b }
+      - { id: intent-organize, kind: builtin, from: skills/organize/SKILL.md, to: plugin/builtins/intent-organize/SKILL.md, mode: adapted, relation: adapted, baseBlob: bfa2bb364ea2625c911f9396cc032ec5bed2b7ed }
+      - { id: intent-philosopher, kind: builtin, from: skills/philosopher/SKILL.md, to: plugin/builtins/intent-philosopher/SKILL.md, mode: adapted, relation: adapted, baseBlob: 6406b25447e3811c81af8feba63a565acdf876b0 }
+      - { id: intent-present, kind: builtin, from: skills/present/SKILL.md, to: plugin/builtins/intent-present/SKILL.md, mode: adapted, relation: adapted, baseBlob: 759c57726b5cab4d8fad4f631efeb518df31fd46 }
+      - { from: skills/present/references/build_deck.py, to: plugin/builtins/intent-present/references/build_deck.py, mode: verbatim, baseBlob: 1ed828c93b786408280713ab264a779a98afba1f }
+      - { from: skills/present/references/deck-theme.css, to: plugin/builtins/intent-present/references/deck-theme.css, mode: verbatim, baseBlob: 416e973c730569ff2c5917b270207b8825c36e19 }
+      - { from: skills/present/references/deck-theme.md, to: plugin/builtins/intent-present/references/deck-theme.md, mode: verbatim, baseBlob: 2af37b4156c693f8a5a88d4f0f3622aae9d28fbf }
+      - { from: skills/present/references/reveal-template.html, to: plugin/builtins/intent-present/references/reveal-template.html, mode: verbatim, baseBlob: a9ad7b815d90e90befae44c849af27b13e8f9f1c }
+      - { id: intent-specify, kind: builtin, from: skills/specify/SKILL.md, to: plugin/builtins/intent-specify/SKILL.md, mode: adapted, relation: adapted, baseBlob: dad986ee96e44ef4954fe48ad1d56b3ed9ebdeb7 }
+      - { id: intent-storytelling, kind: builtin, from: skills/storytelling/SKILL.md, to: plugin/builtins/intent-storytelling/SKILL.md, mode: adapted, relation: adapted, baseBlob: 00ebda8ad30afc5a30305e14e083a55b642365f7 }
+      - { id: intent-strategize, kind: builtin, from: skills/strategize/SKILL.md, to: plugin/builtins/intent-strategize/SKILL.md, mode: adapted, relation: adapted, baseBlob: 418292c8352661d6f9aead5a7fca3b28ee362e21 }
+      - { id: intent-transpose, kind: builtin, from: skills/transpose/SKILL.md, to: plugin/builtins/intent-transpose/SKILL.md, mode: adapted, relation: adapted, baseBlob: 7f6a0f15bb91802855f26da63a0feeb1d649805e }
+      - { id: intent-wireframe, kind: builtin, from: skills/wireframe/SKILL.md, to: plugin/builtins/intent-wireframe/SKILL.md, mode: adapted, relation: adapted, baseBlob: fa772b28f544a4433b5efeb321dd5ae59f72e478 }
+      - { from: skills/wireframe/references/design-system.css, to: plugin/builtins/intent-wireframe/references/design-system.css, mode: verbatim, baseBlob: 973551acc7a6cf61b69cfed19e5e410fc90419a2 }
+      - { from: skills/wireframe/references/styleguide.html, to: plugin/builtins/intent-wireframe/references/styleguide.html, mode: verbatim, baseBlob: 1adc667fe9b127f7e2700d04f1c87bf4b559a453 }
+      - { from: skills/wireframe/references/viewer.css, to: plugin/builtins/intent-wireframe/references/viewer.css, mode: verbatim, baseBlob: 064310b4250cbe4f37533ace42e6bcdf35033cd9 }
+      - { from: skills/wireframe/references/viewer.js, to: plugin/builtins/intent-wireframe/references/viewer.js, mode: verbatim, baseBlob: c0df1c009bbb218af0c62550ed99523de972f5d8 }
+  - id: typeui
+    kind: github
+    repo: bergside/typeui
+    # Pinned 2026-11-10 to upstream HEAD (2026-10-23). MIT: the license file is LICENSE.md
+    # ("Copyright (c) 2026 Bergside LLC"), which GitHub reports as NOASSERTION only because of
+    # the .md extension. The Claude package plugins/claude/typeui/ carries no skill text, only
+    # the TypeUI remote MCP registration (README.md, .mcp.json, plugin.json), so the builtin
+    # adapts the harness-neutral skill body every other harness variant ships
+    # (plugins/grok/typeui/skills/typeui/SKILL.md; the openclaw/hermes copies differ only in the
+    # harness name) to Claude Code, with the Claude install commands from the Claude package's
+    # README; the Claude package files are watched. muster does not register the MCP server.
+    # Not vendored: skills/fundamentals (typeui-fundamentals, ~280 KB of UI/UX principles), the
+    # CLI, registry and the other harness packages.
+    ref: efc5f21dff38692e4eaffc304fed465d7cb531e8
+    tag: v1.0.0-35-gefc5f21
+    license: MIT
+    copyright: "Copyright (c) 2026 Bergside LLC"
+    relation: adapted
+    items:
+      - { from: LICENSE.md, mode: watch, baseBlob: dd4f9d7daaf1a31a3793741931b6b4a80fca0c23 }
+      - { from: plugins/claude/typeui/README.md, to: plugin/builtins/typeui/SKILL.md, mode: watch, baseBlob: a08881a0a3de4858ca6394cc9dfde696a8f49f5e }
+      - { from: plugins/claude/typeui/.mcp.json, to: plugin/builtins/typeui/SKILL.md, mode: watch, baseBlob: c27703dd7879120853c48dd2aae97a4d3c03a454 }
+      - { id: typeui, kind: builtin, from: plugins/grok/typeui/skills/typeui/SKILL.md, to: plugin/builtins/typeui/SKILL.md, mode: adapted, relation: adapted, baseBlob: a67fddf0f3b8318d98deec349b2a79fbc445fd1f }
+  - id: pfd
+    kind: github
+    repo: skovalik/perception-first-design
+    # Pinned 2026-11-10 to upstream HEAD (2026-06-24). CC BY-SA 4.0 (single license since
+    # upstream v0.5: the CHANGELOG records that the earlier dual "MIT AND CC-BY-SA-4.0" license
+    # was dropped, so no file at the pin is MIT and no code is needed from it). ShareAlike:
+    # plugin/builtins/pfd/ stays CC-BY-SA-4.0 (frontmatter license, catalog provenance, and a
+    # header comment naming the license and the changes made); muster-authored files never
+    # carry its wording (src/provenance.js checkShareAlike enforces the file license).
+    # Vendored: skills/pfd/SKILL.md (adapted: frontmatter, the header comment and paths only:
+    # repository-level framework/, corpus/ and scripts/ paths point at the pinned upstream
+    # repository, the insights log moves to the project's .muster/pfd/) and its references/
+    # verbatim. Not vendored: framework/, corpus/, commands/, scripts/.
+    ref: 1704ff61c18872a66d969e860c9b6e45a8f50f16
+    tag: v0.7.0-4-g1704ff6
+    license: CC-BY-SA-4.0
+    copyright: "Copyright 2025-2026 Stefan Kovalik / Aurochs"
+    trademark: "\"Perception-First Design\" is a trademark of Stefan Kovalik / Aurochs (Serial 99686343). The methodology is open; the name requires attribution."
+    relation: vendored
+    items:
+      - { from: LICENSE, mode: watch, baseBlob: d0f4e56f9961f719d7d63d318c5d05c7392a744b }
+      - { from: NOTICE, mode: watch, baseBlob: dd289d4e7ca32d1e96df062b8d954a5790159807 }
+      - { id: pfd, kind: builtin, from: skills/pfd/SKILL.md, to: plugin/builtins/pfd/SKILL.md, mode: adapted, relation: adapted, baseBlob: b4944d7a595017ed645b82706eeeee70cd64b3d5 }
+      - { from: skills/pfd/references/accumulated-learnings.md, to: plugin/builtins/pfd/references/accumulated-learnings.md, mode: verbatim, baseBlob: df1cb55231885ed8359def151f1d16ee4c175e1d }
+      - { from: skills/pfd/references/citation-standards.md, to: plugin/builtins/pfd/references/citation-standards.md, mode: verbatim, baseBlob: 37bdc62754af77f3b189b7c240de89b5ac65f172 }
+      - { from: skills/pfd/references/insights-log.md, to: plugin/builtins/pfd/references/insights-log.md, mode: verbatim, baseBlob: d6cf027cd60a27c163c06b11a6b8700298dfe8c9 }
+      - { from: skills/pfd/references/mvs-psychology-reference.md, to: plugin/builtins/pfd/references/mvs-psychology-reference.md, mode: verbatim, baseBlob: ff2fc410df40930e6c1c606b0c7af7f755754aa7 }
+      - { from: skills/pfd/references/pfd-spatial-extension.md, to: plugin/builtins/pfd/references/pfd-spatial-extension.md, mode: verbatim, baseBlob: 211e501baf9eb2b16dd0f382cca30f0948d1aca3 }
+      - { from: skills/pfd/references/practitioner-corrections.md, to: plugin/builtins/pfd/references/practitioner-corrections.md, mode: verbatim, baseBlob: f3f3f195ee8fe51401558c379d5a339b2bbb5ffc }
+      - { from: skills/pfd/references/learnings/_index.md, to: plugin/builtins/pfd/references/learnings/_index.md, mode: verbatim, baseBlob: 1cce9f2018e280ad39c369d55dd74fa7e1a0be2f }
+      - { from: skills/pfd/references/learnings/_search.json, to: plugin/builtins/pfd/references/learnings/_search.json, mode: verbatim, baseBlob: 343eb9679bd273f80951bd98e70d027ec76a0e20 }
+      - { from: skills/pfd/references/learnings/cross/l009-temporal-session-continuity.md, to: plugin/builtins/pfd/references/learnings/cross/l009-temporal-session-continuity.md, mode: verbatim, baseBlob: c2f8c32d6130732c07f686312eef48cdf1a1e486 }
+      - { from: skills/pfd/references/learnings/cross/l012-route-vs-survey-knowledge.md, to: plugin/builtins/pfd/references/learnings/cross/l012-route-vs-survey-knowledge.md, mode: verbatim, baseBlob: d0449eb8ce185e2500dfdeeb41938c9f6c950893 }
+      - { from: skills/pfd/references/learnings/cross/l015-experiential-self-contradiction.md, to: plugin/builtins/pfd/references/learnings/cross/l015-experiential-self-contradiction.md, mode: verbatim, baseBlob: 180813f8640cda35633864f4bffac0905b82f314 }
+      - { from: skills/pfd/references/learnings/cross/l019-multi-artifact-engagement-field.md, to: plugin/builtins/pfd/references/learnings/cross/l019-multi-artifact-engagement-field.md, mode: verbatim, baseBlob: 44c5278715649b06b636b954e1a6d74c2964285f }
+      - { from: skills/pfd/references/learnings/cross/l021-l4-ethics-fusion.md, to: plugin/builtins/pfd/references/learnings/cross/l021-l4-ethics-fusion.md, mode: verbatim, baseBlob: 142463d80852509471fb9545134741e007ac3976 }
+      - { from: skills/pfd/references/learnings/cross/l025-cascade-credit.md, to: plugin/builtins/pfd/references/learnings/cross/l025-cascade-credit.md, mode: verbatim, baseBlob: bd825c89e8cdf8577876327901060216ebf47055 }
+      - { from: skills/pfd/references/learnings/cross/l026-aesthetic-stability-as-trust-producer.md, to: plugin/builtins/pfd/references/learnings/cross/l026-aesthetic-stability-as-trust-producer.md, mode: verbatim, baseBlob: b9ac8e5e004fd67ec979dc64994e005f648b5a54 }
+      - { from: skills/pfd/references/learnings/cross/l028-held-decision-compounding.md, to: plugin/builtins/pfd/references/learnings/cross/l028-held-decision-compounding.md, mode: verbatim, baseBlob: b3d5a48a9a50f7cbc380caa3580987f23703b28a }
+      - { from: skills/pfd/references/learnings/L0/l018-backend-mechanics-as-frontend-complexity.md, to: plugin/builtins/pfd/references/learnings/L0/l018-backend-mechanics-as-frontend-complexity.md, mode: verbatim, baseBlob: d9fd3b04fd8ccaa3d3bd1c3b63494e7cb173113c }
+      - { from: skills/pfd/references/learnings/L1/l011-visual-channel-audit.md, to: plugin/builtins/pfd/references/learnings/L1/l011-visual-channel-audit.md, mode: verbatim, baseBlob: da68777c3e4fc962ee647b36954329429a6d77fa }
+      - { from: skills/pfd/references/learnings/L2/l013-keyboard-density-is-l2.md, to: plugin/builtins/pfd/references/learnings/L2/l013-keyboard-density-is-l2.md, mode: verbatim, baseBlob: 1eed2d5509c55a069bea624e3d09310bdfddf9aa }
+      - { from: skills/pfd/references/learnings/L2/l016-near-miss-color-asymmetry.md, to: plugin/builtins/pfd/references/learnings/L2/l016-near-miss-color-asymmetry.md, mode: verbatim, baseBlob: 658aeef8e023a6334e57a52cee04c4e8dbbec59e }
+      - { from: skills/pfd/references/learnings/L2/l024-aa-constrained-token-ladder.md, to: plugin/builtins/pfd/references/learnings/L2/l024-aa-constrained-token-ladder.md, mode: verbatim, baseBlob: 013ce90c1d91e9a154bd159efc8c5ab83bc91a41 }
+      - { from: skills/pfd/references/learnings/L3/l023-falsifiability-triad.md, to: plugin/builtins/pfd/references/learnings/L3/l023-falsifiability-triad.md, mode: verbatim, baseBlob: 6fa5cdf6f5cfd4e265268dc5e4686487fbfaf61b }
+      - { from: skills/pfd/references/learnings/L4/l003-pre-send-vs-post-response.md, to: plugin/builtins/pfd/references/learnings/L4/l003-pre-send-vs-post-response.md, mode: verbatim, baseBlob: 950afc231cb1f6c8482764dc9f34668fc12cdd9f }
+      - { from: skills/pfd/references/learnings/L4/l006-infrastructure-vs-activation.md, to: plugin/builtins/pfd/references/learnings/L4/l006-infrastructure-vs-activation.md, mode: verbatim, baseBlob: cf42f21b50774487fc22edc59b4ae1b89c10f192 }
+      - { from: skills/pfd/references/learnings/L4/l008-epistemic-asymmetry.md, to: plugin/builtins/pfd/references/learnings/L4/l008-epistemic-asymmetry.md, mode: verbatim, baseBlob: 687a3c9e9191112260c6d6e403ecb93902d11735 }
+      - { from: skills/pfd/references/learnings/L4/l022-l4-symmetry-threshold.md, to: plugin/builtins/pfd/references/learnings/L4/l022-l4-symmetry-threshold.md, mode: verbatim, baseBlob: b77ef71968fe7145f419096ae8da0ca0b0f80a76 }
+      - { from: skills/pfd/references/learnings/meta/l001-generative-vs-evaluative.md, to: plugin/builtins/pfd/references/learnings/meta/l001-generative-vs-evaluative.md, mode: verbatim, baseBlob: f2d7249dbfe41a9b2ca1621443f9a7220b14eed2 }
+      - { from: skills/pfd/references/learnings/meta/l002-access-vs-signal.md, to: plugin/builtins/pfd/references/learnings/meta/l002-access-vs-signal.md, mode: verbatim, baseBlob: 4f7eda41b46ae3311806a3ba3fb798023fecd3d7 }
+      - { from: skills/pfd/references/learnings/meta/l004-workspace-vs-product-separation.md, to: plugin/builtins/pfd/references/learnings/meta/l004-workspace-vs-product-separation.md, mode: verbatim, baseBlob: 2c4f8e066d969de716997d86513b35afdb5b44a6 }
+      - { from: skills/pfd/references/learnings/meta/l005-recursive-validation.md, to: plugin/builtins/pfd/references/learnings/meta/l005-recursive-validation.md, mode: verbatim, baseBlob: dd85da2d7b5f76313ce1de93fa44ba522da3c1d2 }
+      - { from: skills/pfd/references/learnings/meta/l007-convergent-gap-identification.md, to: plugin/builtins/pfd/references/learnings/meta/l007-convergent-gap-identification.md, mode: verbatim, baseBlob: 30e928a67a813c333dc0fdfd800183dc2a9ff635 }
+      - { from: skills/pfd/references/learnings/meta/l010-constraints-are-distributions.md, to: plugin/builtins/pfd/references/learnings/meta/l010-constraints-are-distributions.md, mode: verbatim, baseBlob: 28d3633caacc78e7bd026e6d4a942776252e983d }
+      - { from: skills/pfd/references/learnings/meta/l014-operational-vs-structural-ethics.md, to: plugin/builtins/pfd/references/learnings/meta/l014-operational-vs-structural-ethics.md, mode: verbatim, baseBlob: 761ec02cecf7e8c94a50def23efb780c8adde790 }
+      - { from: skills/pfd/references/learnings/meta/l017-iterative-regression-is-visibility.md, to: plugin/builtins/pfd/references/learnings/meta/l017-iterative-regression-is-visibility.md, mode: verbatim, baseBlob: 92e920d203ad4d886162eda1984e189adc0987ec }
+      - { from: skills/pfd/references/learnings/meta/l020-international-citation-expansion.md, to: plugin/builtins/pfd/references/learnings/meta/l020-international-citation-expansion.md, mode: verbatim, baseBlob: 2731870e22f893e9612a66fc1164ff985eaabe63 }
+      - { from: skills/pfd/references/learnings/meta/l027-internal-acknowledgment-signals.md, to: plugin/builtins/pfd/references/learnings/meta/l027-internal-acknowledgment-signals.md, mode: verbatim, baseBlob: f67b55c1cc0dbd40b3d9f7cf0e237d44aad8d9d1 }
+      - { from: skills/pfd/references/learnings/meta/l029-port-dont-install-motion-audit.md, to: plugin/builtins/pfd/references/learnings/meta/l029-port-dont-install-motion-audit.md, mode: verbatim, baseBlob: 72c104addee1efcf96df869964be0af07039229b }
 
   # ===== Attribution-only sources (fetch: false) =====================================
   # Never fetched or regenerated by `muster vendor`; recorded so every item based on an

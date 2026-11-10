@@ -1,4 +1,5 @@
-# Muster-authored built-ins (not vendored — safe from `muster vendor` regeneration).
+# Muster-authored built-ins (not vendored — safe from `muster vendor` regeneration), plus the
+# merge-tracked UX skill family at the end (also safe: `muster vendor update` never touches catalogs).
 - id: muster-author
   kind: builtin
   roles: [author]
@@ -34,3 +35,202 @@
   roles: [video]
   rank: 50
   provenance: { license: Apache-2.0, upstream: [] }
+
+# ----- UX skill family: merge-tracked vendored builtins (vendor/manifest.yaml sources uupm,
+# intent, typeui, pfd). Listed here, not in builtins.generated.yaml, because plain
+# `muster vendor` regenerates that file from non-merge-tracked sources only and would drop them.
+# Roles complement rather than compete: /muster:design (impeccable) stays the design-workflow
+# engine and owns DESIGN.md; uupm-ui-ux-pro-max is the default UX review and design-data skill
+# (highest family rank on frontend, below the rank-50 frontend agent so implementation routing
+# is unchanged); targeted fixers, intent's discipline skills and the canvases sit below it.
+# Every family entry has a distinct rank per role, so equal match scores resolve the same way
+# every time, and distinct keywords (searched by `muster match` and `match --skills`).
+- id: uupm-ui-ux-pro-max
+  kind: builtin
+  roles: [frontend]
+  rank: 49
+  keywords: [ux, ui, usability, accessibility, landing, palette, typography, font, checklist]
+  description: "Default UX review and design-data lookup: priority table, pre-delivery checklist, page and component review, searchable styles, palettes, fonts, UX guidelines and stack rules."
+  provenance: { license: MIT, upstream: [nextlevelbuilder/ui-ux-pro-max-skill] }
+- id: uupm-ui-styling
+  kind: builtin
+  roles: [frontend]
+  rank: 44
+  keywords: [shadcn, tailwind, styling, theme]
+  description: "shadcn/ui, Tailwind and canvas styling recipes with scripts for adding components and generating a Tailwind config."
+  provenance: { license: MIT, upstream: [nextlevelbuilder/ui-ux-pro-max-skill] }
+- id: uupm-design-system
+  kind: builtin
+  roles: [frontend]
+  rank: 43
+  keywords: [tokens, tokenization, cssvars, specs]
+  description: "Three-layer design tokens, component specs and token validation, plus BM25 slide decision data; output proposes DESIGN.md changes."
+  provenance: { license: MIT, upstream: [nextlevelbuilder/ui-ux-pro-max-skill] }
+- id: intent-evaluate
+  kind: builtin
+  roles: [frontend]
+  rank: 41
+  keywords: [heuristic, heuristics, nielsen, walkthrough, darkpatterns]
+  description: "Heuristic UX evaluation: Nielsen heuristics, cognitive walkthroughs and dark-pattern detection, findings ranked by severity."
+  provenance: { license: CC0-1.0, upstream: [ghaida/intent] }
+- id: intent-include
+  kind: builtin
+  roles: [frontend]
+  rank: 40
+  keywords: [inclusive, inclusion, screenreader, cognitive, motor]
+  description: "Inclusive design depth: screen reader, keyboard, cognitive and motor accessibility and accessibility test methods."
+  provenance: { license: CC0-1.0, upstream: [ghaida/intent] }
+- id: intent-journey
+  kind: builtin
+  roles: [frontend]
+  rank: 39
+  keywords: [journey, flows, onboarding, checkout, signup]
+  description: "Experience flows: task flows, multi-step journeys, onboarding, checkout, settings and cross-platform adaptation."
+  provenance: { license: CC0-1.0, upstream: [ghaida/intent] }
+- id: intent-organize
+  kind: builtin
+  roles: [frontend]
+  rank: 38
+  keywords: [navigation, taxonomy, sitemap, labeling, findability]
+  description: "Information architecture: navigation, taxonomy, labeling, search and browse, card sorting and tree tests."
+  provenance: { license: CC0-1.0, upstream: [ghaida/intent] }
+- id: intent-fortify
+  kind: builtin
+  roles: [frontend]
+  rank: 37
+  keywords: [edge, resilience, empty, loading, offline]
+  description: "Edge-case hardening: state inventories, error recovery, empty, loading and first-run states, stress tests."
+  provenance: { license: CC0-1.0, upstream: [ghaida/intent] }
+- id: intent-wireframe
+  kind: builtin
+  roles: [frontend]
+  rank: 36
+  keywords: [wireframe, wireframes, lofi]
+  description: "Wireframes: low-to-high fidelity HTML wireframe ladders with a viewer and a styleguide."
+  provenance: { license: CC0-1.0, upstream: [ghaida/intent] }
+- id: intent-transpose
+  kind: builtin
+  roles: [frontend]
+  rank: 34
+  keywords: [crossplatform, transpose, tvos]
+  description: "Cross-platform translation of a design between web, mobile, TV and other surfaces."
+  provenance: { license: CC0-1.0, upstream: [ghaida/intent] }
+- id: intent-localize
+  kind: builtin
+  roles: [frontend]
+  rank: 33
+  keywords: [localization, localize, i18n, culture, rtl]
+  description: "Cultural adaptation: localization beyond translation, density, formats, trust signals and market assumptions."
+  provenance: { license: CC0-1.0, upstream: [ghaida/intent] }
+- id: pfd
+  kind: builtin
+  roles: [frontend, author]
+  rank: 29
+  keywords: [perception, persuasion, conversion, fluency]
+  description: "Perception-First Design: a five-layer, perception-grounded method to evaluate, derive or analyze design, copy and communication."
+  provenance: { license: CC-BY-SA-4.0, upstream: [skovalik/perception-first-design] }
+- id: typeui
+  kind: builtin
+  roles: [frontend]
+  rank: 28
+  keywords: [typeui, brandkit]
+  description: "TypeUI MCP context (project design skills, brand kits, UI prompts, layout variations); use only when the TypeUI MCP server is connected."
+  provenance: { license: MIT, upstream: [bergside/typeui] }
+- id: uupm-design
+  kind: builtin
+  roles: [image]
+  rank: 46
+  keywords: [logo, identity, cip, icon, icons]
+  description: "Brand-asset production: logos, corporate identity mockups, icons, social images and banners, routing to the sibling uupm builtins."
+  provenance: { license: MIT, upstream: [nextlevelbuilder/ui-ux-pro-max-skill] }
+- id: uupm-banner-design
+  kind: builtin
+  roles: [image]
+  rank: 45
+  keywords: [banner, banners, hero, ads]
+  description: "Banner art direction and exact sizes for social, ads, web heroes and print."
+  provenance: { license: MIT, upstream: [nextlevelbuilder/ui-ux-pro-max-skill] }
+- id: uupm-brand
+  kind: builtin
+  roles: [author]
+  rank: 46
+  keywords: [brand, voice, tone, messaging]
+  description: "Brand voice, visual identity, messaging frameworks and asset consistency checks, with brand-to-token sync scripts."
+  provenance: { license: MIT, upstream: [nextlevelbuilder/ui-ux-pro-max-skill] }
+- id: intent-articulate
+  kind: builtin
+  roles: [author]
+  rank: 45
+  keywords: [microcopy, uxwriting, errors, wording]
+  description: "UX writing and content design: labels, errors, empty states, onboarding copy, voice and tone, content models."
+  provenance: { license: CC0-1.0, upstream: [ghaida/intent] }
+- id: uupm-slides
+  kind: builtin
+  roles: [author]
+  rank: 44
+  keywords: [slides, deck, presentation, pitch]
+  description: "Strategic HTML presentations: deck strategies, layout patterns, copywriting formulas and Chart.js templates."
+  provenance: { license: MIT, upstream: [nextlevelbuilder/ui-ux-pro-max-skill] }
+- id: intent-present
+  kind: builtin
+  roles: [author]
+  rank: 43
+  keywords: [readout, reveal, keynote]
+  description: "Design presentations: reviews and research readouts as reveal.js, PowerPoint, Google Slides or Figma decks."
+  provenance: { license: CC0-1.0, upstream: [ghaida/intent] }
+- id: intent-storytelling
+  kind: builtin
+  roles: [author]
+  rank: 42
+  keywords: [storytelling, narrative, story]
+  description: "Narrative for design work: story structure for research findings, proposals and pitches."
+  provenance: { license: CC0-1.0, upstream: [ghaida/intent] }
+- id: intent-philosopher
+  kind: builtin
+  roles: [brainstorm]
+  rank: 45
+  keywords: [philosopher, expansive, reframe]
+  description: "Expansive design thinking: open exploration of a problem before solving it."
+  provenance: { license: CC0-1.0, upstream: [ghaida/intent] }
+- id: intent-strategize
+  kind: builtin
+  roles: [plan, research]
+  rank: 40
+  keywords: [strategy, opportunity, hypothesis, framing]
+  description: "UX strategy: problem framing, opportunity sizing, hypotheses and project scope."
+  provenance: { license: CC0-1.0, upstream: [ghaida/intent] }
+- id: intent-blueprint
+  kind: builtin
+  roles: [plan]
+  rank: 39
+  keywords: [blueprint, ecosystem, servicedesign]
+  description: "Service design: service blueprints, ecosystem maps and the process and data dependencies behind an experience."
+  provenance: { license: CC0-1.0, upstream: [ghaida/intent] }
+- id: intent-specify
+  kind: builtin
+  roles: [plan]
+  rank: 38
+  keywords: [specification, spec, handoff]
+  description: "Design-to-engineering specs: component, interaction and state specifications for handoff."
+  provenance: { license: CC0-1.0, upstream: [ghaida/intent] }
+- id: intent-intent
+  kind: builtin
+  roles: [plan]
+  rank: 37
+  keywords: [intent, principles]
+  description: "Intent entry point: sets UX project context and principles and routes to the intent-* skills; carries UX foundation references."
+  provenance: { license: CC0-1.0, upstream: [ghaida/intent] }
+- id: intent-investigate
+  kind: builtin
+  roles: [research]
+  rank: 39
+  keywords: [interview, interviews, survey, usability, synthesis]
+  description: "User research: interview guides, surveys, usability test plans, diary studies and synthesis."
+  provenance: { license: CC0-1.0, upstream: [ghaida/intent] }
+- id: intent-measure
+  kind: builtin
+  roles: [research]
+  rank: 38
+  keywords: [metrics, experiment, funnel, kpi]
+  description: "UX measurement: goal-signal-metric chains, A/B test design, funnels and counter-metrics."
+  provenance: { license: CC0-1.0, upstream: [ghaida/intent] }

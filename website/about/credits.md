@@ -39,6 +39,10 @@ Every non-vendored source, generated from the manifest. Each row lists the items
 | [obra/superpowers](https://github.com/obra/superpowers) @ `22f0b463e7a5` | MIT | 21 vendored builtins and agents | adapted, vendored |
 | [wshobson/agents](https://github.com/wshobson/agents) @ `9c61ab243def` | MIT | 88 vendored builtins and agents | adapted, vendored |
 | [open-gsd/gsd-core](https://github.com/open-gsd/gsd-core) @ `9385f4618b52` | MIT | 40 vendored builtins and agents | adapted, vendored |
+| [nextlevelbuilder/ui-ux-pro-max-skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) @ `4f2dbb67e649` | MIT | 144 vendored builtins and agents | vendored, inspired-by, adapted |
+| [ghaida/intent](https://github.com/ghaida/intent) @ `1806110106a4` | CC0-1.0 | 42 vendored builtins and agents | vendored, inspired-by, adapted |
+| [bergside/typeui](https://github.com/bergside/typeui) @ `efc5f21dff38` | MIT | 4 vendored builtins and agents | adapted |
+| [skovalik/perception-first-design](https://github.com/skovalik/perception-first-design) @ `1704ff61c188` | CC-BY-SA-4.0 | 40 vendored builtins and agents | vendored, adapted |
 | [open-gsd/gsd-core](https://github.com/open-gsd/gsd-core) @ `1c352d1ea37b` | MIT | `muster-gsd-plan-phase`, `muster-gsd-execute-phase`, `muster-gsd-verify-work` | mechanism-port |
 | [wshobson/agents](https://github.com/wshobson/agents) @ `2de74ac1c8f6` | MIT | `wsh-signed-audit-trails-recipe` | mechanism-port |
 | [blader/humanizer](https://github.com/blader/humanizer) @ `1b48564898e9` | MIT | `muster-humanizer` | adapted |

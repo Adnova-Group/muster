@@ -13,6 +13,11 @@ const execFileDefault = promisify(execFileCb);
 const INJECTED_CODEX_RUNNER = "muster:injected-codex-runner";
 const startupCodexHome = process.env.CODEX_HOME;
 
+// The Codex lane is frozen: builtins added after the freeze (the merge-tracked UX family:
+// uupm-*, intent-*, typeui, pfd) are Claude-plugin only and never copied into the
+// Codex bundle's internal skills, so CODEX_COUNTS below stays the frozen census.
+export const isCodexFrozenOutBuiltin = name => /^(uupm|intent)-/.test(name) || name === "typeui" || name === "pfd";
+
 // Expected contents of one generated Codex bundle. This census belongs with
 // inventory/build validation; model adapters only translate tiers to models.
 export const CODEX_COUNTS = Object.freeze({

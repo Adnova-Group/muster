@@ -1,3 +1,10 @@
 # Byte-exact upstream base copies: the vendor-sync doctor check and 3-way merges compare their
 # git blob hashes, so they must never be line-ending converted on checkout (Windows autocrlf).
 vendor/upstream/** -text
+# Merge-tracked UX builtins (vendor/manifest.yaml sources uupm, intent, typeui, pfd): every
+# verbatim file is its own base copy, checked by git blob hash, so it must stay byte-exact too.
+plugin/builtins/uupm-*/** -text
+plugin/builtins/intent-*/** -text
+plugin/builtins/typeui/** -text
+plugin/builtins/pfd/** -text
+plugin/agents/intent-*.md -text

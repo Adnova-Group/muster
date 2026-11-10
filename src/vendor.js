@@ -195,6 +195,9 @@ export function validateVendorManifest(doc) {
       errors.push(`sources[${i}].license: must be an allowed SPDX id, NONE or LicenseRef-*`);
     if (s.copyright !== undefined && (typeof s.copyright !== "string" || !s.copyright.trim()))
       errors.push(`sources[${i}].copyright: must be a non-empty string`);
+    // A trademark notice the upstream asks to travel with attribution (reproduced in NOTICE).
+    if (s.trademark !== undefined && (typeof s.trademark !== "string" || !s.trademark.trim()))
+      errors.push(`sources[${i}].trademark: must be a non-empty string`);
     if (s.formerly !== undefined && (!Array.isArray(s.formerly) || !s.formerly.every(r => REPO_RE.test(r))))
       errors.push(`sources[${i}].formerly: must be a list of owner/name`);
     if (s.tag !== undefined && !isSyncSource(s)) errors.push(`sources[${i}].tag: only a merge-tracked source (items with mode) records a tag`);

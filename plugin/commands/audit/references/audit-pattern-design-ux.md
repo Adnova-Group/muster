@@ -1,11 +1,21 @@
 ---
 name: audit-pattern-design-ux
-description: Hunt-list pattern skill for muster's UX/design audit dimension -- points into the pinned Impeccable design-workflow vocabulary and muster's design-gate machinery rather than duplicating it. Loaded by the audit orchestrator as a REQUIRED SKILLS binding on the frontend (design-ux) dimension task; read on demand, never dispatched standalone.
+description: Hunt-list pattern skill for muster's UX/design audit dimension -- points into the pinned Impeccable design-workflow vocabulary, the uupm priority table and pre-delivery checklist, and muster's design-gate machinery rather than duplicating them. Loaded by the audit orchestrator as a REQUIRED SKILLS binding on the frontend (design-ux) dimension task; read on demand, never dispatched standalone.
 upstream:
   - repo: pbakaus/impeccable
     ref: 32930818a109fafa87199babe92fa8e530cff5d3
     path: null
     license: Apache-2.0
+    relation: inspired-by
+  - repo: nextlevelbuilder/ui-ux-pro-max-skill
+    ref: 4f2dbb67e64969a9a30ab00742f2d55d66ddec2b
+    path: null
+    license: MIT
+    relation: inspired-by
+  - repo: ghaida/intent
+    ref: 1806110106a472bc588d7a8a2b7e3d39aee4a4b8
+    path: null
+    license: CC0-1.0
     relation: inspired-by
   - kind: article
     title: 10 Usability Heuristics for User Interface Design
@@ -19,7 +29,7 @@ role-anchored frontend dispatch; a second "You are..." opener here would duplica
 
 # Audit pattern: UX/design
 
-**Version:** 1
+**Version:** 2
 
 Hunt-list for the **design-ux** audit dimension (`buildAuditManifest`, `src/audit.js`, role
 `frontend`, conditional on real UI/design evidence in the audited scope).
@@ -44,10 +54,55 @@ read the cited files directly, they are the canonical source.
   documents the design-context resolution and gate behavior in more depth than the command prose;
   read it for the init/status/resolve/detect/ignores/provider surface if the finding concerns
   context resolution rather than a workflow itself.
-- Accessibility-specific depth: `plugin/builtins/wsh-wcag-audit-patterns/SKILL.md` (vendored,
+- Accessibility-specific depth: `<plugin root>/builtins/wsh-wcag-audit-patterns/SKILL.md` (vendored,
   WCAG 2.2, MIT, `wshobson/agents`) is the deeper accessibility-specific hunt-list if the audited
   scope's finding is squarely an a11y violation (POUR principles, conformance levels A/AA/AAA) --
   read it directly rather than re-deriving accessibility criteria here.
+
+## UX review sources and precedence
+
+The design-ux reviewer applies two primary checklists together, then the specialist depth below.
+`<plugin root>` is `${CLAUDE_PLUGIN_ROOT}`; every builtin is read by path (none is in the slash menu).
+
+1. **impeccable's critique dimensions**: the `audit` and `critique` workflows above (hierarchy,
+   information architecture, resonance, cognitive load; accessibility, performance,
+   responsiveness, design quality).
+2. **uupm's priority table and pre-delivery checklist** (`uupm-ui-ux-pro-max`, muster's default
+   UX review skill): the "Rule Categories by Priority" table in
+   `<plugin root>/builtins/uupm-ui-ux-pro-max/SKILL.md` sets the ORDER of the sweep (priority 1
+   first) and the default severity band; each category's full rules are in its
+   `references/quick-reference.md`, and the canonical pre-delivery checklist is the
+   "Pre-Delivery Checklist" section of its `references/pro-rules.md`. Read those files; do not
+   restate them. Its `scripts/search.py "<one outcome>" --domain ux` confirms a specific guideline
+   when a finding needs a citation.
+
+**Deduplicate before reporting.** The two checklists overlap (accessibility, responsiveness,
+hierarchy, performance appear in both). Report each defect ONCE, under the highest-precedence
+source that covers it, and name the other sources that agree in the same line. Never file one
+defect twice because two checklists name it.
+
+**Precedence when sources disagree**, highest first:
+
+1. the project's canonical `DESIGN.md` (via `muster design resolve`);
+2. accessibility / WCAG 2.2 (`wsh-wcag-audit-patterns`, Nielsen's heuristics for usability);
+3. impeccable (`/muster:design` workflows);
+4. the supporting skills below, uupm style suggestions last.
+
+A uupm or supporting-skill suggestion that contradicts `DESIGN.md` is not a finding; a
+`DESIGN.md` rule that fails WCAG is (report it against `DESIGN.md`).
+
+**Specialist depth** (read only when the scope calls for it; each is a builtin under
+`<plugin root>/builtins/<id>/SKILL.md`):
+
+- `intent-evaluate`: Nielsen heuristic evaluation and cognitive walkthrough with
+  critical/major/minor/cosmetic severities; `intent-fortify` for edge, empty, error and loading
+  states; `intent-include` for screen-reader, cognitive and motor depth beyond WCAG.
+- `pfd`: a separately licensed (CC BY-SA 4.0) design method about how people first take in an
+  interface; read that builtin itself when first-impression quality is in scope, and cite it by id.
+<!-- INTEGRATION SLOT (UX skills track): the sibling best-of-breed UX skills track (anthropic-*,
+taste-*, addy-*, emil-*, hallmark, gsap-*, elaya-*, jk-*) reports which of its builtin ids belong
+in this specialist list; add them here at integration, one bullet each, ranked below the two
+primary checklists and placed in the precedence above (they sit with the supporting skills). -->
 
 ## Repo-specific conventions to enforce
 

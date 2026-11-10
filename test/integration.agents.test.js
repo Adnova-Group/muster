@@ -33,6 +33,10 @@ test("muster agents credit their upstream (atomic-claude role concept, gsd-core 
       // Merge-tracked from ghaida/intent (CC0-1.0 public-domain dedication).
       assert.equal(a.provenance.license, "CC0-1.0", `${a.id} vendored intent agent should be CC0-1.0`);
       assert.deepEqual(a.provenance.upstream, ["ghaida/intent"], `${a.id} must record its upstream source`);
+    } else if (a.id.startsWith("prt-")) {
+      // Merge-tracked from anthropics/claude-plugins-official's pr-review-toolkit (Apache-2.0).
+      assert.equal(a.provenance.license, "Apache-2.0", `${a.id} vendored pr-review-toolkit agent should be Apache-2.0`);
+      assert.deepEqual(a.provenance.upstream, ["anthropics/claude-plugins-official"], `${a.id} must record its upstream source`);
     } else {
       assert.equal(a.provenance.license, "MIT", `${a.id} vendored agent should be MIT`);
       assert.deepEqual(a.provenance.upstream, ["wshobson/agents"], `${a.id} must record its upstream source`);

@@ -6,7 +6,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, writeFileSync, symlinkSync, rmSync, mkdtempSync } from "node:fs";
+import { mkdirSync, writeFileSync, symlinkSync, rmSync } from "node:fs";
+import { trackedMkdtempSync as mkdtempSync } from "../test-support/helpers.js";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";

@@ -142,6 +142,156 @@
     upstream:
       - addyosmani/agent-skills
   description: "Verify UI in a real browser through the Chrome DevTools MCP: DOM, console errors, network requests, performance traces and screenshots."
+- id: emil-design-eng
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - emilkowalski/skills
+  description: "Emil Kowalski's design-engineering craft: the invisible details of UI polish, component feel and when motion earns its place."
+- id: emil-apple-design
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - emilkowalski/skills
+  description: "Apple-style fluid interfaces for the web: springs, gestures, interruptible transitions, materials, depth and optical typography."
+- id: emil-improve-animations
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - emilkowalski/skills
+  description: "Read-only motion audit of a codebase: prioritized animation findings plus self-contained fix plans for other agents to execute."
+- id: emil-animate
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - emilkowalski/skills
+  description: "Build a web animation from scratch: whether to animate, purpose, tool, properties, easing, duration, interruption and exit."
+- id: emil-animate-expo
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - emilkowalski/skills
+  description: Build React Native and Expo animations with Reanimated, Gesture Handler, Expo Router and haptics, tuned to feel right on device.
+- id: emil-animation-vocabulary
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - emilkowalski/skills
+  description: Glossary that names a vaguely described motion effect (pop in, rubber-banding, stagger) so it can be prompted precisely.
+- id: emil-review-animations
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - emilkowalski/skills
+  description: "Strict review of animation and motion code against Emil Kowalski's craft bar: easing, duration, springs, interruption, reduced motion."
+- id: emil-find-animation-opportunities
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - emilkowalski/skills
+  description: Read-only scan for places that should animate, and the many that should not, proposing motion with exact values.
+- id: emil-animation-performance
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - emilkowalski/skills
+  description: "Keep web animations in the frame budget: composite-only properties, CSS vs WAAPI vs rAF, will-change, and diagnosing jank."
+- id: emil-remove-animations
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - emilkowalski/skills
+  description: Subtract motion an interface does not need (keyboard actions, high-frequency surfaces, decoration) when it feels slow or over-animated.
+- id: emil-choreograph
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - emilkowalski/skills
+  description: "Choreograph a multi-element animation: staggered lists, sequencing, overlap, crossfades, and the hero or list entrance."
+- id: emil-mobile-native
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - emilkowalski/skills
+  description: "Make a mobile web app feel native: tap highlight, sticky hover, 100vh, input zoom, safe areas, overscroll and touch details."
+- id: emil-break-ui
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - emilkowalski/skills
+  description: Stress-test a UI with worst-case data (long names, empty, huge counts, non-Latin text) behind a demo toggle and report every break.
+- id: emil-prototype
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - emilkowalski/skills
+  description: Prototype several genuinely different versions of a UI piece behind a live picker; runs only when explicitly invoked.
+- id: emil-pick-ui-library
+  kind: builtin
+  roles:
+    - frontend
+  rank: 40
+  provenance:
+    license: MIT
+    upstream:
+      - emilkowalski/skills
+  description: Pick an opinionated frontend library for a task (charts, OTP, command menu, toasts, drag and drop); runs only when explicitly invoked.
 - id: wsh-stride-analysis-patterns
   kind: builtin
   roles:

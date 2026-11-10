@@ -660,6 +660,50 @@ sources:
       - { id: addy-frontend-ui-engineering, kind: builtin, from: skills/frontend-ui-engineering/SKILL.md, to: plugin/builtins/addy-frontend-ui-engineering/SKILL.md, mode: adapted, relation: adapted, baseBlob: 631971815da44e24f4d0bca2b7d983ba6d1bcfc4, roles: [frontend], rank: 42, description: "Frontend engineering discipline: production-quality components, state, responsive layout and WCAG-ready markup without the generic AI look." }
       - { from: references/accessibility-checklist.md, to: plugin/builtins/addy-frontend-ui-engineering/references/accessibility-checklist.md, mode: adapted, baseBlob: 214ab49b504869227015bfd8eaaeb44e4355467e }
       - { id: addy-browser-testing-with-devtools, kind: builtin, from: skills/browser-testing-with-devtools/SKILL.md, to: plugin/builtins/addy-browser-testing-with-devtools/SKILL.md, mode: adapted, baseBlob: ca0044e859e5637c33250dbba1fc1a24540b7ad3, roles: [frontend], rank: 40, description: "Verify UI in a real browser through the Chrome DevTools MCP: DOM, console errors, network requests, performance traces and screenshots." }
+  - id: emil-skills
+    kind: github
+    repo: emilkowalski/skills
+    # Added 2026-11-10 from the ui-skills.com registry (best-of-breed UX skills, by GitHub stars).
+    # Merge-tracked (every item has a `mode`): plain `muster vendor` never regenerates it, and
+    # `muster vendor update <id>` 3-way merges each muster file against its byte-exact base copy in
+    # vendor/upstream/<id>/. Pinned to upstream HEAD on 2026-11-10 (no release tag at that commit).
+    # Kept muster divergence: every SKILL.md swaps the upstream frontmatter for muster's (name kept,
+    # one-line description, muster_builtin, SPDX license, generated upstream:); harness keys such as
+    # disable-model-invocation, hooks, metadata and agents/openai.yaml are dropped. Bodies are
+    # upstream's; cross-references by upstream skill name resolve through the kept `name:`.
+    # Catalog: role frontend, ranked below the wsh frontend builtins (50) so none becomes the default
+    # frontend provider. Precedence: project DESIGN.md > accessibility (jk-better-accessibility 46) >
+    # impeccable > these supporting skills (44 review/writing, 42 direction/engineering, 40 motion, 30 opt-in).
+    # Not vendored: write-swift (SwiftUI, out of scope) and ask-sonner (one library's Q&A).
+    ref: 715c1807e08c497cfd1dc4feb450a2a3300ef2a9
+    tag: null
+    license: MIT
+    copyright: "Copyright (c) 2026 Emil Kowalski"
+    relation: vendored
+    items:
+      - { id: emil-design-eng, kind: builtin, from: skills/emil-design-eng/SKILL.md, to: plugin/builtins/emil-design-eng/SKILL.md, mode: adapted, baseBlob: dc063c2a861922c1c9f2412b824b0862746304f5, roles: [frontend], rank: 40, description: "Emil Kowalski's design-engineering craft: the invisible details of UI polish, component feel and when motion earns its place." }
+      - { id: emil-apple-design, kind: builtin, from: skills/apple-design/SKILL.md, to: plugin/builtins/emil-apple-design/SKILL.md, mode: adapted, baseBlob: adf68c517f2d7d2781587d619de07f4de286da57, roles: [frontend], rank: 40, description: "Apple-style fluid interfaces for the web: springs, gestures, interruptible transitions, materials, depth and optical typography." }
+      - { id: emil-improve-animations, kind: builtin, from: skills/improve-animations/SKILL.md, to: plugin/builtins/emil-improve-animations/SKILL.md, mode: adapted, baseBlob: d6e77f37272329af0cc36f9eeedbe5226e86ce63, roles: [frontend], rank: 40, description: "Read-only motion audit of a codebase: prioritized animation findings plus self-contained fix plans for other agents to execute." }
+      - { from: skills/improve-animations/AUDIT.md, to: plugin/builtins/emil-improve-animations/AUDIT.md, mode: adapted, baseBlob: 0862c446eea250326cdd2054fc3492c6707f4cf7 }
+      - { from: skills/improve-animations/PLAN-TEMPLATE.md, to: plugin/builtins/emil-improve-animations/PLAN-TEMPLATE.md, mode: adapted, baseBlob: 239026b91f8032df191dde2085fd796b8c116d91 }
+      - { id: emil-animate, kind: builtin, from: skills/animate/SKILL.md, to: plugin/builtins/emil-animate/SKILL.md, mode: adapted, baseBlob: 2d3b63acc5e2afcbf54b5ba59792e69fa51bcb0d, roles: [frontend], rank: 40, description: "Build a web animation from scratch: whether to animate, purpose, tool, properties, easing, duration, interruption and exit." }
+      - { from: skills/animate/RECIPES.md, to: plugin/builtins/emil-animate/RECIPES.md, mode: adapted, baseBlob: 6744891261bdf0bb0473d77f2cc706f2d78b574e }
+      - { id: emil-animate-expo, kind: builtin, from: skills/animate-expo/SKILL.md, to: plugin/builtins/emil-animate-expo/SKILL.md, mode: adapted, baseBlob: 78b39e1d22e8c3c15be96ccebe04bf39792f3455, roles: [frontend], rank: 40, description: "Build React Native and Expo animations with Reanimated, Gesture Handler, Expo Router and haptics, tuned to feel right on device." }
+      - { from: skills/animate-expo/RECIPES.md, to: plugin/builtins/emil-animate-expo/RECIPES.md, mode: adapted, baseBlob: a02e6b80f9dec86f196590f2f7a4fe3310ea1cb4 }
+      - { id: emil-animation-vocabulary, kind: builtin, from: skills/animation-vocabulary/SKILL.md, to: plugin/builtins/emil-animation-vocabulary/SKILL.md, mode: adapted, baseBlob: 5ab2976514c74a194ebf069506d95ff3a5a0084f, roles: [frontend], rank: 40, description: "Glossary that names a vaguely described motion effect (pop in, rubber-banding, stagger) so it can be prompted precisely." }
+      - { id: emil-review-animations, kind: builtin, from: skills/review-animations/SKILL.md, to: plugin/builtins/emil-review-animations/SKILL.md, mode: adapted, baseBlob: 591397b5308266f76671dacc3e44830a3e3e535f, roles: [frontend], rank: 40, description: "Strict review of animation and motion code against Emil Kowalski's craft bar: easing, duration, springs, interruption, reduced motion." }
+      - { from: skills/review-animations/STANDARDS.md, to: plugin/builtins/emil-review-animations/STANDARDS.md, mode: adapted, baseBlob: 67b6edb5ed45aeafe7e3706bb76e27f3bd209a92 }
+      - { id: emil-find-animation-opportunities, kind: builtin, from: skills/find-animation-opportunities/SKILL.md, to: plugin/builtins/emil-find-animation-opportunities/SKILL.md, mode: adapted, baseBlob: d3b030fbca9abad9220a032f72d425c6b7fa2de8, roles: [frontend], rank: 40, description: "Read-only scan for places that should animate, and the many that should not, proposing motion with exact values." }
+      - { id: emil-animation-performance, kind: builtin, from: skills/animation-performance/SKILL.md, to: plugin/builtins/emil-animation-performance/SKILL.md, mode: adapted, baseBlob: 74c421e4e673cab84490f8b17b89735c30b0f555, roles: [frontend], rank: 40, description: "Keep web animations in the frame budget: composite-only properties, CSS vs WAAPI vs rAF, will-change, and diagnosing jank." }
+      - { id: emil-remove-animations, kind: builtin, from: skills/remove-animations/SKILL.md, to: plugin/builtins/emil-remove-animations/SKILL.md, mode: adapted, baseBlob: 100b7b7666f7d09c69a75ebb793e30e607058e77, roles: [frontend], rank: 40, description: "Subtract motion an interface does not need (keyboard actions, high-frequency surfaces, decoration) when it feels slow or over-animated." }
+      - { id: emil-choreograph, kind: builtin, from: skills/choreograph/SKILL.md, to: plugin/builtins/emil-choreograph/SKILL.md, mode: adapted, baseBlob: 9fef0048d260be7bc05a909a03b52627bb3ccf37, roles: [frontend], rank: 40, description: "Choreograph a multi-element animation: staggered lists, sequencing, overlap, crossfades, and the hero or list entrance." }
+      - { from: skills/choreograph/RECIPES.md, to: plugin/builtins/emil-choreograph/RECIPES.md, mode: adapted, baseBlob: 17936a9cfc3e26224c5b4555f5a239758718815c }
+      - { id: emil-mobile-native, kind: builtin, from: skills/mobile-native/SKILL.md, to: plugin/builtins/emil-mobile-native/SKILL.md, mode: adapted, baseBlob: 94bba21fcb990b850e06effbf5709c96a07446ad, roles: [frontend], rank: 40, description: "Make a mobile web app feel native: tap highlight, sticky hover, 100vh, input zoom, safe areas, overscroll and touch details." }
+      - { id: emil-break-ui, kind: builtin, from: skills/break-ui/SKILL.md, to: plugin/builtins/emil-break-ui/SKILL.md, mode: adapted, baseBlob: 091a28d488662d2451131f1aaa60a6dcd2391932, roles: [frontend], rank: 40, description: "Stress-test a UI with worst-case data (long names, empty, huge counts, non-Latin text) behind a demo toggle and report every break." }
+      - { from: skills/break-ui/CATALOG.md, to: plugin/builtins/emil-break-ui/CATALOG.md, mode: adapted, baseBlob: 46962bb89445b8526ea94994a79b49508573b5fd }
+      - { id: emil-prototype, kind: builtin, from: skills/prototype/SKILL.md, to: plugin/builtins/emil-prototype/SKILL.md, mode: adapted, baseBlob: dbcc1a23c66933f7372c0aacbce2b0d7cc6100b6, roles: [frontend], rank: 40, description: "Prototype several genuinely different versions of a UI piece behind a live picker; runs only when explicitly invoked." }
+      - { from: skills/prototype/PICKER.md, to: plugin/builtins/emil-prototype/PICKER.md, mode: adapted, baseBlob: aaa88c0eba38eb01c00d4eb2b144e39f808fc26a }
+      - { id: emil-pick-ui-library, kind: builtin, from: skills/pick-ui-library/SKILL.md, to: plugin/builtins/emil-pick-ui-library/SKILL.md, mode: adapted, baseBlob: 5e0028e988b88d2a88a019fdc978b4732243e467, roles: [frontend], rank: 40, description: "Pick an opinionated frontend library for a task (charts, OTP, command menu, toasts, drag and drop); runs only when explicitly invoked." }
   # ---- end ui-skills.com UX skills ----
   - id: gsd
     kind: github

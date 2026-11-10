@@ -628,24 +628,29 @@ async function driveRestoreBlockerRecovery(t, label, blockerRecord) {
   let blockerOutcome;
   let blockerRan = false;
   let raceInjected = false;
+  // Signals that the injected acquirer has written its record, so the restore below runs after
+  // it on every machine. A fixed 20 ms pause lost that race on slow CI runners.
+  let blockerWroteResolve;
+  const blockerWrote = new Promise(resolve => { blockerWroteResolve = resolve; });
 
   const reclaimer = withCodexFileLock(lock, async () => {}, {
     staleMs: 0,
     maxStaleMs: 5_000,
-    timeoutMs: 500,
+    timeoutMs: 10_000,
     __reclaimRaceHook: async () => {
       if (raceInjected) return;
       raceInjected = true;
       await rm(lock, { force: true });
       await writeFile(lock, '{"format":1');
       blockerOutcome = withCodexFileLock(lock, async () => { blockerRan = true; }, {
-        timeoutMs: 200,
+        timeoutMs: 5_000,
         beforeOpen: async () => {
           beforeOpenReachedResolve();
           await beforeOpenBlocked;
         },
         __afterAcquireWriteHook: async () => {
           await writeFile(lock, JSON.stringify(blockerRecord) + "\n");
+          blockerWroteResolve();
           throw new Error("simulated owner death after lock write");
         }
       }).then(() => null, error => error);
@@ -654,7 +659,7 @@ async function driveRestoreBlockerRecovery(t, label, blockerRecord) {
     __beforeRestoreHook: async ({ retirementPath }) => {
       await writeFile(retirementPath, JSON.stringify(deadOwner("completed-original")) + "\n");
       releaseBeforeOpen();
-      await pause(20);
+      await Promise.race([blockerWrote, pause(5_000)]);
     }
   });
 

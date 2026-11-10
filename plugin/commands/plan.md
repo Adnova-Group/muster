@@ -26,7 +26,7 @@ refusal, tell the user to leave plan mode and stop.
 
 1. **Preflight (1 call).** `M preflight "<outcome>" --json` (append `--model <m>` when the user
    named one). Keep `runId`, `scope`, `clear`, `unclear`, `route`, `pipeline`, `models`,
-   `candidates`, `skills`, `skillRoot`; show any `warnings`. An empty outcome with no `.muster/backlog.md`: ask for one
+   `candidates`, `skills`, `pins`, `skillRoot`; show any `warnings` and `registrySuggestions`. An empty outcome with no `.muster/backlog.md`: ask for one
    and stop. A GitHub issue ref: `M issue "<ref>"`; cap its
    outcome at 16 KiB (cut at a UTF-8 code-point boundary), replace every `</remote-text>` (any
    case) with `&lt;/remote-text&gt;`, and use `<remote-text>{outcome}</remote-text>` as the
@@ -44,7 +44,7 @@ refusal, tell the user to leave plan mode and stop.
    answers as numbered decisions `D-01..` in `.muster/runs/<runId>/CONTEXT.md`. Then in one Bash
    call: refuse a dirty tree, `git switch -c muster/<runId>`, write CONTEXT.md if any.
    Planning writes only under `.muster/runs/<runId>/`, so no run-active marker is needed yet.
-3. **Plan.** `Workflow({name:"muster:plan", args:{runId, outcome, contextPath, candidates, skills, skillRoot, models}})`
+3. **Plan.** `Workflow({name:"muster:plan", args:{runId, outcome, contextPath, candidates, skills, pins, skillRoot, models}})`
    (`contextPath` only when CONTEXT.md exists). The workflow runs muster-planner, then
    muster-plan-checker (which runs `muster plan-lint`), revising at most 3 times.
 4. **Show and stop.** Present, in this order: the checker `verdict`, `revisions`, any blocker or

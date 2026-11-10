@@ -71,12 +71,22 @@ async function call(prompt, opts) {
 
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48) || 'run'
 
+// Project pins (.muster/config, `muster skills pin`): build-args binds each one to every
+// matching task whatever the plan says, so the planner plans with them instead of around them.
+function pinLine(pins) {
+  const valid = (Array.isArray(pins) ? pins : []).filter((p) => p && typeof p.id === 'string')
+  if (!valid.length) return ''
+  const list = valid.map((p) => `${p.id} (${p.role ? `tasks with role ${p.role}` : 'every task'})`).join(', ')
+  return `Project-pinned skills, always bound at build time: ${list}. Bind each pinned builtin in its matching tasks' skills attribute (build-args adds any left out, and the project-installed ones) and plan those tasks to follow it.`
+}
+
 function planBrief(cfg, planPath, issues, revision) {
   const lines = [
     `Run ${cfg.runId}. Outcome: ${cfg.outcome || '(see CONTEXT.md)'}`,
     cfg.contextPath ? `Decisions and resolved gray areas: ${cfg.contextPath}. Honour every D-NN decision in it.` : '',
     cfg.candidates ? `Candidate specialists for each task's agent_hint: ${JSON.stringify(cfg.candidates)}` : '',
     cfg.skills ? `Candidate builtin skills for each task's skills attribute: ${JSON.stringify(cfg.skills)}${cfg.skillRoot ? `; every other builtin id is a directory name under ${cfg.skillRoot}` : ''}` : '',
+    pinLine(cfg.pins),
   ]
   if (!issues) {
     lines.push(

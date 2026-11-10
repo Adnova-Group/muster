@@ -3,35 +3,15 @@ domain: pm
 title: Test Plan
 match: [test plan, ai test plan, qa plan, QA plan, test strategy, acceptance test plan]
 upstream:
-  - repo: deanpeters/product-manager-prompts
-    ref: null
-    path: null
-    license: CC-BY-NC-SA-4.0
+  - kind: standard
+    title: "ISO/IEC/IEEE 29119-3, Software testing: Test documentation"
+    author: ISO/IEC/IEEE
+    url: null
     relation: inspired-by
-  - repo: deanpeters/Product-Manager-Skills
-    ref: null
-    path: null
-    license: CC-BY-NC-SA-4.0
-    relation: inspired-by
-  - repo: phuryn/pm-skills
-    ref: null
-    path: null
-    license: MIT
-    relation: inspired-by
-  - repo: anthropics/knowledge-work-plugins
-    ref: null
-    path: null
-    license: Apache-2.0
-    relation: inspired-by
-  - repo: joelparkerhenderson/objectives-and-key-results
-    ref: null
-    path: null
-    license: NONE
-    relation: inspired-by
-  - repo: architecture-decision-record/architecture-decision-record
-    ref: null
-    path: null
-    license: CC-BY-NC-SA-4.0
+  - kind: standard
+    title: IEEE 829, Standard for Software and System Test Documentation (withdrawn)
+    author: IEEE
+    url: https://standards.ieee.org/ieee/829/3787/
     relation: inspired-by
 phases:
   - { id: intake,       role: brainstorm,  desc: "feature under test, risks, scope, exit criteria" }

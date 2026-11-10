@@ -57,7 +57,7 @@ test("Codex build ignores a project Work receipt and emits the full Codex artifa
     await readFile(join(result.pluginRoot, "runtime", "in-process-worker.mjs"), "utf8");
     await readFile(join(result.pluginRoot, "runtime", "verdict.schema.json"), "utf8");
     await readFile(join(result.pluginRoot, "skills", "muster", "SKILL.md"), "utf8");
-    await readFile(join(result.pluginRoot, "agents", "muster-builder.toml"), "utf8");
+    await readFile(join(result.pluginRoot, "agents", "muster-executor.toml"), "utf8");
     await readFile(join(work.pluginPath, "runtime", "chatgpt-work-server.mjs"), "utf8");
     const marketplace = JSON.parse(await readFile(join(outDir, "marketplace.json"), "utf8"));
     assert.equal(marketplace.plugins.find(plugin => plugin.name === "muster")?.source?.path, "./.agents/plugins/plugin");
@@ -294,7 +294,7 @@ test("buildCodexPlugin's input-digest skip-if-current check can be bypassed with
   await writeFile(join(staged, "runtime", "in-process-worker.mjs"), "export {};\n");
   await writeFile(join(staged, "runtime", "verdict.schema.json"), "{}\n");
   await writeFile(join(staged, "skills", "muster", "SKILL.md"), "# Muster\n");
-  await writeFile(join(staged, "agents", "muster-builder.toml"), "name = \"muster-builder\"\n");
+  await writeFile(join(staged, "agents", "muster-executor.toml"), "name = \"muster-executor\"\n");
   await publishCodexPlugin({
     pluginsRoot: outDir,
     stagedPlugin: staged,
@@ -488,7 +488,7 @@ test("build-anchor-audit: rewording review-gate/SKILL.md's reviewer-selection pr
   // regex this audit item's OTHER review-gate anchors were given the identical posture for) --
   // proving one of those siblings actually catches an equivalent rewording, not just that it
   // compiles.
-  const reviewGateSkillPath = join(checkout, "plugin", "skills", "review-gate", "SKILL.md");
+  const reviewGateSkillPath = join(checkout, "codex", "frozen", "skills", "review-gate", "SKILL.md");
   const original = await readFile(reviewGateSkillPath, "utf8");
   const anchorOpening = "1. **Select reviewers, scaled by diff size.**";
   assert.ok(original.includes(anchorOpening), "sanity: the fixture carries the pre-reword anchor text");

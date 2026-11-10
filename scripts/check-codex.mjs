@@ -77,7 +77,8 @@ for (const [id, config] of Object.entries(mapping.agents)) {
 }
 const skills = new Set(await dirs(join(plugin, "skills")));
 const internalSkills = new Set(await dirs(join(plugin, "internal-skills")));
-const modes = ["muster", "muster-plan", "muster-go", "muster-plan-backlog", "muster-go-backlog", "muster-diagnose", "muster-audit", "muster-runner", "muster-capture", "muster-init", "muster-design"];
+const modes = ["muster", "muster-plan", "muster-go", "muster-diagnose", "muster-audit", "muster-capture", "muster-init", "muster-design"];
+for (const name of ["muster-plan-backlog", "muster-go-backlog", "muster-runner"]) if (skills.has(name)) fail(`removed mode skill ${name} must not ship`);
 for (const name of modes) if (!skills.has(name)) fail(`missing mode skill ${name}`);
 for (const name of ["run", "autopilot", "sprint"]) if (skills.has(name)) fail(`retired alias skill ${name} must not ship`);
 const native = await dirs(join(root, "plugin/skills"));
@@ -127,25 +128,19 @@ for (const [label, pattern] of [
 ]) {
   if (!pattern.test(initCommand)) fail(`init.md is missing native-completion guard: ${label}`);
 }
-for (const name of ["plan.md", "go.md", "plan-backlog.md", "go-backlog.md", "runner.md"]) {
+for (const name of ["plan.md", "go.md"]) {
   const text = await readFile(join(plugin, "commands", name), "utf8");
   if (text.includes(" assess ") && !text.includes(" assess --codex ")) fail(`${name} does not use Codex-aware outcome assessment`);
 }
-for (const name of ["plan.md", "go.md", "plan-backlog.md"]) {
+for (const name of ["plan.md", "go.md"]) {
   const text = await readFile(join(plugin, "commands", name), "utf8");
   if (!text.includes("capabilities --codex --roles-only")) fail(`${name} emits the full Codex skill inventory during routing`);
 }
-const runnerCommand = await readFile(join(plugin, "commands", "runner.md"), "utf8");
-if (!runnerCommand.includes("Usage: $muster-runner") || !runnerCommand.includes('codex exec "$muster-runner')) fail("runner command is not bound to the Codex runner skill");
-const coordination = await readFile(join(plugin, "internal-skills", "coordination", "SKILL.md"), "utf8");
-if (!coordination.includes("plugin cache is not a Git checkout") || /git log -1 --format/.test(coordination)) fail("coordination preflight is not package-cache safe");
 const orchestrator = await readFile(join(plugin, "internal-skills", "orchestrator", "SKILL.md"), "utf8");
 if (/generic-subagent fallback|isolation: "worktree"|hook-enforced -- these BLOCK|permissionDecision/.test(orchestrator)) fail("orchestrator overclaims Codex dispatch or hook enforcement");
 for (const marker of ["one process-wave member", "minimal prompt", "Never attach unrelated plan items", "Never call a subagent API from this production-wave step"]) {
   if (!orchestrator.includes(marker)) fail(`orchestrator lacks process-wave marker ${marker}`);
 }
-const implementerPrompt = await readFile(join(plugin, "internal-skills", "sp-subagents", "implementer-prompt.md"), "utf8");
-if (!implementerPrompt.includes("the parent runs the broad suite once at final verification") || implementerPrompt.includes("full suite once before committing")) fail("Codex implementer prompt repeats broad suites inside workers");
 const reviewGate = await readFile(join(plugin, "internal-skills", "review-gate", "SKILL.md"), "utf8");
 for (const marker of ["capabilities --codex --role <role>", "never attach the full skills inventory", "Select one code reviewer for ordinary waves", "Add the security reviewer only", "configured repeated-identical/no-progress threshold"]) {
   if (!reviewGate.includes(marker)) fail(`Codex review gate lacks quota policy marker ${marker}`);
@@ -169,7 +164,7 @@ const watchSurfaces = [
   ["orchestrator", join(plugin, "internal-skills", "orchestrator", "SKILL.md")],
   ...modes.map(name => [name, join(plugin, "skills", name, "SKILL.md")])
 ];
-if (watchSurfaces.length !== 13) fail(`agent watch coverage drifted to ${watchSurfaces.length} surfaces instead of 13`);
+if (watchSurfaces.length !== 10) fail(`agent watch coverage drifted to ${watchSurfaces.length} surfaces instead of 10`);
 const assertWatchPattern = (text, name, pattern, label) => {
   if (!pattern.test(text)) fail(`${name} ${label}`);
 };

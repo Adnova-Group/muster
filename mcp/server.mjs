@@ -33,7 +33,7 @@ const SERVER_INFO = { name: "muster", version: VERSION };
 //                               An entry may also carry its own `flags: (args) => [...]` (same
 //                               convention as json2's `flags` below) to append extra plain CLI
 //                               args/flags after the primary positional value — e.g.
-//                               muster_receipt_verify's `--cwd <repo>` pair. Optional; only
+//                               a `--cwd <repo>` pair. Optional; only
 //                               defined where a tool actually needs it, so every existing "str"
 //                               tool's behavior is unchanged.
 //   J2(desc, props, required) — "json2": one OR more payloads; each is written to its own temp file
@@ -214,12 +214,6 @@ const TOOLS = {
   muster_capabilities_roles: { argv: ["capabilities", "--roles-only"], ...S("Resolve every Muster role the same way muster_capabilities does, but return only the compact {roles} map.", "home", false) },
   muster_match_skills: { argv: ["match", "--skills"], ...S("Rank the live skills inventory against a free-text task by token overlap, plus stack-derived suggested skills (matchSkills + suggestSkillsForStack; no model call). Stack signals are always derived from the task text itself (signalsFromTask); use the CLI for an explicit --stack override.", "task") },
   muster_gate_cadence: { argv: ["gate-cadence"], ...J2("Compute review-gate cadence (spec-gate rounds, batched review-gate passes, and -- when changedLines is given -- reviewer count + reasoning tier) from a manifest's dependency-ordered waves. Deterministic, no LLM.", { manifest: { type: "object" }, changedLines: { type: "number" } }, ["manifest"]), picks: (a) => [a.manifest], flags: (a) => a.changedLines !== undefined ? ["--changed-lines", String(a.changedLines)] : [] },
-  muster_receipt_verify: {
-    argv: ["receipt-verify"], kind: "str", prop: "sha",
-    description: "Verify a base-SHA is a REAL, resolvable git commit object in an explicit repo -- proof a well-formed-but-fabricated SHA does not pass (makeGitShaVerifier's git-backed default verifier: `git rev-parse --verify --quiet <sha>^{commit}`, never a branch/tag/HEAD/relative ref). Returns {sha, cwd, verified, mechanism}. `cwd` is required and never defaults to this server's own cwd -- state which repository the SHA is being checked against explicitly.",
-    inputSchema: { type: "object", properties: { sha: { type: "string" }, cwd: { type: "string" } }, required: ["sha", "cwd"] },
-    flags: (a) => ["--cwd", String(a.cwd ?? "")],
-  },
 
   // Operations with specialized argument shapes.
   muster_scope: { argv: ["scope"], ...S("Deterministic backlog-vs-item scope detection for the plan/go verb family (detectScope): does free text look like a backlog reference/file, or read as a single-item outcome? Returns {scope: \"backlog\"|\"item\"|\"ambiguous\", signals}. An empty/omitted `text` is a valid bare invocation -- checks the default .muster/backlog.md under the server's own working directory (this tool has no `dir` override, matching the CLI's own scope command).", "text", false) },
@@ -471,9 +465,9 @@ export function startMusterMcpServer(config) {
     const hasValue = v != null && v !== "";
     // `flags` only fires alongside a PRESENT primary value -- appending it when the
     // positional is missing would let it shift into the positional's own argv slot
-    // (e.g. muster_receipt_verify omitting `sha` would otherwise send `["receipt-verify",
-    // "--cwd", cwd]`, with the CLI reading "--cwd" itself as the sha and silently
-    // "verifying" a nonsense ref instead of reporting the missing-sha usage error).
+    // (e.g. a tool omitting its positional would otherwise send `[verb, "--cwd", cwd]`,
+    // with the CLI reading "--cwd" itself as the positional instead of reporting the
+    // missing-argument usage error).
     // Suppressing flags too when the value is absent lets the bare argv reach the CLI's
     // own required-arg check for a clean, correct diagnostic.
     return runCli(hasValue ? [...tool.argv, String(v), ...(tool.flags ? tool.flags(args) : [])] : tool.argv, { signal });

@@ -1,4 +1,4 @@
-// Loader + minimal validator for plugin/skills/review-gate/verdict.schema.json --
+// Loader + minimal validator for src/verdict.schema.json --
 // the single-sourced shape of .muster/verdicts.json (backlog item
 // structured-output-binding). Muster hand-rolls schema validation elsewhere
 // (src/manifest.js validates the Crew Manifest shape without an external
@@ -16,7 +16,7 @@ import { dirFromImportMeta } from "./fs-util.js";
 // relative path by hand.
 export const VERDICT_SCHEMA_PATH = dirFromImportMeta(
   import.meta.url,
-  "../plugin/skills/review-gate/verdict.schema.json"
+  "./verdict.schema.json"
 );
 
 export async function loadVerdictSchema() {

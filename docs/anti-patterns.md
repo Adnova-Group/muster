@@ -151,9 +151,10 @@ was supposed to verify the contract section itself carries it.
 section the requirement actually applies to, so unrelated incidental prose could produce a
 false pass.
 
-**Guard:** `dispatchContractSection()` in `test/lifecycle-agent.test.js` extracts the
-"## Dispatch contract" section and every brief-input and receipts assertion runs against
-that extract alone, not the full file (commit ad70966).
+**Guard:** section-scoped assertions: `test/runner-build-review-mode.test.js` slices the
+"## Dispatch contract" section of the frozen Codex runner (`codex/frozen/agents/muster-runner.md`)
+and asserts against that extract alone, not the full file (the original guard, commit ad70966,
+left with the lifecycle-agent test in revival stage 2b).
 
 ## 9. Generated-artifact model-tier drift
 

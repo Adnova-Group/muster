@@ -108,11 +108,11 @@ test("public navigation exposes every guide route and names the ten-mode referen
   ]) {
     assert.match(config, new RegExp(`link:\\s*"${route}"`), `${route} must be reachable from navigation`);
   }
-  assert.match(config, /text:\s*"The ten modes"/);
-  assert.doesNotMatch(config, /The eight modes/);
+  assert.match(config, /text:\s*"The seven modes"/);
+  assert.doesNotMatch(config, /The (?:eight|ten) modes/);
 });
 
-test("public entry points consistently document ten modes including Design and Init", async () => {
+test("public entry points consistently document seven modes including Design and Init", async () => {
   const pages = await Promise.all([
     read("website/index.md"),
     read("website/guides/quickstart.md"),
@@ -121,10 +121,10 @@ test("public entry points consistently document ten modes including Design and I
     read("website/guides/harnesses.md"),
   ]);
   for (const page of pages) {
-    assert.match(page, /\b[Tt]en modes\b/);
+    assert.match(page, /\b[Ss]even modes\b/);
     assert.match(page, /\bDesign\b/);
     assert.match(page, /\bInit\b/);
-    assert.doesNotMatch(page, /\b[Ee]ight modes\b/);
+    assert.doesNotMatch(page, /\b(?:[Ee]ight|[Tt]en) modes\b/);
   }
   assert.match(pages[1], /\/muster:init/);
   assert.match(pages[1], /\/muster:design/);
@@ -144,7 +144,7 @@ test("harness documentation routes and support claims are explicit", async () =>
     assert.match(harnesses, new RegExp(harness));
   }
   assert.match(cowork, /support matrix/i);
-  assert.match(cowork, /30 CLI-wrapper tools/i);
+  assert.match(cowork, /29 CLI-wrapper tools/i);
   assert.match(cowork, /`muster_sprint_protocol`/);
   assert.match(cowork, /phase-?3[\s\S]{0,260}before relying on parallel/i);
   assert.match(cowork, /orchestrator creates[\s\S]{0,120}dedicated isolated Git worktree[\s\S]{0,180}sequentially/i);
@@ -245,7 +245,7 @@ test("website release surface routes through harness choice and publishes access
     assert.match(getStarted, disclosure);
     assert.match(work + harnesses, disclosure);
   }
-  for (const mode of ["Plan", "Go", "Plan-backlog", "Go-backlog", "Diagnose", "Audit", "Design", "Runner", "Capture", "Init"]) {
+  for (const mode of ["Plan", "Go", "Diagnose", "Audit", "Design", "Capture", "Init"]) {
     assert.match(quickstart, new RegExp(`>${mode}<|>${mode.replace("-", "-")}<|\\b${mode}\\b`, "i"));
   }
   for (const marker of ["favicon.svg", "muster-mark.svg", "social-preview.png", "og:image:alt", "twitter:image:alt"]) {

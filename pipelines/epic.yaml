@@ -4,39 +4,39 @@ title: Epic
 match: [epic, epics, initiative, theme, capability epic]
 upstream:
   - repo: deanpeters/product-manager-prompts
-    ref: null
+    ref: 418049a6485852600d350038b5a96c2cb53ca93f
     path: null
     license: CC-BY-NC-SA-4.0
     relation: inspired-by
   - repo: deanpeters/Product-Manager-Skills
-    ref: null
-    path: null
+    ref: 70fb6c4e41637047e7e4976d39145b1a78397464
+    path: skills/epic-hypothesis/SKILL.md
     license: CC-BY-NC-SA-4.0
     relation: inspired-by
-  - repo: phuryn/pm-skills
-    ref: null
-    path: null
-    license: MIT
+  - kind: book
+    title: Competing Against Luck (Jobs to Be Done)
+    author: Clayton M. Christensen, Taddy Hall, Karen Dillon and David S. Duncan
+    url: null
     relation: inspired-by
-  - repo: anthropics/knowledge-work-plugins
-    ref: null
-    path: null
-    license: Apache-2.0
+  - kind: book
+    title: Lean UX (hypothesis statements, proto-personas)
+    author: Jeff Gothelf and Josh Seiden
+    url: null
     relation: inspired-by
-  - repo: joelparkerhenderson/objectives-and-key-results
-    ref: null
-    path: null
-    license: NONE
+  - kind: article
+    title: The Humanizing Work Guide to Splitting User Stories
+    author: Richard Lawrence and Peter Green
+    url: https://www.humanizingwork.com/the-humanizing-work-guide-to-splitting-user-stories/
     relation: inspired-by
-  - repo: architecture-decision-record/architecture-decision-record
-    ref: null
-    path: null
-    license: CC-BY-NC-SA-4.0
+  - kind: book
+    title: User Story Mapping
+    author: Jeff Patton
+    url: https://www.jpattonassociates.com/user-story-mapping/
     relation: inspired-by
 phases:
   - { id: intake,      role: brainstorm,  desc: "problem, outcome, scope, target users" }
-  - { id: hypothesis,  role: brainstorm,  desc: "epic hypothesis: We believe [capability] for [persona] will achieve [outcome] measured by [metric]; JTBD framing" }
-  - { id: breakdown,   role: author,      desc: "Richard Lawrence story-splitting (9 patterns: workflow steps, business-rule / data / data-entry-method variations, major effort, simple-then-complex, defer performance, break out a spike) + the reduce-variations meta-pattern; user-story-mapping; sequence by risk + dependency" }
+  - { id: hypothesis,  role: brainstorm,  desc: "frame the epic as a falsifiable bet (Lean UX hypothesis): the capability, the persona it serves, the outcome it should cause, and the signal plus threshold that would show it worked or failed; anchor the outcome in the persona's job-to-be-done" }
+  - { id: breakdown,   role: author,      desc: "Richard Lawrence story-splitting (9 patterns: workflow steps, operations such as create/read/update/delete, business-rule / data / data-entry-method variations, major effort, simple-then-complex, defer performance, break out a spike) + the reduce-variations meta-pattern; user-story-mapping; sequence by risk + dependency" }
   - { id: acceptance,  role: author,      desc: "epic-level acceptance criteria + success metrics" }
   - { id: review,      role: code-review, desc: "adversarial review gate" }
   - { id: score,       role: score,       desc: "score vs rubric, floor principle" }

@@ -95,61 +95,6 @@ const CANDIDATES = [
   { path: "roadmap.md", label: "a non-default .md checklist" },
 ];
 
-test("round-trip: every representative scope:'backlog' verdict is consumable by go-backlog.md step 1's documented resolution (no dead end)", async () => {
-  for (const { path, label } of CANDIDATES) {
-    await withTempDir(async (dir) => {
-      const full = join(dir, path);
-      await mkdir(dirname(full), { recursive: true });
-      await writeFile(full, "- [ ] a checklist item\n");
-
-      const verdict = await detectScope({ cwd: dir, text: path });
-      assert.equal(verdict.scope, "backlog", `${label} (${path}) must classify as scope:"backlog"`);
-
-      // go-backlog.md step 1's documented resolution: empty -> .muster/backlog.md;
-      // otherwise (not issues:/linear:) read the named path directly, provided it clears
-      // the explicit `..`/absolute refusal AND is a parseable file ref OR an existing
-      // readable file with checklist content. A candidate failing this is go-backlog.md's
-      // dead end (no bullet in the prose grammar matches it at all).
-      const ref = parseBacklogRef(path);
-      const readable = await readsAsChecklist(dir, path);
-      assert.ok(
-        consumable(ref, readable, path),
-        `${label} (${path}) must resolve via go-backlog.md step 1's widened grammar (parseBacklogRef file-ref, or an existing readable checklist file); neither matched`
-      );
-    });
-  }
-});
-
-test("round-trip: every representative scope:'backlog' verdict is consumable by plan-backlog.md B1's documented resolution (no raw-intent misroute)", async () => {
-  for (const { path, label } of CANDIDATES) {
-    await withTempDir(async (dir) => {
-      const full = join(dir, path);
-      await mkdir(dirname(full), { recursive: true });
-      await writeFile(full, "- [ ] a checklist item\n");
-
-      const verdict = await detectScope({ cwd: dir, text: path });
-      assert.equal(verdict.scope, "backlog", `${label} (${path}) must classify as scope:"backlog"`);
-
-      // plan-backlog.md B1's documented resolution: a parseable file ref (rule 1) OR a
-      // non-ref-shaped but existing, readable checklist file (rule 2, the bullet this item
-      // adds). `kind: "outcome"` with no readable-checklist fallback is exactly the
-      // raw-intent misroute the item's brief describes -- B1 pre-fix sent a non-.md
-      // checklist into Bootstrap's decomposition machinery instead of reading it.
-      const ref = parseBacklogRef(path);
-      const readable = await readsAsChecklist(dir, path);
-      const misroutedAsRawIntent = ref.kind === "outcome" && !readable;
-      assert.ok(
-        !misroutedAsRawIntent,
-        `${label} (${path}) must not fall through to plan-backlog.md B1's raw-intent Bootstrap path`
-      );
-      assert.ok(
-        consumable(ref, readable, path),
-        `${label} (${path}) must resolve via B1's file-ref bullet or its rule-2 fallback bullet; neither matched`
-      );
-    });
-  }
-});
-
 // --- negative round-trip: a traversal-shaped or absolute candidate must never be
 // consumable by either delegate's documented resolution, even when it resolves to a REAL
 // checklist file. Pre-parseref-abs-guard, this was a real gap: parseBacklogRef's file-ref
@@ -214,32 +159,6 @@ test("round-trip: an absolute-path candidate naming a real checklist file is nev
 // pin the two command files' own text so a regression back to the narrow grammar fails here
 // even if src/scope.js and src/batch-plan.js stay untouched.)
 
-test("prose pin: go-backlog.md step 1 no longer restricts the file form to the literal '.muster/backlog.md' token alone", async () => {
-  const text = await readFile(join(REPO_ROOT, "plugin/commands/go-backlog.md"), "utf8");
-  assert.ok(
-    !/empty or `\.muster\/backlog\.md` — read `\.muster\/backlog\.md`/.test(text),
-    "go-backlog.md step 1 still reads as if only the literal '.muster/backlog.md' token resolves as a file ref"
-  );
-  assert.match(
-    text,
-    /readable checklist file path/,
-    "go-backlog.md step 1 should describe accepting an arbitrary readable checklist file path"
-  );
-});
-
-test("prose pin: plan-backlog.md B1 no longer restricts the file-ref form to '.md'-only, and documents the rule-2 fallback", async () => {
-  const text = await readFile(join(REPO_ROOT, "plugin/commands/plan-backlog.md"), "utf8");
-  assert.ok(
-    !/a lone whitespace-free token ending in `\.md`/.test(text),
-    "plan-backlog.md B1 still describes parseBacklogRef's file kind as .md-only (stale, pre-WIDEN)"
-  );
-  assert.match(
-    text,
-    /existing, readable file whose content looks like a checklist/,
-    "plan-backlog.md B1 should document the rule-2 fallback for a non-ref-shaped but readable checklist file"
-  );
-});
-
 // --- parseref-abs-guard: parseBacklogRef itself now rejects an absolute path (kind:
 // "invalid"), the same way it already rejected a ".." substring -- retiring the
 // compensating absolute-refusal prose PR #22 had bolted onto both consumer files to cover
@@ -248,28 +167,27 @@ test("prose pin: plan-backlog.md B1 no longer restricts the file-ref form to '.m
 // is no longer true, while an absolute path must still be mentioned as one of the
 // rejected shapes (accurate, not compensating -- it just names what parseBacklogRef does).
 
-test("prose pin: go-backlog.md step 1 no longer claims parseBacklogRef's shape check leaves an absolute path unguarded", async () => {
-  const text = await readFile(join(REPO_ROOT, "plugin/commands/go-backlog.md"), "utf8");
-  assert.ok(
-    !/shape check alone only rejects a `\.\.` substring/.test(text),
-    "go-backlog.md step 1 still carries the stale compensating claim that parseBacklogRef's shape check alone only rejects '..'"
-  );
-  assert.match(
-    text,
-    /an absolute path is never read/,
-    "go-backlog.md step 1 should still document that an absolute path is never read (now via parseBacklogRef itself, not compensating prose)"
-  );
-});
+test("round-trip: every representative scope:'backlog' verdict is resolves to a readable backlog for go's Backlog flow (no dead end)", async () => {
+  for (const { path, label } of CANDIDATES) {
+    await withTempDir(async (dir) => {
+      const full = join(dir, path);
+      await mkdir(dirname(full), { recursive: true });
+      await writeFile(full, "- [ ] a checklist item\n");
 
-test("prose pin: plan-backlog.md B1 no longer claims parseBacklogRef's file-ref shape check leaves an absolute path unguarded", async () => {
-  const text = await readFile(join(REPO_ROOT, "plugin/commands/plan-backlog.md"), "utf8");
-  assert.ok(
-    !/file-ref shape check alone does not reject this/.test(text),
-    "plan-backlog.md B1 still carries the stale compensating claim that parseBacklogRef's file-ref shape check alone does not reject an absolute path"
-  );
-  assert.match(
-    text,
-    /or an absolute path/,
-    "plan-backlog.md B1's file-ref bullet should still document an absolute path as one of the kind:invalid shapes (now via parseBacklogRef itself, not compensating prose)"
-  );
+      const verdict = await detectScope({ cwd: dir, text: path });
+      assert.equal(verdict.scope, "backlog", `${label} (${path}) must classify as scope:"backlog"`);
+
+      // go's Backlog flow (formerly go-backlog.md step 1): empty -> .muster/backlog.md;
+      // otherwise (not issues:/linear:) read the named path directly, provided it clears
+      // the explicit `..`/absolute refusal AND is a parseable file ref OR an existing
+      // readable file with checklist content. A candidate failing this is go-backlog.md's
+      // dead end (no bullet in the prose grammar matches it at all).
+      const ref = parseBacklogRef(path);
+      const readable = await readsAsChecklist(dir, path);
+      assert.ok(
+        consumable(ref, readable, path),
+        `${label} (${path}) must resolve as a backlog (parseBacklogRef file-ref, or an existing readable checklist file); neither matched`
+      );
+    });
+  }
 });

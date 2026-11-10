@@ -293,7 +293,7 @@ test("dedicated full server starts only with receipted activation and both opt-i
   }, input);
   assert.equal(result.code, 0);
   const messages = result.stdout.trim().split("\n").map(line => JSON.parse(line));
-  assert.equal(messages.find(message => message.id === 2).result.tools.length, 31);
+  assert.equal(messages.find(message => message.id === 2).result.tools.length, 30);
 
   if (process.platform !== "win32") {
     await chmod(join(installed.pluginPath, ".."), 0o777);
@@ -333,7 +333,7 @@ test("installed full Work runtime executes with Work-only capability semantics",
       name: "muster_manifest_validate",
       arguments: { manifest: {
         outcome: "test", successCriteria: ["green"],
-        crew: [{ role: "implement", provider: "muster-builder", source: "builtin" }],
+        crew: [{ role: "implement", provider: "muster-executor", source: "builtin" }],
         plan: [{ id: "a", task: "test", deps: [] }],
       } },
     } },
@@ -369,7 +369,7 @@ test("installed full Work runtime executes with Work-only capability semantics",
     const body = JSON.parse(response(id).content[0].text);
     const manifest = body.manifest || body;
     assert.ok(manifest.crew.every(member => member.source === "inline"));
-    assert.doesNotMatch(JSON.stringify(body), /muster-builder|wsh-|claude|sonnet|opus/i);
+    assert.doesNotMatch(JSON.stringify(body), /muster-executor|wsh-|claude|sonnet|opus/i);
   }
   assert.equal(
     response(7).content[0].text,

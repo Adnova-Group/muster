@@ -44,7 +44,7 @@ Start a new Claude Code session and run:
 /muster:plan Add rate limiting to the public API with tests
 ```
 
-Muster detects your project, assembles a crew, and shows the glass-box manifest plus a plan, then stops for your approval. If you see the crew manifest, you are set.
+Muster runs one preflight, writes and checks a plan through the `muster:plan` workflow (Claude Code asks for Workflow consent unless you allow `Workflow(muster:plan)`), then shows the plan and stops for your approval. If you see the plan, you are set.
 
 You can also exercise the CLI directly in a terminal. Every verb is plain Node and prints JSON:
 
@@ -53,16 +53,15 @@ npx -y @adnova-group/muster detect
 npx -y @adnova-group/muster capabilities
 ```
 
-If the crew manifest does not appear, or `/muster:*` commands are missing, run `npx -y @adnova-group/muster doctor` and see [Troubleshooting](/guides/troubleshooting).
+If the plan does not appear, or `/muster:*` commands are missing, run `npx -y @adnova-group/muster doctor` and see [Troubleshooting](/guides/troubleshooting).
 
 ## What the plugin adds
 
-Claude Code exposes all ten modes, including Design and Init.
+Claude Code exposes all seven modes, including Design and Init.
 
-- **Ten slash-command modes**: `/muster:plan`, `/muster:go`, `/muster:plan-backlog`, `/muster:go-backlog`, `/muster:diagnose`, `/muster:audit`, `/muster:design`, `/muster:runner`, `/muster:capture`, and `/muster:init`.
-- **Two run-scoped hooks**, both declared in `plugin/hooks/hooks.json` and active only while Muster is enabled. Neither fires on session start or on a prompt, and nothing nudges you toward a verb: Muster costs nothing in a session that never invokes it. Enforcement follows the run's EXTERNAL effects, not the orchestrator's own in-repo edits.
-  - **`PreToolUse`** (matcher `Bash|PowerShell|mcp__.*`) enforces the **action-class fence**: while a run is active and `.muster/forbidden-actions` lists a class, every payload is classified and a tool call that would perform a run-forbidden send/sign/submit/publish/purchase/delete-remote action is denied, controlled by `MUSTER_ACTION_GUARD` (`deny` / `warn` / `off`). A verb writes `.muster/run-active` when its run starts and removes it when the run ends; if an interrupted run leaves it behind, the next run overwrites it, or delete it by hand.
-  - **`TaskCompleted`** is the second block surface. Muster writes `.muster/task-board.json` (one entry per native task it created) and flips an entry to `reviewGate: "pass"` only once the review gate actually passes that task. The hook **denies (exit 2) a completion tick on a tracked task with no recorded PASS**, so a task cannot be ticked done before it has been reviewed. If you see a completion refused mid-run, that is this gate: finish the review, or set `MUSTER_TASK_GATE=off` to disable it. It fails open for any task the board does not track.
+- **Seven slash-command modes**: `/muster:plan`, `/muster:go`, `/muster:diagnose`, `/muster:audit`, `/muster:design`, `/muster:capture`, and `/muster:init`. Plan and Go call the plugin's Workflow scripts (`muster:plan`, `muster:build`, `muster:backlog`); Claude Code asks for Workflow consent per run in manual and accept-edits modes, so add the allow rules `Workflow(muster:plan)`, `Workflow(muster:build)` and `Workflow(muster:backlog)` to skip the prompt.
+- **One run-scoped hook**, declared in `plugin/hooks/hooks.json` and active only while Muster is enabled. It never fires on session start or on a prompt, and nothing nudges you toward a verb: Muster costs nothing in a session that never invokes it. Enforcement follows the run's EXTERNAL effects, not the orchestrator's own in-repo edits.
+  - **`PreToolUse`** (matcher `Bash|PowerShell|mcp__.*`) enforces the **action-class fence**: while a run is active and `.muster/forbidden-actions` lists a class, every payload is classified and a tool call that would perform a run-forbidden send/sign/submit/publish/purchase/delete-remote action is denied, controlled by `MUSTER_ACTION_GUARD` (`deny` / `warn` / `off`). `/muster:go` writes `.muster/run-active` and `.muster/forbidden-actions` before it builds and removes both at the merge decision; if an interrupted run leaves them behind, the next run overwrites them, or delete them by hand.
 - **Built-in agents and skills**, vendored from MIT-licensed upstreams plus Muster's own clean-room specialists.
 
 ## Uninstall

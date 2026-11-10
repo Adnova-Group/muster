@@ -40,7 +40,7 @@ function frontmatter(text) {
 // ── disallowed-tools: read-only enforcement, evidence-first ────────────────────────────────
 
 test("router/SKILL.md denies Write/Edit/NotebookEdit -- its documented contract never writes a file itself", async () => {
-  const fm = frontmatter(await read("plugin/skills/router/SKILL.md"));
+  const fm = frontmatter(await read("codex/frozen/skills/router/SKILL.md")); // frozen Codex lane input since revival stage 2b
   const m = fm.match(/^disallowed-tools:\s*(.+)$/m);
   assert.ok(m, "router/SKILL.md must carry a disallowed-tools key");
   const denied = m[1].split(",").map((s) => s.trim());
@@ -48,8 +48,9 @@ test("router/SKILL.md denies Write/Edit/NotebookEdit -- its documented contract 
 });
 
 test("review-gate/advisor/tournament keep Write/Edit -- each has a documented write of its own, verified not guessed", async () => {
-  for (const skill of ["review-gate", "advisor", "tournament"]) {
-    const fm = frontmatter(await read(`plugin/skills/${skill}/SKILL.md`));
+  for (const path of ["codex/frozen/skills/review-gate/SKILL.md", "plugin/skills/advisor/SKILL.md", "codex/frozen/skills/tournament/SKILL.md"]) {
+    const skill = path.split("/").at(-2);
+    const fm = frontmatter(await read(path));
     assert.doesNotMatch(
       fm,
       /^disallowed-tools:/m,
@@ -61,16 +62,13 @@ test("review-gate/advisor/tournament keep Write/Edit -- each has a documented wr
 // ── argument-hint: every command, extracted from its own Usage string ──────────────────────
 
 const EXPECTED_ARGUMENT_HINTS = {
-  audit: "[path or empty = whole repo] | backlog [path]",
+  audit: "[path] | backlog [path]",
   capture: "[hint]",
   design: "<init|status|resolve|detect|ignores|provider|workflow> [target]",
-  diagnose: "<symptom | paste failing test/CI output>",
-  "go-backlog": "<backlog ref>",
-  go: "<outcome>",
+  diagnose: "<symptom | failing output>",
+  go: "<outcome | backlog ref>",
   init: "[dir]",
-  "plan-backlog": "<backlog ref | raw intent>",
-  plan: "<outcome text | backlog text>",
-  runner: "[backlog path | issues:<label>]",
+  plan: "<outcome | backlog ref>",
 };
 
 test("every plugin/commands/*.md file carries argument-hint, matching the Usage string already in its description", async () => {

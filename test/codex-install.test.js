@@ -37,7 +37,7 @@ test("Codex project install declares every shipped agent and removes only Muster
   assert.equal(receipt?.algorithm, "sha256");
   assert.match(receipt?.digest, /^[a-f0-9]{64}$/);
   assert.equal((installed.match(/^\[agents\.[a-z0-9-]+\]$/gm) || []).length, CODEX_COUNTS.agents + 1);
-  assert.match(installed, /\[agents\.muster-builder\]\ndescription = "Feature-checkpoint builder[^"]*"\nconfig_file = "agents\/muster-builder\.toml"/);
+  assert.match(installed, /\[agents\.muster-executor\]\ndescription = "Implements one PLAN.md task[^"]*"\nconfig_file = "agents\/muster-executor\.toml"/);
   assert.ok(installed.startsWith(original), "root keys and unrelated TOML must remain before the managed tables");
 
   await runCodexInstall({ cwd, home, repoRoot, execFile: absent });
@@ -110,7 +110,7 @@ test("Codex install and uninstall reject a modified or missing receipted declara
       await runCodexInstall({ cwd, home, repoRoot, execFile: absent });
       const installed = await readFile(configPath, "utf8");
       const tampered = mutation === "modified"
-        ? installed.replace("description = \"Feature-checkpoint builder", "description = \"Tampered builder")
+        ? installed.replace("description = \"Implements one PLAN.md task", "description = \"Tampered builder")
         : installed.slice(0, installed.indexOf("# >>> muster managed agent declarations >>>"));
       assert.notEqual(tampered, installed);
       await writeFile(configPath, tampered);
@@ -199,7 +199,7 @@ test("Codex agent declarations preserve LF, CRLF, and missing-final-newline conf
       await runCodexInstall({ cwd, home, repoRoot, execFile: absent });
       const installed = await readFile(configPath, "utf8");
       assert.ok(installed.startsWith(original + (original.endsWith("\n") ? "" : newline) + "# >>> muster managed agent declarations >>>"));
-      assert.ok(installed.includes(`${newline}[agents.muster-builder]${newline}`));
+      assert.ok(installed.includes(`${newline}[agents.muster-executor]${newline}`));
       await runCodexUninstall({ cwd, home, execFile: absent });
       assert.equal(await readFile(configPath, "utf8"), original);
     });
@@ -236,15 +236,15 @@ test("Codex declaration reconciliation preserves the inserted separator when unr
 test("Codex install rejects TOML-equivalent foreign agent declaration tables", async t => {
   const absent = async () => { throw new Error("not found"); };
   for (const header of [
-    "[agents.muster-builder]",
-    "[ agents . muster-builder ]",
-    '["agents"."muster-builder"]',
-    "['agents'.'muster-builder']",
-    '[agents."muster-builder"]',
-    "['agents'.muster-builder]",
-    '["ag\\u0065nts".muster-builder]',
-    '[agents."muster\\u002dbuilder"]',
-    '[ "agents" . \'muster-builder\' ]'
+    "[agents.muster-executor]",
+    "[ agents . muster-executor ]",
+    '["agents"."muster-executor"]',
+    "['agents'.'muster-executor']",
+    '[agents."muster-executor"]',
+    "['agents'.muster-executor]",
+    '["ag\\u0065nts".muster-executor]',
+    '[agents."muster\\u002dexecutor"]',
+    '[ "agents" . \'muster-executor\' ]'
   ]) {
     await t.test(header, async () => {
       const tmp = await mkdtemp(join(tmpdir(), "muster-codex-agent-table-conflict-"));
@@ -338,7 +338,7 @@ test("Codex installation refuses unrelated profiles and dry-run writes nothing",
   const tmp = await mkdtemp(join(tmpdir(), "muster-codex-conflict-"));
   const cwd = join(tmp, "project"), home = join(tmp, "home"), agents = join(cwd, ".codex", "agents");
   await mkdir(agents, { recursive: true });
-  await writeFile(join(agents, "muster-builder.toml"), "name = 'not-muster'\n");
+  await writeFile(join(agents, "muster-executor.toml"), "name = 'not-muster'\n");
   const absent = async () => { throw new Error("not found"); };
   await assert.rejects(() => runCodexInstall({ cwd, home, repoRoot, execFile: absent }), /Codex profile conflict/);
   const dry = await runCodexInstall({ cwd: join(tmp, "dry"), home, repoRoot, dryRun: true, execFile: absent });
@@ -363,7 +363,7 @@ test("Codex install and uninstall reject registries without exact Muster ownersh
 
     await writeFile(registryPath, JSON.stringify({ format: 1, owner: "muster", entries: [] }, null, 2) + "\n");
     await runCodexInstall({ cwd, home, repoRoot, execFile: absent });
-    const profilePath = join(cwd, ".codex", "agents", "muster-builder.toml");
+    const profilePath = join(cwd, ".codex", "agents", "muster-executor.toml");
     const profile = await readFile(profilePath, "utf8");
     await writeFile(registryPath, foreign);
     await assert.rejects(() => runCodexUninstall({ cwd, home, execFile: absent }), /registry.*(ownership|owner|invalid)/i);
@@ -552,11 +552,11 @@ test("Codex user-scope install and uninstall use CODEX_HOME without disturbing u
   const existing = { hooks: { Stop: [{ hooks: [{ type: "command", command: "printf existing" }] }] } };
   await writeFile(join(target, "hooks.json"), JSON.stringify(existing));
   const installed = await runCodexInstall({ scope: "user", cwd, home, repoRoot, execFile: absent });
-  assert.ok(installed.files.some(item => item.path === join(target, "agents", "muster-builder.toml")));
+  assert.ok(installed.files.some(item => item.path === join(target, "agents", "muster-executor.toml")));
   assert.ok(installed.files.some(item => item.path === join(target, "muster", "hooks", "muster-hook.mjs")));
   await runCodexUninstall({ scope: "user", cwd, home, execFile: absent });
   assert.deepEqual(JSON.parse(await readFile(join(target, "hooks.json"), "utf8")), existing);
-  await assert.rejects(() => readFile(join(target, "agents", "muster-builder.toml"), "utf8"));
+  await assert.rejects(() => readFile(join(target, "agents", "muster-executor.toml"), "utf8"));
 });
 
 // This fixture can only exercise a genuine WSL2 drvfs C: path by mkdtemp-ing
@@ -717,7 +717,7 @@ test("Codex install rolls profiles and marketplace back when plugin registration
   await assert.rejects(() => runCodexInstall({ cwd, home, repoRoot, execFile }), /registration failed/);
   const agents = join(cwd, ".codex", "agents");
   await assert.rejects(() => readFile(join(agents, ".muster-managed.json"), "utf8"));
-  await assert.rejects(() => readFile(join(agents, "muster-builder.toml"), "utf8"));
+  await assert.rejects(() => readFile(join(agents, "muster-executor.toml"), "utf8"));
   await assert.rejects(() => readFile(join(cwd, ".codex", "config.toml"), "utf8"));
   assert.ok(calls.includes("plugin marketplace remove muster"));
 });
@@ -732,7 +732,7 @@ test("assertContainedProfiles refuses any profile filename that would escape the
     assert.throws(() => assertContainedProfiles([bad], dir), /outside/,
       `${JSON.stringify(bad)} must be refused before it becomes a write destination`);
   }
-  assert.doesNotThrow(() => assertContainedProfiles(["muster-builder.toml", "muster-reviewer.toml"], dir));
+  assert.doesNotThrow(() => assertContainedProfiles(["muster-executor.toml", "muster-reviewer.toml"], dir));
 });
 
 test("runCodexInstall refuses a manifest whose agent id escapes agentsDir and writes nothing outside it", async t => {
@@ -747,7 +747,7 @@ test("runCodexInstall refuses a manifest whose agent id escapes agentsDir and wr
   await cp(join(repoRoot, "package.json"), join(fakeRepo, "package.json"));
   // The manifest lives in catalog/ now (shared, harness-neutral path); poison it there.
   await writeFile(join(fakeRepo, "catalog", "agents.manifest.json"),
-    JSON.stringify({ format: 1, agents: { "../pwned": { source: "plugin/agents/muster-builder.md", tier: "opus" } } }));
+    JSON.stringify({ format: 1, agents: { "../pwned": { source: "plugin/agents/muster-executor.md", tier: "opus" } } }));
   const absent = async () => { throw new Error("codex not found"); };
   await assert.rejects(() => runCodexInstall({ cwd, home, repoRoot: fakeRepo, execFile: absent }), /is not a safe token|outside/);
   // The escaping `<id>.toml` join(agentsDir, "../pwned.toml") == cwd/.codex/pwned.toml must never be written.
@@ -868,7 +868,7 @@ test("Codex uninstall tolerates a foreign table Codex appended inside the region
     "another writer's table must survive muster's removal");
   assert.match(after, /trusted_hash = "sha256:deadbeef"/);
   assert.equal(/muster managed agent declarations/.test(after), false, "muster's markers must be gone");
-  assert.equal(/\[agents\.muster-builder\]/.test(after), false, "muster's declarations must be gone");
+  assert.equal(/\[agents\.muster-executor\]/.test(after), false, "muster's declarations must be gone");
 });
 
 test("Codex reinstall tolerates a foreign table inside the region without losing or duplicating it", async () => {
@@ -884,7 +884,7 @@ test("Codex reinstall tolerates a foreign table inside the region without losing
   const after = await readFile(configPath, "utf8");
   assert.equal((after.match(/\[hooks\.state\]/g) || []).length, 1, "the foreign table must appear exactly once");
   assert.equal((after.match(/# >>> muster managed agent declarations >>>/g) || []).length, 1);
-  assert.match(after, /\[agents\.muster-builder\]/, "muster's declarations must be reinstated");
+  assert.match(after, /\[agents\.muster-executor\]/, "muster's declarations must be reinstated");
   // and the round trip still lands back on a config that holds only the foreign table
   await runCodexUninstall({ cwd, home, execFile: absent });
   const final = await readFile(configPath, "utf8");
@@ -899,7 +899,7 @@ test("Codex integrity still rejects a tampered declaration even when a foreign t
   const configPath = join(cwd, ".codex", "config.toml");
   await runCodexInstall({ cwd, home, repoRoot, execFile: absent });
   const tampered = interleaveForeignTable(await readFile(configPath, "utf8"))
-    .replace("description = \"Feature-checkpoint builder", "description = \"Tampered builder");
+    .replace("description = \"Implements one PLAN.md task", "description = \"Tampered builder");
   await writeFile(configPath, tampered);
 
   // tolerating a foreign table must not become tolerance for edits to muster's own

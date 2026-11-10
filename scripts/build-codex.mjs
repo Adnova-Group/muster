@@ -41,16 +41,6 @@ const modes = {
     purpose: "execute one outcome through an isolated worktree, dependency waves, gates, and a final merge decision",
     description: "Execute one Muster outcome through isolated waves and gates."
   },
-  "muster-plan-backlog": {
-    command: "plan-backlog",
-    purpose: "plan every backlog item before any execution",
-    description: "Plan a backlog with Muster before execution."
-  },
-  "muster-go-backlog": {
-    command: "go-backlog",
-    purpose: "clear a backlog with isolated item worktrees and review gates",
-    description: "Clear a backlog with Muster in isolated, reviewed worktrees."
-  },
   "muster-diagnose": {
     command: "diagnose",
     purpose: "reproduce, identify root cause, fix, and add a regression test",
@@ -65,11 +55,6 @@ const modes = {
     command: "design",
     purpose: "resolve canonical DESIGN.md context and run one of Muster's pinned design workflows",
     description: "Initialize, inspect, gate, or execute Muster design workflows."
-  },
-  "muster-runner": {
-    command: "runner",
-    purpose: "drive one claimed backlog item end-to-end in its own worktree in ordinary full-lifecycle mode, pushing the reviewed item branch and opening its receipts-backed PR",
-    description: "Run one backlog item end to end with Muster in its own worktree."
   },
   "muster-capture": {
     command: "capture",
@@ -122,22 +107,12 @@ function translatePluginPaths(text) {
 // (same `name`-array convention already used below for the --roles-only/manifest-validate
 // rewrites) keeps the guard from firing on files it was never meant to touch, while still
 // failing loud if one of the CARRIER files' own copy of the sentence is reworded.
-const RUN_MARKER_FILES = ["go.md", "diagnose.md", "audit.md", "runner.md", "plan.md"];
-const BATCH_RUN_MARKER_FILES = ["go-backlog.md"];
-const PLAN_BACKLOG_RUN_MARKER_FILES = ["plan-backlog.md"];
-const STALE_MARKER_FILES = ["go.md", "diagnose.md", "audit.md", "runner.md", "plan.md", "go-backlog.md", "plan-backlog.md"];
-const backlogWaveDispatchRe = /This transition is executable and authoritative; actual Agent\/Workflow\/spawn\/wait calls remain adapter-owned\.[\s\S]*?wave-sized concurrency always stays within that ceiling\)\./;
-// build-anchor-audit item: this previously anchored on a literal ending "instead of
-// blocking." that go-backlog.md's own source no longer carries at all (the sentence was
-// reworded to require propagated action-fence markers and reject `agent_id` exemptions)
-// -- a pre-existing silent no-op this audit's throw-on-miss caught live. Anchored on the
-// stable "Runner cwd..."/marker prefix through the sentence's "action fence." close,
-// and scoped to leave the FOLLOWING worktree-removal/node_modules-bootstrap sentences
-// (harness-neutral, no PreToolUse/hook content) untouched.
-const runnerCwdRe = /Runner cwd is its worktree, and the preflight above copies regular `[.]muster\/run-active`[\s\S]*?do not bypass the action fence\./;
-const backlogFencePropagationRe = /Before dispatching any writer, propagate the batch fence[\s\S]*?the worker stops or its wave reaches the barrier\.\n/;
+const FROZEN_CODEX_COMMANDS = ["plan.md", "go.md", "audit.md", "diagnose.md"];
+const FROZEN_CODEX_SKILLS = ["orchestrator", "router", "review-gate", "tournament"];
+const RUN_MARKER_FILES = ["go.md", "diagnose.md", "audit.md", "plan.md"];
+const STALE_MARKER_FILES = ["go.md", "diagnose.md", "audit.md", "plan.md"];
 const captureWritesRe = /capture only ever writes[\s\S]*?deliberately omitted\./i;
-// adapt-command-file-arrays item (PR #163 reviewer nit): the four arrays above
+// adapt-command-file-arrays item (PR #163 reviewer nit): the arrays above
 // are hand-maintained -- a NEW command file adopting the same boilerplate would
 // silently miss their fail-loud anchor protection (the replaceAll would still
 // translate it, but a later rewording of ITS copy could no-op unguarded).
@@ -145,8 +120,6 @@ const captureWritesRe = /capture only ever writes[\s\S]*?deliberately omitted\./
 // it, or the build stops and names the array to update.
 const COMMAND_MARKER_COVERAGE = [
   ["the action fence uses to scope itself to this run", RUN_MARKER_FILES, "RUN_MARKER_FILES"],
-  ["the whole batch counts as ONE run for the action fence's scoping", BATCH_RUN_MARKER_FILES, "BATCH_RUN_MARKER_FILES"],
-  ["the whole plan-backlog invocation counts as ONE run for the action fence's scoping", PLAN_BACKLOG_RUN_MARKER_FILES, "PLAN_BACKLOG_RUN_MARKER_FILES"],
   ["Nothing clears a stale marker automatically: overwrite one an interrupted run left behind, and delete `.muster/run-active` by hand to disarm a leftover action fence outside a run.", STALE_MARKER_FILES, "STALE_MARKER_FILES"],
 ];
 // codex-dispatch-single-source item (audit 2026-07-29, slice D): the skill split left TWO
@@ -255,21 +228,11 @@ function adaptCommandForCodex(text, name, contract) {
     }
   }
   if (RUN_MARKER_FILES.includes(name) && !text.includes("the action fence uses to scope itself to this run")) throw new Error(`${name}: run-active marker anchor not found for Codex rewrite`);
-  if (BATCH_RUN_MARKER_FILES.includes(name) && !text.includes("the whole batch counts as ONE run for the action fence's scoping")) throw new Error(`${name}: batch run-marker anchor not found for Codex rewrite`);
-  if (PLAN_BACKLOG_RUN_MARKER_FILES.includes(name) && !text.includes("the whole plan-backlog invocation counts as ONE run for the action fence's scoping")) throw new Error(`${name}: plan-backlog run-marker anchor not found for Codex rewrite`);
   if (STALE_MARKER_FILES.includes(name) && !text.includes("Nothing clears a stale marker automatically: overwrite one an interrupted run left behind, and delete `.muster/run-active` by hand to disarm a leftover action fence outside a run.")) throw new Error(`${name}: stale-marker anchor not found for Codex rewrite`);
-  if (name === "go-backlog.md" && !backlogWaveDispatchRe.test(text)) throw new Error(`${name}: complete wave-dispatch anchor not found for Codex rewrite`);
-  if (name === "go-backlog.md" && !runnerCwdRe.test(text)) throw new Error(`${name}: runner-cwd anchor not found for Codex rewrite`);
-  if (name === "go-backlog.md" && !backlogFencePropagationRe.test(text)) throw new Error(`${name}: action-fence propagation anchor not found for Codex rewrite`);
   if (name === "capture.md" && !captureWritesRe.test(text)) throw new Error(`${name}: capture-writes anchor not found for Codex rewrite`);
   let result = translatePluginPaths(translateCodexProse(text))
     .replaceAll("the action fence uses to scope itself to this run", "Muster's Codex lifecycle hooks use for state diagnostics")
-    .replaceAll("the whole batch counts as ONE run for the action fence's scoping", "the whole batch counts as ONE run for Muster's Codex lifecycle diagnostics")
-    .replaceAll("the whole plan-backlog invocation counts as ONE run for the action fence's scoping", "the whole plan-backlog invocation counts as ONE run for Muster's Codex lifecycle diagnostics")
     .replaceAll("Nothing clears a stale marker automatically: overwrite one an interrupted run left behind, and delete `.muster/run-active` by hand to disarm a leftover action fence outside a run.", "Codex hooks never delete state markers automatically; on startup, verify and clear only a marker proven stale and owned by the interrupted workflow.")
-    .replace(backlogWaveDispatchRe, "This transition is executable and authoritative; Codex production actions are adapter-owned process members. Construct one complete `wave.json` whose members carry the emitted item id, `agentType: \"muster-runner\"`, runner brief as `prompt`, and a distinct freshly created registered linked worktree as `cwd`, then run `node ${PLUGIN_ROOT}/runtime/muster.mjs codex-wave <wave.json> --repository-root <trusted repo root> --base-sha <exact full base SHA>`. Production waves are process-only; never invoke a shared-CWD or inline dispatch path from the backlog or manifest. The runtime authenticates every pristine worktree, loads and digests the installed `muster-runner` policy, pins its model, effort, sandbox, and developer instructions outside the manifest, and owns the all-process barrier; treat missing provenance or any process failure as an item failure. Put the scheduler's cap in `maxConcurrentThreadsPerSession`; the runtime clamps it to trusted Codex capacity.")
-    .replace(runnerCwdRe, "Runner cwd is its recorded worktree. Codex hooks provide diagnostics but do not replace the worktree path/base-SHA proof or the post-wave ownership check.")
-    .replace(backlogFencePropagationRe, "Do not copy `.muster/run-active` or `.muster/forbidden-actions` into process member worktrees: sealed `codex-wave` admission rejects every ignored artifact. Write the validated fixed-vocabulary member action sets to the separate no-follow fence document; the runtime injects and receipts that policy outside the user brief.\n")
     .replace(captureWritesRe, "Capture only writes the explicitly approved `.muster/backlog.md` bookkeeping artifact and dispatches no write-capable wave, so it deliberately has no run-active lifecycle.");
   if (name === "init.md") {
     const claudeResolver = [
@@ -291,18 +254,9 @@ function adaptCommandForCodex(text, name, contract) {
       "You are muster's initialization coordinator. The generated project profile is provider/model-neutral. Deterministic project learning and"
     );
   }
-  if (["plan.md", "go.md", "plan-backlog.md"].includes(name)) {
+  if (["plan.md", "go.md"].includes(name)) {
     if (!result.includes("capabilities --codex")) throw new Error(`${name}: capabilities --codex anchor not found for Codex roles-only rewrite`);
     result = result.replaceAll("capabilities --codex", "capabilities --codex --roles-only");
-  }
-  if (["go-backlog.md", "plan-backlog.md"].includes(name)) {
-    const sprintWavesAnchor = "JSON is authoritative";
-    const anchorIndex = result.indexOf(sprintWavesAnchor);
-    if (anchorIndex < 0) throw new Error(`${name}: sprint-waves result anchor not found for Codex ceiling binding`);
-    const lineEnd = result.indexOf("\n", anchorIndex);
-    if (lineEnd < 0) throw new Error(`${name}: sprint-waves result line has no insertion boundary`);
-    const ceilingBinding = "\n   - **Codex ceiling binding:** for every Codex `sprint-waves` call in this mode, append `--max-concurrent-threads-per-session <effective agents.max_concurrent_threads_per_session>`. The explicit value carries Codex's project/profile/CLI precedence into the deterministic schedule; the user `$CODEX_HOME/config.toml` read is only a fallback when no effective value is supplied.";
-    result = result.slice(0, lineEnd) + ceilingBinding + result.slice(lineEnd);
   }
   const cli = `node ${"${PLUGIN_ROOT}"}/runtime/muster.mjs`;
   if (["go.md", "diagnose.md", "audit.md"].includes(name)) {
@@ -342,29 +296,11 @@ function adaptCommandForCodex(text, name, contract) {
     ].join("\n");
     result = result.slice(0, sweepStart) + capacitySweep + "\n" + result.slice(boardStart);
   }
-  if (name === "runner.md") {
-    // The Claude lane's Scheduling section discusses Claude-only harness primitives with no
-    // Codex equivalent: as settled by backlog item loop-dmi-conflict, native `/loop` is
-    // documented-inert against this `disable-model-invocation: true` command (v2.1.196), and
-    // `/goal` is named as the native condition-based self-continuing alternative. Both `/loop`
-    // and `/goal` (and the earlier `harness-goal-primitives` self-pacing framing) are Claude-only,
-    // so the whole paragraph is wholesale-replaced (not merely translated) with a fixed
-    // Codex-specific paragraph naming the recurrence gap explicitly and keeping the pre-existing
-    // cron/automation guidance. Anchored + asserted, matching the audit.md dimension-sweep
-    // and coordination Standing-context-preflight wholesale-replace convention above.
-    const schedStart = result.indexOf("**Scheduling**");
-    const schedEnd = result.indexOf("\n\nGlass box:", schedStart);
-    if (schedStart < 0 || schedEnd < 0) throw new Error("runner.md Scheduling section anchor not found");
-    const codexScheduling = "**Scheduling** — fire `$muster-runner` from a Codex automation on a timer, or from cron invoking the Codex CLI (e.g. `codex exec \"$muster-runner issues:agent:todo\"`). Codex has no equivalent recurrence primitive, so a fixed cadence is the only mechanism here: match the backlog's arrival rate, not faster — an idle cycle is cheap, but firing far ahead of new items just piles up idle receipts; start around 15-30 minutes and widen if idle cycles dominate the ledger, tighten if items queue up unclaimed. Safety inventory: pr-only (step 4 never merges/pushes to base), progress-aware repeated-outcome recovery bounds reclaim loops, and the claim lock (Binding A's comment-race window / Binding B's claim-then-verify) makes concurrent firing safe alongside `$muster-go-backlog`, other scheduled runners, and humans on the same backlog.";
-    result = result.slice(0, schedStart) + codexScheduling + result.slice(schedEnd);
-  }
   const directives = {
     "run.md": "ANTH-XML-001, GUARD-SEP-003",
     "autopilot.md": "ANTH-XML-001, GUARD-SEP-003",
     "sprint.md": "ANTH-XML-001, GUARD-SEP-003",
-    "plan-backlog.md": "ANTH-POS-001",
-    "audit.md": "ANTH-POS-001",
-    "runner.md": "ANTH-POS-001, GUARD-CITE-002"
+    "audit.md": "ANTH-POS-001"
   };
   if (directives[name]) result += `\n<!-- prompt-lint-disable ${directives[name]}: Codex compatibility transformation preserves the source workflow's safety directives and treats its deterministic STATE receipts as the evidence contract. -->\n`;
   const commandBinding = `\n\n## Codex harness binding\n\nRead \`${"${PLUGIN_ROOT}"}/runtime/codex-skill-adapter.md\` before following this command. Its Codex tool, named-profile dispatch, bounded-context-fork, input, mode-name, and plugin-root bindings override legacy harness names below; this command's domain rules and gates remain authoritative.\n`;
@@ -377,13 +313,6 @@ function adaptCommandForCodex(text, name, contract) {
     "codex-wave <wave.json> --fence-file <trusted no-follow action-fence.json> --repository-root",
   );
   return result;
-}
-function adaptCoordinationForCodex(text) {
-  const start = text.indexOf("## Standing-context preflight");
-  const end = text.indexOf("## Binding A", start);
-  if (start < 0 || end < 0) throw new Error("coordination standing-context section not found");
-  const section = `## Standing-context preflight\n\nThe installed Codex plugin cache is not a Git checkout, so do not run \`git log\` against plugin paths. At the first read in a runner cycle, record the plugin version from \`${"${PLUGIN_ROOT}"}/package.json\` and a SHA-256 fingerprint over these installed behavior paths: \`internal-skills/coordination/SKILL.md\`, \`commands/go-backlog.md\`, \`commands/go.md\`, and \`commands/runner.md\`. Compute the fingerprint with the host's available SHA-256 tool, sorting paths before hashing. Muster's Codex hooks are installed outside the plugin cache: also locate the selected managed runtime at the git root's \`.codex/muster/hooks/\` or \`$CODEX_HOME/muster/hooks/\` and fingerprint its files plus the sibling Muster ownership manifest. If neither managed hook runtime can be proven, say "I don't know whether the standing context is unchanged," leave a HUMAN-HOLD receipt, and stop.\n\nBefore a later claim or resume in the same cycle, recompute both fingerprints. Unchanged version and fingerprints proceed. Any change means the installed standing context changed or was tampered with during the cycle: leave a HUMAN-HOLD receipt naming the old/new version and hashes, preserve the claim state, and stop. A packaged plugin cannot safely classify such an in-place mutation as confined because there is no authoritative Git history in the cache. A newly started cycle reads the newly installed immutable version and managed hook runtime as its fresh baseline.\n\n`;
-  return text.slice(0, start) + section + text.slice(end);
 }
 // The agent watch protocol is single-sourced from codex/skill-adapter.md's own
 // "## Agent watch invariant" section and version-threaded by buildAgentWatchProtocol above
@@ -601,7 +530,6 @@ function codexSkill(source, id, contract) {
       `node ${"${PLUGIN_ROOT}"}/runtime/resolve-skill-provider.mjs builtin sp-brainstorm visual-companion.md\n\nBefore invoking any \`scripts/...\` command from that guide, run \`node ${"${PLUGIN_ROOT}"}/runtime/resolve-skill-provider.mjs builtin sp-brainstorm --path\`. Treat its verified absolute output as the guide's asset root and resolve every \`scripts/...\` path beneath it; never execute a path from the internal tree without this full-tree verification.`
     );
   }
-  if (id === "coordination") body = adaptCoordinationForCodex(body);
   if (id === "orchestrator") body = adaptOrchestratorForCodex(body, contract);
   if (id === "router") {
     const routerSkillsAnchor = "For EVERY plan task, consult `AvailableCapabilities.skills` and run";
@@ -746,7 +674,7 @@ export async function buildCodexPlugin(options, retries = 1) {
         && readFileSync(join(current.pluginRoot, "runtime", "in-process-worker.mjs")).length > 0
         && readFileSync(join(current.pluginRoot, "runtime", "verdict.schema.json")).length > 0
         && readFileSync(join(current.pluginRoot, "skills", "muster", "SKILL.md")).length > 0
-        && readFileSync(join(current.pluginRoot, "agents", "muster-builder.toml")).length > 0;
+        && readFileSync(join(current.pluginRoot, "agents", "muster-executor.toml")).length > 0;
       if (current.inputDigest === inputDigest
         && current.packageVersion === packageVersion
         && completeCodexContract) return current;
@@ -786,6 +714,11 @@ async function buildCodexPluginOnce({ root, outDir, nodeExecPath }) {
     ensure(plugin); ensure(runtime);
 
     rmAndCopy(join(root, "plugin", "commands"), join(plugin, "commands"));
+    // Codex is frozen (docs/strategy/2026-11-revival-review.md): the Claude plan/go/orchestrator
+    // were rewritten around the Workflow tool, which Codex lacks, and every Codex anchor below
+    // targets the pre-revival prose. codex/frozen/ holds those inputs byte-for-byte as of
+    // revival stage 2; the Claude sources no longer feed the Codex lane for these files.
+    for (const name of FROZEN_CODEX_COMMANDS) cpSync(join(root, "codex", "frozen", "commands", name), join(plugin, "commands", name));
     rmAndCopy(join(root, "catalog"), join(plugin, "catalog"));
     rmAndCopy(join(root, "pipelines"), join(plugin, "pipelines"));
     rmAndCopy(join(root, "vendor"), join(plugin, "vendor"));
@@ -818,17 +751,19 @@ async function buildCodexPluginOnce({ root, outDir, nodeExecPath }) {
       if (!entry.isDirectory()) continue;
       rmAndCopy(join(root, "codex", "skill-assets", entry.name), join(internalSkillDir, entry.name), { merge: true });
     }
-    const implementerPromptPath = join(internalSkillDir, "sp-subagents", "implementer-prompt.md");
-    const implementerPromptSource = readFileSync(implementerPromptPath, "utf8");
-    const fullSuiteAnchor = "full suite once before committing, not after every edit.";
-    if (!implementerPromptSource.includes(fullSuiteAnchor)) throw new Error("implementer-prompt.md full-suite anchor not found for Codex rewrite");
-    write(
-      implementerPromptPath,
-      implementerPromptSource.replace(fullSuiteAnchor, "focused tests before committing; the parent runs the broad suite once at final verification.")
-    );
+    for (const name of FROZEN_CODEX_SKILLS) {
+      rmSync(join(internalSkillDir, name), { recursive: true, force: true });
+      rmAndCopy(join(root, "codex", "frozen", "skills", name), join(internalSkillDir, name));
+    }
+    // The frozen orchestrator keeps its canonical Codex dispatch reference (single source,
+    // extracted above by loadCodexDispatchContract), and the frozen review gate cites the
+    // verdict schema that now lives in src/ beside its validator.
+    rmAndCopy(join(root, "plugin", "skills", "orchestrator", "references", "codex-dispatch.md"), join(internalSkillDir, "orchestrator", "references", "codex-dispatch.md"));
+    cpSync(join(root, "src", "verdict.schema.json"), join(internalSkillDir, "review-gate", "verdict.schema.json"));
     const portedSkillNames = [...new Set([
       ...readdirSync(join(root, "plugin", "skills"), { withFileTypes: true }).filter(entry => entry.isDirectory()).map(entry => entry.name),
-      ...readdirSync(join(root, "plugin", "builtins"), { withFileTypes: true }).filter(entry => entry.isDirectory()).map(entry => entry.name)
+      ...readdirSync(join(root, "plugin", "builtins"), { withFileTypes: true }).filter(entry => entry.isDirectory()).map(entry => entry.name),
+      ...FROZEN_CODEX_SKILLS
     ])];
     for (const name of portedSkillNames.filter(name => name.startsWith("gsd-"))) {
       renameSync(join(internalSkillDir, name), join(internalSkillDir, codexSkillId(name)));
@@ -843,7 +778,7 @@ async function buildCodexPluginOnce({ root, outDir, nodeExecPath }) {
     await writeInternalRuntime(root, plugin);
 
     for (const [name, mode] of Object.entries(modes)) write(join(modeDir, name, "SKILL.md"), modeSkill(name, mode, contract));
-    write(join(modeDir, "muster", "SKILL.md"), `---\nname: muster\ndescription: ${JSON.stringify("Route orchestration requests across Muster modes and pipelines.")}\n---\n\n<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001: Root router delegates to a selected authoritative workflow and intentionally does not impose a second persona or output format. -->\n\n# Muster\n\nRead \`${"${PLUGIN_ROOT}"}/runtime/codex-skill-adapter.md\` before routing so named profiles, bounded context forks, plugin paths, and Codex-native tools are applied consistently.\n\nSelect the matching explicit skill when the request has a clear mode: $muster-init, $muster-plan, $muster-go, $muster-plan-backlog, $muster-go-backlog, $muster-diagnose, $muster-audit, $muster-design, $muster-runner, or $muster-capture.\n\nStart with the bundled deterministic MCP tools: detect the project, resolve capabilities, assess the outcome, route the pipeline, validate the crew manifest, then execute dependency waves with receipts and gates. Write-capable waves require isolated worktrees.\n\n${contract.watchProtocol}`);
+    write(join(modeDir, "muster", "SKILL.md"), `---\nname: muster\ndescription: ${JSON.stringify("Route orchestration requests across Muster modes and pipelines.")}\n---\n\n<!-- prompt-lint-disable ANTH-ROLE-001, ANTH-FMT-001: Root router delegates to a selected authoritative workflow and intentionally does not impose a second persona or output format. -->\n\n# Muster\n\nRead \`${"${PLUGIN_ROOT}"}/runtime/codex-skill-adapter.md\` before routing so named profiles, bounded context forks, plugin paths, and Codex-native tools are applied consistently.\n\nSelect the matching explicit skill when the request has a clear mode: $muster-init, $muster-plan, $muster-go, $muster-diagnose, $muster-audit, $muster-design, or $muster-capture.\n\nStart with the bundled deterministic MCP tools: detect the project, resolve capabilities, assess the outcome, route the pipeline, validate the crew manifest, then execute dependency waves with receipts and gates. Write-capable waves require isolated worktrees.\n\n${contract.watchProtocol}`);
 
     const profiles = await generateCodexProfiles(root);
     for (const [name, content] of profiles) write(join(plugin, "agents", name), content);
@@ -865,7 +800,7 @@ async function buildCodexPluginOnce({ root, outDir, nodeExecPath }) {
     await build({ ...bundleOptions, entryPoints: [join(root, "src", "cli.js")], outfile: join(runtime, "muster.mjs"), banner: { js: requireBanner } });
     write(
       join(runtime, "verdict.schema.json"),
-      readFileSync(join(root, "plugin", "skills", "review-gate", "verdict.schema.json"), "utf8"),
+      readFileSync(join(root, "src", "verdict.schema.json"), "utf8"),
     );
     await build({
       ...bundleOptions,

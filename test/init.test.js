@@ -563,7 +563,10 @@ test("repository fingerprints reject a path-set addition during hashing", async 
     await sleep(20);
     await writeFile(join(dir, "inserted.txt"), "late\n");
   })();
-  await assert.rejects(() => learnProjectProfile(dir), /repository changed while fingerprinting/);
+  // The insertion races the 128 MiB hash, so it can land during the directory walk ("repository
+  // directory changed") or during hashing ("repository changed while fingerprinting"). Both are the
+  // fail-closed outcome this test pins.
+  await assert.rejects(() => learnProjectProfile(dir), /repository (directory changed|changed while fingerprinting)/);
   await writer;
 });
 
@@ -789,7 +792,10 @@ test("project learning binds source facts to the pre-learning directory snapshot
     await sleep(20);
     await rm(join(dir, "src", "app.js"));
   })();
-  await assert.rejects(() => learnProjectProfile(dir), /repository changed while learning/);
+  // The removal races the 128 MiB lockfile read, so it can land during the directory walk
+  // ("repository directory changed") or after it ("repository changed while learning"). Both are
+  // the fail-closed outcome this test pins: learning never returns facts from a changed tree.
+  await assert.rejects(() => learnProjectProfile(dir), /repository (directory )?changed/);
   await writer;
 });
 

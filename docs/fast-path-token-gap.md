@@ -1,5 +1,7 @@
 # Fast-path token gap (backlog item `fast-path-token-gap`)
 
+> **Superseded (revival stage 2b, 2026-11-09).** This records the pre-revival prose lifecycle (router, review-gate, tournament and coordination skills, plan-backlog/go-backlog/runner verbs). Claude Code's plan and go now run on the Workflow scripts in `plugin/workflows/`; see [architecture](architecture.md) and `docs/strategy/stage-2-contracts.md`. The Codex lane still builds from that prose, frozen in `codex/frozen/`. Kept as history.
+
 Seed context: `docs/weight-reduction.md` (criterion 3) and `docs/speed-tuning.md` (its own
 re-measurement) both named the same follow-up and both left it out of scope: the fast path's
 single-reviewer dispatch consumes 41.2% of full-pipeline tokens against a <=25%-consumption

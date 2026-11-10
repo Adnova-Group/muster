@@ -10,14 +10,6 @@ import { readFile } from "node:fs/promises";
 
 const read = (p) => readFile(p, "utf8");
 
-test("go-backlog wave-mode prose pins default 5 / ceiling 10 with clamp + 0-invalid rules", async () => {
-  const text = await read("plugin/commands/go-backlog.md");
-  assert.match(text, /default 5; hard ceiling 10/, "go-backlog.md must state default 5, hard ceiling 10");
-  assert.match(text, /values above 10 clamp to 10/, "go-backlog.md must state the clamp rule");
-  assert.match(text, /`0` is invalid and ignored, falling back to the default/, "go-backlog.md must state the 0-invalid rule");
-  assert.ok(!/default 3; hard ceiling 8/.test(text), "stale 3/8 values must be gone from go-backlog.md");
-});
-
 test("README + website env tables agree on default 5 / ceiling 10", async () => {
   for (const path of ["README.md", "website/reference/configuration.md"]) {
     const text = await read(path);
@@ -30,7 +22,6 @@ test("README + website env tables agree on default 5 / ceiling 10", async () => 
 
 test("no live doc surface still pins the old 3/8 sprint-parallel values", async () => {
   for (const path of [
-    "plugin/commands/go-backlog.md",
     "README.md",
     "docs/architecture.md",
     "website/reference/configuration.md",

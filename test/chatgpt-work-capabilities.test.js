@@ -113,7 +113,7 @@ test("manifest validate --work rejects unavailable skill and provider bindings",
   const source = JSON.parse(await readFile(manifest, "utf8"));
   source.crew[0] = {
     ...source.crew[0],
-    provider: "muster-builder",
+    provider: "muster-executor",
     source: "builtin",
     model: "core",
   };
@@ -128,7 +128,7 @@ test("manifest validate --work rejects unavailable skill and provider bindings",
       (error) => {
         const result = JSON.parse(error.stdout);
         assert.equal(result.ok, false);
-        assert.ok(result.errors.some((message) => message.includes("muster-builder")));
+        assert.ok(result.errors.some((message) => message.includes("muster-executor")));
         assert.ok(result.errors.some((message) => message.includes("muster-humanizer")));
         return true;
       },

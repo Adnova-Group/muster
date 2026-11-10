@@ -12,6 +12,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import os from "node:os";
+import { execFileSync } from "node:child_process";
 import { cleanDir, makeRunActive, spawnHook } from "./test-support/hook-helpers.js";
 import { classifyToolName, classifyBashCommand, classifyAction } from "../plugin/hooks/action-guard.js";
 import { trackedMkdtempSync as mkdtempSync } from "../test-support/helpers.js";
@@ -444,35 +445,55 @@ const SKILL_MD = readFileSync(
   "utf8",
 );
 
-test("orchestrator SKILL.md: forbidden-actions removed before executing the merge disposition", () => {
-  assert.match(
-    SKILL_MD,
-    /remove\s+`\.muster\/forbidden-actions`\s+immediately before executing[^.]*merge disposition/i,
-    "fence lifecycle must state removal happens before the merge disposition executes",
-  );
-  assert.match(
-    SKILL_MD,
-    /human-authorized exit/i,
-    "fence lifecycle must explain why: the declared disposition is the human-authorized exit",
-  );
+test("orchestrator SKILL.md: go writes both fence files before building and removes them at the merge decision", () => {
+  const text = SKILL_MD.replace(/\s+/g, " ");
+  assert.match(text, /writes `\.muster\/run-active` \(the runId\) and `\.muster\/forbidden-actions` \(`send sign submit publish purchase delete-remote`\) before building/);
+  assert.match(text, /removes both at the merge decision or on any escalation exit/);
 });
 
-test("orchestrator SKILL.md: forbidden-actions file carries only the top-level set", () => {
-  assert.match(
-    SKILL_MD,
-    /top-level\s+set/i,
-    "must clarify the file carries the TOP-LEVEL forbiddenActions set",
-  );
-  assert.match(
-    SKILL_MD,
-    /brief-level discipline/i,
-    "must clarify per-task additions are brief-level discipline, not hook-enforced",
-  );
+test("orchestrator SKILL.md: states that the fence also guards linked worktrees of the run's repo", () => {
+  const text = SKILL_MD.replace(/\s+/g, " ");
+  assert.match(text, /reads the markers from the tool call's checkout and, in a linked worktree, from the main checkout/);
 });
 
-test("orchestrator propagates action-fence markers into each isolated writer worktree", () => {
-  assert.match(SKILL_MD, /every isolated writer worktree must carry a regular-file\s+copy of both `\.muster\/run-active` and the exact top-level `\.muster\/forbidden-actions`/i);
-  assert.match(SKILL_MD, /never rely on\s+the outer worktree's markers and never symlink them/i);
+// Workflow executors run in linked worktrees under .claude/worktrees/, which start without the
+// marker files. The fence must still find the run's markers in the main checkout, using only the
+// worktree's .git file (no git spawn on the hot path).
+function gitRepoWithWorktree() {
+  const root = mkdtempSync(path.join(os.tmpdir(), "muster-fence-repo-"));
+  const g = (...a) => execFileSync("git", a, { cwd: root, stdio: "pipe" });
+  g("init", "-q", "-b", "main");
+  g("-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "--allow-empty", "-m", "init");
+  const wt = path.join(root, ".claude", "worktrees", "wf_1-1");
+  g("worktree", "add", "-q", "-b", "worktree-wf_1-1", wt);
+  mkdirSync(path.join(wt, "src"), { recursive: true });
+  return { root, wt };
+}
+
+test("linked worktree of a live run: a forbidden publish is denied using the main checkout's markers", async () => {
+  const { root, wt } = gitRepoWithWorktree();
+  try {
+    makeRunActive(root);
+    writeForbidden(root, ["publish"]);
+    const result = await runRaw(bashPayload("git push origin main", path.join(wt, "src")));
+    assert.equal(result.code, 0);
+    const out = JSON.parse(result.stdout).hookSpecificOutput;
+    assert.equal(out.permissionDecision, "deny");
+  } finally {
+    cleanDir(root);
+  }
+});
+
+test("linked worktree with no live run in the main checkout: allowed", async () => {
+  const { root, wt } = gitRepoWithWorktree();
+  try {
+    const result = await runRaw(bashPayload("git push origin main", wt));
+    assert.equal(result.code, 0);
+    const out = result.stdout.trim() ? JSON.parse(result.stdout).hookSpecificOutput : null;
+    assert.notEqual(out?.permissionDecision, "deny");
+  } finally {
+    cleanDir(root);
+  }
 });
 
 test("separate worker cwd denies a forbidden publish using propagated markers", async () => {

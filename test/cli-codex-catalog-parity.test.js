@@ -9,10 +9,10 @@
 // Probe signals:
 //  - an exact runtime skill (zz-codex-probe) visible ONLY via Codex app-server's
 //    skills/list inventory -- capabilities/match --skills/manifest
-//    validate must see it with --codex and not without;
-//  - the gsd-* -> muster-gsd-* id rewrite adaptCatalogForCodex applies --
-//    `match` must emit the renamed id with --codex and the raw id without.
-// Both signals are environment-independent: HOME points at an empty temp dir
+//    validate must see it with --codex and not without.
+// (The gsd-* -> muster-gsd-* match rewrite check left with the gsd builtins in revival
+// stage 2b; test/codex-catalog.test.js keeps the adaptation itself covered.)
+// The signal are environment-independent: HOME points at an empty temp dir
 // and a fake `codex` binary on PATH implements the app-server + MCP protocol.
 
 import { test } from "node:test";
@@ -125,17 +125,6 @@ test("Codex inventory fails incomplete instead of adopting a different cwd row",
   const caps = await run(["capabilities", "--codex"], { CODEX_FAKE_WRONG_CWD: "/unrelated" });
   assert.equal(caps.installedRaw.skillInventory.complete, false);
   assert.ok(!caps.skills.some(skill => skill.id === PROBE_SKILL));
-});
-
-test("match applies the same gsd-* id rewrite as the shared codex adaptation", async (t) => {
-  const { run } = await setup(t);
-  const [codex, plain] = await Promise.all([
-    run(["match", "gsd plan phase", "--codex"]),
-    run(["match", "gsd plan phase"]),
-  ]);
-  assert.ok(plain.some(r => r.id === "gsd-plan-phase"), "match without --codex keeps the raw gsd- id");
-  assert.ok(codex.some(r => r.id === "muster-gsd-plan-phase"), "match --codex must apply the muster-gsd- rewrite");
-  assert.ok(!codex.some(r => r.id === "gsd-plan-phase"), "match --codex must not leak the unadapted id");
 });
 
 test("manifest validate --codex checks bindings against the same codex-adapted inventory", async (t) => {

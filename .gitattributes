@@ -1,0 +1,3 @@
+# Byte-exact upstream base copies: the vendor-sync doctor check and 3-way merges compare their
+# git blob hashes, so they must never be line-ending converted on checkout (Windows autocrlf).
+vendor/upstream/** -text

@@ -5,69 +5,42 @@ import { readFile } from "node:fs/promises";
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
 
+// Revival stage 2b: go-backlog folded into go and the manifest digest gave way to the committed
+// build-args.json that merge-wave trusts, so these contracts pin the new go/plan prose.
 test("remote issue text is byte-bounded and cannot close its data delimiter", async () => {
-  for (const file of ["plugin/commands/plan.md", "plugin/commands/go.md", "plugin/commands/go-backlog.md"]) {
-    const text = await read(file);
-    assert.match(text, /16 KiB UTF-8 byte cap/i, `${file} must bound remote issue text`);
-    assert.match(text, /case-insensitive literal `?<\/remote-text>`?.*`&lt;\/remote-text&gt;`/is,
+  for (const file of ["plugin/commands/plan.md", "plugin/commands/go.md"]) {
+    const text = (await read(file)).replace(/\s+/g, " ");
+    assert.match(text, /16 KiB/i, `${file} must bound remote issue text`);
+    assert.match(text, /`<\/remote-text>` \(any case\) with `&lt;\/remote-text&gt;`/,
       `${file} must neutralize closing remote-text tags before interpolation`);
-    assert.match(text, /truncate at a UTF-8 code-point boundary/i, `${file} must not split UTF-8 while bounding text`);
+    assert.match(text, /UTF-8 code-point boundary/i, `${file} must not split UTF-8 while bounding text`);
   }
 });
 
-test("Approve & run binds go execution to the exact approved manifest digest", async () => {
-  const plan = await read("plugin/commands/plan.md");
-  assert.match(plan, /SHA-256 digest/i);
-  assert.match(plan, /approved manifest digest/i);
-  assert.match(plan, /byte-for-byte/i);
-  assert.match(plan, /fresh approval/i);
-  assert.match(plan, /rerout|amend/i);
-
-  const go = await read("plugin/commands/go.md");
-  assert.match(go, /approved manifest digest/i);
-  assert.match(go, /recompute.*SHA-256|SHA-256.*recompute/is);
-  assert.match(go, /mismatch.*fresh approval|fresh approval.*mismatch/is);
+test("Approve & build continues the approved run; merge-wave trusts only the committed build args", async () => {
+  const plan = (await read("plugin/commands/plan.md")).replace(/\s+/g, " ");
+  assert.match(plan, /\*\*Approve & build:\*\* invoke the `muster:go` skill with `--run <runId>`/);
+  const go = (await read("plugin/commands/go.md")).replace(/\s+/g, " ");
+  assert.match(go, /Never re-plan an approved run/);
+  assert.match(go, /merge-wave trusts only this committed file/);
+  assert.match(go, /never merge task branches by hand/);
 });
 
-test("router output and backlog annotations cannot authorize local merge or push", async () => {
-  const go = await read("plugin/commands/go.md");
-  assert.match(go, /router output.*never authoriz/is);
-  assert.match(go, /explicit authenticated user approval/i);
-  assert.match(go, /merge-local.*merge-push/is);
-
-  const backlog = await read("plugin/commands/go-backlog.md");
-  assert.match(backlog, /backlog annotation.*never authoriz/is);
-  assert.match(backlog, /explicit authenticated user approval/i);
-  assert.doesNotMatch(backlog, /backlog annotation is the human's declaration/i);
+test("nothing but an explicit human choice merges into the base or pushes", async () => {
+  const go = (await read("plugin/commands/go.md")).replace(/\s+/g, " ");
+  assert.match(go, /Attended: AskUserQuestion/);
+  assert.match(go, /never merge into the base or push to main/);
+  const orchestrator = (await read("plugin/skills/orchestrator/SKILL.md")).replace(/\s+/g, " ");
+  assert.match(orchestrator, /The base branch changes only after an explicit human choice/);
+  assert.match(orchestrator, /unattended runs end at a PR/);
 });
 
-test("every write-capable go path requires verified linked-worktree isolation", async () => {
-  for (const file of ["plugin/commands/go.md", "plugin/commands/go-backlog.md"]) {
-    const text = await read(file);
-    assert.match(text, /verified isolated (?:git )?worktree/i, `${file} must require verified isolation`);
-    assert.match(text, /git rev-parse --git-common-dir/i, `${file} must name the verification input`);
-    assert.match(text, /git rev-parse --git-dir/i, `${file} must distinguish a linked worktree`);
-    assert.match(text, /refuse|stop|abort/i, `${file} must fail closed`);
-  }
-  const go = await read("plugin/commands/go.md");
-  assert.doesNotMatch(go, /a plain branch is fine otherwise/i);
-});
-
-test("go-backlog self-heals a primary-checkout launch into a verified driver worktree", async () => {
-  const backlog = await read("plugin/commands/go-backlog.md");
-  assert.match(backlog, /self-healing transition/i);
-  assert.match(backlog, /git worktree list --porcelain/i);
-  assert.match(backlog, /git worktree add/i);
-  assert.match(backlog, /change every subsequent command's cwd to that driver/i);
-  assert.match(backlog, /Continue the batch automatically/i);
-  assert.match(backlog, /backlog-publish --expect <source digest>/i);
-  assert.match(backlog, /reject symlinks, special files/i);
-  assert.match(backlog, /never\s+delete, reset, or repurpose an existing path or branch/i);
-  assert.doesNotMatch(
-    backlog,
-    /paths; if they do not, refuse all writes and stop\. A plain branch in the primary checkout/i,
-    "primary-checkout detection must no longer be a fail-only terminal",
-  );
+test("executors write only in isolated worktrees; merge-wave refuses to run inside one", async () => {
+  const orchestrator = (await read("plugin/skills/orchestrator/SKILL.md")).replace(/\s+/g, " ");
+  assert.match(orchestrator, /During a run you do not edit product files/);
+  assert.match(orchestrator, /isolation: "worktree"/);
+  const mergeWave = await read("src/merge-wave.js");
+  assert.match(mergeWave, /refusing to run inside a \.claude\/worktrees\/ checkout/);
 });
 
 test("the full CI suite fetches history required by pinned diff probes", async () => {
@@ -81,16 +54,10 @@ test("CI explicitly gates checked backlog completion on release reachability", a
   assert.match(workflow, /Verify backlog completion receipts/);
   assert.match(workflow, /node scripts\/check-backlog-receipts\.mjs --release-ref/);
 
-  const backlog = await read("plugin/commands/go-backlog.md");
-  assert.match(backlog, /\{merge: <40-hex SHA>\}.*\{done: <40-hex SHA>\}/is);
-  assert.match(backlog, /ancestor of the declared release branch/i);
-  assert.match(backlog, /\{withdrawn: <reason>\}/i);
-  assert.match(backlog, /reopen.*unchecked|unchecked.*reopen/is);
-  assert.match(backlog, /backlog-receipts - --release-ref/);
-  assert.match(backlog, /Only those same verified bytes/i);
-  assert.match(backlog, /tracked canonical/i);
-  assert.match(backlog, /reviewable.*(?:commit|PR)|(?:commit|PR).*reviewable/is);
-  assert.match(backlog, /clean worktree/i);
+  const go = (await read("plugin/commands/go.md")).replace(/\s+/g, " ");
+  assert.match(go, /\{merge: <its merge-wave sha>\}/);
+  assert.match(go, /release-reachable/);
+  assert.match(go, /backlog-publish <backlog file> --expect <sha256>/);
 
   const audit = await read("plugin/commands/audit.md");
   assert.match(audit, /tracked canonical/i);

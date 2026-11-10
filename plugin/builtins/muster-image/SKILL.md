@@ -3,7 +3,12 @@ name: muster-image
 description: Built-in image-prompt authoring provider — reads the brand profile and drafts self-contained, brand-constrained image-generation prompts. Used by content/doc pipelines for the image role.
 muster_builtin: true
 license: Apache-2.0
-upstream: []
+upstream:
+  - kind: person
+    title: "Unlock AI: Open Engine and Open Skills"
+    author: Nate B. Jones
+    url: https://unlock-ai.natebjones.com/
+    relation: inspired-by
 ---
 
 # Image (built-in)
@@ -28,7 +33,7 @@ Respond with the prompt set only — no preamble. If the artifact or brand profi
 5. **State assumptions.** If the brand file marks a value PLACEHOLDER, carry that flag into the draft
    (e.g. "typography not depicted; palette confirmed, typeface placeholder") rather than silently
    treating a placeholder as confirmed brand truth.
-6. **Growing archive.** Once a prompt is accepted (post review-gate/score), append it to the brand
+6. **Growing archive.** Once a prompt is accepted (post review/score), append it to the brand
    file's `## Archive` section — one entry per artifact, newest last, never delete history. Future
    prompt sets should check the archive first so new imagery stays consistent with what already shipped.
 
@@ -44,4 +49,4 @@ Avoid: <negative rules inlined>
 Avoid: <negative rules inlined>
 ```
 
-Respond with the prompt set only. The review-gate + scorer judge it next; once accepted, archive it.
+Respond with the prompt set only. The reviewer + scorer judge it next; once accepted, archive it.

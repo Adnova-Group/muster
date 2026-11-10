@@ -40,7 +40,7 @@ test("Claude orchestration surface remains byte-identical outside release metada
     hash.update(await readFile(join(root, path)));
     hash.update("\0");
   }
-  assert.equal(paths.length, 151); // 0.7.0 retired the run/autopilot/sprint command files; 2026-11-09 removed five always-on hook files; stage 1 removed references/kimi-dispatch.md.
+  assert.equal(paths.length, 137); // 0.7.0 retired the run/autopilot/sprint command files; 2026-11-09 removed five always-on hook files; stage 1 removed references/kimi-dispatch.md; stage 2 adds plugin/workflows (plan, build, backlog, schemas) and gsd-derived agents (planner, plan-checker, verifier, executor replacing builder); stage 2b deletes the backlog/runner verbs and router-era skills (see the 2026-11-09e re-pin below).
   // Previous 159-file surface +1: audit-pattern-batch2's new
   // plugin/skills/audit-pattern-documentation/SKILL.md (the 10th pattern skill, approved via the
   // second improver batch, composed onto readability + design-ux). The batch also appended 19
@@ -1508,5 +1508,27 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // field from vendor/manifest.yaml (adapted_from / inspired_by retired), checked by
   // test/provenance.test.js. Owner decisions in docs/strategy/2026-11-revival-review.md.
   // Deliberate, not drift.
-  assert.equal(hash.digest("hex"), "8a253eae9b51d79ff66d33f58403642b29a307ccd540448a87feedd53ce28569");
+  // Re-pin 2026-11-09d (revival stage 2a, 151 -> 154 files): plugin/workflows/ adds the plan,
+  // build and backlog Workflow scripts with their result schemas; muster-planner,
+  // muster-plan-checker and muster-verifier are adapted from gsd-core v1.20.1 and muster-executor
+  // replaces muster-builder, with gsd's measured protocol text kept verbatim and marked; the
+  // muster-reviewer body becomes gsd's code reviewer; ten wsh-* agents move to the model the
+  // generator writes; and the humanizer, PRD/epic pipeline and audit-pattern quotes are rewritten
+  // clean-room, with every item's upstream: block regenerated from vendor/manifest.yaml.
+  // Contracts: docs/strategy/stage-2-contracts.md. Deliberate, not drift.
+  // Re-pin 2026-11-09e (revival stage 2b, 154 -> 137 files): plan.md and go.md run on the
+  // Workflow core and the orchestrator keeps only the compaction-proof rules; plan-backlog,
+  // go-backlog and runner, the router, domain-router, review-gate, tournament and coordination
+  // skills, the sp-plan, sp-subagents and gsd-* builtins, muster-runner and the TaskCompleted
+  // gate are deleted (router, review-gate, tournament and muster-runner survive only as frozen
+  // Codex inputs under codex/frozen/); the ten audit-pattern skills move to
+  // plugin/commands/audit/references/; plugin/runtime/muster.sh is added; every description is
+  // one line and internal skills set user-invocable: false; receipt-verify leaves mcp/server.mjs.
+  // Owner decisions in docs/strategy/2026-11-revival-review.md. Deliberate, not drift.
+  // Re-pin 2026-11-09f (revival stage 2 integration, content-only, file count unchanged): the
+  // action fence also finds a live run's markers from a linked worktree (Workflow executors in
+  // .claude/worktrees/), resolved from the worktree's .git file without spawning git, and the
+  // orchestrator says so; plugin/runtime/muster.sh no longer falls back to a global or project
+  // muster (possibly an older release) and pins npx to the plugin's own version. Deliberate.
+  assert.equal(hash.digest("hex"), "288eaf68e8f369d0984be382f6d4cd6524110d5678c93c0366fe963bca74c1af");
 });

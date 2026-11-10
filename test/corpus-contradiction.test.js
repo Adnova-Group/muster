@@ -16,6 +16,9 @@
 // doc — source of truth stays executable, per the item's "prefer code over
 // the model" directive.
 
+// Revival stage 2b: the router, review-gate, old orchestrator and muster-runner prose now live
+// only as frozen Codex lane inputs (codex/frozen/), so the pairs that quote them are checked there;
+// go-backlog, plan-backlog, runner and coordination were deleted with their pairs.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile, readdir } from "node:fs/promises";
@@ -38,25 +41,23 @@ const normalizeWs = (text) => text.replace(/\s+/g, " ");
 // below); the meta-test just keeps this table honest as entries are added.
 const TERM_REGISTRY = [
   { name: "surface taxonomy enum", canonicalSource: "src/manifest.js (SURFACES)",
-    quotedAt: ["plugin/skills/router/SKILL.md", "plugin/skills/orchestrator/SKILL.md"] },
-  { name: "gate names + surface trigger", canonicalSource: "plugin/skills/review-gate/SKILL.md (3 numbered gate headings)",
-    quotedAt: ["plugin/skills/orchestrator/SKILL.md"] },
+    quotedAt: ["codex/frozen/skills/router/SKILL.md", "codex/frozen/skills/orchestrator/SKILL.md"] },
+  { name: "gate names + surface trigger", canonicalSource: "codex/frozen/skills/review-gate/SKILL.md (3 numbered gate headings)",
+    quotedAt: ["codex/frozen/skills/orchestrator/SKILL.md"] },
   { name: "reviewer severity vocabulary", canonicalSource: "plugin/agents/muster-reviewer.md (severity tags)",
-    quotedAt: ["plugin/skills/review-gate/SKILL.md"] },
+    quotedAt: ["codex/frozen/skills/review-gate/SKILL.md"] },
   { name: "mode names + legacy-alias mappings", canonicalSource: "plugin/commands/*.md (frontmatter name: + alias-stub bodies)",
     quotedAt: ["plugin/commands/*.md (cross-references + alias targets)"] },
   { name: "review-verdict terms", canonicalSource: "plugin/agents/muster-reviewer.md (VERDICT: lines)",
-    quotedAt: ["plugin/agents/muster-runner.md"] },
-  { name: "muster-runner agent id", canonicalSource: "plugin/agents/muster-runner.md (frontmatter name:)",
-    quotedAt: ["plugin/commands/go-backlog.md", "plugin/skills/coordination/SKILL.md"] },
+    quotedAt: ["codex/frozen/agents/muster-runner.md"] },
   { name: "role vocabulary", canonicalSource: "src/roles.js (ROLES)",
-    quotedAt: ["plugin/commands/diagnose.md", "plugin/skills/review-gate/SKILL.md"] },
-  { name: "progress-aware review recovery", canonicalSource: "plugin/skills/review-gate/SKILL.md (reviewGateState)",
-    quotedAt: ["plugin/skills/orchestrator/SKILL.md", "plugin/agents/muster-runner.md"] },
+    quotedAt: ["codex/frozen/commands/diagnose.md", "codex/frozen/skills/review-gate/SKILL.md"] },
+  { name: "progress-aware review recovery", canonicalSource: "codex/frozen/skills/review-gate/SKILL.md (reviewGateState)",
+    quotedAt: ["codex/frozen/skills/orchestrator/SKILL.md", "codex/frozen/agents/muster-runner.md"] },
 ];
 
 test("term registry: every entry names a canonical source and at least one quote site", () => {
-  assert.equal(TERM_REGISTRY.length, 8, "expected 8 registered shared terms");
+  assert.equal(TERM_REGISTRY.length, 7, "expected 7 registered shared terms");
   for (const t of TERM_REGISTRY) {
     assert.ok(t.name && t.canonicalSource, `registry entry missing name/canonicalSource: ${JSON.stringify(t)}`);
     assert.ok(Array.isArray(t.quotedAt) && t.quotedAt.length > 0, `${t.name}: quotedAt must list at least one file`);
@@ -76,7 +77,7 @@ function extractSurfaces(manifestSrc) {
 test("surface taxonomy: router.md's pipe-enum matches manifest.js's SURFACES exactly", async () => {
   const [manifestSrc, routerMd] = await Promise.all([
     read("src/manifest.js"),
-    read("plugin/skills/router/SKILL.md"),
+    read("codex/frozen/skills/router/SKILL.md"),
   ]);
   const surfaces = extractSurfaces(manifestSrc);
   assert.deepEqual(surfaces, ["ui", "copy", "integration", "none"], "sanity: known canonical order");
@@ -90,7 +91,7 @@ test("surface taxonomy: router.md's pipe-enum matches manifest.js's SURFACES exa
 test("surface taxonomy: orchestrator.md's surface-line tokens match manifest.js's SURFACES exactly", async () => {
   const [manifestSrc, orchestratorMd] = await Promise.all([
     read("src/manifest.js"),
-    read("plugin/skills/orchestrator/SKILL.md"),
+    read("codex/frozen/skills/orchestrator/SKILL.md"),
   ]);
   const surfaces = extractSurfaces(manifestSrc);
   const normalized = normalizeWs(orchestratorMd);
@@ -131,8 +132,8 @@ function extractGateSurfaceMap(reviewGateMd) {
 
 test("gate names: orchestrator.md's surface-line gate names + mapping match review-gate.md's headings exactly", async () => {
   const [reviewGateMd, orchestratorMd] = await Promise.all([
-    read("plugin/skills/review-gate/SKILL.md"),
-    read("plugin/skills/orchestrator/SKILL.md"),
+    read("codex/frozen/skills/review-gate/SKILL.md"),
+    read("codex/frozen/skills/orchestrator/SKILL.md"),
   ]);
   const map = extractGateSurfaceMap(reviewGateMd);
   assert.deepEqual(
@@ -163,7 +164,7 @@ function extractSeverityTags(reviewerMd) {
 test("severity vocabulary: review-gate.md's findings shape matches muster-reviewer.md's severity tags exactly", async () => {
   const [reviewerMd, reviewGateMd] = await Promise.all([
     read("plugin/agents/muster-reviewer.md"),
-    read("plugin/skills/review-gate/SKILL.md"),
+    read("codex/frozen/skills/review-gate/SKILL.md"),
   ]);
   const tags = extractSeverityTags(reviewerMd);
   assert.deepEqual(tags, ["blocker", "risk", "nit"], "sanity: known canonical severity order");
@@ -175,8 +176,7 @@ test("severity vocabulary: review-gate.md's findings shape matches muster-review
 });
 
 // ── term 4: registered mode names ───────────────────────────────────────────
-const COMMAND_FILES = ["audit", "capture", "diagnose", "go-backlog", "go",
-  "plan-backlog", "plan", "runner", "design", "init"];
+const COMMAND_FILES = ["audit", "capture", "diagnose", "go", "plan", "design", "init"];
 
 async function loadCommandNames() {
   const names = new Set();
@@ -214,31 +214,13 @@ function extractVerdictTerms(reviewerMd) {
 test("dispatch-contract terms: muster-runner.md quotes muster-reviewer.md's VERDICT: PASS verbatim", async () => {
   const [reviewerMd, runnerMd] = await Promise.all([
     read("plugin/agents/muster-reviewer.md"),
-    read("plugin/agents/muster-runner.md"),
+    read("codex/frozen/agents/muster-runner.md"),
   ]);
   const terms = extractVerdictTerms(reviewerMd);
   assert.deepEqual(terms, ["VERDICT: PASS", "VERDICT: CHANGES_REQUESTED"], "sanity: known canonical verdict terms");
   const passTerm = terms.find((t) => t.endsWith("PASS"));
   const occurrences = runnerMd.split(`\`${passTerm}\``).length - 1;
   assert.ok(occurrences >= 1, `muster-runner.md must quote \`${passTerm}\` verbatim at least once (muster-reviewer.md is canonical)`);
-});
-
-test("dispatch-contract terms: muster-runner's agent id matches its frontmatter name everywhere it's quoted as a subagent type", async () => {
-  const [runnerMd, goBacklogMd, coordinationMd] = await Promise.all([
-    read("plugin/agents/muster-runner.md"),
-    read("plugin/commands/go-backlog.md"),
-    read("plugin/skills/coordination/SKILL.md"),
-  ]);
-  const fm = runnerMd.match(/^name:\s*(\S+)/m);
-  assert.ok(fm, "muster-runner.md missing frontmatter name:");
-  const agentId = fm[1];
-  assert.equal(agentId, "muster-runner", "sanity: known canonical agent id");
-  for (const [label, text] of [["go-backlog.md", goBacklogMd], ["coordination/SKILL.md", coordinationMd]]) {
-    assert.ok(
-      text.includes(`subagent type \`${agentId}\``),
-      `${label} must quote "subagent type \`${agentId}\`" verbatim (muster-runner.md's frontmatter name is canonical)`
-    );
-  }
 });
 
 // ── term 6: role vocabulary ──────────────────────────────────────────────────
@@ -260,7 +242,7 @@ function extractQuotedRoles(text) {
 }
 
 test("role vocabulary: every backtick-quoted role name in plugin/commands and plugin/skills is a real member of roles.js's ROLES", async () => {
-  const targets = ["plugin/commands/diagnose.md", "plugin/skills/review-gate/SKILL.md"];
+  const targets = ["codex/frozen/commands/diagnose.md", "codex/frozen/skills/review-gate/SKILL.md"];
   let checked = 0;
   for (const t of targets) {
     const text = await read(t);
@@ -275,9 +257,9 @@ test("role vocabulary: every backtick-quoted role name in plugin/commands and pl
 // ── term 7: progress-aware review recovery ──────────────────────────────────
 test("review recovery contract stays progress-aware across orchestrator and runner", async () => {
   const [reviewGateMd, orchestratorMd, runnerMd] = await Promise.all([
-    read("plugin/skills/review-gate/SKILL.md"),
-    read("plugin/skills/orchestrator/SKILL.md"),
-    read("plugin/agents/muster-runner.md"),
+    read("codex/frozen/skills/review-gate/SKILL.md"),
+    read("codex/frozen/skills/orchestrator/SKILL.md"),
+    read("codex/frozen/agents/muster-runner.md"),
   ]);
   for (const text of [reviewGateMd, orchestratorMd, runnerMd]) {
     assert.match(text, /repeated identical|repeated-identical|no-progress/i);

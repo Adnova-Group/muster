@@ -148,7 +148,7 @@ test("every wired Codex event's actual runtime output stays inside the advisory 
     "SubagentStart(read-only agent)"
   );
   assertAdvisoryShape(
-    await runCodexHook({ hook_event_name: "SubagentStart", session_id: "guard-subagent-writer", agent_id: "a2", agent_type: "muster-builder", cwd: tmp }, tmp, hookPath, hookEnv),
+    await runCodexHook({ hook_event_name: "SubagentStart", session_id: "guard-subagent-writer", agent_id: "a2", agent_type: "muster-executor", cwd: tmp }, tmp, hookPath, hookEnv),
     "SubagentStart(writer agent)"
   );
 

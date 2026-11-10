@@ -1,7 +1,7 @@
 # QA runbook
 
-Repo-local, compounding test knowledge for muster. This is where the review gate
-(`plugin/skills/review-gate/SKILL.md`) and any human or agent about to test a
+Repo-local, compounding test knowledge for muster. This is where a reviewer
+(`muster-reviewer`, dispatched by the `muster:build` workflow) and any human or agent about to test a
 change should look first, and where it should record what it learns.
 
 **Why this lives here, in git, and not under `.muster/`:** `.muster/` is
@@ -13,8 +13,7 @@ this repo and the output pasted is what actually came back, not a guess.
 
 Structure: one section per high-traffic flow — how to exercise it, what
 "healthy" looks like, known divergences (dated), and gotchas. When you find a
-new one, add it here in the same pass as the fix (see "update-after-divergence"
-in the review-gate skill).
+new one, add it here in the same pass as the fix.
 
 ---
 
@@ -116,7 +115,7 @@ without parsing JSON.
 - `citation-check` on a file with zero `[src: x]` anchors still exits 0 — no
   claims cited is not automatically a failure at the CLI layer; the "is this a
   claim needing evidence" judgment call is a reviewer's job per the
-  citation-guard step in `review-gate/SKILL.md`, not the checker's.
+  reviewer, not the checker's.
 - `sprint-waves` fixtures should use unchecked (`- [ ] `) items to appear in a
   wave at all — checked (`- [x] `) items are dropped from `waves` (see
   `test/sprint-waves.test.js`, "checked items are ignored").

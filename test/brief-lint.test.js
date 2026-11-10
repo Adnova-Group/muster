@@ -268,18 +268,14 @@ test("findUnmarkedDispatchSignals: a REPEATED signal is checked independently pe
 
 test("DISPATCH_SIGNAL_PATTERNS: exposes at least the headings/phrases this item catalogued as real dispatch sites", () => {
   const names = DISPATCH_SIGNAL_PATTERNS.map((p) => p.name);
+  // Revival stage 2b retired the go spec-gate, review-gate, tournament and muster-runner
+  // dispatch prose with their signals; the orchestrator's fallback executor brief replaced them.
   for (const expected of [
-    "dispatch-contract-heading",
     "report-back-heading",
     "verdict-heading",
-    "return-contract-heading",
     "request-response-shapes-heading",
-    "go-spec-gate-return-contract",
     "audit-sweep-return-contract",
-    "review-gate-full-brief-identity",
-    "review-gate-fast-path-brief-identity",
-    "tournament-synthesizer-prompt",
-    "tournament-judge-scoring-shape",
+    "fallback-executor-brief",
   ]) {
     assert.ok(names.includes(expected), `expected DISPATCH_SIGNAL_PATTERNS to include "${expected}"`);
   }

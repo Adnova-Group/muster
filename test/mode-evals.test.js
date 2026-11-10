@@ -683,7 +683,8 @@ const dataset = JSON.parse(await read("eval/modes/dataset.json"));
 //
 // The original run/autopilot/sprint fixtures were migrated to the canonical
 // plan/plan-backlog/go/go-backlog modes. The aliases themselves retired in 0.7.0.
-const MODES = ["plan", "plan-backlog", "go", "go-backlog", "runner", "audit", "diagnose", "capture"];
+// Revival stage 2b deleted plan-backlog, go-backlog and runner (backlog scope folds into plan/go).
+const MODES = ["plan", "go", "audit", "diagnose", "capture"];
 const STRUCTURAL_MODES = ["init", "design"];
 const RETIRED_ALIASES = new Set(["run", "autopilot", "sprint"]);
 // The skill-protocol layer (plugin/skills/*, router excluded — it already has
@@ -693,13 +694,10 @@ const RETIRED_ALIASES = new Set(["run", "autopilot", "sprint"]);
 // throw on a case that left it undefined. STRUCTURAL_SKILLS (below) names a further skill
 // with no independent response-quality behavior to grade — same STRUCTURAL_MODES/Init
 // posture, one layer down.
+// review-gate, coordination, tournament and domain-router were deleted in revival stage 2b.
 const SKILLS = [
   "orchestrator",
-  "review-gate",
-  "coordination",
   "interview",
-  "tournament",
-  "domain-router",
   "advisor",
   "greenfield",
   "prd-pipeline",
@@ -720,18 +718,6 @@ const SKILLS = [
 // Their coverage is test/audit-pattern-skills.test.js's contract guard instead.
 const STRUCTURAL_SKILLS = [
   "improve",
-  "audit-pattern-architecture",
-  "audit-pattern-tech-debt",
-  "audit-pattern-coverage",
-  "audit-pattern-simplification",
-  "audit-pattern-readability",
-  "audit-pattern-security",
-  "audit-pattern-design-ux",
-  "audit-pattern-prompt-quality",
-  "audit-pattern-dead-code-duplication",
-  // audit-pattern-batch2: the approved 10th pattern skill, composed onto BOTH readability and
-  // design-ux (same two-dimension precedent as audit-pattern-dead-code-duplication above).
-  "audit-pattern-documentation",
 ];
 // The content-pipeline layer (eval/modes extended to pipelines/*.yaml phase prompts) --
 // the "honest graded subset" of the content pipelines (knowledge/software pipelines like
@@ -762,9 +748,9 @@ const BUILTINS = ["muster-research", "muster-image", "muster-video", "muster-hum
 // design (see the dataset case's own comment).
 const KNOWLEDGE_PIPELINES = ["ai-implementation-spec", "ai-test-plan", "book", "business-case", "epic", "launch-plan", "okrs", "prd", "roadmap", "runbook", "user-story"];
 
-test("dataset covers all 8 mode prompts with at least 5 cases each, 40+ total", () => {
+test("dataset covers all 5 mode prompts with at least 5 cases each, 35+ total", () => {
   const modeCases = dataset.cases.filter((c) => MODES.includes(c.mode));
-  assert.ok(modeCases.length >= 40, `expected 40+ mode cases, got ${modeCases.length}`);
+  assert.ok(modeCases.length >= 35, `expected 35+ mode cases, got ${modeCases.length}`);
   const byMode = {};
   for (const c of modeCases) byMode[c.mode] = (byMode[c.mode] || 0) + 1;
   for (const mode of MODES) assert.ok((byMode[mode] || 0) >= 5, `mode "${mode}" has only ${byMode[mode] || 0} cases`);
@@ -778,15 +764,17 @@ test("no dataset case declares a retired alias as its mode", () => {
 
 // [vl-t6] CASE-COUNT FLOOR: PR #5's run.md batch-plan cases (and the earlier
 // autopilot/sprint cases) were migrated (relabeled to plan/plan-backlog/go/go-backlog),
-// never deleted -- this pins the pre-migration total so a future "migrate by deleting the
-// inconvenient half" can't silently shrink coverage.
-test("dataset case-count floor: total >= 164 (pre-t6-migration baseline)", () => {
-  assert.ok(dataset.cases.length >= 164, `expected >=164 total dataset cases (the pre-migration baseline), got ${dataset.cases.length}`);
+// never deleted -- this pins the total so a future "migrate by deleting the inconvenient half"
+// can't silently shrink coverage. Revival stage 2b re-based it: the 46 cases for the seven
+// deleted surfaces (plan-backlog, go-backlog, runner, review-gate, coordination, tournament,
+// domain-router) left with them, 168 -> 122.
+test("dataset case-count floor: total >= 122 (post-stage-2b baseline)", () => {
+  assert.ok(dataset.cases.length >= 122, `expected >=122 total dataset cases, got ${dataset.cases.length}`);
 });
 
-test("dataset covers all 10 skill-protocol skills with at least 3 cases each, 33+ total", () => {
+test("dataset covers all 6 skill-protocol skills with at least 3 cases each, 23+ total", () => {
   const skillCases = dataset.cases.filter((c) => SKILLS.includes(c.mode));
-  assert.ok(skillCases.length >= 33, `expected 33+ skill cases, got ${skillCases.length}`);
+  assert.ok(skillCases.length >= 23, `expected 23+ skill cases, got ${skillCases.length}`);
   const bySkill = {};
   for (const c of skillCases) bySkill[c.mode] = (bySkill[c.mode] || 0) + 1;
   for (const skill of SKILLS) assert.ok((bySkill[skill] || 0) >= 3, `skill "${skill}" has only ${bySkill[skill] || 0} cases`);
@@ -874,10 +862,11 @@ test("the sprint waves fixture's pinned output matches the checked-in waves.json
 // mutant-kill-rule-clean.md fixture is byte-identical to its "## Mutant-kill gate" section --
 // a future edit to review-gate/SKILL.md that silently drops or thins the rule fails this test
 // instead of the fixture quietly going stale.
-test("the review-gate mutant-kill-rule fixture matches the live plugin/skills/review-gate/SKILL.md section (drift guard)", async () => {
-  const live = await read("plugin/skills/review-gate/SKILL.md");
+// Revival stage 2b: review-gate survives only as the frozen Codex lane input.
+test("the review-gate mutant-kill-rule fixture matches the frozen codex/frozen/skills/review-gate/SKILL.md section (drift guard)", async () => {
+  const live = await read("codex/frozen/skills/review-gate/SKILL.md");
   const headingIndex = live.indexOf("## Mutant-kill gate");
-  assert.ok(headingIndex >= 0, "plugin/skills/review-gate/SKILL.md must contain a '## Mutant-kill gate' section");
+  assert.ok(headingIndex >= 0, "codex/frozen/skills/review-gate/SKILL.md must contain a '## Mutant-kill gate' section");
   const liveSection = live.slice(headingIndex);
   const fixture = await read("eval/modes/fixtures/skills/review-gate/mutant-kill-rule-clean.md");
   assert.equal(liveSection, fixture, "fixtures/skills/review-gate/mutant-kill-rule-clean.md must be byte-identical to the live SKILL.md's '## Mutant-kill gate' section onward");
@@ -959,7 +948,7 @@ test("coverage-table surfaces match the actual file inventory (glob counts) — 
   assert.equal(commandFiles.length, MODES.length + STRUCTURAL_MODES.length, `plugin/commands/*.md has ${commandFiles.length} file(s), expected ${MODES.length + STRUCTURAL_MODES.length}`);
 
   const skillDirs = await readdir(new URL("../plugin/skills", import.meta.url));
-  assert.equal(skillDirs.length, SKILLS.length + 1 + STRUCTURAL_SKILLS.length, `plugin/skills/* has ${skillDirs.length} dir(s), expected ${SKILLS.length + 1 + STRUCTURAL_SKILLS.length} (10 SKILLS + router, which has its own eval:router, + ${STRUCTURAL_SKILLS.length} structural SKILLS)`);
+  assert.equal(skillDirs.length, SKILLS.length + STRUCTURAL_SKILLS.length, `plugin/skills/* has ${skillDirs.length} dir(s), expected ${SKILLS.length + STRUCTURAL_SKILLS.length} (${SKILLS.length} SKILLS + ${STRUCTURAL_SKILLS.length} structural SKILLS; the router left with revival stage 2b)`);
 
   const builtinDirs = (await readdir(new URL("../plugin/builtins", import.meta.url))).filter((d) => d.startsWith("muster-"));
   assert.equal(builtinDirs.length, BUILTINS.length, `plugin/builtins/muster-*/ has ${builtinDirs.length} dir(s), expected ${BUILTINS.length} (BUILTINS)`);
@@ -968,7 +957,7 @@ test("coverage-table surfaces match the actual file inventory (glob counts) — 
   assert.equal(pipelineFiles.length, CONTENT_PIPELINES.length + KNOWLEDGE_PIPELINES.length, `pipelines/*.yaml has ${pipelineFiles.length} file(s), expected ${CONTENT_PIPELINES.length + KNOWLEDGE_PIPELINES.length} (9 CONTENT_PIPELINES + 11 KNOWLEDGE_PIPELINES)`);
 
   const readmeText = await read("eval/modes/README.md");
-  for (const name of [...MODES, ...STRUCTURAL_MODES, ...SKILLS, ...STRUCTURAL_SKILLS, ...CONTENT_PIPELINES, ...BUILTINS, ...KNOWLEDGE_PIPELINES, "router"]) {
+  for (const name of [...MODES, ...STRUCTURAL_MODES, ...SKILLS, ...STRUCTURAL_SKILLS, ...CONTENT_PIPELINES, ...BUILTINS, ...KNOWLEDGE_PIPELINES]) {
     assert.ok(readmeText.includes(name), `README's coverage table is missing surface "${name}"`);
   }
 });
@@ -979,11 +968,12 @@ test("coverage-table surfaces match the actual file inventory (glob counts) — 
 // require citing its `signals` verbatim (never paraphrased) in any confirm, and announce
 // the artifact they're about to produce before step 0/1 runs.
 
-test("scope-confirm coverage: plan.md and go.md invoke muster scope, require verbatim signals, and announce the artifact", async () => {
+test("scope coverage: plan.md and go.md take scope from one preflight call; plan quotes the signals verbatim", async () => {
   for (const file of ["plan", "go"]) {
     const text = await read(`plugin/commands/${file}.md`);
-    assert.match(text, /muster scope/, `${file}.md must invoke muster scope`);
-    assert.match(text, /every string in `signals`\s*\*\*verbatim\*\*/, `${file}.md must require citing signals verbatim, not paraphrased`);
-    assert.match(text, /Announce the artifact/, `${file}.md must announce the artifact it will produce`);
+    assert.match(text, /M preflight "<outcome>" --json/, `${file}.md must run preflight`);
+    assert.match(text, /scope: "backlog"/, `${file}.md must branch on the preflight scope`);
   }
+  const plan = await read("plugin/commands/plan.md");
+  assert.match(plan, /quoting the `signals` verbatim/, "plan.md must quote the scope signals verbatim in its confirm");
 });

@@ -24,29 +24,29 @@ import {
 // version-dependent and the caller must say which. Full coverage of the split
 // lives in test/codex-multi-agent-version.test.js.
 test("codexSpawnAgentCall: builds a v2 spawn_agent packet with fork_turns:none and the exact resolved agent_type", () => {
-  const call = codexSpawnAgentCall({ taskId: "task-1", message: "implement X", agentType: "muster-builder", version: "v2" });
+  const call = codexSpawnAgentCall({ taskId: "task-1", message: "implement X", agentType: "muster-executor", version: "v2" });
   assert.equal(call.tool, "collaboration.spawn_agent");
   assert.equal(call.task_name, "task-1");
   assert.equal(call.fork_turns, "none");
-  assert.equal(call.agent_type, "muster-builder");
+  assert.equal(call.agent_type, "muster-executor");
   assert.equal(call.message, "implement X");
 });
 
 test("codexSpawnAgentCall: a multi-wave routed run honors each crew member's own agent_type, never a shared default", () => {
   const wave = [
-    { taskId: "wave1-a", agentType: "muster-builder" },
+    { taskId: "wave1-a", agentType: "muster-executor" },
     { taskId: "wave1-b", agentType: "wsh-frontend-developer" },
     { taskId: "wave2-a", agentType: "muster-reviewer" },
   ];
   const calls = wave.map(task => codexSpawnAgentCall({ ...task, version: "v2" }));
-  assert.deepEqual(calls.map(c => c.agent_type), ["muster-builder", "wsh-frontend-developer", "muster-reviewer"]);
+  assert.deepEqual(calls.map(c => c.agent_type), ["muster-executor", "wsh-frontend-developer", "muster-reviewer"]);
   for (const call of calls) {
     assert.equal(call.fork_turns, "none", `${call.task_name} must never fork_turns:"all"`);
     assert.equal(call.tool, "collaboration.spawn_agent");
   }
   // The same crew on a v1 model gets the v1 packet, agent_type still exact.
   const v1 = wave.map(task => codexSpawnAgentCall({ ...task, version: "v1" }));
-  assert.deepEqual(v1.map(c => c.agent_type), ["muster-builder", "wsh-frontend-developer", "muster-reviewer"]);
+  assert.deepEqual(v1.map(c => c.agent_type), ["muster-executor", "wsh-frontend-developer", "muster-reviewer"]);
   for (const call of v1) {
     assert.equal(call.tool, "multi_agent_v1.spawn_agent");
     assert.equal(call.fork_context, false);
@@ -84,8 +84,8 @@ test("assertCodexSpawnAgentAccepted: a rejected profile fails LOUD with a regist
 });
 
 test("assertCodexSpawnAgentAccepted: an accepted spawn returns a plain confirmation, no throw", () => {
-  const result = assertCodexSpawnAgentAccepted({ taskId: "task-4", agentType: "muster-builder", rejected: false });
-  assert.deepEqual(result, { taskId: "task-4", agentType: "muster-builder", accepted: true });
+  const result = assertCodexSpawnAgentAccepted({ taskId: "task-4", agentType: "muster-executor", rejected: false });
+  assert.deepEqual(result, { taskId: "task-4", agentType: "muster-executor", accepted: true });
 });
 
 test("assertCodexSpawnAgentAccepted: rejected with no rejectionReason still throws a complete registration diagnostic", () => {
@@ -98,11 +98,11 @@ test("assertCodexSpawnAgentAccepted: rejected with no rejectionReason still thro
 test("assertCodexSpawnAgentAccepted: only an explicit rejected:false status with valid identifiers is accepted", () => {
   for (const outcome of [
     {},
-    { taskId: "task-6", agentType: "muster-builder" },
-    { taskId: "task-6", agentType: "muster-builder", rejected: 0 },
-    { taskId: "task-6", agentType: "muster-builder", rejected: "false" },
-    { taskId: "", agentType: "muster-builder", rejected: false },
-    { taskId: "   ", agentType: "muster-builder", rejected: false },
+    { taskId: "task-6", agentType: "muster-executor" },
+    { taskId: "task-6", agentType: "muster-executor", rejected: 0 },
+    { taskId: "task-6", agentType: "muster-executor", rejected: "false" },
+    { taskId: "", agentType: "muster-executor", rejected: false },
+    { taskId: "   ", agentType: "muster-executor", rejected: false },
     { taskId: "task-6", agentType: "", rejected: false },
     { taskId: "task-6", agentType: "   ", rejected: false },
   ]) {

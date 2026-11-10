@@ -19,18 +19,19 @@ and explicitly parked, not built.
 ## Scope of the audit
 
 "Plugin prose" here means the model-facing surface Claude Code actually loads and reads at
-dispatch time: `plugin/commands` (the ten modes as `*.md` files),
-`plugin/skills` (the twenty-two core skills, one `SKILL.md` per
-subdirectory), muster's own agents in `plugin/agents` (seven `muster-*.md` files; not the
-vendored `wsh-*.md` personas), and `plugin/output-styles/muster.md` -- forty files.
+dispatch time: `plugin/commands` (the seven modes as `*.md` files),
+`plugin/skills` (the seven core skills, one `SKILL.md` per
+subdirectory), muster's own agents in `plugin/agents` (nine `muster-*.md` files; not the
+vendored `wsh-*.md` personas), and `plugin/output-styles/muster.md` -- twenty-four files. The Workflow scripts in
+`plugin/workflows/` are code, not prose, and sit outside the audit.
 
 Two adjacent trees were deliberately excluded, with evidence rather than assertion:
 
 - The vendored specialist packs (`plugin/agents`'s `wsh-*.md` personas and every SKILL.md under
-  `plugin/builtins`) are payload content the router dispatches *into*, not muster's own
+  `plugin/builtins`) are payload content muster dispatches *into*, not muster's own
   orchestration prose. A raw grep for "hook" across `plugin/` before narrowing the scope
   pulled in React hooks (`plugin/agents/wsh-frontend-developer.md`: "Advanced hooks
-  (useActionState...)"), git pre-commit hooks (`plugin/builtins/gsd-execute-phase/SKILL.md`), a
+  (useActionState...)"), git pre-commit hooks (in a since-deleted gsd builtin), a
   different harness's own hook system entirely
   (`plugin/builtins/wsh-signed-audit-trails-recipe/SKILL.md`, which documents *protect-mcp's*
   runtime hooks, unrelated to Claude Code's), and marketing copy ("Lead with a hook" in
@@ -70,13 +71,13 @@ one deny surface left on any dispatch-adjacent tool call.
 
 **Degradation ladder (no-subagent harness).** There is no isolated-context spawn at all --
 one thread of conversation, period. Muster's own dispatchable agent already states this
-fallback for itself, not as theory: `plugin/agents/muster-runner.md`'s review-gate step reads
-"use the Task tool (named Agent on some harnesses -- the frontmatter grants both) to dispatch
-muster-reviewer... when agent dispatch is unavailable, run the reviewer's discipline yourself
-in a strictly read-only pass over the diff." Generalized across every dispatch call in this
+fallback for itself, not as theory: `plugin/skills/orchestrator/SKILL.md`'s "Prose fallback"
+section dispatches the planner, executor, reviewer and verifier one Agent call at a time when the
+Workflow tool is missing, and says to stop rather than work inline when the Agent tool is
+missing too. Generalized across every dispatch call in this
 document: the orchestrator loop reads the resolved provider's skill or agent prose into its own
 context and performs the step itself, sequentially, in the same thread. Consequences: waves
-collapse from parallel fan-out to a strictly sequential pass; a tournament's N competing
+collapse from parallel fan-out to a strictly sequential pass; any N competing
 candidates become N sequential single-shot drafts scored by the same loop that wrote them,
 which weakens the point of running a tournament at all; the model-tier-per-role advantage
 narrows to whatever model-swap capability the harness exposes at the top-level call, if any; and
@@ -92,17 +93,15 @@ set of gates -- offering the exact options and signals fired, never inferring si
 than parsing free text.
 
 **Claude Code binding.** The AskUserQuestion selection UI tool. It is the single most-cited
-mechanism in this audit (see the Grep audit table below): the scope confirmation in
-`plugin/commands/plan.md` and `plugin/commands/go.md`, the merge-decision prompt in
-`plugin/commands/go.md` and `plugin/commands/audit.md`, capture's write gate in
-`plugin/commands/capture.md`, plan-backlog's approval gates in
-`plugin/commands/plan-backlog.md`, the interview skill's one-question-at-a-time loop in
-`plugin/skills/interview/SKILL.md`, coordination's HUMAN-HOLD resume in
-`plugin/skills/coordination/SKILL.md`, the orchestrator's pre-flight plan-conflict batch
-question and review-gate escalation resolution in `plugin/skills/orchestrator/SKILL.md`,
+mechanism in this audit (see the Grep audit table below): the backlog-scope confirm and the
+approval stop in `plugin/commands/plan.md`, the unclear-outcome questions and the merge decision
+in `plugin/commands/go.md`, the merge-decision prompt in `plugin/commands/audit.md`, capture's
+write gate in `plugin/commands/capture.md`, the interview skill's one-question-at-a-time loop in
+`plugin/skills/interview/SKILL.md`, the escalation stops in `plugin/skills/orchestrator/SKILL.md`,
 roadmap-prioritization's optional-push offers in
-`plugin/skills/roadmap-prioritization/SKILL.md`, and the router and greenfield skills'
-"ask, don't invent" rule in `plugin/skills/router/SKILL.md` and `plugin/skills/greenfield/SKILL.md`.
+`plugin/skills/roadmap-prioritization/SKILL.md`, and the greenfield skill's "ask, don't invent"
+rule in `plugin/skills/greenfield/SKILL.md`. Workflow agents cannot ask the user, so every one of
+these stops sits between workflow calls in the main thread.
 
 **Degradation ladder (no structured question UI).** No multi-choice tool exists -- the model
 asks in prose and waits for the next turn's freeform reply, parsed by the calling skill's own
@@ -122,36 +121,28 @@ never named as harness degradation before now.
 **What it is.** A guardrail on a tool call that fires deterministically, independent of whether
 the model chooses to comply.
 
-**Claude Code binding.** `plugin/hooks/hooks.json` registers two scripts, and neither fires
+**Claude Code binding.** `plugin/hooks/hooks.json` registers one script, and it does nothing
 outside a muster run's scope: a single `PreToolUse` matched against `Bash|PowerShell|mcp__.*`
-(`plugin/hooks/pre-tool-use.js`, the action-class fence) and `TaskCompleted`
-(`plugin/hooks/task-completed-gate.js`). There is no `SessionStart` or `UserPromptSubmit` hook
+(`plugin/hooks/pre-tool-use.js`, the action-class fence). The `TaskCompleted` gate was removed
+in revival stage 2b with the native task board. There is no `SessionStart` or `UserPromptSubmit` hook
 and no warn-only nudge: muster costs nothing in a session that never invokes a verb. The
 enforcement-model redesign removed the wave-guard, the per-turn scale-gate, and the separate
 `Task|Agent`-matched todo-gate (unscopable in the field -- false-positive-trained kill switches
 and denies on sessions/repos where muster never ran; see CHANGELOG), and the zero-cost pass then
 removed the border invitation, its inline-file counter, and the session/prompt hooks. The
-action-class fence is the ONE hard deny. `plugin/skills/orchestrator/SKILL.md`'s own
-"Enforcement model: gates vs conventions" section draws the identical line for a plugin-user
-reading skill prose rather than hook source: one hook-enforced hard deny (the action-class
-fence) and a CONVENTIONS tier -- dispatch-not-inline, todo-driving visibility,
-crew-owner/state-in-subject, verb selection, humanizer routing, glass-box narration -- enforced
-only by SKILL discipline and the review gate after the fact, specifically because a
-`PreToolUse` hook can observe a tool call, never a judgment call, and even the one hard deny only
-ever sees the run's EXTERNAL effects (a forbidden action class), never the orchestrator's own
-in-repo edits.
+action-class fence is the ONE hard deny. `plugin/skills/orchestrator/SKILL.md`'s must-hold
+rules draw the same line for a plugin user reading skill prose rather than hook source: the fence
+is hook-enforced, while dispatch-not-inline, evidence over verdicts and merge-wave as the only
+merge path are run rules the skill states and `muster merge-wave` checks after the fact, because
+a `PreToolUse` hook can observe a tool call, never a judgment call, and even the one hard deny
+only ever sees the run's EXTERNAL effects (a forbidden action class), never the orchestrator's
+own in-repo edits.
 
-**Degradation ladder (no-hook harness).** No `PreToolUse`/`TaskCompleted` event exists at
-all. The action-class fence becomes a `FORBIDDEN ACTIONS:` line carried in the dispatch brief --
+**Degradation ladder (no-hook harness).** No `PreToolUse` event exists at all. The action-class fence becomes a `FORBIDDEN ACTIONS:` line carried in the dispatch brief --
 the brief-copy step is harness-agnostic prose already, not hook-dependent -- with no mechanical
-block, relying entirely on the review gate catching a violation after the fact. Every item already
-in the CONVENTIONS tier -- dispatch-not-inline, todo-driving visibility (that same file's "Task
-board" section already documents its fail-soft path: a no-native-board harness "relies on
-STATE alone (note this once)"), crew-owner/state-in-subject, verb selection, humanizer routing,
-glass-box narration -- needs no further downgrade: none of them were hook-enforced to begin with,
-so a no-hook harness changes nothing for that tier. Drift reinforcement across a long session
-rides the verb's own skill text and the dispatch briefs the orchestrator loop controls on every
-harness now, Claude Code included; no session-lifecycle hook injects it.
+block, relying entirely on the reviewer and `merge-wave` catching a violation after the fact.
+The run rules need no further downgrade: none of them were hook-enforced to begin with, so a
+no-hook harness changes nothing for them.
 
 ### 4. Isolate
 
@@ -159,14 +150,14 @@ harness now, Claude Code included; no session-lifecycle hook injects it.
 driven by a dispatched runner -- its own filesystem/branch sandbox, so concurrent work cannot
 collide with the base checkout or with a sibling task.
 
-**Claude Code binding.** Git worktrees, created per concurrent same-wave file-writing task
-(`plugin/skills/orchestrator/SKILL.md`: `isolation: "worktree"` passed as a parameter on the
-Agent tool call) and per dispatched backlog-item runner in wave mode
-(`plugin/commands/go-backlog.md`: each parallel item-runner subagent gets its own
-`.worktrees/<item-branch>`). The guarantee composes with Enforce: before dispatch, the
-orchestrator copies regular `.muster/run-active` and `.muster/forbidden-actions` files into
-every isolated writer cwd. The `PreToolUse` hook resolves those files from the tool payload
-cwd; `agent_id` and metadata paths do not bypass a matching action fence.
+**Claude Code binding.** Git worktrees, created by the `muster:build` Workflow script for every
+executor (`isolation: "worktree"` on each `agent()` call in `plugin/workflows/build.js`, the same
+parameter the Agent tool takes in the orchestrator's prose fallback). Fixers work in the builder's
+kept worktree, the verifier integrates the wave commits in a scratch worktree, and `muster
+merge-wave` (`src/merge-wave.js`) removes only clean, merged worktrees under `.claude/worktrees/`.
+The action fence reads `.muster/run-active` and `.muster/forbidden-actions` from the tool
+payload's cwd; Workflow worktrees are created by the harness, so the fence covers the main thread
+and executor isolation is the worktree boundary itself.
 
 **Degradation ladder (no-subagent harness, nothing to pin a cwd to).** Git worktrees and branches are
 themselves plain git, not Claude-Code-specific, so the filesystem sandbox survives unchanged on
@@ -191,36 +182,20 @@ document considers still assumes git.
 durable enough for a resumed run or a reviewer to trust without re-deriving it from
 conversation memory.
 
-**Claude Code binding.** Three layers, only one of which is Claude-Code-specific. `.muster/STATE.md`
-and git itself (commits, `git notes --ref=muster` written per wave by
-`plugin/skills/orchestrator/SKILL.md`) are plain files and git, harness-agnostic already. The
-mandated dispatch return contract (implementers return raw data capped at 2000 characters,
-reviewers return a verdict first with findings capped at 1500 characters --
-`plugin/skills/orchestrator/SKILL.md`'s "Return contract" section) is brief-level prose
-discipline, not a Claude Code feature, though it only has something to bound *because* Dispatch
-exists. The one genuinely Claude-Code-specific piece is the native todo list: Claude Code's own
-`TodoWrite`/`TaskCreate`/`TaskUpdate` tool calls, surfaced in its own todo UI. A hook
-(plugin/hooks/todo-gate.js) once read that list back to gate dispatch on it; the
-enforcement-model redesign removed the gate (visibility is now convention, not hook-enforced --
-see `docs/architecture.md`'s "Enforcement model" section), so `plugin/skills/orchestrator/
-SKILL.md`'s "Task board" section carries the discipline on its own: one harness-visible task
-per work item, via the harness's native task-tracking primitive (`TaskCreate`/`TaskUpdate`/
-`TaskList` on Claude Code) when present -- now the AUTHORITATIVE live-progress surface, not a
-duplicate of a status list STATE also keeps (backlog item `task-board-authoritative`). A NEW,
-narrower hook-enforced gate exists for the completion tick specifically: `TaskCompleted`
-(`plugin/hooks/task-completed-gate.js`) denies marking a muster-tracked native task completed
-unless `.muster/task-board.json` records that task's review-gate PASS -- unlike the removed
-todo-gate, this one gates a real review-gate RESULT, not mere board visibility, and only on the
-completion tick, never on dispatch.
+**Claude Code binding.** The run directory `.muster/runs/<runId>/` (CONTEXT, PLAN,
+build-args, SUMMARY-*, VERIFICATION, STATE), committed on the work branch, plus git itself (the
+tagged per-task commits and the `--no-ff` merges). These are plain files and git,
+harness-agnostic already. The Claude-Code-specific layer is the Workflow script's
+schema-validated returns (`plugin/workflows/schemas.js`): each executor, reviewer and verifier
+returns evidence fields (`commit`, `commitReviewed`, `testsRun`, `testsPassed`) that
+`src/merge-wave.js` re-checks against git and the committed build args before anything merges.
+The native task board is gone on current models (the 5.x generation has no TaskCreate), so
+progress is derived from disk by `muster next --run` (`src/run-next.js`) instead.
 
-**Degradation ladder (no native todo tool).** The STATE.md ledger and git notes need no
-ladder -- they survive unchanged on any harness with a filesystem and git, since neither one
-was Claude-Code-specific to begin with. The native-todo-list receipt has no direct equivalent
-absent that tool: `plugin/skills/orchestrator/SKILL.md`'s own "Task board" section already
-states the fail-soft path verbatim -- a no-native-board harness "relies on STATE alone (note
-this once)" -- so the todo-list receipt folds back into the STATE.md checklist, with visibility
-enforced only by the same convention-not-gate downgrade named under Enforce, never
-mechanically.
+**Degradation ladder (no Workflow tool).** The run directory and git need no ladder. Without
+schema-validated workflow returns, the orchestrator's prose fallback asks each Agent call for the
+same JSON shapes and writes `build-result.json` itself; `merge-wave`'s checks are unchanged, so
+the evidence bar holds even when the shape is model-written.
 
 ### 6. Capability scan
 
@@ -255,7 +230,7 @@ scanned.
 
 ## Grep audit
 
-Reproducible commands, run from the repo root against the forty-three-file "plugin prose" scope
+Reproducible commands, run from the repo root against the "plugin prose" scope
 defined above (`FILES` set to every `*.md` in `plugin/commands`, every `SKILL.md` in
 `plugin/skills`, every `muster-*.md` in `plugin/agents`, and every `*.md` in
 `plugin/output-styles`):
@@ -280,103 +255,23 @@ both numbers on every test run from the live prose tree, so this table cannot si
 stale:
 
 ```
-AskUserQuestion    files=14  mentions=35
-dispatch (Agent/Task tool)  files=7  mentions=17
-hook (PreToolUse/SessionStart/UserPromptSubmit)  files=10  mentions=26
-worktree   files=7  mentions=54
+AskUserQuestion    files=7  mentions=17
+dispatch (Agent/Task tool)  files=2  mentions=8
+hook (PreToolUse/SessionStart/UserPromptSubmit)  files=2  mentions=3
+worktree   files=8  mentions=55
 ```
 
-Counts refreshed for the release action-fence follow-up: `go.md`, `go-backlog.md`, and the
-orchestrator now require run markers to be copied into each isolated writer cwd. That adds
-the dispatch, hook, and worktree matches above; the executable test continues to derive the
-numbers from the same live plugin-prose scope.
+Counts refreshed for revival stage 2b (2026-11-09): plan.md, go.md and the orchestrator were
+rewritten around the Workflow scripts; plan-backlog, go-backlog, runner, the router,
+domain-router, review-gate, tournament and coordination skills, the muster-runner agent and the
+`TaskCompleted` gate were deleted, and the ten audit-pattern hunt lists moved out of
+`plugin/skills/`. Earlier per-item refresh notes described prose that no longer exists and were
+dropped; the test re-derives every number from the live tree.
 
-Counts refreshed for the workflow-tool-delegation item: orchestrator/SKILL.md's new "Wave
-dispatch: native Workflow vs prose fallback" section added one dispatch mention (`Agent`
-tool calls, one per task) and one worktree mention (the per-task git worktree parallel-
-isolation rule) -- file counts unchanged (still the same 5 files each), only mentions grew.
-
-Counts refreshed again for the task-board-authoritative item: `plugin/skills/orchestrator/
-SKILL.md`'s "Task board" section (naming the new `TaskCompleted` gating hook,
-`plugin/hooks/task-completed-gate.js`) and its "Enforcement model" section (naming that same
-hook as a second, narrower hook-enforced block) both gained new `hook`-word mentions;
-`plugin/commands/go-backlog.md`'s step 2/3 rewrite (native board authoritative, STATE
-de-duplicated) added none of its own -- file counts unchanged (still the same 11 files), hook
-mentions grew 19 -> 26 (+7: 6 in orchestrator/SKILL.md, 1 in go-backlog.md's cross-reference to
-the gating hook). AskUserQuestion, dispatch, and worktree counts are untouched by this item.
-
-Counts refreshed again for the worktree-isolation-native item: `plugin/skills/orchestrator/
-SKILL.md`'s new "Worktree isolation per harness + base-SHA receipts" subsection (stacked after
-"Codex-native dispatch: spawn_agent") names each of the four harnesses' native worktree
-mechanisms concretely (Claude Code CLI's `isolation: "worktree"` Agent-tool parameter, Claude
-Code Desktop's automatic per-session worktree, Hermes's `hermes -w`/kanban worktree workspaces,
-Codex's receipts-only floor) and the base-SHA receipt every harness records alike -- one more
-`Agent tool` mention (dispatch 16 -> 17) and seven more `worktree` mentions (15 -> 22, the
-per-harness mechanism list plus the receipt-builder prose). File counts unchanged (still the
-same 5 files each); AskUserQuestion and hook counts are untouched by this item.
-
-Counts refreshed again for the native-plan-mode-parity item: `plugin/commands/plan.md` and
-`plugin/commands/plan-backlog.md` gained new selection-UI prose (the native plan-surface
-gate, `src/plan-surface.js`) that added four `AskUserQuestion` mentions (31 -> 35) and two
-`hook`-word mentions (26 -> 28) -- file counts unchanged (still the same 13 and 11 files);
-dispatch and worktree counts are untouched by this item.
-
-Counts refreshed again for the runner-worktree-bootstrap item: `plugin/agents/muster-runner.md`
-gained a new "Worktree bootstrap" section (the node_modules symlink-or-npm-ci discipline every
-dispatched runner independently rediscovered) that added one `worktree`-word mention (22 -> 23);
-`plugin/commands/go-backlog.md`'s existing Isolation bullet gained a citing clause pointing back
-at that same rule, on its own already-counted line, adding none of its own -- file counts
-unchanged (still the same 5 files); AskUserQuestion, dispatch, and hook counts are untouched by
-this item.
-
-Four later refreshes recorded Kimi-lane prose (worktree isolation, the plan-flow surface, the
-resume retry, and batch token reporting). That prose was removed with the Kimi lane on
-2026-11-09; the counts above reflect the removal.
-
-Counts refreshed again for the audit-pillar-pattern-library item (composed base branch,
-2026-08-04): the item's 9 new `plugin/skills/audit-pattern-architecture/SKILL.md`-shaped
-hunt-list skills widen the `plugin/skills` scope from twelve to twenty-one directories (thirty-three to
-forty-two total prose files, both fixed above). One of the nine,
-`audit-pattern-architecture/SKILL.md`, cites the doc's own primitive-binding vocabulary
-verbatim in a single line ("AskUserQuestion, Agent tool, hooks, worktrees") -- one new file and
-one new mention each on the AskUserQuestion (14/36) and dispatch (7/18) rows. The worktree row
-(7/62) also reflects that same line plus `plugin/commands/audit.md`'s own worktree-isolation
-prose, which grew independently on this base branch since the prior refresh; every number above
-is re-derived fresh from the live tree by `test/docs-binding-interface.test.js`'s own grep-audit
-procedure, not carried forward from any prior entry's arithmetic.
-
-Counts refreshed again for the audit-pattern-batch2 item (composed base branch, 2026-08-04): the
-item's approved second improver batch adds a 10th `plugin/skills/audit-pattern-documentation/
-SKILL.md` pattern skill and appends 19 dated entries across the other 9, widening the
-`plugin/skills` scope from twenty-one to twenty-two directories (forty-two to forty-three total
-prose files, both fixed above). Four of the newly appended entries each name `hook` as an
-ordinary English word inside their own finding text -- `audit-pattern-architecture/SKILL.md`'s
-lock-protocol census ("public vs private hook seams"), `audit-pattern-coverage/SKILL.md`'s
-mock-altitude entry ("a documented injection hook"), `audit-pattern-security/SKILL.md`'s
-integrity-pairing entry ("the exact-hash hook trust check"), and
-`audit-pattern-documentation/SKILL.md`'s decision-record-audit entry ("hook-trust's '20
-commits'") -- four new files and four new mentions on the hook row (11/29 -> 15/33). No entry
-added an AskUserQuestion, dispatch, or worktree mention; those three rows are unchanged. Every
-number above is re-derived fresh from the live tree, not carried forward from this or any prior
-entry's arithmetic.
-
-Counts refreshed again for the zero-cost-until-invoked pass (2026-11): the always-on
-`SessionStart`/`UserPromptSubmit` hooks and the border invitation were deleted, so the eight
-command files' run-active boilerplate no longer names the `PreToolUse` hook or `SessionStart`,
-`capture.md` no longer cites the hook's decision order, and the orchestrator's lease prose was
-reflowed (hook 15/33 -> 10/26, worktree 7/62 -> 7/61). AskUserQuestion and dispatch counts are
-untouched by this item.
-
-Counts refreshed again for the Kimi and Orca lane removal (2026-11-09): the orchestrator's Kimi
-worktree bullet, Kimi-native dispatch subsection and Kimi resume clause, `plan.md`'s Kimi
-session bullet, and the Kimi run-loop and token-accounting prose in `go.md` and `go-backlog.md`
-were deleted (AskUserQuestion 14/36 -> 14/35, dispatch 7/18 -> 7/17, worktree 7/61 -> 7/54).
-The hook count is untouched by this item.
-
-Every one of those 132 mentions accounted for above: AskUserQuestion under Ask; Agent/Task tool
+Every one of those mentions is accounted for above: AskUserQuestion under Ask; Agent/Task tool
 and `subagent_type` under Dispatch; hook/PreToolUse/SessionStart/UserPromptSubmit under
-Enforce; worktree under Isolate. Receipts and Capability scan bind to mechanisms (the native
-todo tool, the plugin registry) that plugin prose refers to by their STATE/task-board/`muster
+Enforce; worktree under Isolate. Receipts and Capability scan bind to mechanisms (the run
+directory, the plugin registry) that plugin prose refers to by their run-directory/`muster
 capabilities` names rather than by the literal strings audited here, which is why they are not
 separate rows in this table -- their own sections above cite the exact files instead.
 
@@ -398,7 +293,7 @@ legacy setup fixture. This is a bootstrap authority pair, not a generated bindin
 Building an actual AGENTS.md adapter would mean generating and keeping in sync a real
 degradation surface: the working principles, the verb lexicon, and a routing-policy reminder
 written into AGENTS.md content a harness without `SessionStart` could load on its own, plus
-deciding how (or whether) the wave-guard/scale-gate/todo-gate/action-fence conventions get
+deciding how (or whether) the action fence and the run rules get
 restated there once they are conventions rather than gates (see Enforce). That is real design
 and implementation work, is out of scope for a doc-only item, and stays a named follow-up here
 rather than a half-built adapter: **parked, not built.**

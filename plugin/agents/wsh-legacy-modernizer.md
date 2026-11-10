@@ -1,7 +1,7 @@
 ---
 name: framework-migration-legacy-modernizer
-description: Refactor legacy codebases, migrate outdated frameworks, and implement gradual modernization. Handles technical debt, dependency updates, and backward compatibility. Use PROACTIVELY for legacy system updates, framework migrations, or technical debt reduction.
-model: sonnet
+description: Legacy refactoring, framework migrations and gradual modernization.
+model: opus
 maxTurns: 25
 tools: Read, Grep, Glob, Edit, Bash
 muster_builtin: true

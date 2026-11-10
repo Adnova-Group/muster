@@ -67,10 +67,9 @@ test("contributor and architecture docs describe the current build and dispatch 
 
 test("binding inventory and docs index match the public surface", async () => {
   const binding = await read("docs/binding-interface.md");
-  assert.match(binding, /ten modes as `\*\.md` files/i);
-  // Re-derived 2026-08-04: the 9 audit-pattern hunt-list skills widened the prose scope 33->42;
-  // audit-pattern-batch2's 10th (documentation) skill widened it again, 42->43.
-  assert.match(binding, /forty files|40 files/i);
+  assert.match(binding, /seven modes as `\*\.md` files/i);
+  // Re-derived 2026-11-09 (revival stage 2b): 7 commands + 7 skills + 9 muster agents + 1 style.
+  assert.match(binding, /twenty-four files|24 files/i);
   const index = await read("docs/README.md");
   for (const expected of ["Architecture", "Binding", "Operations", "Research", "Historical"]) {
     assert.match(index, new RegExp(`## ${expected}`, "i"));
@@ -84,13 +83,13 @@ test("README has no dead links to removed internal docs", async () => {
   }
 });
 
-test("public references document design and init in the ten primary modes", async () => {
+test("public references document design and init in the seven primary modes", async () => {
   const readme = await read("README.md");
   const architecture = await read("docs/architecture.md");
   const modes = await read("website/reference/modes.md");
-  assert.match(readme, /## The ten modes/);
-  assert.match(architecture, /## The ten modes/);
-  assert.match(modes, /# The ten modes/);
+  assert.match(readme, /## The seven modes/);
+  assert.match(architecture, /## The seven modes/);
+  assert.match(modes, /# The seven modes/);
   for (const text of [readme, architecture, modes]) {
     assert.match(text, /Design[^\n]*\/muster:design/);
     assert.match(text, /Init[^\n]*\/muster:init \[dir\]/);
@@ -200,21 +199,21 @@ test("Init public reference pins one instruction authority and holds conflicts",
   assert.match(modes, /reverse `AGENTS\.md` reference to `CLAUDE\.md` cannot satisfy/i);
 });
 
-test("public docs contain no stale 29-tool total claims", async () => {
+test("public docs contain no stale 29- or 31-tool total claims", async () => {
   const roots = ["cowork", "docs", "website"];
   const files = ["README.md"];
-  const exactComponentPhrase = "30 CLI-wrapper tools plus `muster_sprint_protocol`";
+  const exactComponentPhrase = "29 CLI-wrapper tools plus `muster_sprint_protocol`";
   for (const dir of roots) {
     const entries = await readdir(new URL(dir, root), { recursive: true });
     files.push(...entries.filter((entry) => entry.endsWith(".md")).map((entry) => `${dir}/${entry}`));
   }
-  const staleTotal = /\b29(?:-tool\b|\s+(?:deterministic\s+)?tools?\b|\s+CLI(?:-|\s)?wrappers?\b|\s+CLI(?:-|\s)?wrapper(?:\s+MCP)?\s+tools?\b)/i;
+  const staleTotal = /\b(?:29|31)(?:-tool\b|\s+(?:deterministic\s+)?tools?\b|\s+CLI(?:-|\s)?wrappers?\b|\s+CLI(?:-|\s)?wrapper(?:\s+MCP)?\s+tools?\b)/i;
   for (const file of files) {
     const text = (await read(file)).replaceAll(exactComponentPhrase, "");
     assert.doesNotMatch(
       text,
       staleTotal,
-      `${file} may use 29 only in the exact component phrase "${exactComponentPhrase}"`,
+      `${file} may use 29 only in the exact component phrase "${exactComponentPhrase}", and never 31 (the pre-2b total)`,
     );
   }
   assert.match(await read("website/guides/codex.md"), new RegExp(exactComponentPhrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
@@ -326,7 +325,7 @@ test("CHANGELOG.md contains a heading for the current version", async () => {
 const GATED_PROSE = ["README.md", "docs/architecture.md", "CONTRIBUTING.md", "docs/anti-patterns.md"];
 
 test("public prose carries no sycophancy AI-tells (humanizer gate)", async () => {
-  // "great question", "as an AI", "happy to help" never belong in technical docs.
+  // "great question", "you're absolutely right", "happy to help" never belong in technical docs.
   for (const f of GATED_PROSE) {
     const hit = scoreHumanness(await read(f)).findings.find(x => x.category === "sycophancy");
     assert.equal(hit, undefined,
@@ -345,8 +344,8 @@ test("public prose carries no AI-tell signposting (humanizer gate)", async () =>
 });
 
 test("public prose carries no AI-tell banned sentence-openers (humanizer gate)", async () => {
-  // "Certainly", "Moreover", "Additionally", "Furthermore", "Indeed", "Notably",
-  // "Importantly", "Ultimately", "Overall" at line/paragraph starts are AI-tell patterns.
+  // "Certainly", "Moreover", "Additionally", "Furthermore", "Notably", "Importantly",
+  // "Interestingly", "Undoubtedly", "Ultimately" at line/paragraph starts are AI-tell patterns.
   // The regex only fires on line-start matches, keeping false-positive risk very low.
   for (const f of GATED_PROSE) {
     const hit = scoreHumanness(await read(f)).findings.find(x => x.category === "banned-opener");

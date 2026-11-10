@@ -1,7 +1,7 @@
 ---
 name: backend-development-security-auditor
-description: Review code and architecture for security vulnerabilities, OWASP Top 10, auth flaws, and compliance issues. Use for security review during feature development.
-model: sonnet
+description: "Security review: OWASP Top 10, auth flaws and compliance."
+model: opus
 maxTurns: 40
 tools: Read, Grep, Glob, Edit, Bash
 muster_builtin: true

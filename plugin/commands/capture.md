@@ -1,6 +1,6 @@
 ---
 name: capture
-description: "Conversation-to-backlog generator — the third and final backlog generator, alongside the interview skill's decomposition check and audit's backlog mode, so hand-written backlog items are never needed. Turns a session's discussion (research findings, design decisions, review residuals, explicit user directives like 'add those 5') into backlog items via the identical extract/validate/dedupe/write machinery, gated by human approval before anything is written. Usage: /muster:capture [hint] — hint optionally scopes which part of the conversation to mine; empty = the whole session so far."
+description: "Turn this conversation's decisions into approval-gated backlog items. Usage: /muster:capture [hint]"
 argument-hint: "[hint]"
 upstream: []
 ---
@@ -46,11 +46,11 @@ This reuses the interview skill's Decomposition check machinery **by reference**
    - **assess-passable** — `muster assess "<item text>"` (via `$MUSTER_CLI assess "<item text>"`) (every `{key: value}` annotation stripped generically first) returns `clear: true`; fold in criteria until it does, capped at 2 reword attempts. If the item still isn't `clear: true` after 2 attempts, present it in step 4's offer list marked **UNMEASURABLE** with its assess signals attached, for the human to fix or drop — never fabricate a metric to force `clear: true`.
    - **`{id: <short-kebab-slug>}`** on every item — a label only, with no effect on ordering.
    - **explicit `{deps: none}`** for a genuinely independent item, or **`{deps: <predecessor ids>}`** for one that builds on another item extracted in this same batch — an item written without a `{deps}` annotation implicitly depends on everything already above it in the file, so always state it explicitly.
-   - **no `{disposition}`** annotation unless the user explicitly declared one for that item during the conversation (`go-backlog` defaults unannotated items to `pr`).
+   - **no `{disposition}`** annotation unless the user explicitly declared one for that item during the conversation (go's Backlog flow defaults unannotated items to `pr`).
 3. **Dedupe** — read `.muster/backlog.md` if it exists; skip any candidate whose text (every `{key: value}` annotation stripped generically) already matches an existing line's text, checked or unchecked. Track skips for the report.
 4. **Present** — before writing anything, show the surviving candidate list via the **AskUserQuestion** selection UI: **Approve all** / **Edit** (revise or drop specific items; an edited item re-enters step 2 — assess-passable + dedupe — before it is re-offered) / **Drop <named items>** / **Cancel (capture nothing)** — the last exits without writing anything to the backlog. Nothing is written until the user approves — this is the human gate on what enters the queue.
 5. **Write** — create `.muster/backlog.md` if absent, else append below the existing content; NEVER remove, reorder, or rewrite existing lines. Publish the complete staged result on stdin with `$MUSTER_CLI backlog-publish .muster/backlog.md --expect <sha256|absent>`; on a changed-before-publication failure, reread, redo dedupe/append, and retry — never write or rename the backlog directly. One line per approved item: `- [ ] <item text>` followed by its `{id}`/`{deps}`/(optional) `{disposition}` annotations — exactly the format `/muster:go-backlog` parses. Record the written items and the skips in the run STATE (glass box).
-6. **Offer** — via **AskUserQuestion**: run the **first item now** (the Go lifecycle), run the **whole backlog** now (`/muster:go-backlog`), or **just save** (stop here).
+6. **Offer** — via **AskUserQuestion**: run the **first item now** (the Go lifecycle), run the **whole backlog** now (`/muster:go .muster/backlog.md`), or **just save** (stop here).
 
 ## Glass box
 Record, per item: the source (quote fragment or decision reference), the `assess` result (or `UNMEASURABLE` if the reword cap was hit), and whether it was written or skipped as a duplicate — so the backlog always traces back to the conversation it came from.

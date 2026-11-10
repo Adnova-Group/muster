@@ -37,7 +37,7 @@
 // fast-path-token-gap item (closing criterion 3's own named gap): `reviewSkillCharsAfter`/
 // `outputTokensPerReviewerAfter` let the AFTER side model a DIFFERENT brief size / output-
 // token cost than the before side, for the two levers that item adds -- a lighter reviewer
-// brief (`plugin/skills/review-gate/fast-path-brief.md`, real/measured) and a cheaper
+// brief (`codex/frozen/skills/review-gate/fast-path-brief.md`, real/measured) and a cheaper
 // reasoning-effort tier (`src/gate-cadence.js`'s `reviewerReasoningForCount`, MODELED to
 // produce a shorter output here — documented, not measured, same posture as
 // `outputTokensPerReviewer` itself). Both default to the base before-side values, so every

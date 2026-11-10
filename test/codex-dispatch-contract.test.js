@@ -39,13 +39,6 @@ test("shipped Codex orchestrator embeds the reference's fork_turns contract verb
   assert.match(forkTurns, /never use `"all"`/);
 });
 
-test("shipped Codex go-backlog command routes production waves through codex-wave only", async () => {
-  const goBacklog = await readFile(join(selectedPluginRoot, "commands", "go-backlog.md"), "utf8");
-  assert.match(goBacklog, /codex-wave <wave\.json>/);
-  assert.match(goBacklog, /Production waves are process-only/);
-  assert.match(goBacklog, /never invoke a shared-CWD or inline dispatch path from the backlog or manifest/);
-});
-
 test("shipped Codex orchestrator carries BOTH multi-agent API shapes, not v2-only", async () => {
   const shapesTable = await extractRefBlock("| | v2 (`sol`, `terra`)");
   const orchestrator = await readFile(join(selectedPluginRoot, "internal-skills", "orchestrator", "SKILL.md"), "utf8");

@@ -1,5 +1,7 @@
 # Performance pass (backlog item `muster-performance-pass`)
 
+> **Superseded (revival stage 2b, 2026-11-09).** This records the pre-revival prose lifecycle (router, review-gate, tournament and coordination skills, plan-backlog/go-backlog/runner verbs). Claude Code's plan and go now run on the Workflow scripts in `plugin/workflows/`; see [architecture](architecture.md) and `docs/strategy/stage-2-contracts.md`. The Codex lane still builds from that prose, frozen in `codex/frozen/`. Kept as history.
+
 Seed context: "muster has gotten out of control... a massive beast that can't get out of its own
 way and decimates LLM plan quotas." The codex-teardown run that surfaced this recorded three
 concrete symptoms: an `npx -y` cold start on every single muster CLI call (10+/run), a fixed

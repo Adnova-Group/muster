@@ -1,6 +1,6 @@
 // codex-mcp-surface-gaps: the 2026-07-19 Codex dogfood fell back to the bundled CLI for
 // 4 deterministic ops with no muster_* MCP equivalent (roles-only capabilities, skill
-// matching, gate-cadence, receipt-verify). This is the end-to-end proof, through the
+// matching, gate-cadence). This is the end-to-end proof, through the
 // BUILT Codex plugin's MCP server (mirrors test/codex-mcp-runtime-env.test.js's spawn
 // pattern), that the new tools ride the actual bundle Codex loads, not just the shared
 // cowork/mcp-server.mjs source.
@@ -57,7 +57,7 @@ test("built Codex plugin's MCP server: tools/list carries the round-1 + round-2 
   const names = r[2].result.tools.map((t) => t.name);
   assert.equal(names.length, CODEX_COUNTS.mcpTools);
   for (const name of [
-    "muster_receipt_verify", "muster_capabilities_roles", "muster_match_skills", "muster_gate_cadence",
+    "muster_capabilities_roles", "muster_match_skills", "muster_gate_cadence",
     "muster_scope", "muster_fast_path", "muster_plan_checklist",
   ]) {
     assert.ok(names.includes(name), `tools/list must include ${name}`);
@@ -143,7 +143,7 @@ test("built Codex plugin's MCP server: muster_capabilities_roles resolves agains
   assert.ok(res, "tools/call returned no result");
   assert.equal(res.isError, false, `muster_capabilities_roles errored: ${JSON.stringify(res?.content)}`);
   const body = JSON.parse(res.content[0].text);
-  assert.equal(body.roles?.implement?.chosen?.id, "muster-builder", `implement must resolve to the named Codex profile, got ${JSON.stringify(body.roles?.implement?.chosen)}`);
+  assert.equal(body.roles?.implement?.chosen?.id, "muster-executor", `implement must resolve to the named Codex profile, got ${JSON.stringify(body.roles?.implement?.chosen)}`);
   assert.notEqual(body.roles?.implement?.chosen?.source, "inline", "must not fall back to inline (the --cowork/--codex swap missing on this tool)");
   assert.equal(body.skills, undefined, "roles-only capture omits skills");
 });
@@ -166,28 +166,6 @@ test("built Codex plugin's MCP server: muster_capabilities_roles carries the res
   assert.deepEqual(body.roles?.["code-navigation"]?.codexModel, { model: "gpt-5.6-terra", effort: "high" });
   // A skill-provider role has no profile TOML, so no codexModel is fabricated.
   assert.equal("codexModel" in (body.roles?.brainstorm ?? {}), false, "skill-backed role must not carry a codexModel");
-});
-
-test("built Codex plugin's MCP server: muster_receipt_verify -- a REAL SHA from this checkout verifies true", async () => {
-  const { stdout } = await execFileP("git", ["rev-parse", "HEAD"], { cwd: repoRoot });
-  const sha = stdout.trim();
-  const r = await rpc(entry(), [INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_receipt_verify", arguments: { sha, cwd: repoRoot } } }]);
-  const res = r[2].result;
-  assert.ok(res, "tools/call returned no result");
-  assert.equal(res.isError, false, `real SHA must not error: ${JSON.stringify(res.content)}`);
-  const body = JSON.parse(res.content[0].text);
-  assert.equal(body.verified, true);
-  assert.equal(body.sha, sha);
-});
-
-test("built Codex plugin's MCP server: muster_receipt_verify -- a fabricated well-formed SHA verifies false", async () => {
-  const fabricated = "f".repeat(40);
-  const r = await rpc(entry(), [INIT, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "muster_receipt_verify", arguments: { sha: fabricated, cwd: repoRoot } } }]);
-  const res = r[2].result;
-  assert.ok(res, "tools/call returned no result");
-  assert.equal(res.isError, true, "an unverified SHA's non-zero CLI exit surfaces as isError");
-  const body = JSON.parse(res.content[0].text);
-  assert.equal(body.verified, false);
 });
 
 test("packaged Codex build script keeps check-codex.mjs's MCP tool-count regex coherent", async () => {

@@ -447,7 +447,7 @@ test("portable MCP entry point starts with neutral instructions and exposes Must
       method: "tools/call",
       params: {
         name: "muster_match_skills",
-        arguments: { task: "runner heartbeats" },
+        arguments: { task: "workflows unavailable fallback" },
       },
     }) + "\n");
   });
@@ -471,7 +471,7 @@ test("portable MCP entry point starts with neutral instructions and exposes Must
     "the neutral lane must not advertise skills absent from the portable package"
   );
   assert.ok(
-    result.matches.ranked.some(skill => skill.id === "coordination"),
+    result.matches.ranked.some(skill => skill.id === "orchestrator"),
     "description-only terms must rank the package's portable skill under a clean HOME"
   );
 });

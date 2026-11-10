@@ -24,12 +24,12 @@ test("every marked brief/return-contract template in plugin/agents, plugin/comma
     [],
     `expected no brief/return-contract template over budget, found: ${JSON.stringify(findings, null, 2)}`
   );
+  // Revival stage 2b: the review-gate, tournament, go spec-gate and muster-runner templates
+  // left plugin/ (the Workflow scripts own those briefs now); the orchestrator's prose-fallback
+  // executor brief is the remaining marked brief.
+  assert.ok(briefCount >= 1, "expected the orchestrator's marked fallback executor brief");
   assert.ok(
-    briefCount >= 4,
-    "expected at least four marked brief templates in the corpus (muster-runner.md, review-gate/SKILL.md, review-gate/fast-path-brief.md, tournament/SKILL.md's synthesizer prompt)"
-  );
-  assert.ok(
-    returnCount >= 12,
-    "expected at least twelve marked return-contract templates in the corpus (muster-runner.md, orchestrator/SKILL.md, every muster-{builder,strategist,investigator,improver,surgeon,reviewer}.md, advisor/SKILL.md, go.md, audit.md, tournament/SKILL.md's judge shape)"
+    returnCount >= 6,
+    "expected the marked return contracts (orchestrator fallback, muster-{strategist,investigator,improver,surgeon}.md, advisor/SKILL.md, audit.md)"
   );
 });

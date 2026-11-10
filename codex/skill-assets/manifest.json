@@ -24,13 +24,13 @@
       ],
       "overlay": {
         "source": "plugin/builtins/sp-brainstorm",
-      "files": [
-        "scripts/helper.js",
-        "scripts/server.cjs",
-        "scripts/start-server.sh",
-        "scripts/stop-server.sh",
-        "visual-companion.md"
-      ]
+        "files": [
+          "scripts/helper.js",
+          "scripts/server.cjs",
+          "scripts/start-server.sh",
+          "scripts/stop-server.sh",
+          "visual-companion.md"
+        ]
       }
     },
     {

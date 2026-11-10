@@ -50,7 +50,7 @@ test("router eval run passes the accuracy bar on the goldens", async () => {
 });
 
 test("router skill still documents the required `model` crew field (guards the eval fix)", async () => {
-  const skill = await read("plugin/skills/router/SKILL.md");
+  const skill = await read("codex/frozen/skills/router/SKILL.md"); // frozen Codex lane input since revival stage 2b
   // The crew-shape spec line must include the model field, else the router regresses to
   // emitting manifests that fail validation (the defect this eval originally caught).
   const crewShape = skill.split("\n").find(l => l.includes('"crew"') && l.includes('"stage"'));
@@ -59,7 +59,7 @@ test("router skill still documents the required `model` crew field (guards the e
 });
 
 test("a manifest missing model fails the code grade (the original defect)", () => {
-  const noModel = { outcome: "x", successCriteria: ["a"], crew: [{ stage: "implement", provider: "muster-builder", source: "builtin", rationale: "r", evidence: "e", fallback: "inline" }], recommendations: [], degradations: [], plan: [{ task: "do it", mode: "single" }] };
+  const noModel = { outcome: "x", successCriteria: ["a"], crew: [{ stage: "implement", provider: "muster-executor", source: "builtin", rationale: "r", evidence: "e", fallback: "inline" }], recommendations: [], degradations: [], plan: [{ task: "do it", mode: "single" }] };
   assert.equal(codeGradeManifest(noModel, ["implement"]).score, 0, "missing model must score 0");
 });
 
@@ -71,7 +71,7 @@ test("role coverage does not false-positive on a plan task's trailing-punctuatio
   // bug: a crew containing only `implement` must NOT cover security-review/code-review.
   const implementOnly = {
     outcome: "x", successCriteria: ["a"],
-    crew: [{ stage: "implement", provider: "muster-builder", source: "builtin", model: "sonnet", rationale: "r", evidence: "e", fallback: "inline" }],
+    crew: [{ stage: "implement", provider: "muster-executor", source: "builtin", model: "sonnet", rationale: "r", evidence: "e", fallback: "inline" }],
     recommendations: [], degradations: [],
     plan: [{ task: "Audit the entire codebase for security vulnerabilities and remediate the findings.", mode: "single" }],
   };

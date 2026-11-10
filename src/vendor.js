@@ -11,8 +11,10 @@ import { isContainedLexical } from "./fs-safe.js";
 import { modelForRole, maxTier, floorAtCore, normalizeTier } from "./model.js";
 import { claudeModelForTier, claudeProfileForAgentId } from "./claude.js";
 import { matchFrontmatter } from "./frontmatter.js";
+import { isSyncItem, isSyncSource, validateSyncItem, validateSyncSource } from "./vendor-sync.js";
 import {
-  RELATIONS, ITEM_PATHS, WAIVER_STATUSES, isValidLicense, isVendoredItem, isFetchedSource,
+  RELATIONS, ITEM_PATHS, WAIVER_STATUSES, WORK_KINDS, LICENSE_REVIEW_FINDINGS, isWorkSource,
+  isValidLicense, isVendoredItem, isFetchedSource,
   upstreamEntry, renderUpstreamBlock, generateNotice as generateManifestNotice, NOTICE_PATHS
 } from "./provenance.js";
 
@@ -144,8 +146,26 @@ export function validateVendorManifest(doc) {
     } else if (!ID_RE.test(s.id)) {
       errors.push(`sources[${i}].id: invalid — must match /^[a-zA-Z0-9_-]+$/`);
     }
-    if (!s.license) errors.push(`sources[${i}].license: required`);
-    if (!["local", "github"].includes(s.kind)) errors.push(`sources[${i}].kind: must be local|github`);
+    // A work (article, book, paper, standard, talk, person, unknown) is credited, never
+    // fetched, and only ever inspired-by: it names a title/author instead of a repo.
+    const work = isWorkSource(s);
+    if (!work && !s.license) errors.push(`sources[${i}].license: required`);
+    if (!["local", "github", ...WORK_KINDS].includes(s.kind)) errors.push(`sources[${i}].kind: must be local|github|${WORK_KINDS.join("|")}`);
+    if (work) {
+      if (s.repo !== undefined || s.ref !== undefined) errors.push(`sources[${i}]: a ${s.kind} source has no repo or ref`);
+      if (s.fetch !== false) errors.push(`sources[${i}].fetch: a ${s.kind} source must be fetch: false`);
+      const named = [s.title, s.author].some(v => typeof v === "string" && v.trim());
+      if (s.kind === "unknown" ? !(typeof s.title === "string" && s.title.trim() && /\b\d{4}-\d{2}-\d{2}\b/.test(String(s.note ?? ""))) : !named)
+        errors.push(`sources[${i}]: ${s.kind === "unknown" ? "an unknown origin needs a title and a dated note (YYYY-MM-DD)" : "a work needs a title or an author"}`);
+      if (s.url !== undefined && !(typeof s.url === "string" && /^https:\/\//.test(s.url))) errors.push(`sources[${i}].url: a work's url must be https://`);
+      const relations = [s.relation, ...(s.items || []).map(it => it?.relation)].filter(r => r !== undefined);
+      if (s.relation === undefined || relations.some(r => r !== "inspired-by")) errors.push(`sources[${i}].relation: a ${s.kind} source can only be inspired-by`);
+    }
+    if (s.licenseReview !== undefined) {
+      const r = s.licenseReview;
+      if (!r || !/^\d{4}-\d{2}-\d{2}$/.test(String(r.date ?? "")) || !LICENSE_REVIEW_FINDINGS.includes(r.finding) || typeof r.evidence !== "string" || !r.evidence.trim())
+        errors.push(`sources[${i}].licenseReview: needs date (YYYY-MM-DD), finding (${LICENSE_REVIEW_FINDINGS.join("|")}) and evidence`);
+    }
     if (s.repo !== undefined && !REPO_RE.test(s.repo))
       errors.push(`sources[${i}].repo: invalid — must be owner/name (alphanumeric, dash, dot, underscore only)`);
     if (s.ref !== undefined) {
@@ -176,9 +196,22 @@ export function validateVendorManifest(doc) {
       errors.push(`sources[${i}].copyright: must be a non-empty string`);
     if (s.formerly !== undefined && (!Array.isArray(s.formerly) || !s.formerly.every(r => REPO_RE.test(r))))
       errors.push(`sources[${i}].formerly: must be a list of owner/name`);
+    if (s.tag !== undefined && !isSyncSource(s)) errors.push(`sources[${i}].tag: only a merge-tracked source (items with mode) records a tag`);
+    if (Array.isArray(s.items) && isSyncSource(s)) {
+      errors.push(...validateSyncSource(s, `sources[${i}]`));
+      if (!isFetchedSource(s)) errors.push(`sources[${i}].fetch: a merge-tracked source is fetched by muster vendor update`);
+    }
     if (!Array.isArray(s.items)) errors.push(`sources[${i}].items: must be an array`);
     else s.items.forEach((it, j) => {
       const at = `sources[${i}].items[${j}]`;
+      if (it.to !== undefined && !isSyncItem(it)) { errors.push(`${at}.mode: a file item (with to) needs mode ${["adapted", "verbatim", "watch"].join("|")}`); return; }
+      if (isSyncItem(it)) {
+        errors.push(...validateSyncItem(it, at, (kind, id) => ITEM_PATHS[kind]?.(id), s.ref));
+        if (it.kind !== undefined && !Object.hasOwn(ITEM_PATHS, it.kind)) errors.push(`${at}.kind: must be one of ${Object.keys(ITEM_PATHS).join("|")}`);
+        if (it.id !== undefined && !ID_RE.test(it.id)) errors.push(`${at}.id: invalid — must match /^[a-zA-Z0-9_-]+$/`);
+        if (it.relation !== undefined && !RELATIONS.includes(it.relation)) errors.push(`${at}.relation: must be one of ${RELATIONS.join("|")}`);
+        return;
+      }
       const vendored = isVendoredItem(s, it);
       if (vendored ? !it.from : (it.from !== null && typeof it.from !== "string")) errors.push(`${at}.from: required${vendored ? "" : " (null = repository-wide)"}`);
       if (!it.id) {
@@ -259,14 +292,20 @@ export function modelForRoles(roles) {
   return floorAtCore(maxTier(roles.map(modelForRole)));
 }
 
+// The concrete Claude `model:` toAgent writes for a vendored agent item. Agent-backed
+// entries take it from the same manifest-driven, emission-layer profile that
+// capabilities dispatches (catalog/agents.manifest.json via claudeProfileForAgentId).
+// Unknown/non-manifest agents preserve the vendor-manifest fallback: an explicit
+// item.model pin, otherwise the role-derived tier floored at core. Exported so the
+// generator and test/agents.generated.test.js's drift check share one code path.
+export function vendoredAgentModel(item) {
+  const tier = item.model ? normalizeTier(item.model) : modelForRoles(item.roles);
+  return claudeProfileForAgentId(item.id)?.model ?? claudeModelForTier(tier).model;
+}
+
 export function toAgent(sourceText, item, source) {
   const { data, body } = splitFrontmatter(sourceText);
-  // Agent-backed entries take their concrete Claude model from the same
-  // manifest-driven, emission-layer profile that capabilities dispatches.
-  // Unknown/non-manifest agents preserve the vendor-manifest fallback: an
-  // explicit item.model pin, otherwise the role-derived tier floored at core.
-  const tier = item.model ? normalizeTier(item.model) : modelForRoles(item.roles);
-  const model = claudeProfileForAgentId(item.id)?.model ?? claudeModelForTier(tier).model;
+  const model = vendoredAgentModel(item);
   const filteredTools = (() => {
     if (!data.tools) return DEFAULT_TOOLS;
     const allowed = data.tools.split(",").map(s => s.trim()).filter(t => ALLOWED_TOOLS.has(t));
@@ -274,7 +313,7 @@ export function toAgent(sourceText, item, source) {
   })();
   const fm = {
     name: data.name || item.id,
-    description: data.description || `Agent for ${item.roles.join(", ")} (adapted from ${source.repo})`,
+    description: item.description || data.description || `Agent for ${item.roles.join(", ")} (adapted from ${source.repo})`,
     model,
     tools: filteredTools,
     muster_builtin: true,
@@ -394,8 +433,9 @@ export async function runVendor({ home = homedir(), repoRoot = process.cwd(), ma
   const builtinEntries = [];
   const agentEntries = [];
   for (const source of manifest.sources) {
-    // Attribution-only sources are recorded (NOTICE, `upstream:`) but never fetched.
-    if (!isFetchedSource(source)) continue;
+    // Attribution-only sources are recorded (NOTICE, `upstream:`) but never fetched;
+    // merge-tracked sources are only touched by `muster vendor update`.
+    if (!isFetchedSource(source) || !source.items.some(it => isVendoredItem(source, it))) continue;
     const { root, error, cleanup } = await fetchSourceRoot(source, home);
     if (!root) {
       const detail = error ? `: ${error.message}` : "";

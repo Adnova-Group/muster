@@ -43,4 +43,4 @@ rather than drafting blind.
 - Shot list: a list of `[timestamp] shot — rationale` rows, grouped by script section.
 - Edit-decision outline: a numbered outline of section → pacing/cut/overlay decisions.
 
-Respond with the artifact only. The review-gate + scorer judge it next.
+Respond with the artifact only. The reviewer + scorer judge it next.

@@ -18,9 +18,9 @@ export const PRINCIPLES = [
 ].join("\n");
 
 export const VERBS =
-  "Verbs: /muster:plan (approve-first; a backlog scope confirms, then plans), /muster:go (hands-off lifecycle; same scope confirm), " +
-  "/muster:plan-backlog (approve-first batch planner), /muster:diagnose (failure-first fix), /muster:audit (whole-codebase review-and-fix), " +
-  "/muster:design (canonical design-context and workflow gate), /muster:go-backlog (batch backlog clear), /muster:runner (unattended one-cycle work-picker).";
+  "Verbs: /muster:plan (approve-first; one outcome or a backlog), /muster:go (hands-off lifecycle; one outcome or a backlog), " +
+  "/muster:diagnose (failure-first fix), /muster:audit (whole-codebase review-and-fix), " +
+  "/muster:design (canonical design-context and workflow gate), /muster:capture (conversation to backlog).";
 
 // Voice anti-drift: a single reinforcement line the injected guidance carries, to
 // counter the output voice regressing over long sessions the same way routing does.
@@ -31,7 +31,7 @@ export const ROUTING_POLICY =
   [
     "Default routing: in this muster repo, drive actionable prompts through muster --",
     "route directives and substantive questions to the verbs (/muster:plan · :go ·",
-    ":plan-backlog · :diagnose · :audit · :design · :go-backlog · :runner) where applicable, and",
+    ":diagnose · :audit · :design · :capture) where applicable, and",
     "content/copy work through the muster content pipeline (humanizer). Let conversational",
     "or trivial turns fall through. Honor explicit /muster commands as given.",
   ].join(" ") +

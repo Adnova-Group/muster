@@ -30,6 +30,7 @@ import { readProfile } from "./profile.js";
 import { buildSignals } from "./signals.js";
 import { validateVendorManifest, runVendor } from "./vendor.js";
 import { runProvenance } from "./provenance.js";
+import { checkVendorSync, runVendorReport, runVendorUpdate } from "./vendor-sync.js";
 import { parse as parseYaml } from "yaml";
 import { scaffoldProject } from "./setup.js";
 import {
@@ -55,7 +56,7 @@ import { adaptCatalogForCodex } from "./codex-catalog.js";
 import { readAgentPluginInventory } from "./agent-plugins.js";
 import { assessOutcome } from "./interview.js";
 import { parseDomainArgs, formatError, requireArg, flagValue } from "./cli-args.js";
-import { dirFromImportMeta } from "./fs-util.js";
+import { dirFromImportMeta, readdirSafe } from "./fs-util.js";
 import { matchProviders, matchSkills, suggestSkillsForStack, signalsFromTask } from "./match.js";
 import { prioritize } from "./prioritize.js";
 import { parseIssueRef, resolveIssue } from "./issue.js";
@@ -74,7 +75,7 @@ import { detectScope } from "./scope.js";
 import { runHygiene, renderHygieneReport, DEFAULT_WORKTREE_THRESHOLD } from "./hygiene.js";
 import { resolveMusterCli } from "./cli-resolve.js";
 import { planGateCadence, DEFAULT_REVIEW_DIFF_THRESHOLD } from "./gate-cadence.js";
-import { resolveWaveDispatch, resolveWorktreeIsolation, makeGitShaVerifier } from "./wave-dispatch.js";
+import { resolveWaveDispatch, resolveWorktreeIsolation } from "./wave-dispatch.js";
 import { codexSpawnAgentCall, codexWaitAgentCall } from "./codex-dispatch.js";
 import { runCodexWave, runCodexWaveContinuation } from "./codex-wave-runner.js";
 import { resolvePlanSurface } from "./plan-surface.js";
@@ -84,6 +85,10 @@ import { envInt, isTruthyFlag } from "./env-util.js";
 import { scoreOutcomeForFastPath, buildFastPathManifest } from "./fast-path.js";
 import { detectReviewTriggers, lightBriefEligible } from "./review-brief.js";
 import { BACKLOG_PUBLICATION_MAX_BYTES } from "./backlog-publication.js";
+import { runPreflight } from "./preflight.js";
+import { mergeWave } from "./merge-wave.js";
+import { nextForRun } from "./run-next.js";
+import { writeBuildArgs } from "./build-args.js";
 import {
   codexThreadLimitConfigPath,
   resolveCodexThreadCeiling,
@@ -141,14 +146,16 @@ const USAGE = [
   "Usage: muster <detect|capabilities [--cowork] [--codex] [--work] [--agent-plugins] [--role <role>] [--roles-only]|match [--skills] <task> [--stack <csv>] [--work]|",
   // manifest + waves: validate, order, and drive a plan
   "manifest validate <file> [--work]|wave <file>|next <manifest.json> [--done a,b]|",
+  // stage-2 run steps: one-call preflight, deterministic wave merge, run position
+  "preflight <outcome> [--json] [--run <id>] [--model <model>]|build-args <runId> [--base <sha>]|merge-wave <runId> --result <build-result.json>|next --run <id>|plan-lint <PLAN.md> [--json] [--root <dir>]|",
   // performance pass + gate helpers
-  "resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|codex-wave <wave.json> --fence-file <action-fence.json> --repository-root <repo> --base-sha <sha>|codex-wave-resume <receipt-id> --review-state <file>|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex>|plan-surface <runtime>|codex-plan <outcome> [--cwd <dir>]|desktop-harness <chatgpt-desktop|codex-desktop|gpt-work>|receipt-verify <sha> --cwd <repo>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|",
+  "resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|codex-wave <wave.json> --fence-file <action-fence.json> --repository-root <repo> --base-sha <sha>|codex-wave-resume <receipt-id> --review-state <file>|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex>|plan-surface <runtime>|codex-plan <outcome> [--cwd <dir>]|desktop-harness <chatgpt-desktop|codex-desktop|gpt-work>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|",
   // sprint waves, review tally, tournament pick/fuse, advisor
   "sprint-waves <backlog.md> [--max-concurrent-threads-per-session N]|sprint-reconcile <progress.json>|backlog-receipts <backlog.md> --release-ref <ref>|backlog-publish <backlog.md> --expect <sha256|absent>|tally <file>|pick <file>|fuse <candidates.json> <fusion-map.json>|advise <advice-request.json>|",
   // harness-native dispatch packets (codex lane)
   "codex-audit-provider --role <role> --task-id <id> --callable-apis <v1,v2> --callable-agent-ids <id,...> [--api-override <v1|v2>] [--message <text>|--message-file <f>]|codex-spawn-packet --task-id <id> --agent-type <id> [--message <text>|--message-file <f>] [--version v1|v2] [--fork-turns <none|N>]|codex-wait-packet [--version v1|v2] [--targets a,b] [--timeout-ms N]|",
   // memory + vendor + init lifecycle
-  "memory read|write ...|vendor|provenance [--write]|init [dir]|init transition [dir] --to <handoff|attempted|completed>|init normalize [dir] --approve CLAUDE.md|init acknowledge [dir] --reason unavailable|init finalize [dir]|setup [dir]|design <init|status|resolve|detect|ignores|provider|gate|workflows|run> ...|",
+  "memory read|write ...|vendor [update <source> --to <tag> [--dry-run]|report <source> --to <tag> [--stdout]|check]|provenance [--write]|init [dir]|init transition [dir] --to <handoff|attempted|completed>|init normalize [dir] --approve CLAUDE.md|init acknowledge [dir] --reason unavailable|init finalize [dir]|setup [dir]|design <init|status|resolve|detect|ignores|provider|gate|workflows|run> ...|",
   // planning + routing artifacts
   "plan-checklist <file>|domain <outcome>|pipeline <domain|id>|route <outcome>|score <file>|",
   // prompt tooling
@@ -653,6 +660,14 @@ async function handleCoreCommandPart1(cmd, rest) {
     out(computeWaves(m.plan));
     return true;
   } else if (cmd === "next") {
+    // Bare `muster next` routes to the newest stage-2 run (run ids sort by date prefix);
+    // `next <manifest.json>` keeps the manifest flow the Cowork MCP and frozen Codex lane use.
+    if (!rest.length) {
+      const runs = (await readdirSafe(join(process.cwd(), ".muster", "runs"))).sort();
+      if (!runs.length) fail("next: no .muster/runs/<id>/ here; pass --run <id> or a manifest file");
+      out(await nextForRun({ cwd: process.cwd(), runId: runs[runs.length - 1] }));
+      return true;
+    }
     const file = requireArg(rest, 0, "next <manifest.json> [--done a,b]: missing file path", fail);
     const m = JSON.parse(await readFile(file, "utf8"));
     if (!Array.isArray(m.plan)) fail("next: manifest has no 'plan' array");
@@ -709,24 +724,6 @@ async function handleCoreCommandPart2(cmd, rest) {
     // resolve to the universal AskUserQuestion fallback, never a thrown error -- see
     // src/plan-surface.js.
     out(resolvePlanSurface(rest[0]));
-    return true;
-  } else if (cmd === "receipt-verify") {
-    // base-sha-receipt-verification item: the executable consumer -- proof that a
-    // base-SHA receipt's SHA is REAL, not just well-formed (buildBaseShaReceipt's
-    // format check alone can't provide that). Runs the git-backed default verifier
-    // (makeGitShaVerifier, src/wave-dispatch.js -- shape-checked before it ever shells
-    // out, so a branch/tag/HEAD/relative-ref argument is correctly reported unverified
-    // rather than a false positive) against an explicit repo `--cwd` (never
-    // process.cwd() -- Codex's spawn_agent has no cwd field, so the caller must always
-    // state the repo) and prints the same {verified, mechanism} shape
-    // buildBaseShaReceipt records.
-    const sha = requireArg(rest, 0, "receipt-verify <sha> --cwd <repo>: missing sha", fail);
-    const cwd = flagValue(rest, "--cwd");
-    if (!cwd) fail("receipt-verify <sha> --cwd <repo>: missing --cwd");
-    const verify = makeGitShaVerifier({ cwd });
-    const verified = verify(sha);
-    out({ sha, cwd, verified, mechanism: verify.mechanism });
-    if (!verified) process.exit(2);
     return true;
   } else if (cmd === "fast-path") {
     // weight-reduction item, criterion 1 (flagship): pre-router single-agent fast path.
@@ -961,7 +958,7 @@ async function handleCoreCommandPart6(cmd, rest) {
     const file = requireArg(rest, 0, "tally <verdicts.json>: missing file path", fail);
     const verdicts = JSON.parse(await readFile(file, "utf8"));
     // verdicts.json is a structured-output-binding contract
-    // (plugin/skills/review-gate/verdict.schema.json). Validation runs BEFORE
+    // (src/verdict.schema.json). Validation runs BEFORE
     // tallying and reports violations loudly -- but the schema is deliberately
     // STRICTER than tallyReview, whose tolerance of a malformed-but-consumable
     // emission is documented (its header, and the schema's own description).
@@ -1016,10 +1013,35 @@ async function handleCoreCommandPart3(cmd, rest) {
     return true;
   } else if (cmd === "vendor") {
     const manifestUrl = new URL("../vendor/manifest.yaml", import.meta.url);
-    const manifest = parseYaml(await readFile(manifestUrl, "utf8"));
+    const manifestText = await readFile(manifestUrl, "utf8");
+    const manifest = parseYaml(manifestText);
     const v = validateVendorManifest(manifest);
     if (!v.ok) { process.stderr.write(`muster: ${v.errors.join("\n")}\n`); process.exit(2); }
     const repoRoot = dirFromImportMeta(import.meta.url, "../");
+    // Merge-tracked sources (src/vendor-sync.js): never the regenerate path below.
+    if (["update", "report", "check"].includes(rest[0])) {
+      const sub = rest[0];
+      if (sub === "check") {
+        const res = await checkVendorSync({ root: repoRoot, manifest });
+        out(res);
+        if (!res.ok) process.exitCode = 1;
+        return true;
+      }
+      const usage = `vendor ${sub} <source> --to <tag>${sub === "update" ? " [--dry-run]" : " [--stdout]"}`;
+      const sourceId = rest[1] && !rest[1].startsWith("-") ? rest[1] : null;
+      const toTag = flagValue(rest, "--to");
+      if (!sourceId || !toTag) fail(`${usage}: missing ${sourceId ? "--to <tag>" : "<source>"}`);
+      if (sub === "report") {
+        const res = await runVendorReport({ root: repoRoot, manifest, sourceId, toTag, write: !rest.includes("--stdout") });
+        if (rest.includes("--stdout")) process.stdout.write(res.text);
+        else { const { text, ...summary } = res; out(summary); }
+        return true;
+      }
+      const res = await runVendorUpdate({ root: repoRoot, manifest, manifestText, sourceId, toTag, dryRun: rest.includes("--dry-run") });
+      out(res);
+      if (res.conflicts.length) process.exitCode = 1;
+      return true;
+    }
     const res = await runVendor({ repoRoot, manifest });
     res.warnings.forEach(w => process.stderr.write(`warn: ${w}\n`));
     out({ vendored: res.count, warnings: res.warnings.length });
@@ -1196,7 +1218,7 @@ async function handleCoreCommandPart7(cmd, rest) {
     // Deterministic citation guard for research/content artifacts: every `[src: anchor]` must
     // resolve against the trailing "Sources" list; dangling anchors fail loud (exit 2). Paragraphs
     // with zero citations are reported for a reviewer's judgment call, not auto-failed (see
-    // plugin/skills/review-gate/SKILL.md). Reads stdin when the file arg is `-` or absent.
+    // codex/frozen/skills/review-gate/SKILL.md). Reads stdin when the file arg is `-` or absent.
     const text = await readText(rest[0]);
     const r = checkCitations(text);
     out(r);
@@ -1291,7 +1313,7 @@ async function handleCoreCommandPart4(cmd, rest) {
   } else if (cmd === "doctor") {
     const r = rest.includes("--codex")
       ? await runCodexDoctor({ root: new URL("../", import.meta.url) })
-      : await runDoctor({ root: new URL("../", import.meta.url) });
+      : await runDoctor({ root: new URL("../", import.meta.url), cwd: process.cwd() });
     out(r);
     if (!r.ok) process.exit(2);
     return true;
@@ -1437,7 +1459,73 @@ async function handleCoreCommandPart5(cmd, rest) {
   return false;
 }
 
+function renderPreflight(s) {
+  const yn = (b) => (b ? "yes" : "no");
+  const models = Object.entries(s.models).map(([k, v]) => `${k} ${v.model}/${v.effort}`).join(", ");
+  return [
+    `run ${s.runId}: scope ${s.scope}, clear ${yn(s.clear)}${s.clear ? "" : ` (${s.unclear.join(", ")})`}, fast-path ${yn(s.fastPath)}`,
+    `project ${s.project.languages.join("/") || "unknown"}, tests ${s.project.testRunner}, branch ${s.project.branch ?? "-"}${s.project.dirty ? " (dirty)" : ""}`,
+    `models ${models}`,
+    `candidates ${s.candidates.join(", ") || "-"}`,
+    `gsd ${yn(s.detected.gsd)}, plugins ${s.detected.plugins.join(", ") || "-"}, memory ${s.memory.join(", ") || "-"}`,
+    `detail ${s.detail}`,
+  ].join("\n") + "\n";
+}
+
+// Stage-2 run steps (docs/strategy/stage-2-contracts.md).
+async function handleRunCommand(cmd, rest) {
+  if (cmd === "preflight") {
+    const runId = flagValue(rest, "--run");
+    const model = flagValue(rest, "--model");
+    const valued = new Set(["--run", "--model"]);
+    const outcome = rest.filter((a, i) => a !== "--json" && !valued.has(a) && !valued.has(rest[i - 1])).join(" ");
+    if (!outcome.trim()) fail("preflight <outcome> [--json] [--run <id>] [--model <model>]: missing outcome");
+    const summary = await runPreflight({ outcome, cwd: process.cwd(), home: homedir(), catalogDir: CATALOG_DIR, runId, model });
+    if (rest.includes("--json")) process.stdout.write(JSON.stringify(summary) + "\n");
+    else process.stdout.write(renderPreflight(summary));
+    return true;
+  } else if (cmd === "build-args") {
+    const runId = rest.find((a, i) => !a.startsWith("-") && rest[i - 1] !== "--base");
+    if (!runId) fail("build-args <runId> [--base <sha>]: missing runId");
+    let base = flagValue(rest, "--base");
+    if (!base) {
+      // No trusted git (or no repo): build without a base; merge-wave still checks every commit.
+      try {
+        const head = spawnSync(assertTrustedGitCommand(), ["rev-parse", "HEAD"], { encoding: "utf8" });
+        base = head.status === 0 ? head.stdout.trim() : null;
+      } catch { base = null; }
+    }
+    const report = await writeBuildArgs({ cwd: process.cwd(), runId, base });
+    out(report);
+    if (!report.ok) process.exit(1);
+    return true;
+  } else if (cmd === "merge-wave") {
+    const usage = "merge-wave <runId> --result <build-result.json>";
+    const resultFile = flagValue(rest, "--result");
+    const runId = rest.find((a, i) => !a.startsWith("-") && rest[i - 1] !== "--result");
+    if (!runId || !resultFile) fail(`${usage}: missing ${runId ? "--result" : "runId"}`);
+    const report = await mergeWave({ cwd: process.cwd(), runId, resultFile: resolve(resultFile) });
+    out(report);
+    if (!report.ok) process.exit(1);
+    return true;
+  } else if (cmd === "next" && rest.includes("--run")) {
+    const runId = flagValue(rest, "--run");
+    if (!runId) fail("next --run <id>: missing run id");
+    out(await nextForRun({ cwd: process.cwd(), runId }));
+    return true;
+  }
+  return false;
+}
+
 async function handleCoreCommand(cmd, rest) {
+  if (await handleRunCommand(cmd, rest)) return true;
+  if (cmd === "plan-lint") {
+    // Deterministic plan gates ported from gsd (src/plan-lint.js). Exit 0 = no blockers,
+    // 1 = blockers, 2 = not evaluated; set via exitCode so a usage error never reads as exit 1.
+    const { runPlanLintCli } = await import("./plan-lint.js");
+    process.exitCode = runPlanLintCli(rest);
+    return true;
+  }
   if (await handleCoreCommandPart1(cmd, rest)) return true;
   if (await handleCoreCommandPart2(cmd, rest)) return true;
   if (await handleCoreCommandPart6(cmd, rest)) return true;

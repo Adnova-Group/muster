@@ -47,7 +47,7 @@ test("capabilities --codex: named agents carry codexModel {model, effort} cohere
   // luna/xhigh (bounded budget lane), terra/high (long-context-safe locator).
   const named = {
     "wsh-security-auditor": { model: "gpt-5.6-sol", effort: "xhigh" },
-    "muster-builder": { model: "gpt-5.6-sol", effort: "medium" },
+    "muster-executor": { model: "gpt-5.6-sol", effort: "medium" },
     "wsh-test-automator": { model: "gpt-5.6-luna", effort: "xhigh" },
     "muster-investigator": { model: "gpt-5.6-terra", effort: "high" }
   };

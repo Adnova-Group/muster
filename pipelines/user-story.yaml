@@ -3,35 +3,40 @@ domain: pm
 title: User Story
 match: [user story, user stories, story, ticket, backlog item, job story]
 upstream:
-  - repo: deanpeters/product-manager-prompts
-    ref: null
-    path: null
-    license: CC-BY-NC-SA-4.0
-    relation: inspired-by
   - repo: deanpeters/Product-Manager-Skills
-    ref: null
-    path: null
+    ref: 70fb6c4e41637047e7e4976d39145b1a78397464
+    path: skills/user-story/SKILL.md
     license: CC-BY-NC-SA-4.0
     relation: inspired-by
   - repo: phuryn/pm-skills
-    ref: null
+    ref: d384f0c9eb81fe74656a4f6da168587836939edb
     path: null
     license: MIT
     relation: inspired-by
-  - repo: anthropics/knowledge-work-plugins
-    ref: null
-    path: null
-    license: Apache-2.0
+  - kind: book
+    title: User Stories Applied (As a / I want / So that)
+    author: Mike Cohn
+    url: null
     relation: inspired-by
-  - repo: joelparkerhenderson/objectives-and-key-results
-    ref: null
-    path: null
-    license: NONE
+  - kind: article
+    title: INVEST in Good Stories, and SMART Tasks
+    author: Bill Wake
+    url: https://xp123.com/invest-in-good-stories-and-smart-tasks/
     relation: inspired-by
-  - repo: architecture-decision-record/architecture-decision-record
-    ref: null
-    path: null
-    license: CC-BY-NC-SA-4.0
+  - kind: article
+    title: "Essential XP: Card, Conversation, Confirmation"
+    author: Ron Jeffries
+    url: https://ronjeffries.com/xprog/articles/expcardconversationconfirmation/
+    relation: inspired-by
+  - kind: article
+    title: Gherkin reference (Given / When / Then)
+    author: Cucumber
+    url: https://cucumber.io/docs/gherkin/reference/
+    relation: inspired-by
+  - kind: article
+    title: Designing features using job stories
+    author: Alan Klement (Intercom)
+    url: https://www.intercom.com/blog/using-job-stories-design-features-ui-ux/
     relation: inspired-by
 phases:
   - { id: intake,     role: brainstorm,  desc: "persona, need, context" }

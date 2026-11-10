@@ -1,12 +1,10 @@
 const SUPERPOWERS_NAMES = Object.freeze({
   "sp-brainstorm": "brainstorming",
-  "sp-plan": "writing-plans",
   "sp-tdd": "test-driven-development",
   "sp-review": "requesting-code-review",
   "sp-review-recv": "receiving-code-review",
   "sp-debug": "systematic-debugging",
   "sp-verify": "verification-before-completion",
-  "sp-subagents": "subagent-driven-development",
   "sp-parallel": "dispatching-parallel-agents"
 });
 

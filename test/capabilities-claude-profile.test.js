@@ -86,10 +86,10 @@ test("capabilities: an agent-backed role's claudeModel IS its claudeProfile.mode
       `${role}: claudeModel (${entry.claudeModel}) contradicts its own claudeProfile.model (${entry.claudeProfile.model})`);
   }
   assert.ok(profileBacked > 0, "sanity: at least one role is profile-backed");
-  // The live contradiction this fix closes: implement resolves to muster-builder
+  // The live contradiction this fix closes: implement resolves to muster-executor
   // (prime + workhorse in catalog/agents.manifest.json) while the implement role
   // tier is core -- claudeModel used to say sonnet next to a profile saying opus.
-  assert.equal(roles.implement.chosen.id, "muster-builder", "sanity: implement resolves to muster-builder");
+  assert.equal(roles.implement.chosen.id, "muster-executor", "sanity: implement resolves to muster-executor");
   assert.deepEqual(roles.implement.claudeProfile, { model: "opus", workflowEffort: "medium" });
   assert.equal(roles.implement.claudeModel, "opus", "implement must dispatch on the profile's model, not the role tier");
 });

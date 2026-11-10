@@ -1,3 +1,4 @@
+import { checkVendorSync } from "./vendor-sync.js";
 import { loadCatalog } from "./catalog.js";
 import { loadPipelines } from "./pipeline.js";
 import { knownDomains } from "./domain.js";
@@ -188,7 +189,28 @@ async function checkNoteAncestor(note, execImpl) {
   }
 }
 
-export async function runDoctor({ root, home, exec } = {}) {
+// Pre-revival run-state files the stage-2 core no longer writes (docs/strategy/stage-2-contracts.md:
+// a run's record is the committed .muster/runs/<id>/). Doctor only reports them; nothing reads them.
+export const LEGACY_RUN_STATE = Object.freeze(["manifest.json", "capabilities.json", "gate-cadence.json", "verdicts.json", "wave-active", "task-board.json"]);
+
+// Project run state in `cwd`: a leftover action-fence marker (the fence stays armed until it is
+// deleted) and legacy files from the pre-revival flow. Informational: always ok.
+export async function runStateCheck(cwd) {
+  const dir = join(cwd, ".muster");
+  const notes = [];
+  const marker = await readFile(join(dir, "run-active"), "utf8").then(t => t.trim(), () => null);
+  if (marker !== null) {
+    const known = marker && await exists(join(dir, "runs", marker));
+    notes.push(`.muster/run-active is present (${known ? `run ${marker}` : "no matching run"}); the action fence stays armed until a run's merge decision removes it or you delete it`);
+  }
+  const entries = await readdirSafe(dir);
+  const legacy = entries.filter(f => LEGACY_RUN_STATE.includes(f) || /^STATE-archive-.*\.md$/.test(f));
+  if (legacy.length) notes.push(`legacy pre-revival run state, safe to delete: ${legacy.map(f => `.muster/${f}`).join(", ")}`);
+  const runs = (await readdirSafe(join(dir, "runs"))).length;
+  return { name: "run-state", ok: true, detail: notes.length ? notes.join("; ") : `${runs} run director${runs === 1 ? "y" : "ies"}, no stale markers` };
+}
+
+export async function runDoctor({ root, home, exec, cwd } = {}) {
   const base = root instanceof URL ? fileURLToPath(root) : (root || process.cwd());
   const checks = [];
 
@@ -402,6 +424,25 @@ export async function runDoctor({ root, home, exec } = {}) {
     }
   }
 
+  // --- vendor sync (offline) ---
+  // Merge-tracked sources (src/vendor-sync.js): every base copy under vendor/upstream/
+  // matches its recorded baseBlob, every adapted/verbatim file exists, and verbatim regions
+  // still equal their base lines. A cached report for a newer upstream tag is surfaced as
+  // "behind" without failing. No network.
+  {
+    let manifest = null;
+    try { manifest = parseYaml(await readFile(join(base, "vendor/manifest.yaml"), "utf8")); } catch { /* reported by vendor-note-staleness below */ }
+    if (!manifest || !Array.isArray(manifest.sources)) {
+      checks.push({ name: "vendor-sync", ok: true, detail: "no readable vendor/manifest.yaml — skip" });
+    } else {
+      const res = await checkVendorSync({ root: base, manifest });
+      const behind = res.behind.length ? `; ${res.behind.join("; ")}` : "";
+      checks.push(res.ok
+        ? { name: "vendor-sync", ok: true, detail: `${res.checked} merge-tracked item(s) match their base copies${behind}` }
+        : { name: "vendor-sync", ok: false, detail: res.problems.join("; ") });
+    }
+  }
+
   // --- vendor note staleness ---
   // vendor/manifest.yaml's comment blocks record which upstream commit rolled a mechanism into
   // a hand-adapted builtin, or which commit a pin superseded. Those commit shas must actually be
@@ -455,5 +496,6 @@ export async function runDoctor({ root, home, exec } = {}) {
     }
   }
 
+  if (cwd) checks.push(await runStateCheck(cwd));
   return { ok: checks.every(c => c.ok), checks };
 }

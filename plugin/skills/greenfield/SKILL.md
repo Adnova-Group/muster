@@ -1,6 +1,7 @@
 ---
 name: greenfield
-description: Bootstrap a brand-new project when the target is empty. Initialize deterministic state, design and plan before implementation, then hand native instructions to the active harness.
+description: Bootstraps a brand-new project in an empty target before planning.
+user-invocable: false
 upstream: []
 ---
 

@@ -22,7 +22,7 @@ test("Codex user install declares shipped agents in CODEX_HOME config.toml and p
 
   await runCodexInstall({ scope: "user", cwd, home, repoRoot, execFile: absent });
   const installed = await readFile(configPath, "utf8");
-  assert.match(installed, /\[agents\.muster-reviewer\]\ndescription = "Read-only diff\/branch reviewer[^"]*"\nconfig_file = "agents\/muster-reviewer\.toml"/);
+  assert.match(installed, /\[agents\.muster-reviewer\]\ndescription = "Read-only reviewer of one task's commits[^"]*"\nconfig_file = "agents\/muster-reviewer\.toml"/);
   assert.equal((installed.match(/^\[agents\.[a-z0-9-]+\]$/gm) || []).length, 27);
   assert.ok(installed.startsWith(original), "unrelated TOML must remain byte-for-byte before managed tables");
 
@@ -121,7 +121,7 @@ test("Codex uninstall preserves receipts when plugin removal fails and succeeds 
   };
   await runCodexInstall({ cwd, home, repoRoot, execFile });
   const registryPath = join(home, ".codex", "muster", "install-scopes.json");
-  const profilePath = join(cwd, ".codex", "agents", "muster-builder.toml");
+  const profilePath = join(cwd, ".codex", "agents", "muster-executor.toml");
   const hookPath = join(cwd, ".codex", "muster", "hooks", "muster-hook.mjs");
   const before = await Promise.all([registryPath, profilePath, hookPath].map(path => readFile(path, "utf8")));
 

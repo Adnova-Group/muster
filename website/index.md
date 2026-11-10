@@ -26,7 +26,7 @@ features:
       width: 32
       height: 32
     title: Glass-box by design
-    details: Every routing decision is inspectable. Which role resolved to which provider, on which model, and why. The crew manifest shows the plan before any work begins.
+    details: Every routing decision is inspectable. Which role resolved to which provider, on which model, and why. The checked plan is shown before any work begins.
   - icon:
       src: /brand/icon-runtime.svg
       alt: ""
@@ -53,7 +53,7 @@ features:
       alt: ""
       width: 32
       height: 32
-    title: Ten modes, including Design
+    title: Seven modes, including Design
     details: Plan and Go handle one outcome; Plan-backlog and Go-backlog handle batches. Diagnose fixes one bug. Audit sweeps the codebase. Design handles human-facing work. Runner picks one scheduled item. Capture writes approved backlog items. Init prepares repository state.
   - icon:
       src: /brand/icon-local.svg

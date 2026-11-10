@@ -1,0 +1,35 @@
+id: design
+domain: pm
+title: Design Doc
+# Renamed from ai-implementation-spec (PM domain stage D): this is a design doc, the "how". The SPEC
+# (docs/specs/<slug>/SPEC.md, /muster:pm spec) is the "what". The old id still resolves through
+# PIPELINE_ALIASES in src/pipeline.js.
+match: [design doc, design document, technical design, implementation spec, technical spec, ai implementation spec, tech spec, RFC, system design]
+upstream:
+  - repo: architecture-decision-record/architecture-decision-record
+    ref: a36c53f49517fc55ceadd459d3e59770c9074416
+    path: null
+    license: CC-BY-NC-SA-4.0
+    relation: inspired-by
+  - repo: adr/madr
+    ref: ba75bb1b20d42af5746b246ad348c202419ae681
+    path: null
+    license: MIT OR CC0-1.0
+    relation: inspired-by
+  - kind: article
+    title: Documenting Architecture Decisions
+    author: Michael Nygard
+    url: https://www.cognitect.com/blog/2011/11/15/documenting-architecture-decisions
+    relation: inspired-by
+phases:
+  - { id: intake,       role: brainstorm,  skills: [muster-pm], desc: "feature, constraints, success criteria. When a SPEC exists (docs/specs/<slug>/SPEC.md), read it and its intent first: the design answers how, inside the spec's requirements, invariants and D-NN decisions, and never restates or changes a requirement. A choice the spec should lock becomes a proposed D-NN listed for the spec owner, not an edit to the spec" }
+  - { id: architecture, role: author,      desc: "approach, components, data flow, tradeoffs; name the SPEC requirement or invariant IDs each component serves" }
+  - { id: adr,          role: author,      desc: "Architecture Decision Records (MADR 4.0): Context, Decision Drivers, Considered Options (pros/cons), Decision, Consequences, Confirmation; status lifecycle proposed|accepted|deprecated|superseded-by ADR-XXXX" }
+  - { id: interfaces,   role: author,      desc: "interfaces/contracts, edge cases, error handling" }
+  - { id: risks,        role: author,      desc: "risks+mitigations; rollout (flag/canary/phased); observability (metrics, alerts); rollback triggers" }
+  - { id: review,       role: code-review, desc: "adversarial review gate: when a spec exists, every component traces to a SPEC ID and no requirement is restated differently from the spec; every rejected option says why" }
+  - { id: score,        role: score,       desc: "score vs rubric, floor principle" }
+gate:
+  criteria: [clarity, completeness, feasibility, testability, contract-completeness, alternatives-documented, observability-plan]
+  floor: 2
+  pass_total: 16

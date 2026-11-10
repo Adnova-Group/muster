@@ -13,9 +13,9 @@ plus `improve`, graded structurally like `init` above — a `context: fork` back
 dispatcher onto `muster-improver`'s own retrospective judgment (an agent, already outside
 this eval's graded universe), with no independent response-quality behavior of its own to
 fixture; its coverage is `test/skill-improve.test.js`'s contract guard,
-the 7 native-builtin pipeline-role providers (`plugin/builtins/muster-*/SKILL.md` —
+the 8 native builtins (`plugin/builtins/muster-*/SKILL.md` — the pipeline-role providers
 `muster-research`, `muster-image`, `muster-video`, `muster-humanizer`, `muster-scorer`,
-`muster-prompt-smith`, `muster-author`; the vendored `gsd-*`/`sp-*`/`wsh-*` builtins are
+`muster-prompt-smith`, `muster-author`, plus the `muster-pm` artifact kit; the vendored `gsd-*`/`sp-*`/`wsh-*` builtins are
 generic technique skills, not muster's own pipeline-role prompts, and are out of scope),
 **and** all 20 pipeline phase prompts (`pipelines/*.yaml`), split into two layers: 9
 content pipelines (`blog-post`, `social-post`, `newsletter`, `case-study`, `lead-magnet`,
@@ -93,14 +93,15 @@ documented rules reuse a REAL function already imported above, and the other two
 | step 1's exclusions block + cap-10 holdback arithmetic, step 4's approval-precedes-write ordering | no `src/*.js` home (documented protocol, not shipped code) — `captureExclusionsCheck`/`captureCapHoldbackCheck`/`captureApprovalOrderCheck` in `grade-lib.mjs` |
 
 The native-builtin layer (`plugin/builtins/muster-*/SKILL.md`, the 7 built-in
-pipeline-role providers) extends the rule a fifth time — most of these are assembled
-prose with no `src/*.js` home (graded structurally, same tier as `orchestrator-brief`),
-but two genuinely reuse real code:
+pipeline-role providers plus `muster-pm`) extends the rule a fifth time — most of these are
+assembled prose with no `src/*.js` home (graded structurally, same tier as
+`orchestrator-brief`), but three genuinely reuse real code:
 
 | builtin | deterministic surface |
 |---|---|
 | muster-research's document-ingestion fact ledger | reuses `evidence-table-shape` directly — its `{fact, anchor, confidence, needs_review}` row IS a `fact`-typed evidence-table row, same schema `EVIDENCE_ROW_RE` already encodes |
 | muster-scorer's stated 0–3 score contract | `scorerVerdictShapeCheck` adds the integer-range check `scoreArtifact` (`src/score.js`) alone doesn't enforce, then delegates the floor-principle pass/fail to that same REAL function |
+| muster-pm's SPEC contract (a template-shaped spec passes; ready-too-early blocks) | `pmSpecLintCheck` grades with `lintSpec` (`src/spec-lint.js`) — the exact function `muster spec-lint` wraps |
 | muster-prompt-smith's `muster prompt optimize` proposal shape | `selectWinner` (`src/prompt-optimize.js`) — the exact function the CLI wraps, graded directly for its `{winner, winnerPrompt, regression, escalate, ranking}` shape |
 | muster-image's prompt-set shape, muster-video's shot-list rows, muster-humanizer's voice-profile-precedes-generic ordering, muster-author's framework+CTA shape | no `src/*.js` home (assembled prose) — `imagePromptSetShapeCheck`/`videoShotListShapeCheck`/`humanizerPrecedenceCheck`/`authorDraftShapeCheck` in `grade-lib.mjs` |
 
@@ -136,7 +137,7 @@ coordination comment thread) grades a **checked-in fixture artifact** instead (s
 ```jsonc
 {
   "id": "plan-parallel-manifest-fences",     // unique
-  "mode": "plan",                            // one of the 8 mode prompts (MODES, incl. capture), one of the 10 skill names (SKILLS), one of the 7 native-builtin names (BUILTINS), OR one of the 20 pipeline ids split across CONTENT_PIPELINES (9) and KNOWLEDGE_PIPELINES (11) — see test/mode-evals.test.js. A single field, all five layers share it (grade.mjs, frozen, calls `.padEnd()` on `row.mode` unconditionally)
+  "mode": "plan",                            // one of the 8 mode prompts (MODES, incl. capture), one of the 10 skill names (SKILLS), one of the 8 native-builtin names (BUILTINS), OR one of the 20 pipeline ids split across CONTENT_PIPELINES (9) and KNOWLEDGE_PIPELINES (11) — see test/mode-evals.test.js. A single field, all five layers share it (grade.mjs, frozen, calls `.padEnd()` on `row.mode` unconditionally)
   "outcome": "Add JWT auth to the API and update the docs, in parallel.", // the user input this case models (also the literal string fed to a pure fn, when `check` reads `outcome` directly)
   "check": "manifest",                       // which grade-lib.mjs grader to dispatch to
   "artifact": "fixtures/plan/manifest-parallel.json", // OPTIONAL: path (relative to eval/modes/) to a checked-in fixture
@@ -207,7 +208,7 @@ coordination comment thread) grades a **checked-in fixture artifact** instead (s
     - `release-notes/gate-floor-insufficient.json` + `gate-passing.json`, `executive-summary/gate-floor-insufficient.json` + `gate-weakest-below-floor.json` — real per-pipeline `{scores, gate}` inputs for `scoreArtifact`, demonstrating the floor-principle math generalizes past prd.
     - The 11 knowledge pipelines each get `<pipeline>/gate-passing.json` (a real `{scores, gate}` pair clearing that pipeline's own live `pipelines/<pipeline>.yaml` gate), plus a clean/violating structural-property pair where one is graded: `epic/breakdown-story-waves.md` (sprint-waves), `okrs` (inline `assess` outcomes, no fixture needed), `roadmap/rice-rank-order.json` (roadmap-rice), `prd/intake-rows-clean.md` + `intake-rows-unowned-action.md` (evidence-table-shape), `runbook/steps-command-pairs.md` + `steps-missing-expected-output.md`, `book/chapter-manifest-sequential.md` + `chapter-manifest-gap.md`, `ai-test-plan/case-table-clean.md` + `case-table-missing-owner.md`, `user-story/acceptance-gherkin-scenarios.md` + `acceptance-gherkin-missing-then.md`, `ai-implementation-spec/adr-status-lifecycle-clean.md` + `adr-status-invalid.md`. `business-case` and `launch-plan` carry only their gate fixture (skipped honestly, see above).
   - `capture/` — the capture-layer's fixtures: `exclusions-candidates.json` + `exclusions-invalid-reason.json` (the 5 documented exclusion rules), `cap-holdback-under-cap.json` + `cap-holdback-over-cap.json` (the cap-10 holdback arithmetic), `reword-cap-becomes-clear.json` + `reword-cap-stays-unmeasurable.json` (the 2-reword cap → UNMEASURABLE surfacing, via real `assessOutcome`), `approve-then-write.md` + `cancel-skips-write.md` (approval-precedes-write ordering), `dedupe-candidates.json` (dedupe sans-annotation).
-  - `builtins/` — the native-builtin layer's fixtures, one directory per `muster-*` provider: `muster-research/fact-ledger-clean.md` + `fact-ledger-missing-anchor.md`, `muster-image/prompt-set-clean.md` + `prompt-set-brand-file-punt.md`, `muster-video/shot-list-clean.md` + `shot-list-missing-rationale.md`, `muster-humanizer/precedence-voice-first-clean.md` + `precedence-order-reversed.md` (unit-test-only — see below) + `precedence-no-profile-baseline.md`, `muster-scorer/valid-scores-passing.json` + `invalid-range-score.json`, `muster-prompt-smith/optimize-improvement-no-regression.json` + `optimize-regression-detected.json`, `muster-author/draft-framework-cta-shape.md` + `draft-missing-framework-multiple-ctas.md`.
+  - `builtins/` — the native-builtin layer's fixtures, one directory per `muster-*` provider: `muster-research/fact-ledger-clean.md` + `fact-ledger-missing-anchor.md`, `muster-image/prompt-set-clean.md` + `prompt-set-brand-file-punt.md`, `muster-video/shot-list-clean.md` + `shot-list-missing-rationale.md`, `muster-humanizer/precedence-voice-first-clean.md` + `precedence-order-reversed.md` (unit-test-only — see below) + `precedence-no-profile-baseline.md`, `muster-scorer/valid-scores-passing.json` + `invalid-range-score.json`, `muster-prompt-smith/optimize-improvement-no-regression.json` + `optimize-regression-detected.json`, `muster-author/draft-framework-cta-shape.md` + `draft-missing-framework-multiple-ctas.md`, `muster-pm/spec-lite-ready.md` + `spec-ready-too-early.md`.
   - `skills/coordination/` also carries the HUMAN-HOLD extension's fixtures: `claim-human-hold-resets-floor.md` (a HUMAN-HOLD receipt floor-resets the claim window exactly like DONE/BLOCKED/FAILED), `human-hold-resume-wrong-party.md` + `human-hold-resume-authorized.md` (only the named `authorizer=<login>`'s reply resumes it, per `coordination/SKILL.md`'s stricter HUMAN-HOLD resume gate).
 
 ## Producing artifacts (honest limitation)
@@ -232,14 +233,14 @@ node --test test/mode-evals.test.js
 npm run eval:modes             # same as the first command, via package.json
 ```
 
-As of this writing: 168 total cases (160 code-graded, 100% passing + 8 model-graded) — 58
+As of this writing: 170 total cases (162 code-graded, 100% passing + 8 model-graded) — 58
 mode-prompt cases across the 8 `MODES` (`plan`: 8, `plan-backlog`: 9 — its batch-plan form
 carries the backlog-ref grammar, run order reusing `sprint-waves`, conflict flags, and
 a model-graded approval-gate rubric — `go`: 7, `go-backlog`: 6, `runner`: 6, `audit`: 6,
 `diagnose`: 7, `capture`: 9), 48 skill-protocol cases (41 original + 3 coordination
 HUMAN-HOLD extension cases + 2 muster-runner dispatch-contract cases + 2 review-gate
-mutant-kill-rule cases), 21 content-pipeline cases (>= 2 per pipeline across all 9), 14
-native-builtin cases (2 per builtin across all 7), and 27 knowledge-pipeline cases (11
+mutant-kill-rule cases), 21 content-pipeline cases (>= 2 per pipeline across all 9), 16
+native-builtin cases (2 per builtin across all 8), and 27 knowledge-pipeline cases (11
 gate-achievability + 16 structural, across the 11 pipelines — see the coverage table below
 for the exact per-pipeline breakdown, including the 2 pipelines with no structural case,
 skipped honestly).
@@ -305,7 +306,7 @@ not model.
 | audit-pattern-dead-code-duplication | structural | 0 — composed onto BOTH the tech-debt and simplification dimensions (not a dispatched dimension of its own); see `test/audit-pattern-skills.test.js` |
 | audit-pattern-documentation | structural | 0 — approved via the audit-pattern-batch2 improver cycle, composed onto BOTH readability (unconditional) and design-ux (conditional, information-architecture half) dimensions (not a dispatched dimension of its own); see `test/audit-pattern-skills.test.js` |
 
-### Native-builtin providers (`plugin/builtins/muster-*/SKILL.md`, 7)
+### Native-builtin providers (`plugin/builtins/muster-*/SKILL.md`, 8)
 
 | surface | tier | cases |
 |---|---|---|
@@ -316,6 +317,7 @@ not model.
 | muster-scorer | empirical | 2 |
 | muster-prompt-smith | empirical | 2 |
 | muster-author | empirical | 2 |
+| muster-pm | empirical | 2 |
 
 The `gsd-*`/`sp-*`/`wsh-*` builtins (39 dirs under `plugin/builtins/`) are
 **deliberate-none**: vendored generic technique skills (superpowers/get-shit-done/

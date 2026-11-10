@@ -110,6 +110,19 @@ test("next --run ignores checkpoint tasks when deciding whether every task is su
   assert.deepEqual(report.tasks.planned, ["01", "02"]);
 });
 
+test("next --run reads muster-verifier's gsd status frontmatter (passed, gaps_found, human_needed)", async () => {
+  const { verificationVerdict } = await import("../src/run-next.js");
+  assert.equal(verificationVerdict("---\nstatus: passed\n---"), "PASS");
+  assert.equal(verificationVerdict("---\nstatus: gaps_found\n---"), "GAPS");
+  assert.equal(verificationVerdict("---\nstatus: human_needed\nscore: 3/3\n---"), "HUMAN_NEEDED");
+  const root = await trackedMkdtemp(join(tmpdir(), "muster-next-human-"));
+  await mkdir(join(root, ".muster/runs/r1"), { recursive: true });
+  await writeFile(join(root, ".muster/runs/r1/PLAN.md"), PLAN);
+  for (const id of ["01", "02"]) await writeFile(join(root, `.muster/runs/r1/SUMMARY-${id}.md`), "x\n");
+  await writeFile(join(root, ".muster/runs/r1/VERIFICATION.md"), "---\nstatus: human_needed\n---\n");
+  assert.equal((await nextForRun({ cwd: root, runId: "r1" })).position, "human_needed");
+});
+
 test("bare next routes to the newest run directory; with no runs it fails loud", async () => {
   const root = await trackedMkdtemp(join(tmpdir(), "muster-next-bare-"));
   assert.notEqual(cli(root, ["next"]).status, 0);

@@ -1,7 +1,7 @@
 #!/bin/sh
 # Resolve the muster CLI per call, cheapest first: a bundled runtime, the source checkout this
 # plugin was loaded from (--plugin-dir or a marketplace clone), the project's local install,
-# a global install, then npx. Commands call `sh "$CLAUDE_PLUGIN_ROOT/runtime/muster.sh" <verb>`
+# a global install, then npx. Commands call `sh "${CLAUDE_PLUGIN_ROOT}/runtime/muster.sh" <verb>`
 # because Bash tool calls do not share shell variables.
 d=$(dirname "$0")
 if [ -f "$d/muster.mjs" ]; then exec node "$d/muster.mjs" "$@"; fi

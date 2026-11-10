@@ -15,7 +15,7 @@ stop only for an unclear outcome, an escalation, or the merge decision.
 
 <outcome>$ARGUMENTS</outcome>
 
-`M` below means `sh "$CLAUDE_PLUGIN_ROOT/runtime/muster.sh"` (repeat it in every Bash call;
+`M` below means `sh "${CLAUDE_PLUGIN_ROOT}/runtime/muster.sh"` (repeat it in every Bash call;
 shell variables do not persist). The **orchestrator** skill holds the rules that survive
 compaction; if the `Workflow` tool is missing, follow its prose fallback instead of steps 3-6.
 After a compaction, `M next --run <runId>` says where you are.

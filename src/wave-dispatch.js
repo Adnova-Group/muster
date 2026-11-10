@@ -12,10 +12,6 @@
 // own tool list (docs/research/claude-code-cli.md sec 1's dated correction;
 // docs/native-workflow-dispatch.md).
 //
-// execFileSync backs makeGitShaVerifier's git-backed default verifier below (the ONLY
-// place in this file that shells out, and only when that verifier is actually invoked --
-// never unconditionally on buildBaseShaReceipt's hot path).
-//
 // There is no on-disk or protocol signal an outside process (this CLI) can probe to
 // detect agent-teams mode from inside a running session -- the SAME "cannot be
 // auto-probed, must be DECLARED" shape as Cowork's nativePluginRide (src/harness.js /
@@ -28,7 +24,6 @@
 // session whose tool list lacks Workflow (Codex, Cowork, `--tools`-restricted or
 // pre-Workflow Claude Code builds) -- prose is the default whenever nothing is declared.
 
-import { execFileSync } from "node:child_process";
 
 export const AGENT_TEAMS_ENV = "MUSTER_AGENT_TEAMS";
 
@@ -189,45 +184,6 @@ export function buildBaseShaReceipt({ taskId, mechanism, baseSha, worktreePath, 
   const verified = verify(baseSha) === true;
   const verificationMechanism = typeof verify.mechanism === "string" && verify.mechanism ? verify.mechanism : "custom";
   return { taskId, mechanism, baseSha, worktreePath: worktreePath ?? null, verified, verificationMechanism };
-}
-
-// The git-backed default verifier factory: "reachable" is DEFINED as the SHA resolving
-// to a real commit object in the repository at an EXPLICIT cwd -- `git rev-parse
-// --verify --quiet <sha>^{commit}` succeeding (exit 0) means the object exists and is (or
-// dereferences to) a commit; any non-zero exit -- unknown object, wrong type, not a git
-// repo at all -- means false. cwd is REQUIRED and never defaults to `process.cwd()`:
-// Codex's `collaboration.spawn_agent` has no cwd field at all, so the caller (the
-// orchestrator prose, or a human running the `receipt-verify` CLI) must always state
-// which repository the SHA is being checked against -- silently trusting the running
-// process's own cwd would make the receipt meaningless on exactly the harness that needs
-// it most. `exec` is injectable (defaults to execFileSync) so callers can test this
-// factory's OWN contract hermetically without a real git shell-out; production callers
-// get the real one. The returned function carries a `.mechanism` label ("git-object")
-// that buildBaseShaReceipt reads back into the receipt's `verificationMechanism`.
-//
-// The input is ALSO shape-checked against BASE_SHA_RE before ever shelling out (review
-// finding, fixed): `git rev-parse --verify` resolves any revision expression -- a branch
-// name, a tag, `HEAD`, a relative ref like `HEAD~2` -- not just SHAs, so without this
-// guard a caller that passes something other than a SHA (the standalone `receipt-verify`
-// CLI, invoked directly, never routes through buildBaseShaReceipt's own format check
-// first) would get a false `verified: true` for input that was never a base-SHA at all.
-// A shape-invalid input is unconditionally false, same as any other non-reachable SHA --
-// this is the verifier's own definition of "reachable," not a separate error path.
-export function makeGitShaVerifier({ cwd, exec = execFileSync } = {}) {
-  if (typeof cwd !== "string" || !cwd.trim()) {
-    throw new Error("makeGitShaVerifier: cwd is required (an explicit repository path -- never process.cwd())");
-  }
-  function verifyGitSha(sha) {
-    if (typeof sha !== "string" || !BASE_SHA_RE.test(sha)) return false;
-    try {
-      exec("git", ["rev-parse", "--verify", "--quiet", `${sha}^{commit}`], { cwd, stdio: ["ignore", "ignore", "ignore"] });
-      return true;
-    } catch {
-      return false;
-    }
-  }
-  verifyGitSha.mechanism = "git-object";
-  return verifyGitSha;
 }
 
 // ───────────────────────────────────────────────────────────────────────────

@@ -57,7 +57,8 @@ reasonable answer, recorded in CONTEXT.md as a `D-NN [ASSUMPTION]` decision. The
 3. **Plan.** `Workflow({name:"muster:make-plan", args:{runId, outcome, contextPath, specPath, candidates, skills, pins, skillRoot, cli, models}})`
    (`contextPath` only when CONTEXT.md exists; `specPath` = `spec.path`, plus `#<spec.anchor>`,
    only for a spec). The workflow runs muster-planner, then
-   muster-plan-checker (both run plan-lint via `cli`), revising at most 3 times.
+   muster-plan-checker (both run plan-lint via `cli`), revising at most 3 times. Write its
+   result to `.muster/runs/<runId>/plan-check.json` before anything else (go builds only a PASS).
 4. **Show and stop.** Present, in this order: the checker `verdict`, `revisions`, any blocker or
    warning issues verbatim, `escalated` when set, and a compact view of PLAN.md: tasks by wave,
    each as `<taskId> · <agent_hint or muster-executor> · <skills or ->` plus title, files and

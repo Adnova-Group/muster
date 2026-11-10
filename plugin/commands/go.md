@@ -19,7 +19,8 @@ instead of steps 3-6. After a compaction, `M next --run <runId>` says where you 
 
 **Continuing a run** (`--run <runId>`): write the
 step-2 fence files, run `M next --run <runId>`, and resume at the step its `next` names
-(`plan` -> 3, `build` -> 4, `merge` -> 6, `verify`/`done` -> 7, `pipeline` -> Content step 2).
+(`plan` -> 3, `build` -> 4, `merge` -> 6, `verify`/`done` -> 7, `pipeline` -> Content step 2,
+`escalate` -> stop).
 Never re-plan an approved run.
 
 1. **Preflight (1 call).** `M preflight "<outcome>" --json` (append `--model <m>` when the user

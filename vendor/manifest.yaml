@@ -1041,6 +1041,77 @@ sources:
       - { id: jk-state-machine, kind: builtin, from: skills/state-machine/SKILL.md, to: plugin/builtins/jk-state-machine/SKILL.md, mode: adapted, baseBlob: 26f835284b16b4d08372867ec75b0212019659c9, roles: [frontend], rank: 40, description: "Render every state of a component on a throwaway page with mock data and a keyboard switcher; runs only when explicitly invoked." }
       - { from: skills/state-machine/switcher.md, to: plugin/builtins/jk-state-machine/switcher.md, mode: adapted, baseBlob: f59488c4247e8876f5ac680696b5504bb0950087 }
   # ---- end ui-skills.com UX skills ----
+  # ---- complementary skills: research/data, SRE, writing and stack (2026-11-10) ----
+  - id: kdense-skills
+    kind: github
+    repo: K-Dense-AI/scientific-agent-skills
+    # Added 2026-11-10 (owner-approved complements). Merge-tracked (every item has a `mode`): plain
+    # `muster vendor` never regenerates it, and `muster vendor update kdense-skills` 3-way merges each
+    # adapted file against its byte-exact base copy in vendor/upstream/kdense-skills/; verbatim items
+    # are whole-file copies checked by blob. Pinned to upstream HEAD on 2026-11-10, 7 commits past the
+    # latest release v2.72.0. K-Dense also mirrors these skills in K-Dense-AI/claude-scientific-writer;
+    # scientific-agent-skills is the canonical home (its skills/ tree, MIT LICENSE.md).
+    # Kept muster divergence: each SKILL.md swaps the upstream frontmatter for muster's (name kept,
+    # one-line description, muster_builtin, SPDX license, generated upstream:; allowed-tools,
+    # compatibility and metadata dropped) and adds a prompt-lint-disable comment after the H1; each
+    # supporting Markdown file gains the packaging-only prompt-lint header. Scripts, templates and
+    # data are verbatim.
+    # market-research-reports: carried whole. Its scripts are offline standard-library tools (no
+    # network, LLM or image calls) and official_data_sources.md routes to public statistical APIs,
+    # so there is no vendor-API dependency to remove (relation: vendored).
+    # literature-review (relation: adapted): the vendor-API dependencies are removed. Parallel's paid
+    # parallel-cli (scoping search and URL extraction, PARALLEL_API_KEY) becomes the harness's own web
+    # search and fetch tools with the same query/date/hits logging, in SKILL.md, core_workflow.md,
+    # search_and_citation.md and example_workflow.md; the SKILL.md "Optional search CLI" install block
+    # is dropped. The OpenRouter schematic generator (scripts/generate_schematic.py and
+    # generate_schematic_ai.py, OPENROUTER_API_KEY, paid Gemini image calls) is not carried, and the
+    # SKILL.md figures paragraph now says to draw schematics from the extraction table deterministically.
+    # verify_citations.py (Crossref, public and keyless), search_databases.py and generate_pdf.py
+    # (Pandoc) are verbatim. Cross-references to upstream skills muster does not carry (parallel-web,
+    # citation-management, pubmed-database) are kept as upstream names.
+    # Wired into muster-research's ledger and coverage discipline, which names both by id.
+    ref: 2d2065fb4520fa3f3f2bcf61cff26ec8b7eba4b5
+    tag: v2.72.0-7-g2d2065f
+    license: MIT
+    copyright: "Copyright (c) 2025 K-Dense Inc."
+    relation: vendored
+    items:
+      - { id: kdense-market-research-reports, kind: builtin, from: skills/market-research-reports/SKILL.md, to: plugin/builtins/kdense-market-research-reports/SKILL.md, mode: adapted, baseBlob: b49b023b7a95b70d1c61e9cfa820d01ddb79ae83 }
+      - { from: skills/market-research-reports/references/data_analysis_patterns.md, to: plugin/builtins/kdense-market-research-reports/references/data_analysis_patterns.md, mode: adapted, baseBlob: 25403e3bf19a055ca2c466f581f48f515f74848c }
+      - { from: skills/market-research-reports/references/evidence_model.md, to: plugin/builtins/kdense-market-research-reports/references/evidence_model.md, mode: adapted, baseBlob: e4ca3bb75ae99adcbadc743b197a1562fe2962e0 }
+      - { from: skills/market-research-reports/references/methods_and_ethics.md, to: plugin/builtins/kdense-market-research-reports/references/methods_and_ethics.md, mode: adapted, baseBlob: 1c4e2b570101ddbaa0c1301011b60602b0673a7a }
+      - { from: skills/market-research-reports/references/official_data_sources.md, to: plugin/builtins/kdense-market-research-reports/references/official_data_sources.md, mode: adapted, baseBlob: af1d1195bac0c66cc69d01a6088542b4f23d0076 }
+      - { from: skills/market-research-reports/references/report_structure_guide.md, to: plugin/builtins/kdense-market-research-reports/references/report_structure_guide.md, mode: adapted, baseBlob: fc9465fbae36e116a02724217719c035ea818e8e }
+      - { from: skills/market-research-reports/references/sources.md, to: plugin/builtins/kdense-market-research-reports/references/sources.md, mode: adapted, baseBlob: 479a2130179483579b49623b3517eb247da2cd33 }
+      - { from: skills/market-research-reports/references/visual_generation_guide.md, to: plugin/builtins/kdense-market-research-reports/references/visual_generation_guide.md, mode: adapted, baseBlob: a10d294eadc398bc36d6593f9ab6621141da1630 }
+      - { from: skills/market-research-reports/assets/FORMATTING_GUIDE.md, to: plugin/builtins/kdense-market-research-reports/assets/FORMATTING_GUIDE.md, mode: adapted, baseBlob: 4b539e1d31a2392e62d2a0e20d9847ec376ff525 }
+      - { from: skills/market-research-reports/assets/claims_ledger_template.csv, to: plugin/builtins/kdense-market-research-reports/assets/claims_ledger_template.csv, mode: verbatim, baseBlob: 6773321504a8ad53e04193d38bf564a44495e301 }
+      - { from: skills/market-research-reports/assets/competitor_feature_matrix_template.csv, to: plugin/builtins/kdense-market-research-reports/assets/competitor_feature_matrix_template.csv, mode: verbatim, baseBlob: c77281705bbaff9dfd51b97df77639b5e812f0c6 }
+      - { from: skills/market-research-reports/assets/consistency_check_template.csv, to: plugin/builtins/kdense-market-research-reports/assets/consistency_check_template.csv, mode: verbatim, baseBlob: c9f6d8b3bba178394a0ea14afb6170c89d2ba6a5 }
+      - { from: skills/market-research-reports/assets/forecast_sensitivity_template.json, to: plugin/builtins/kdense-market-research-reports/assets/forecast_sensitivity_template.json, mode: verbatim, baseBlob: 7aa41e3a4059422527a93fcc05f124f34f1a9540 }
+      - { from: skills/market-research-reports/assets/market_report_template.tex, to: plugin/builtins/kdense-market-research-reports/assets/market_report_template.tex, mode: verbatim, baseBlob: 5bcd5548d383b3cb3462828b81d77d607839661e }
+      - { from: skills/market-research-reports/assets/market_research.sty, to: plugin/builtins/kdense-market-research-reports/assets/market_research.sty, mode: verbatim, baseBlob: 70cc46049303b58a89474735876d2ba49eb12471 }
+      - { from: skills/market-research-reports/assets/market_sizing_scenarios_template.json, to: plugin/builtins/kdense-market-research-reports/assets/market_sizing_scenarios_template.json, mode: verbatim, baseBlob: 713f2e1fc1c98d15eb3bb725540d25489cbb8429 }
+      - { from: skills/market-research-reports/assets/report_manifest_template.json, to: plugin/builtins/kdense-market-research-reports/assets/report_manifest_template.json, mode: verbatim, baseBlob: a931d8d5bdd120f4ec7c21606681cbb3acac2f0c }
+      - { from: skills/market-research-reports/assets/source_ledger_template.csv, to: plugin/builtins/kdense-market-research-reports/assets/source_ledger_template.csv, mode: verbatim, baseBlob: efe5d136953324df9490ded9e476c4e139a53240 }
+      - { from: skills/market-research-reports/scripts/_common.py, to: plugin/builtins/kdense-market-research-reports/scripts/_common.py, mode: verbatim, baseBlob: 3aeaa1570c3f92ffe2d8315e69f4d5691fe73206 }
+      - { from: skills/market-research-reports/scripts/audit_claim_citations.py, to: plugin/builtins/kdense-market-research-reports/scripts/audit_claim_citations.py, mode: verbatim, baseBlob: 57514a060132e331bc1ad881de2316f48dbf60f4 }
+      - { from: skills/market-research-reports/scripts/calculate_market_sizing.py, to: plugin/builtins/kdense-market-research-reports/scripts/calculate_market_sizing.py, mode: verbatim, baseBlob: 24d181eeea670f20f0767725b4c92ea8018a8aac }
+      - { from: skills/market-research-reports/scripts/check_unit_consistency.py, to: plugin/builtins/kdense-market-research-reports/scripts/check_unit_consistency.py, mode: verbatim, baseBlob: 4d50d9528c4f76c02b48b08c43f6a5bbdf2e5925 }
+      - { from: skills/market-research-reports/scripts/forecast_sensitivity.py, to: plugin/builtins/kdense-market-research-reports/scripts/forecast_sensitivity.py, mode: verbatim, baseBlob: 439891f4a63cf4c6fab0c405be07e584785be525 }
+      - { from: skills/market-research-reports/scripts/generate_report_scaffold.py, to: plugin/builtins/kdense-market-research-reports/scripts/generate_report_scaffold.py, mode: verbatim, baseBlob: 236c63a0b0cabc812c405f131f4d22ac476b9af6 }
+      - { from: skills/market-research-reports/scripts/validate_competitor_matrix.py, to: plugin/builtins/kdense-market-research-reports/scripts/validate_competitor_matrix.py, mode: verbatim, baseBlob: 22456557c4e1610d579674433b0a8f5e06a5b48c }
+      - { from: skills/market-research-reports/scripts/validate_evidence_ledger.py, to: plugin/builtins/kdense-market-research-reports/scripts/validate_evidence_ledger.py, mode: verbatim, baseBlob: d5c9d2ace96b2fcb4fcbd5c3eb6f52846e10d7f3 }
+      - { id: kdense-literature-review, kind: builtin, from: skills/literature-review/SKILL.md, to: plugin/builtins/kdense-literature-review/SKILL.md, mode: adapted, relation: adapted, baseBlob: 5178dce6419cee412155e7b9dd523d5b2ef703f5 }
+      - { from: skills/literature-review/references/citation_styles.md, to: plugin/builtins/kdense-literature-review/references/citation_styles.md, mode: adapted, baseBlob: a12c1f8a6dc1a93abfe3c7d74b198062176ce3cf }
+      - { from: skills/literature-review/references/core_workflow.md, to: plugin/builtins/kdense-literature-review/references/core_workflow.md, mode: adapted, baseBlob: 6a0bab11cd67d05dd683576f512b2045d85c826b }
+      - { from: skills/literature-review/references/database_strategies.md, to: plugin/builtins/kdense-literature-review/references/database_strategies.md, mode: adapted, baseBlob: ed342f27145805ad585ba260c75d60678b60ac20 }
+      - { from: skills/literature-review/references/example_workflow.md, to: plugin/builtins/kdense-literature-review/references/example_workflow.md, mode: adapted, baseBlob: 521308758c8847254edb1d62ad242e982f00dbe5 }
+      - { from: skills/literature-review/references/search_and_citation.md, to: plugin/builtins/kdense-literature-review/references/search_and_citation.md, mode: adapted, baseBlob: ed27ee9d24c9cef3381cc414834dda7d69a4a019 }
+      - { from: skills/literature-review/assets/review_template.md, to: plugin/builtins/kdense-literature-review/assets/review_template.md, mode: adapted, baseBlob: d4188470de723bc75d617b8aaf2fb47a0b65dce4 }
+      - { from: skills/literature-review/scripts/generate_pdf.py, to: plugin/builtins/kdense-literature-review/scripts/generate_pdf.py, mode: verbatim, baseBlob: dea8d556e808c006c911131ee761b2bd1ae8ecc0 }
+      - { from: skills/literature-review/scripts/search_databases.py, to: plugin/builtins/kdense-literature-review/scripts/search_databases.py, mode: verbatim, baseBlob: d14e3202055844ea47a4d19b8b5ceeb4321dceab }
+      - { from: skills/literature-review/scripts/verify_citations.py, to: plugin/builtins/kdense-literature-review/scripts/verify_citations.py, mode: verbatim, baseBlob: 39fb278f7896e275784f7ea23ba395b1929863e5 }
   - id: gsd
     kind: github
     repo: open-gsd/gsd-core

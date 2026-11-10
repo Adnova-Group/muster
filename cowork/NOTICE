@@ -28,6 +28,8 @@ Per-item detail (upstream path, ref, relation) is in each item's `upstream:` fie
   Copyright (c) 2026 Elaya
 - jakubkrehel/skills @ 72bdd6121cd595f47fd21c9f23e374028c9cbacd (MIT)
   Copyright (c) 2026 Jakub Krehel
+- K-Dense-AI/scientific-agent-skills @ 2d2065fb4520fa3f3f2bcf61cff26ec8b7eba4b5 (MIT)
+  Copyright (c) 2025 K-Dense Inc.
 - open-gsd/gsd-core @ 9385f4618b52ef68ed8a5e8bdd93cfb25bd87765, 1c352d1ea37b010e99b8353905eb5def4f784100 (MIT)
   Copyright (c) 2026 Open GSD
 - nextlevelbuilder/ui-ux-pro-max-skill @ 4f2dbb67e64969a9a30ab00742f2d55d66ddec2b (MIT)

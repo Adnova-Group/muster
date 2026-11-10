@@ -427,3 +427,26 @@
   keywords: [docs, documentation, official, framework, citations, version, api]
   description: "Ground framework-specific code in current official documentation: detect versions, fetch the docs, implement the documented pattern and cite each source."
   provenance: { license: MIT, upstream: [addyosmani/agent-skills] }
+
+# ----- Complementary skills (2026-11-10): merge-tracked vendored builtins for research/data,
+# SRE, writing and stack work (vendor/manifest.yaml sources kdense-skills, knowledge-work-skills,
+# mattpocock-skills, simple-english, supabase-agent-skills, samber-golang, and the items added to
+# wshobson, superpowers and marketingskills). Listed here for the same reason as the UX family.
+# Every entry ranks below its role's default provider so none displaces it: research stays with
+# muster-research (40) and the rank-50 agents, author with muster-author, prompt-quality with
+# muster-prompt-smith, implement/test-author/security-review/performance with the rank-50 wsh and
+# sp builtins they complement. Distinct ranks per role and single-token keywords, as above.
+- id: kdense-market-research-reports
+  kind: builtin
+  roles: [research]
+  rank: 37
+  keywords: [market, tam, sam, som, sizing, forecast, competitor, ledger]
+  description: "Evidence-traceable market research: source and claims ledgers, scenario-based TAM/SAM/SOM sizing, forecast sensitivity and an audit-ready release gate."
+  provenance: { license: MIT, upstream: [K-Dense-AI/scientific-agent-skills] }
+- id: kdense-literature-review
+  kind: builtin
+  roles: [research]
+  rank: 36
+  keywords: [literature, systematic, scoping, prisma, citations, papers, pubmed, arxiv]
+  description: "Systematic, scoping or narrative literature reviews: recorded search strategies, coverage logs, screening counts, citation verification and thematic synthesis."
+  provenance: { license: MIT, upstream: [K-Dense-AI/scientific-agent-skills] }

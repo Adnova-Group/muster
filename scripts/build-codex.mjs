@@ -12,7 +12,7 @@ import { escapeRe } from "../src/keyword.js";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { generateNotice, generateProvenanceMarkdown } from "../src/provenance.js";
 import { parseFrontmatterLenient } from "../src/frontmatter.js";
-import { isCodexFrozenOutBuiltin } from "../src/codex-inventory.js";
+import { isCodexExcludedBuiltin } from "../src/codex-inventory.js";
 
 // Deliberately synchronous fs throughout this script (mirrors src/codex-release.js).
 //
@@ -756,9 +756,9 @@ async function buildCodexPluginOnce({ root, outDir, nodeExecPath }) {
     }
     rmAndCopy(join(root, "plugin", "skills"), internalSkillDir);
     rmAndCopy(join(root, "plugin", "builtins"), internalSkillDir, { merge: true });
-    // Frozen Codex lane: post-freeze builtins (the UX family) stay Claude-plugin only.
+    // Frozen Codex lane: post-freeze builtins (the UX family and the 2026-11-10 complements) stay Claude-plugin only.
     for (const entry of readdirSync(join(root, "plugin", "builtins"), { withFileTypes: true }))
-      if (entry.isDirectory() && isCodexFrozenOutBuiltin(entry.name)) rmSync(join(internalSkillDir, entry.name), { recursive: true, force: true });
+      if (entry.isDirectory() && isCodexExcludedBuiltin(entry.name)) rmSync(join(internalSkillDir, entry.name), { recursive: true, force: true });
     for (const entry of readdirSync(join(root, "codex", "skill-assets"), { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
       rmAndCopy(join(root, "codex", "skill-assets", entry.name), join(internalSkillDir, entry.name), { merge: true });
@@ -774,7 +774,7 @@ async function buildCodexPluginOnce({ root, outDir, nodeExecPath }) {
     cpSync(join(root, "src", "verdict.schema.json"), join(internalSkillDir, "review-gate", "verdict.schema.json"));
     const portedSkillNames = [...new Set([
       ...readdirSync(join(root, "plugin", "skills"), { withFileTypes: true }).filter(entry => entry.isDirectory()).map(entry => entry.name),
-      ...readdirSync(join(root, "plugin", "builtins"), { withFileTypes: true }).filter(entry => entry.isDirectory() && !isCodexFrozenOutBuiltin(entry.name)).map(entry => entry.name),
+      ...readdirSync(join(root, "plugin", "builtins"), { withFileTypes: true }).filter(entry => entry.isDirectory() && !isCodexExcludedBuiltin(entry.name)).map(entry => entry.name),
       ...FROZEN_CODEX_SKILLS
     ])];
     for (const name of portedSkillNames.filter(name => name.startsWith("gsd-"))) {

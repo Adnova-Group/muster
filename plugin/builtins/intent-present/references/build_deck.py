@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Adapted by Muster from ghaida/intent @ 1806110106a472bc588d7a8a2b7e3d39aee4a4b8 (CC0-1.0): chart category and series names may not start with "=" (security hardening; python-pptx writes them into the embedded workbook as formulas).
+# Adapted by Muster from ghaida/intent @ 1806110106a472bc588d7a8a2b7e3d39aee4a4b8 (CC0-1.0): the chart's embedded workbook is written with XlsxWriter's strings_to_formulas and strings_to_urls off, so chart labels stay literal text (security hardening).
 """Build a .pptx from a /present deck spec (JSON). Shared path for PowerPoint and
 Google Slides (import the .pptx into Slides). Usage: build_deck.py deck.json out.pptx
 
@@ -14,6 +14,22 @@ from pptx.dml.color import RGBColor
 from pptx.chart.data import CategoryChartData
 from pptx.enum.chart import XL_CHART_TYPE
 from pptx.enum.shapes import MSO_SHAPE, PP_PLACEHOLDER
+import pptx.chart.xlsx as _chart_xlsx
+
+# Muster hardening: python-pptx writes chart categories and series names into the chart's
+# embedded workbook with XlsxWriter's write(), which by default stores a string starting
+# with "=" as a live formula (=HYPERLINK(...) exfiltrates cells on Edit Data) and turns
+# http(s)://, ftp://, mailto:, internal: and external: strings into hyperlinks and external
+# references. Deck specs are model-written, often from untrusted text, so every workbook
+# python-pptx opens here is created with both conversions off and labels stay literal strings.
+_XlsxWorkbook = _chart_xlsx.Workbook
+
+
+def _literal_workbook(filename=None, options=None):
+    return _XlsxWorkbook(filename, {**(options or {}), "strings_to_formulas": False, "strings_to_urls": False})
+
+
+_chart_xlsx.Workbook = _literal_workbook
 
 LAYOUTS = {"title", "claim_visual", "claim_chart", "claim_bullets", "quote", "section", "ask"}
 INK, MUTED, RULE, SURFACE = RGBColor(0x1A, 0x1A, 0x2E), RGBColor(0x5B, 0x5B, 0x72), RGBColor(0xB8, 0xB8, 0xC8), RGBColor(0xF1, 0xF1, 0xF6)
@@ -83,13 +99,6 @@ def _validate(spec):
                     raise ValueError(f"slide {i}: each chart series needs a name and one value per category")
                 if any(isinstance(v, bool) or not isinstance(v, (int, float)) for v in ser["values"]):
                     raise ValueError(f"slide {i}: chart values must be numbers, as stated in the source")
-            # Muster hardening: python-pptx writes categories and series names into the chart's
-            # embedded workbook with XlsxWriter's write(), which stores a string starting with
-            # "=" as a live formula (=HYPERLINK(...) exfiltrates cells on Edit Data). Deck
-            # specs are model-written, often from untrusted sources.
-            labels = list(cats) + [ser.get("name") for ser in series]
-            if any(isinstance(x, str) and x.lstrip().startswith(("=", "{=")) for x in labels):
-                raise ValueError(f"slide {i}: chart categories and series names cannot start with '=' (spreadsheet formula)")
             hi = c.get("highlight", 0)
             if isinstance(hi, bool) or not isinstance(hi, int) or hi not in range(len(series)):
                 raise ValueError(f"slide {i}: chart highlight must be the index of one series (0 to {len(series) - 1})")

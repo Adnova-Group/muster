@@ -1842,9 +1842,13 @@ sources:
     # paths point at ${CLAUDE_PLUGIN_ROOT}/builtins/intent-present/references/). Not vendored:
     # the Cursor/Copilot ports, hooks/, docs/ site, tests/ and build scripts.
     # Security adaptation (stage 3 pre-PR review, 2026-11-10; base copy kept, noted in its header):
-    # present/references/build_deck.py rejects chart categories and series names starting with "="
-    # (python-pptx writes them into the embedded workbook through XlsxWriter's write(), which stores
-    # such a string as a live formula); test/vendored-script-hardening.test.js pins it.
+    # present/references/build_deck.py makes python-pptx create the chart's embedded workbook with
+    # XlsxWriter's strings_to_formulas and strings_to_urls off (python-pptx writes categories and
+    # series names with write(), which by default stores "=..." as a live formula and turns
+    # http(s)/ftp/mailto/internal/external strings into hyperlinks or external references), so every
+    # label stays a literal string; test/vendored-script-hardening.test.js pins it, end to end when
+    # python-pptx is installed. The only other vendored CSV/XLSX/chart writer, kdense
+    # generate_report_scaffold.py, writes constant header rows only.
     ref: 1806110106a472bc588d7a8a2b7e3d39aee4a4b8
     tag: v1.7.4
     license: CC0-1.0

@@ -49,6 +49,9 @@ export function buildArgsFromPlan(planText, { runId, base = null, branch = null,
       if (unknown.length) problems.push(`task ${t.id} binds unknown skill(s): ${unknown.join(", ")}`);
       task.skills = t.skills.filter((id) => catalog.skills.has(id)).map((id) => ({ id, path: catalog.skills.get(id).path }));
     }
+    // tdd="true" or type="tdd" selects muster:team's test-first split (muster-test-writer, then
+    // the builder); muster:build ignores the flag.
+    if (t.tdd === "true" || t.type === "tdd") task.tdd = true;
     if (!task.verify.length) problems.push(`task ${t.id} has no <automated> verify command`);
     if (!byWave.has(t.wave)) byWave.set(t.wave, []);
     byWave.get(t.wave).push(task);

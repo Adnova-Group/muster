@@ -94,3 +94,84 @@ export const PLAN_RESULT = {
   },
   required: ["status", "planPath", "taskCount", "summary"],
 };
+
+// ---- dev-team topologies (plugin/workflows/team.js, debug.js; docs/strategy/dev-team-topologies.md)
+
+// muster-test-writer return value: the red (failing tests) or cover (passing tests) commit.
+export const RED_RESULT = {
+  type: "object",
+  properties: {
+    taskId: str,
+    status: { type: "string", enum: ["done", "blocked", "error"] },
+    branch: str,
+    commit: str,
+    worktree: str,
+    testFiles: strList,
+    testsRun: strList,
+    failingAsExpected: { type: "boolean" },
+    failures: {
+      type: "array",
+      items: { type: "object", properties: { test: str, reason: str }, required: ["test", "reason"] },
+    },
+    deviations: strList,
+  },
+  required: ["taskId", "status", "branch", "commit", "worktree", "testFiles", "testsRun", "failingAsExpected", "failures", "deviations"],
+};
+
+// muster-integration-checker return value: one wave's merged tree.
+export const INTEGRATION_RESULT = {
+  type: "object",
+  properties: {
+    verdict: { type: "string", enum: ["PASS", "FAIL", "ABSTAIN"] },
+    commitsChecked: strList,
+    findings: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: { severity: str, taskIds: strList, file: str, line: { type: "integer" }, summary: str },
+        required: ["severity", "taskIds", "file", "summary"],
+      },
+    },
+    testsRun: strList,
+    testsPassed: { type: "boolean" },
+  },
+  required: ["verdict", "commitsChecked", "findings", "testsRun", "testsPassed"],
+};
+
+// wsh-team-debugger, generate mode.
+export const HYPOTHESES_RESULT = {
+  type: "object",
+  properties: {
+    hypotheses: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: { id: str, statement: str, category: str, predicts: str },
+        required: ["id", "statement", "category", "predicts"],
+      },
+    },
+  },
+  required: ["hypotheses"],
+};
+
+// wsh-team-debugger, investigate and challenge modes.
+export const HYPOTHESIS_RESULT = {
+  type: "object",
+  properties: {
+    hypothesisId: str,
+    status: { type: "string", enum: ["CONFIRMED", "PLAUSIBLE", "FALSIFIED", "INCONCLUSIVE"] },
+    confidence: { type: "string", enum: ["high", "medium", "low"] },
+    evidence: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: { file: str, line: { type: "integer" }, claim: str, supports: { type: "boolean" } },
+        required: ["file", "claim", "supports"],
+      },
+    },
+    causalChain: str,
+    reproduction: str,
+    suggestedFix: str,
+  },
+  required: ["hypothesisId", "status", "confidence", "evidence", "causalChain", "reproduction", "suggestedFix"],
+};

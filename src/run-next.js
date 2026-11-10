@@ -57,9 +57,19 @@ export async function nextForRun({ cwd, runId }) {
   const verdict = has("VERIFICATION.md") ? verificationVerdict(await readOrNull(join(dir, "VERIFICATION.md")) || "") : null;
   const rel = `.muster/runs/${runId}`;
 
+  // Content runs (muster:pipeline) have pipeline-args.json instead of PLAN.md.
+  let pipelineVerdict = null;
+  if (has("pipeline-result.json")) {
+    try { pipelineVerdict = JSON.parse(await readOrNull(join(dir, "pipeline-result.json"))).verdict || "ERROR"; } catch { pipelineVerdict = "ERROR"; }
+  }
+
   let position, action, why;
   if (has("continue-here.md")) {
     [position, action, why] = ["paused", `resume: read ${rel}/continue-here.md, then continue from the step it names`, "continue-here.md exists"];
+  } else if (has("pipeline-args.json") && !plan) {
+    if (!pipelineVerdict) [position, action, why] = ["pipeline", `pipeline: Workflow({name:"muster:pipeline", args:<${rel}/pipeline-args.json>})`, "pipeline-args.json exists, pipeline-result.json does not"];
+    else if (pipelineVerdict === "PASS") [position, action, why] = ["verified", "done: present the artifact, its score and the merge decision", "pipeline-result.json verdict PASS"];
+    else [position, action, why] = ["inconclusive", "ask the human: the content gate did not pass (see pipeline-result.json halted and score)", `pipeline-result.json verdict ${pipelineVerdict}`];
   } else if (!plan && !has("CONTEXT.md")) {
     [position, action, why] = ["new", "discuss: run the interview to write CONTEXT.md (or plan directly when preflight says the outcome is clear)", "no CONTEXT.md and no PLAN.md"];
   } else if (!plan) {
@@ -85,7 +95,7 @@ export async function nextForRun({ cwd, runId }) {
     runId, position, next: action, why,
     artifacts: {
       context: has("CONTEXT.md"), plan: !!plan, summaries: summarized, buildResult: has("build-result.json"),
-      verification: verdict, paused: has("continue-here.md"),
+      verification: verdict, paused: has("continue-here.md"), pipeline: has("pipeline-args.json") ? (pipelineVerdict || "pending") : null,
     },
     tasks: { planned, summarized, merged },
   };

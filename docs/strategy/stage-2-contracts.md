@@ -138,3 +138,37 @@ branches with `branch -d` only.
 - `vendor/reports/gsd-<tag>.md` is the per-item upstream diff report.
 - `.github/workflows/upstream-watch.yml` runs weekly. It opens an issue when a new gsd release
   touches tracked files.
+
+## Amendments from stage 3 (2026-11-10: wiring the dropped breadth back in)
+
+9. **Specialists.** A task's `agent_hint` names a catalog agent id. `build-args` resolves a
+   *dispatchable* one (not a workflow seat, not `readOnly` in the agent manifest, has Bash) to
+   `agentType: "muster:<frontmatter name>"` (`src/specialists.js`; `wsh-debugger` runs as
+   `muster:debugging-toolkit-debugger`). `build.js` dispatches that type for the build stage
+   and puts the executor contract in the brief (branch check, tagged commit, no package
+   installs, no SUMMARY file, ExecResult fields), since specialists do not carry it. Anything
+   else runs `muster-executor` with the hint as a lens. Fixers stay `muster-executor`
+   (amendment 4 unchanged).
+10. **Skills.** A task's `skills="id, id"` binds builtin skills (`plugin/builtins/<id>/`).
+    `build-args` writes `skills: [{id, path}]` with the absolute `SKILL.md` path; the builder
+    reads each first and returns `skillsApplied: [{id, how, quote?}]` (optional in ExecResult);
+    the reviewer gets the same skills and fails work that does not follow one; `build.js`
+    reports bound skills without evidence as the task's `skillsMissing`. Path binding is
+    deliberate: Workflow `agent()` has no skills option, frontmatter `skills:` preloading is
+    per agent (not per task) and cannot load `disable-model-invocation` skills, and exposing
+    the builtins as plugin skills would list 46 descriptions in every session.
+    `muster plan-lint` blocks unknown skill ids, warns on unknown or non-dispatchable hints,
+    and warns on a task with no `skills` attribute when a preflight `skillCandidates` entry
+    scored >= 4 and matches the task (`skills=""` declines).
+11. **preflight** also returns `skills`, `skillRoot`, `route` (`code` | `pipeline` | `ask`),
+    `domain` and `pipeline`, and writes `skillCandidates` (with scores) to `preflight.json`.
+    Seat tiers: planner, checker and verifier `prime`, executor and reviewer `core`.
+12. **Worktree cap.** `build.js` starts at most `args.worktreeConcurrency` builders at once
+    (default 3) to keep simultaneous `git worktree add` calls off `.git/config.lock`.
+13. **Content pipelines.** `muster pipeline-args <runId>` writes `pipeline-args.json`
+    (`{runId, outcome, contextPath?, pipeline:{id, title, gate}, phases:[{id, role, desc,
+    skills}], artifactPath, models}`); `plugin/workflows/pipeline.js` runs the phases in order
+    in the main checkout, then review + score as the gate (JS applies the floor and pass total;
+    at most 2 revisions of the last author phase), then the remaining phases. It returns
+    `{runId, pipeline, artifactPath, verdict: PASS|FAIL|ERROR, halted, revisions, score, review,
+    phases}`; the main thread saves it as `pipeline-result.json`, which `next --run` reads.

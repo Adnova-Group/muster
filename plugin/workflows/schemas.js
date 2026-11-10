@@ -21,6 +21,10 @@ export const EXEC_RESULT = {
     testsPassed: { type: "boolean" },
     selfCheck: { type: "string", enum: ["PASSED", "FAILED"] },
     deviations: strList,
+    skillsApplied: {
+      type: "array",
+      items: { type: "object", properties: { id: str, how: str, quote: str }, required: ["id", "how"] },
+    },
   },
   required: ["taskId", "status", "branch", "commit", "worktree", "filesChanged", "testsRun", "testsPassed", "selfCheck", "deviations"],
 };

@@ -141,6 +141,28 @@ describe("runDoctor hooks-integrity check", () => {
     assert.equal(check.ok, false, "should fail on missing hook script");
     assert.match(check.detail, /ghost\.js/, "detail must mention the missing file");
   });
+
+  it("fails when an exec-form hook's args reference a .js file that does not exist", async () => {
+    const tmp = await mkdtemp(join(tmpdir(), "muster-doctor-hooks-exec-missing-"));
+    await mkdir(join(tmp, "catalog"), { recursive: true });
+    await mkdir(join(tmp, "pipelines"), { recursive: true });
+    await mkdir(join(tmp, "plugin/builtins/dummy"), { recursive: true });
+    await writeFile(join(tmp, "plugin/builtins/dummy/SKILL.md"), "# dummy");
+    await mkdir(join(tmp, "plugin/hooks"), { recursive: true });
+    const execForm = {
+      hooks: {
+        PreToolUse: [
+          { matcher: "^Bash$", hooks: [{ type: "command", command: "node", args: ["${CLAUDE_PLUGIN_ROOT}/hooks/ghost.js"] }] }
+        ]
+      }
+    };
+    await writeFile(join(tmp, "plugin/hooks/hooks.json"), JSON.stringify(execForm));
+
+    const result = await runDoctor({ root: tmp });
+    const check = result.checks.find(c => c.name === "hooks-integrity");
+    assert.equal(check.ok, false, "an exec-form hook's missing script must fail the check");
+    assert.match(check.detail, /ghost\.js/, "detail must mention the missing file");
+  });
 });
 
 // ---------- pipeline/domain alignment ----------

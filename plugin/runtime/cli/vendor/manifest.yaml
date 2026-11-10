@@ -1,0 +1,1679 @@
+# Single source of truth for every external repository and work a Muster item is based on.
+#
+# `muster vendor` fetches the `fetch: true` sources (the default) and regenerates their
+# items; `muster provenance --write` (offline) stamps every item's `upstream:` field,
+# the catalog provenance summary, NOTICE / cowork/NOTICE and the generated block of
+# website/about/credits.md from this file, and `muster provenance` (check mode) fails on
+# drift, on an entry that names no source, and on the license gate below.
+# test/provenance.test.js enforces it.
+#
+# Source fields:
+#   kind       github | local for a repository; article | book | paper | standard |
+#              talk | person for a work; unknown for an origin muster's history mentions
+#              but never names (needs a `note` dated YYYY-MM-DD saying what was searched)
+#   repo       owner/name, canonical (post-rename); `formerly` lists old names
+#   ref        40-hex commit SHA, or omitted only for inspired-by sources
+#   license    SPDX id | NONE (no license file: all rights reserved) | LicenseRef-*
+#              (repositories only)
+#   title, author, url   a work's name, author and https link (title or author required)
+#   relation   default relation for the source's items:
+#                vendored        upstream text carried essentially unchanged
+#                adapted         upstream text edited
+#                mechanism-port  mechanism re-implemented in new text
+#                inspired-by     idea, structure or framework named, no text carried
+#              a work is always inspired-by
+#   copyright  the upstream copyright line, reproduced in NOTICE
+#   fetch      false = attribution only, never fetched by `muster vendor` (every work)
+#   licenseReview  required on a repository whose terms give Muster no right to reuse
+#              text (NONE, NC, ND, proprietary) when Muster carries none of its text:
+#              { date, finding: ideas-only | clean-room-rewrite, evidence }
+# Item fields: id, from (upstream path; null = repository-wide), and for non-fetched
+# sources `kind` (builtin | agent | skill | command | output-style | pipeline |
+# codex-fallback); optional relation / ref overrides. Items of a fetched source carry
+# roles and are vendored. Refs for non-fetched sources with no recorded pin were
+# resolved as the upstream default-branch HEAD on the date of the Muster change that
+# introduced the item; each such source says so.
+sources:
+  - id: impeccable
+    kind: github
+    repo: pbakaus/impeccable
+    ref: 32930818a109fafa87199babe92fa8e530cff5d3
+    license: Apache-2.0
+    copyright: "Copyright 2025 Paul Bakaus"
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: design, kind: command, from: null }
+      - { id: audit-pattern-design-ux, kind: audit-pattern, from: null }
+  - id: superpowers
+    kind: github
+    repo: obra/superpowers
+    # pinned SHA — resolve a new one deliberately when updating, and review the regenerated diff before committing
+    # (was kind:local, tracking whatever superpowers plugin version was already
+    # installed; pinned here for reproducible vendoring, matching wshobson's shape).
+    # ref = obra/superpowers Superpowers 6 release (2026-06-16), commit 8e1262a
+    # "writing-plans: task right-sizing, Global Constraints header, per-task
+    # Interfaces blocks" — rolled into sp-plan/SKILL.md (muster-local frontmatter
+    # + intro paragraphs preserved):
+    #   1. Task Right-Sizing guidance (tasks sized to one reviewable slice).
+    #   2. Global Constraints header (plan-level constraints stated once,
+    #      inherited by every task).
+    #   3. Per-task Interfaces blocks (each task declares interfaces it
+    #      exposes/consumes).
+    #
+    # Re-pinned 2026-07-06: 8e1262a -> 284be590 (v6.0.0 tag commit), so the pin
+    # covers all three sp-subagents mechanisms rolled into sp-subagents/SKILL.md
+    # below (muster-local frontmatter + intro paragraphs preserved):
+    #   1. Pre-flight plan-conflict review (b61b550) — batch conflicts into one
+    #      question before Task 1 dispatch instead of interrupting mid-plan.
+    #   2. Tiered implementer dispatch (cfe48c28ac) — cheapest tier when the
+    #      plan already carries complete code; mid-tier floor for prose-only
+    #      task text.
+    #   3. Reviewer risk-budget (de4672b171) — constraints as the reviewer's
+    #      attention lens; named risks get one focused check, not an open
+    #      sweep.
+    # 284be590 pulls in 11 commits past 8e1262a, not just these three; the 9
+    # skills/ paths below still resolve at 284be590 (verified). Spot-diffed
+    # upstream against the vendored copies (2026-07-06): writing-plans is
+    # byte-identical. subagent-driven-development's remaining upstream-only
+    # text is resolved as of 2026-07-06 (zero undecided divergence):
+    #   - Final-review model-choice note (e97faafb5) — adapted: folded into
+    #     the existing "review tasks -> most capable model" bullet as an
+    #     explicit-dispatch clarification for the final code reviewer, a
+    #     step muster's process already has.
+    #   - Red Flags plan-mandated-finding clause (530476fd0) — adapted: added
+    #     to the Never list; mirrors muster's Pre-Flight Plan Review
+    #     escalation ("ask which governs"), just triggered mid-task instead
+    #     of pre-flight.
+    #   - Narration-cadence line (e97faafb5) — accepted-divergent: cites "the
+    #     ledger" (upstream's progress.md/Durable-Progress file), a structure
+    #     muster's single-file SKILL.md deliberately doesn't carry; narration
+    #     cadence here is already governed globally by
+    #     plugin/output-styles/muster.md.
+    ref: 284be5905ed540d34ce5bcde24728b9b7f413ea0
+    license: MIT
+    copyright: "Copyright (c) 2025 Jesse Vincent"
+    relation: vendored
+    items:
+      - from: skills/brainstorming/SKILL.md
+        id: sp-brainstorm
+        relation: adapted
+        roles: [brainstorm]
+      - from: skills/test-driven-development/SKILL.md
+        id: sp-tdd
+        roles: [test-author]
+      - from: skills/requesting-code-review/SKILL.md
+        id: sp-review
+        relation: adapted
+        roles: [code-review]
+      - from: skills/receiving-code-review/SKILL.md
+        id: sp-review-recv
+        roles: [code-review]
+        rank: 48
+      - from: skills/systematic-debugging/SKILL.md
+        id: sp-debug
+        relation: adapted
+        roles: [debug]
+      - from: skills/verification-before-completion/SKILL.md
+        id: sp-verify
+        roles: [test-author]
+      - from: skills/dispatching-parallel-agents/SKILL.md
+        id: sp-parallel
+        relation: adapted
+        roles: [plan]
+  - id: wshobson
+    kind: github
+    repo: wshobson/agents
+    # pinned SHA — resolve a new one deliberately when updating, and review the regenerated diff before committing
+    ref: cf6059d030bf4fe96623ae2e596d2f31e35fedc0
+    license: MIT
+    copyright: "Copyright (c) 2024 Seth Hobson"
+    relation: vendored
+    items:
+      # security-review
+      - from: plugins/security-scanning/skills/stride-analysis-patterns/SKILL.md
+        id: wsh-stride-analysis-patterns
+        relation: adapted
+        roles: [security-review]
+      - from: plugins/security-scanning/skills/attack-tree-construction/SKILL.md
+        id: wsh-attack-tree-construction
+        relation: adapted
+        roles: [security-review]
+      - from: plugins/security-scanning/skills/sast-configuration/SKILL.md
+        id: wsh-sast-configuration
+        roles: [security-review]
+      - from: plugins/security-scanning/skills/threat-mitigation-mapping/SKILL.md
+        id: wsh-threat-mitigation-mapping
+        roles: [security-review]
+      - from: plugins/signed-audit-trails/skills/signed-audit-trails-recipe/SKILL.md
+        id: wsh-signed-audit-trails-recipe
+        # adapted: later upstream correctness/security fixes were hand-ported into the
+        # body (2026-11-09) without moving this pin; the item body records them.
+        relation: adapted
+        roles: [security-review]
+      # code-review
+      - from: plugins/developer-essentials/skills/code-review-excellence/SKILL.md
+        id: wsh-code-review-excellence
+        roles: [code-review]
+      - from: plugins/agent-teams/skills/multi-reviewer-patterns/SKILL.md
+        id: wsh-multi-reviewer-patterns
+        roles: [code-review]
+      # test-author
+      - from: plugins/developer-essentials/skills/e2e-testing-patterns/SKILL.md
+        id: wsh-e2e-testing-patterns
+        roles: [test-author]
+      - from: plugins/javascript-typescript/skills/javascript-testing-patterns/SKILL.md
+        id: wsh-javascript-testing-patterns
+        roles: [test-author]
+      - from: plugins/python-development/skills/python-testing-patterns/SKILL.md
+        id: wsh-python-testing-patterns
+        roles: [test-author]
+      # frontend
+      - from: plugins/frontend-mobile-development/skills/nextjs-app-router-patterns/SKILL.md
+        id: wsh-nextjs-app-router-patterns
+        roles: [frontend]
+      - from: plugins/frontend-mobile-development/skills/react-state-management/SKILL.md
+        id: wsh-react-state-management
+        relation: adapted
+        roles: [frontend]
+      - from: plugins/frontend-mobile-development/skills/tailwind-design-system/SKILL.md
+        id: wsh-tailwind-design-system
+        roles: [frontend]
+      - from: plugins/ui-design/skills/design-system-patterns/SKILL.md
+        id: wsh-design-system-patterns
+        roles: [frontend]
+      # implement (backend/api/language)
+      - from: plugins/backend-development/skills/api-design-principles/SKILL.md
+        id: wsh-api-design-principles
+        roles: [implement]
+      - from: plugins/backend-development/skills/architecture-patterns/SKILL.md
+        id: wsh-architecture-patterns
+        roles: [implement, architecture-review]
+      - from: plugins/backend-development/skills/microservices-patterns/SKILL.md
+        id: wsh-microservices-patterns
+        roles: [implement]
+      - from: plugins/javascript-typescript/skills/typescript-advanced-types/SKILL.md
+        id: wsh-typescript-advanced-types
+        roles: [implement]
+      - from: plugins/javascript-typescript/skills/nodejs-backend-patterns/SKILL.md
+        id: wsh-nodejs-backend-patterns
+        relation: adapted
+        roles: [implement]
+      - from: plugins/python-development/skills/python-design-patterns/SKILL.md
+        id: wsh-python-design-patterns
+        relation: adapted
+        roles: [implement]
+      - from: plugins/python-development/skills/async-python-patterns/SKILL.md
+        id: wsh-async-python-patterns
+        roles: [implement]
+      - from: plugins/systems-programming/skills/go-concurrency-patterns/SKILL.md
+        id: wsh-go-concurrency-patterns
+        relation: adapted
+        roles: [implement]
+      - from: plugins/developer-essentials/skills/debugging-strategies/SKILL.md
+        id: wsh-debugging-strategies
+        roles: [implement, debug]
+      # refactor / tech-debt
+      - from: plugins/framework-migration/skills/react-modernization/SKILL.md
+        id: wsh-react-modernization
+        roles: [refactor, tech-debt]
+      - from: plugins/framework-migration/skills/dependency-upgrade/SKILL.md
+        id: wsh-dependency-upgrade
+        roles: [refactor, tech-debt]
+      - from: plugins/python-development/skills/python-anti-patterns/SKILL.md
+        id: wsh-python-anti-patterns
+        roles: [refactor, tech-debt]
+      # documentation / architecture
+      - from: plugins/documentation-generation/skills/architecture-decision-records/SKILL.md
+        id: wsh-architecture-decision-records
+        roles: [implement, architecture-review]
+      - from: plugins/documentation-generation/skills/openapi-spec-generation/SKILL.md
+        id: wsh-openapi-spec-generation
+        relation: adapted
+        roles: [implement]
+      # accessibility (frontend)
+      - from: plugins/accessibility-compliance/skills/wcag-audit-patterns/SKILL.md
+        id: wsh-wcag-audit-patterns
+        roles: [frontend]
+      - from: plugins/ui-design/skills/responsive-design/SKILL.md
+        id: wsh-responsive-design
+        relation: adapted
+        roles: [frontend]
+      # performance (no skills/ dir — using primary agent file)
+      - from: plugins/application-performance/agents/performance-engineer.md
+        id: wsh-performance-engineer
+        roles: [performance]
+      # seo (no skills/ dir — using primary agent file)
+      - from: plugins/seo-technical-optimization/agents/seo-structure-architect.md
+        id: wsh-seo-structure-architect
+        roles: [seo]
+      # === Curated wshobson AGENTS (kind: agent, not skills) ===
+      # `as: agent` routes these to catalog/agents.generated.yaml + plugin/agents/<id>.md.
+      # Mapped to muster roles, one agent per role gap. perf + seo already vendored above — not duplicated.
+      - from: plugins/backend-development/agents/backend-architect.md
+        id: wsh-backend-architect
+        roles: [architecture-review]
+        as: agent
+        description: "Backend architecture: API design, service boundaries, resilience and observability."
+      - from: plugins/code-documentation/agents/code-reviewer.md
+        id: wsh-code-reviewer
+        roles: [code-review]
+        as: agent
+        description: Code review for quality, security and production reliability.
+      - from: plugins/debugging-toolkit/agents/debugger.md
+        id: wsh-debugger
+        relation: adapted
+        roles: [debug]
+        as: agent
+        description: Debugging errors, test failures and unexpected behavior.
+      - from: plugins/backend-development/agents/security-auditor.md
+        id: wsh-security-auditor
+        roles: [security-review]
+        as: agent
+        description: "Security review: OWASP Top 10, auth flaws and compliance."
+      - from: plugins/frontend-mobile-development/agents/frontend-developer.md
+        id: wsh-frontend-developer
+        roles: [frontend]
+        as: agent
+        description: "Frontend work: React components, layouts, state, performance and accessibility."
+      - from: plugins/backend-development/agents/test-automator.md
+        id: wsh-test-automator
+        roles: [test-author]
+        as: agent
+        description: "Test suites: unit, integration and E2E, with TDD/BDD support."
+      - from: plugins/framework-migration/agents/legacy-modernizer.md
+        id: wsh-legacy-modernizer
+        roles: [refactor, tech-debt]
+        as: agent
+        description: Legacy refactoring, framework migrations and gradual modernization.
+      - from: plugins/code-documentation/agents/docs-architect.md
+        id: wsh-docs-architect
+        roles: [architecture-review]
+        as: agent
+        description: Long-form technical documentation from an existing codebase.
+      # === Broadened roster (more-specialists): software + knowledge-work breadth ===
+      # software
+      - from: plugins/machine-learning-ops/agents/data-scientist.md
+        id: wsh-data-scientist
+        roles: [research]
+        as: agent
+        description: Analytics, statistical modeling and machine-learning analysis.
+      - from: plugins/data-engineering/agents/data-engineer.md
+        id: wsh-data-engineer
+        roles: [research]
+        as: agent
+        description: Data pipelines, warehouses and streaming (Spark, dbt, Airflow).
+      - from: plugins/cicd-automation/agents/devops-troubleshooter.md
+        id: wsh-devops-troubleshooter
+        roles: [implement]
+        as: agent
+        description: Incident response and debugging with logs, traces and Kubernetes.
+      - from: plugins/cloud-infrastructure/agents/cloud-architect.md
+        id: wsh-cloud-architect
+        roles: [architecture-review]
+        as: agent
+        description: "Cloud architecture on AWS, Azure and GCP: IaC, cost, security and disaster recovery."
+      - from: plugins/database-cloud-optimization/agents/database-optimizer.md
+        id: wsh-database-optimizer
+        roles: [performance]
+        as: agent
+        description: "Database performance: query tuning, indexing, caching and migrations."
+      - from: plugins/documentation-generation/agents/api-documenter.md
+        id: wsh-api-documenter
+        roles: [docs-research]
+        as: agent
+        description: "API documentation: OpenAPI 3.1, developer portals and SDK docs."
+      - from: plugins/machine-learning-ops/agents/ml-engineer.md
+        id: wsh-ml-engineer
+        roles: [implement]
+        as: agent
+        description: "Production ML systems: model serving, feature pipelines and monitoring."
+      - from: plugins/llm-application-dev/agents/prompt-engineer.md
+        id: wsh-prompt-engineer
+        relation: adapted
+        roles: [implement]
+        as: agent
+        description: Prompt engineering for LLM features, agents and system prompts.
+      # knowledge-work (PM/business/content)
+      - from: plugins/business-analytics/agents/business-analyst.md
+        id: wsh-business-analyst
+        roles: [research]
+        as: agent
+        description: "Business analysis: KPI frameworks, dashboards and data-driven recommendations."
+      - from: plugins/content-marketing/agents/content-marketer.md
+        id: wsh-content-marketer
+        roles: [author]
+        as: agent
+        description: "Content marketing: strategy, SEO, distribution and performance."
+      - from: plugins/documentation-generation/agents/tutorial-engineer.md
+        id: wsh-tutorial-engineer
+        roles: [docs-research]
+        as: agent
+        description: Step-by-step tutorials and onboarding guides from code.
+      - from: plugins/customer-sales-automation/agents/customer-support.md
+        id: wsh-customer-support
+        roles: [author]
+        as: agent
+        description: "Customer support experience: ticketing, support content and CX."
+  - id: gsd
+    kind: github
+    repo: open-gsd/gsd-core
+    # Merge-tracked (every item has a `mode`), so plain `muster vendor` never regenerates it.
+    # `muster vendor update gsd --to <tag> [--dry-run]` 3-way merges the adapted agents against
+    # the byte-exact base copies in vendor/upstream/gsd/, regenerates verbatim regions, and moves
+    # this pin, the base copies and every baseBlob only when nothing conflicts.
+    # `muster vendor report gsd --to <tag>` writes vendor/reports/gsd-<tag>.md (per-item upstream
+    # diff stats plus commits citing each item's issues); .github/workflows/upstream-watch.yml
+    # runs it weekly. Items: adapted = edited copy (merge); verbatim = text carried in marked
+    # `<!-- verbatim: gsd <path>:<a>-<b> -->` regions of `to` (regenerate); watch = read for
+    # mechanism changes, never merged. Watch references keep a base copy so the doctor can check
+    # it; the four workflow spines and the ported .cts gates (file items below) do not.
+    # Re-pinned 2026-11-09 to v1.20.1 for the stage-2 agents (docs/strategy/2026-11-gsd-gap-analysis.md).
+    # The three hand-ported gsd-* builtins left the manifest at this re-pin; their files go with
+    # the command rewrite.
+    ref: 9385f4618b52ef68ed8a5e8bdd93cfb25bd87765
+    tag: v1.20.1
+    license: MIT
+    copyright: "Copyright (c) 2026 Open GSD"
+    relation: adapted
+    items:
+      # adapted: the stage-2 agent seats (heavy adaptation; the reviewer is medium)
+      - { id: muster-planner, kind: agent, from: agents/gsd-planner.md, to: plugin/agents/muster-planner.md, mode: adapted, baseBlob: b1a841e20eaec7cb7dab57ad72979f02b6e99efa, issues: [429, 1478, 1479, 2401, 3172, 4767, 4927] }
+      - { id: muster-plan-checker, kind: agent, from: agents/gsd-plan-checker.md, to: plugin/agents/muster-plan-checker.md, mode: adapted, baseBlob: 44b7536fd9c99be8d27cadf0e7945a675ccbcf7f, issues: [1478, 1479, 3172, 3724, 4927] }
+      - { id: muster-executor, kind: agent, from: agents/gsd-executor.md, to: plugin/agents/muster-executor.md, mode: adapted, baseBlob: 0edccaf308cd7ce8aeb831a3bcc08c904da6ed60, issues: [2075, 2924, 3097, 3099, 3542, 3819] }
+      - { id: muster-verifier, kind: agent, from: agents/gsd-verifier.md, to: plugin/agents/muster-verifier.md, mode: adapted, baseBlob: 860c6f833806441adb51c70dd1df2ba3c69a9dc1, issues: [1955, 3304] }
+      - { id: muster-reviewer, kind: agent, from: agents/gsd-code-reviewer.md, to: plugin/agents/muster-reviewer.md, mode: adapted, baseBlob: e79259d281d738b495963c1ae0ada8d58449266e, issues: [] }
+      # verbatim: reference protocols carried byte-for-byte inside the agents (one item per consumer)
+      - { id: muster-planner, kind: agent, from: gsd-core/references/prohibition-probe.md, to: plugin/agents/muster-planner.md, mode: verbatim, relation: vendored, baseBlob: d8c1fe398b437c0738f5b949cc54faa8b3dff270, issues: [644, 1278, 1279] }
+      - { id: muster-planner, kind: agent, from: gsd-core/references/planner-revision.md, to: plugin/agents/muster-planner.md, mode: verbatim, relation: vendored, baseBlob: 59c6ad83323a3bc969b4b5ebc9a05bfc1cc48b1a, issues: [] }
+      - { id: muster-planner, kind: agent, from: gsd-core/references/revision-loop.md, to: plugin/agents/muster-planner.md, mode: verbatim, relation: vendored, baseBlob: b90616e11d85997383e106a7698d8b03166c23f9, issues: [] }
+      - { id: muster-plan-checker, kind: agent, from: gsd-core/references/failing-direction.md, to: plugin/agents/muster-plan-checker.md, mode: verbatim, relation: vendored, baseBlob: b65b7c37606e4fe5406cfb2c4f8f952e96e1221b, issues: [2401, 3172] }
+      - { id: muster-executor, kind: agent, from: gsd-core/references/worktree-branch-check.md, to: plugin/agents/muster-executor.md, mode: verbatim, relation: vendored, baseBlob: 390513b53bfb478f85aa71a97c93fb93a5279795, issues: [48, 1265, 2015, 2924, 3174] }
+      - { id: muster-verifier, kind: agent, from: gsd-core/references/honest-verifier.md, to: plugin/agents/muster-verifier.md, mode: verbatim, relation: vendored, baseBlob: 85c932f56e2d89e3b48f254669f3ab92e4a3d0d7, issues: [966, 1110] }
+      - { id: muster-verifier, kind: agent, from: gsd-core/references/verifier-evidence-gate.md, to: plugin/agents/muster-verifier.md, mode: verbatim, relation: vendored, baseBlob: 9478e59cb37675f986c62babb5b8a466e1815c51, issues: [3304] }
+      # watch: references paraphrased by the agents or by the stage-2 CLI/workflows (base copy kept)
+      - { from: gsd-core/references/planner-reversibility.md, mode: watch, baseBlob: 8acb45a73352dcbe8e3bc8b9b5d41333bc2c796d }    # muster-planner
+      - { from: gsd-core/references/planner-preconditions.md, mode: watch, baseBlob: 531520109b8d13ef62177f81fca13b1d8290efe3 }    # muster-planner
+      - { from: gsd-core/references/planner-verify-command-grounding.md, mode: watch, baseBlob: dab92507b2670b5425916e0acd0239b84283f32a, issues: [2401, 4927] }    # muster-planner
+      - { from: gsd-core/references/planner-mvp-mode.md, mode: watch, baseBlob: 4c697c0260efae636aa5a5900c3d3b51ba4bc657 }    # muster-planner (tracer-first)
+      - { from: gsd-core/references/planner-antipatterns.md, mode: watch, baseBlob: 5b9cb1dbe6aa9b6c00c54c29ad09ce43e9dd0782, issues: [429] }    # muster-planner
+      - { from: gsd-core/references/verify-command-path-resolvability.md, mode: watch, baseBlob: 9d38ed2311394b65cbc929252917dea7334e81a4, issues: [2401] }    # muster plan-lint
+      - { from: gsd-core/references/verifier-wiring-patterns.md, mode: watch, baseBlob: 43d2519067408c0c350478ca014ee1d06dbfe5a9 }    # muster-verifier
+      - { from: gsd-core/references/model-profiles.md, mode: watch, baseBlob: 71675de315efcd522d078a75a4d208a89c02c4a1, issues: [3023] }    # preflight tier map
+      - { from: gsd-core/references/model-profile-resolution.md, mode: watch, baseBlob: 13afbb3ef4c16f8c8add5cede34f344bb493ea80, issues: [2517] }    # omit-on-inherit
+      - { from: gsd-core/references/context-budget.md, mode: watch, baseBlob: 194134d55af5cf723a808c719022d15fe71db39f }    # orchestrator rules
+      - { from: gsd-core/templates/summary.md, mode: watch, baseBlob: 948a4f4059528b42161df16a6ea23b50b25f4781 }    # SUMMARY-<taskId>.md shape
+      - { from: gsd-core/templates/verification-report.md, mode: watch, baseBlob: 3271b9de8840b0e5a4c8ed58ecb66a1dd3b17e29 }    # VERIFICATION.md shape
+      - { from: gsd-core/templates/continue-here.md, mode: watch, baseBlob: 1c3711d57bfa0884adbda52408dda12186b1557d }    # pause handoff
+      - { from: gsd-core/templates/UAT.md, mode: watch, baseBlob: da367297d8d7b4e722e11fcb80c1941326c9b940 }    # human_needed format
+      # ----- stage-2 plan-lint track: gsd's deterministic plan gates ported to src/plan-lint.js -----
+      # File items ({from, to, mode, baseBlob}): an upstream file mapped onto a muster source file,
+      # never vendored or stamped. The TypeScript gates are ports into one JS file, so
+      # `muster vendor update` reports their upstream changes as ports to redo instead of merging.
+      # `watch` = prose rules re-encoded as checks, report-only on update.
+      - { from: src/verify-command-grounding.cts, to: src/plan-lint.js, mode: adapted, ref: 9385f4618b52ef68ed8a5e8bdd93cfb25bd87765, baseBlob: 5c96d801c0ccdb6710b4c821ca50889d5b43f2f1 }
+      - { from: src/gate-verify-failure-directions.cts, to: src/plan-lint.js, mode: adapted, ref: 9385f4618b52ef68ed8a5e8bdd93cfb25bd87765, baseBlob: 217a59a3f9eb046f62b2a29545c9f041b57d632e }
+      - { from: src/gate-verify-command-paths.cts, to: src/plan-lint.js, mode: adapted, ref: 9385f4618b52ef68ed8a5e8bdd93cfb25bd87765, baseBlob: a471181dc94f8e52c68d2afa92fc3b54ce5d1392 }
+      - { from: src/plan-document.cts, to: src/plan-lint.js, mode: adapted, ref: 9385f4618b52ef68ed8a5e8bdd93cfb25bd87765, baseBlob: 31f060a66a089253499ec21578fe28ec213b72f9 }
+      - { from: src/verify.cts, to: src/plan-lint.js, mode: adapted, ref: 9385f4618b52ef68ed8a5e8bdd93cfb25bd87765, baseBlob: 6589ed669a13e90cbe003b58af523701b754b0de }
+      - { from: src/phase.cts, to: src/plan-lint.js, mode: adapted, ref: 9385f4618b52ef68ed8a5e8bdd93cfb25bd87765, baseBlob: 98dbfc801b2284e621ed3ef280c610887f065db8 }
+      - { from: src/init.cts, to: src/plan-lint.js, mode: adapted, ref: 9385f4618b52ef68ed8a5e8bdd93cfb25bd87765, baseBlob: a59fc021927017f503d1d8034af7454f672f6860 }
+      - { from: src/markdown-sectionizer.cts, to: src/plan-lint.js, mode: adapted, ref: 9385f4618b52ef68ed8a5e8bdd93cfb25bd87765, baseBlob: 275b3fc8e335b994cf2765052aaac07d5077381c }
+      - { from: agents/gsd-planner.md, to: src/plan-lint.js, mode: watch, ref: 9385f4618b52ef68ed8a5e8bdd93cfb25bd87765, baseBlob: b1a841e20eaec7cb7dab57ad72979f02b6e99efa }
+      - { from: agents/gsd-plan-checker.md, to: src/plan-lint.js, mode: watch, ref: 9385f4618b52ef68ed8a5e8bdd93cfb25bd87765, baseBlob: 44b7536fd9c99be8d27cadf0e7945a675ccbcf7f }
+      # ----- end stage-2 plan-lint track -----
+      # watch: the workflow spines muster replaced with native Workflow scripts (report only)
+      - { from: gsd-core/workflows/execute-phase.md, mode: watch, baseBlob: 72722e6eb4853f76c7e76feb3eda2f4b92b6a337, issues: [48, 2924, 3542] }
+      - { from: gsd-core/workflows/plan-phase.md, mode: watch, baseBlob: 115ed207b92c11178c5d8d0bf7804581e371434e, issues: [2401, 3172, 3724] }
+      - { from: gsd-core/workflows/verify-work.md, mode: watch, baseBlob: 62d0b7c00b9567fad79162a35ec4fd148a1aca8d, issues: [3724] }
+      - { from: gsd-core/workflows/code-review.md, mode: watch, baseBlob: 1090eafe9ab3814086c6a91b1eb23abfed0f1b13 }
+
+  # ===== Attribution-only sources (fetch: false) =====================================
+  # Never fetched or regenerated by `muster vendor`; recorded so every item based on an
+  # external repository names it. Hand-maintained items stay hand-maintained.
+
+  # --- Codex fallback skills: self-contained Codex rewrites (codex/fallback-skills) ---
+  # Pinned at the refs of the Codex compatibility survey (codex/upstreams.json) they
+  # were written against, not at the vendored-body pins above.
+  - id: gsd-core-codex
+    kind: github
+    repo: open-gsd/gsd-core
+    ref: 1c352d1ea37b010e99b8353905eb5def4f784100
+    license: MIT
+    copyright: "Copyright (c) 2026 Open GSD"
+    relation: mechanism-port
+    fetch: false
+    items:
+      - { id: muster-gsd-plan-phase, kind: codex-fallback, from: gsd-core/workflows/plan-phase.md }
+      - { id: muster-gsd-execute-phase, kind: codex-fallback, from: gsd-core/workflows/execute-phase.md }
+      - { id: muster-gsd-verify-work, kind: codex-fallback, from: gsd-core/workflows/verify-work.md }
+  - id: wshobson-codex
+    kind: github
+    repo: wshobson/agents
+    ref: 2de74ac1c8f6669821dcef13153332c3168033c1
+    license: MIT
+    copyright: "Copyright (c) 2024 Seth Hobson"
+    relation: mechanism-port
+    fetch: false
+    items:
+      - { id: wsh-signed-audit-trails-recipe, kind: codex-fallback, from: plugins/signed-audit-trails/skills/signed-audit-trails-recipe/SKILL.md }
+
+  # --- muster-humanizer: AI-tell removal, tell taxonomy and tiered vocabulary ---
+  - id: blader-humanizer
+    kind: github
+    repo: blader/humanizer
+    # No v2.8.2 tag exists upstream. SKILL.md `version: 2.8.2` first appears at this
+    # commit (2026-06-29), which was the default-branch HEAD on the 2026-07-13 survey
+    # date recorded in codex/upstreams.json.
+    ref: 1b48564898e999219882660237fde01bf4843a0f
+    license: MIT
+    copyright: "Copyright (c) 2025 Siqi Chen"
+    relation: adapted
+    fetch: false
+    items:
+      - { id: muster-humanizer, kind: builtin, from: SKILL.md }
+  - id: stealthhumanizer
+    kind: github
+    repo: rudra496/StealthHumanizer
+    ref: 1aacbda6e2f66afbdcb6714a85347307068373e9
+    license: MIT
+    copyright: "Copyright (c) 2025-2026 Rudra Sarker"
+    relation: adapted
+    fetch: false
+    items:
+      - { id: muster-humanizer, kind: builtin, from: null }
+  - id: avoid-ai-writing
+    kind: github
+    repo: conorbronsdon/avoid-ai-writing
+    ref: 500ff59006f19c27120c5ddbd9b56fc3d937b6bf
+    license: MIT
+    copyright: "Copyright (c) 2026 Conor Bronsdon"
+    relation: adapted
+    fetch: false
+    items:
+      - { id: muster-humanizer, kind: builtin, from: SKILL.md }
+  - id: anti-ai-slop-writing
+    kind: github
+    repo: jalaalrd/anti-ai-slop-writing
+    ref: 63255f9bbb75a265dc5786a04535cd033f487756
+    # NO LICENSE upstream (all rights reserved).
+    license: NONE
+    relation: inspired-by
+    fetch: false
+    licenseReview:
+      date: 2026-11-09
+      finding: clean-room-rewrite
+      evidence: >-
+        The 2026-06-23 enrichment (dacdaeb2) took its banned-opener list and fabrication
+        check from this repository. Compared at the pin: no sentence was carried over (no
+        shared 7-gram; the shared 4-grams are stock tell phrases such as "at the end of the
+        day" and "I hope this helps" that the MIT sources also list), but the opener list
+        followed its selection, and two entries ("Indeed", "as an AI") appeared in no
+        licensed source. muster-humanizer was rewritten clean-room on 2026-11-09: every
+        list entry now traces to blader/humanizer or conorbronsdon/avoid-ai-writing (MIT),
+        "Indeed" and "Overall" left the opener list and "as an AI" left the scorer.
+    items:
+      - { id: muster-humanizer, kind: builtin, from: skills/anti-ai-slop-writing }
+  - id: humanize-writing
+    kind: github
+    repo: aaaronmiller/humanize-writing
+    # No recorded pin: default-branch HEAD on 2026-06-23 (the humanizer enrichment).
+    # Still the upstream HEAD on 2026-11-09.
+    ref: c07a2a8dab1f6033ad0da713766df43d0dc374b9
+    license: MIT
+    copyright: "Copyright (c) 2025 Aaron Miller"
+    relation: adapted
+    fetch: false
+    items:
+      - { id: muster-humanizer, kind: builtin, from: SKILL.md }
+  - id: humanizer-pro-prompt
+    kind: github
+    repo: linexjlin/GPTs
+    # The 2026-06-23 audit (bec8586b) cited its "Humanizer Pro" prompt for style mimicry
+    # and ask-on-ambiguity; dacdaeb2 adopted both. Ref: default-branch HEAD on 2026-06-23.
+    ref: 3adfb7b38423b64a995057483c1f9007ed5f4da5
+    license: NONE
+    relation: inspired-by
+    fetch: false
+    licenseReview:
+      date: 2026-11-09
+      finding: ideas-only
+      evidence: >-
+        Compared prompts/Humanizer Pro.md at the pin with muster-humanizer: no shared
+        5-gram. Muster took two ideas (calibrate to the author's samples; ask one question
+        when intent is unclear) and states them in its own words.
+    items:
+      - { id: muster-humanizer, kind: builtin, from: prompts/Humanizer Pro.md }
+
+  # --- muster-prompt-smith: lint rule taxonomy and eval/optimizer patterns ---
+  - id: lintlang
+    kind: github
+    repo: hermes-labs-ai/lintlang
+    # No recorded pin: default-branch HEAD on 2026-06-18 (the structural prompt linter).
+    ref: dd17238643817f3d7fd3ece69e6fdbafe8676a98
+    license: Apache-2.0
+    copyright: "Copyright 2026 Hermes Labs"
+    relation: mechanism-port
+    fetch: false
+    items:
+      - { id: muster-prompt-smith, kind: builtin, from: src/lintlang/patterns.py }
+  - id: promptfoo
+    kind: github
+    repo: promptfoo/promptfoo
+    ref: 3901d3949df32c087465bce39626c460d8590034
+    license: MIT
+    copyright: "Copyright (c) Promptfoo 2025"
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: muster-prompt-smith, kind: builtin, from: null }
+  - id: promptimal
+    kind: github
+    repo: shobrook/promptimal
+    # Owner confirmed with gh on 2026-11-09 (muster only ever wrote "promptimal").
+    # No recorded pin: the upstream has had no commits since 2025-01-05, so this HEAD
+    # is the only version that could have been read on 2026-06-18.
+    ref: e03cbc1db19c7ec6c310605a9819e35c2baed023
+    license: MIT
+    copyright: "Copyright (c) 2024 Jonathan Shobrook"
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: muster-prompt-smith, kind: builtin, from: null }
+  - id: gepa
+    kind: github
+    repo: gepa-ai/gepa
+    # b7dd4d90 (2026-06-23) credits it in-file: feed lint/eval failure reasons back into
+    # the next variation round. Ref: default-branch HEAD on 2026-06-23.
+    ref: 92dadfffbe98c8ecf508179a1cab09c1bb85cd32
+    license: MIT
+    copyright: "Copyright © 2025 Lakshya A Agrawal"
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: muster-prompt-smith, kind: builtin, from: null }
+
+  # --- book pipeline and muster-scorer ---
+  - id: book-genesis-studio
+    kind: github
+    repo: felipelobomotta-blip/book-genesis-studio
+    formerly: [felipelobomotta-blip/book-genesis-v4]
+    ref: a43a429bdec1770232ee64e7de634c5ce5109b80
+    license: MIT
+    copyright: "Copyright (c) 2026 Felipe Lobo"
+    relation: mechanism-port
+    fetch: false
+    items:
+      # premise-forge gate + per-chapter scored loop
+      - { id: book, kind: pipeline, from: null }
+      # Genesis Score floor principle
+      - { id: muster-scorer, kind: builtin, from: null, relation: inspired-by }
+  - id: autonovel
+    kind: github
+    repo: NousResearch/autonovel
+    # No recorded pin: default-branch HEAD on 2026-06-23 (continuity-ledger adoption);
+    # unchanged since 2026-03-20. NO LICENSE upstream.
+    ref: d165f267a0ffd34f3b0a70a8a72ac38cb8e4a542
+    license: NONE
+    relation: inspired-by
+    fetch: false
+    licenseReview:
+      date: 2026-11-09
+      finding: ideas-only
+      evidence: >-
+        Compared README.md, PIPELINE.md, WORKFLOW.md, program.md and CRAFT.md at the pin
+        with pipelines/book.yaml: no shared 5-gram. Muster took the idea of a canon file
+        every chapter reads and writes back to, and of logging a "debt" when a later edit
+        breaks an earlier fact (program.md's propagation rules), and wrote its own
+        continuity-ledger phase text. The phase names it shares (foundation, drafting)
+        are generic.
+    items:
+      # fiction phase order + continuity-propagation ledger
+      - { id: book, kind: pipeline, from: null }
+  - id: llm-judges-survey-list
+    kind: github
+    repo: CSHaitao/Awesome-LLMs-as-Judges
+    # Credited in-file by b7dd4d90 for the judge-bias guardrails. Ref: HEAD on 2026-06-23.
+    ref: d89ed4241b8199ff504aea009920c1cf4dded2f1
+    license: NONE
+    relation: inspired-by
+    fetch: false
+    licenseReview:
+      date: 2026-11-09
+      finding: ideas-only
+      evidence: >-
+        A paper list (README.md only). Compared at the pin with muster-scorer: no shared
+        5-gram. Muster named the bias classes it surveys (verbosity, position, range
+        compression) in its own guardrail text.
+    items:
+      - { id: muster-scorer, kind: builtin, from: README.md }
+  - id: llm-judge-list
+    kind: github
+    repo: llm-as-a-judge/Awesome-LLM-as-a-judge
+    # The 2026-06-23 audit mapped "distribution-based scoring vs one greedy score" here;
+    # b7dd4d90 adopted it as "rate it twice and take the consensus". Ref: HEAD on 2026-06-23.
+    ref: ad3b4ce1d869129f8527d4c6bcf2a8111582cb98
+    license: NONE
+    relation: inspired-by
+    fetch: false
+    licenseReview:
+      date: 2026-11-09
+      finding: ideas-only
+      evidence: >-
+        A paper list (README.md only). Compared at the pin with muster-scorer: no shared
+        5-gram; one idea (do not trust a single greedy score on a borderline criterion).
+    items:
+      - { id: muster-scorer, kind: builtin, from: README.md }
+  - id: llm-rubric
+    kind: github
+    repo: microsoft/LLM-Rubric
+    # The 2026-06-23 audit's per-judge calibration offset table, built in 9354a0f9 as
+    # calibrateScores() and described in muster-scorer. Ref: HEAD on 2026-06-23.
+    ref: 70d56fc4e9a26e60642bc14b62b96d2d0a500edd
+    license: MIT
+    copyright: "Copyright (c) Microsoft Corporation."
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: muster-scorer, kind: builtin, from: null }
+
+  # --- muster-research: corroboration and citation checks (b7dd4d90, 2026-06-23) ---
+  - id: gpt-researcher
+    kind: github
+    repo: assafelovic/gpt-researcher
+    ref: 409b8b60b477d50f2f844bc9598d1bcb7b056eee
+    license: Apache-2.0
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: muster-research, kind: builtin, from: null }
+  - id: qraft
+    kind: github
+    repo: mbzuai-nlp/qraft
+    ref: 3bbea66c832d87dcd0977f74573ecdaa7344ec7e
+    license: NONE
+    relation: inspired-by
+    fetch: false
+    licenseReview:
+      date: 2026-11-09
+      finding: ideas-only
+      evidence: >-
+        Credited in-file ("LLM-Cite / qraft") for checking that a cited source entails the
+        claim. Compared README.md at the pin with muster-research: no shared 5-gram.
+    items:
+      - { id: muster-research, kind: builtin, from: null }
+
+  # --- atomic-claude: role taxonomy (clean-room agents) and structure-first output style ---
+  - id: atomic-claude
+    kind: github
+    repo: damusix/atomic-claude
+    license: MIT
+    copyright: "Copyright (c) 2026 Danilo Alonso"
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: muster-surgeon, kind: agent, from: null }
+      - { id: muster-reviewer, kind: agent, from: null }
+      - { id: muster-investigator, kind: agent, from: null }
+      - { id: muster-strategist, kind: agent, from: null }
+      - { id: muster-improver, kind: agent, from: null }
+      # `improve` runs muster-improver's judgment from a forked context (0baabffa), so it
+      # carries the same Improve-Agent lineage.
+      - { id: improve, kind: skill, from: null }
+      - { id: muster, kind: output-style, from: null }
+
+  # --- muster-runner: clean-room synthesis (docs/research/lifecycle-agent-patterns.md) ---
+  # No recorded pins: each ref is the upstream default-branch HEAD on 2026-07-07, the
+  # date of the lifecycle-agent research and the muster-runner agent.
+  - id: superpowers-lifecycle
+    kind: github
+    repo: obra/superpowers
+    ref: d884ae04edebef577e82ff7c4e143debd0bbec99
+    license: MIT
+    copyright: "Copyright (c) 2025 Jesse Vincent"
+    relation: mechanism-port
+    fetch: false
+    items:
+      - { id: muster-runner, kind: codex-frozen-agent, from: null }
+  - id: wshobson-lifecycle
+    kind: github
+    repo: wshobson/agents
+    ref: 511f8345cf42f84676e0ad56ddfdee33c90a666f
+    license: MIT
+    copyright: "Copyright (c) 2024 Seth Hobson"
+    relation: mechanism-port
+    fetch: false
+    items:
+      - { id: muster-runner, kind: codex-frozen-agent, from: null }
+  - id: voltagent-subagents
+    kind: github
+    repo: VoltAgent/awesome-claude-code-subagents
+    ref: 14bbcf5d984c8ce61a0aa17f897b7d8e63739783
+    license: MIT
+    copyright: "Copyright (c) 2025 VoltAgent"
+    relation: mechanism-port
+    fetch: false
+    items:
+      - { id: muster-runner, kind: codex-frozen-agent, from: null }
+  - id: twelve-factor-agents
+    kind: github
+    repo: humanlayer/12-factor-agents
+    ref: d20c728368bf9c189d6d7aab704744decb6ec0cc
+    # Code Apache-2.0; content (the twelve factors) CC BY-SA 4.0, per the upstream README.
+    license: Apache-2.0 AND CC-BY-SA-4.0
+    relation: mechanism-port
+    fetch: false
+    items:
+      - { id: muster-runner, kind: codex-frozen-agent, from: null }
+  - id: contains-studio-agents
+    kind: github
+    repo: contains-studio/agents
+    ref: a5a480c324cac64b9c569bca0b2f297d517240cb
+    license: NONE
+    relation: inspired-by
+    fetch: false
+    licenseReview:
+      date: 2026-11-09
+      finding: ideas-only
+      evidence: >-
+        Compared all 38 Markdown files at the pin with plugin/agents/muster-runner.md and
+        plugin/commands/runner.md: zero shared 5-grams. Muster took two mechanisms named in
+        docs/research/lifecycle-agent-patterns.md (trigger examples in the description;
+        per-agent constraints and success measures) and wrote its own text.
+    items:
+      - { id: muster-runner, kind: codex-frozen-agent, from: null }
+  - id: infinite-agentic-loop
+    kind: github
+    repo: disler/infinite-agentic-loop
+    ref: 6e9a012f81ef2291faf174d67176f7e69832cc0a
+    license: NONE
+    relation: inspired-by
+    fetch: false
+    licenseReview:
+      date: 2026-11-09
+      finding: ideas-only
+      evidence: >-
+        Compared .claude/commands/infinite.md, prime.md, CLAUDE.md and README.md at the pin
+        with muster-runner and runner.md: zero shared 5-grams. Mechanisms only (derive
+        progress from the filesystem; a fixed dispatch-prompt shape; capped waves).
+    items:
+      - { id: muster-runner, kind: codex-frozen-agent, from: null }
+  - id: awesome-claude-code
+    kind: github
+    repo: hesreallyhim/awesome-claude-code
+    # CC BY-NC-ND 4.0: used as an index of pointers only, never as a copy source.
+    ref: 957922fca4cc76739eb36ca5388d6295e815fef4
+    license: CC-BY-NC-ND-4.0
+    relation: inspired-by
+    fetch: false
+    licenseReview:
+      date: 2026-11-09
+      finding: ideas-only
+      evidence: >-
+        Compared README.md at the default-branch HEAD of 2026-07-06 (the research date)
+        with muster-runner, runner.md and docs/research/lifecycle-agent-patterns.md: the
+        only shared 6-grams are two URLs it links to (code.claude.com docs and Anthropic's
+        "Building effective agents"). Used as an index; nothing derived from its text.
+    items:
+      - { id: muster-runner, kind: codex-frozen-agent, from: null }
+
+  # --- Research-grounded pipelines (2026-06-08 pipeline research note) ---
+  # The note (recoverable with `git show b122ed9:docs/pipeline-research-2026-06-08.md`)
+  # mapped sources per pipeline GROUP. On 2026-11-09 each pipeline was compared with
+  # the sources and the frameworks it actually names, and each source now lists only
+  # the pipelines that use it.
+  - id: pm-prompts
+    kind: github
+    repo: deanpeters/product-manager-prompts
+    # Ref: default-branch HEAD on 2026-06-08 (the research date).
+    ref: 418049a6485852600d350038b5a96c2cb53ca93f
+    license: CC-BY-NC-SA-4.0
+    relation: inspired-by
+    fetch: false
+    licenseReview:
+      date: 2026-11-09
+      finding: ideas-only
+      evidence: >-
+        The note credits it for JTBD framing and persona-first prompts. Compared
+        prompts/jobs-to-be-done.md, proto-persona-profile.md, backlog-epic-hypothesis.md
+        and the user-story prompts at the pin with every PM pipeline: no shared 4-gram
+        beyond framework names ("jobs to be done"). Its epic hypothesis uses an
+        "If we / for / Then we will" form muster never used.
+    items:
+      - { id: prd, kind: pipeline, from: null }
+      - { id: epic, kind: pipeline, from: null }
+  - id: pm-skills-deanpeters
+    kind: github
+    repo: deanpeters/Product-Manager-Skills
+    # Ref: default-branch HEAD on 2026-06-08 (the research date).
+    ref: 70fb6c4e41637047e7e4976d39145b1a78397464
+    license: CC-BY-NC-SA-4.0
+    relation: inspired-by
+    fetch: false
+    licenseReview:
+      date: 2026-11-09
+      finding: clean-room-rewrite
+      evidence: >-
+        Compared skills/prd-development, epic-hypothesis, user-story, user-story-splitting
+        and epic-breakdown-advisor at the pin. prd.yaml's draft phase listed the same eight
+        sections in the same order as prd-development's eight phases (executive summary,
+        problem, target users, strategic context, solution, success metrics, stories and
+        requirements, out of scope and dependencies), and epic.yaml's "We believe ...
+        will achieve ... measured by" template echoed its "We believe ... We'll measure
+        success by" example. Both were rewritten clean-room on 2026-11-09 (prd from
+        anthropics/knowledge-work-plugins' write-spec structure, Apache-2.0; epic from the
+        Lean UX hypothesis slots). No other shared 4-gram beyond framework names
+        ("As a / I want / So that", "break out a spike", which both take from their
+        originators).
+    items:
+      - { id: prd, kind: pipeline, from: skills/prd-development/SKILL.md }
+      - { id: epic, kind: pipeline, from: skills/epic-hypothesis/SKILL.md }
+      - { id: user-story, kind: pipeline, from: skills/user-story/SKILL.md }
+      - { id: launch-plan, kind: pipeline, from: null }
+  - id: pm-skills-phuryn
+    kind: github
+    repo: phuryn/pm-skills
+    ref: d384f0c9eb81fe74656a4f6da168587836939edb
+    license: MIT
+    copyright: "Copyright (c) 2026 Pawel Huryn"
+    relation: inspired-by
+    fetch: false
+    items:
+      # 3 Cs + INVEST, job stories; GTM beachhead; continuous discovery
+      - { id: user-story, kind: pipeline, from: null }
+      - { id: launch-plan, kind: pipeline, from: null }
+      - { id: prd, kind: pipeline, from: null }
+  - id: knowledge-work-plugins
+    kind: github
+    repo: anthropics/knowledge-work-plugins
+    ref: ca4618669075c133a8f437310775428a5c664e09
+    license: Apache-2.0
+    relation: inspired-by
+    fetch: false
+    items:
+      # prd's draft structure (problem, goals / non-goals, MoSCoW requirements traced to
+      # stories, leading and lagging metrics, open questions) follows write-spec.
+      - { id: prd, kind: pipeline, from: product-management/skills/write-spec/SKILL.md }
+  - id: okr-guide
+    kind: github
+    repo: joelparkerhenderson/objectives-and-key-results
+    ref: f7269521672a63f25fbf01cd4deb652ee181f45c
+    license: NONE
+    relation: inspired-by
+    fetch: false
+    licenseReview:
+      date: 2026-11-09
+      finding: ideas-only
+      evidence: >-
+        Compared README.md at the pin with okrs.yaml: the only shared 4-gram is the phrase
+        "objectives and key results". The "Verb + Metric from X to Y by Date" formula does
+        not appear upstream; output-versus-outcome and stretch grading are the general OKR
+        method (Grove, Doerr), named in muster's own words.
+    items:
+      - { id: okrs, kind: pipeline, from: null }
+  - id: adr
+    kind: github
+    repo: architecture-decision-record/architecture-decision-record
+    # The maintainer's own work (README) is CC BY-NC-SA 4.0; included templates vary.
+    ref: a36c53f49517fc55ceadd459d3e59770c9074416
+    license: CC-BY-NC-SA-4.0
+    relation: inspired-by
+    fetch: false
+    licenseReview:
+      date: 2026-11-09
+      finding: ideas-only
+      evidence: >-
+        ai-implementation-spec names ADR section headings only. Since 48ae2918
+        (2026-06-23) those headings follow MADR 4.0 (adr/madr, MIT OR CC0-1.0), recorded
+        separately. No sentence from this repository appears in any item.
+    items:
+      - { id: ai-implementation-spec, kind: pipeline, from: null }
+  - id: madr
+    kind: github
+    repo: adr/madr
+    # 48ae2918: ADR phase -> MADR 4.0. Ref: default-branch HEAD on 2026-06-23.
+    ref: 8cb64d7e8a85699ed090661ca3224c8889e2a224
+    license: MIT OR CC0-1.0
+    copyright: "Copyright (c) 2017-2022 Oliver Kopp, Olaf Zimmermann"
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: ai-implementation-spec, kind: pipeline, from: null }
+  - id: keep-a-changelog
+    kind: github
+    repo: olivierlacan/keep-a-changelog
+    # The note cites keepachangelog.com; this is its source. Ref: HEAD on 2026-06-15,
+    # the last commit before the note's categories were last edited (8425e131).
+    ref: 37364f7ae516f0bb1309c4f3f6a7f7fbd4778af4
+    license: MIT
+    copyright: "Copyright (c) 2014 Olivier Lacan"
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: release-notes, kind: pipeline, from: null }
+  - id: management-consulting
+    kind: github
+    repo: gcamilo/management-consulting
+    # b7dd4d90: Fact / Inference / Assumption labels in executive-summary. Ref: HEAD on 2026-06-23.
+    ref: dd2d099dc390811015c16ecac306415d62b31008
+    license: MIT
+    copyright: "Copyright (c) 2026"
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: executive-summary, kind: pipeline, from: null }
+  - id: issuetrees
+    kind: github
+    repo: reasoncommons/issuetrees
+    formerly: [life-itself/issuetrees]
+    # b7dd4d90: MECE issue tree before the BLUF. Ref: HEAD on 2026-06-23.
+    ref: 56ad78e0ce784ca7c97214ae96cd57188e50387b
+    license: NONE
+    relation: inspired-by
+    fetch: false
+    licenseReview:
+      date: 2026-11-09
+      finding: ideas-only
+      evidence: >-
+        Compared README.md at the pin with executive-summary.yaml: no shared 5-gram. One
+        idea (decompose the question into an issue tree before answering), itself from
+        Minto's Pyramid Principle.
+    items:
+      - { id: executive-summary, kind: pipeline, from: null }
+  - id: ai-prd-generator
+    kind: github
+    repo: cdeust/ai-prd-generator
+    # b7dd4d90: confidence-gated clarification + claim-by-claim verification in prd.
+    # Ref: HEAD on 2026-06-23. Proprietary commercial license (LICENSE, "All Rights Reserved").
+    ref: 4189d41b102de79ab57d96cab80028a6055b87d2
+    license: LicenseRef-proprietary
+    relation: inspired-by
+    fetch: false
+    licenseReview:
+      date: 2026-11-09
+      finding: ideas-only
+      evidence: >-
+        Compared README.md at the pin with prd.yaml: no shared 5-gram. Two ideas (keep
+        clarifying until confident before drafting; give every claim a confidence flag
+        and flag the unsupported ones) in muster's own words; no code or prompt text.
+    items:
+      - { id: prd, kind: pipeline, from: null }
+  - id: marketingskills
+    kind: github
+    repo: coreyhaines31/marketingskills
+    license: MIT
+    copyright: "Copyright (c) 2025 Corey Haines"
+    relation: inspired-by
+    fetch: false
+    items: &marketing-group
+      - { id: competitive-battlecard, kind: pipeline, from: null }
+      - { id: lead-magnet, kind: pipeline, from: null }
+      - { id: case-study, kind: pipeline, from: null }
+      - { id: newsletter, kind: pipeline, from: null }
+  - id: email-marketing-bible
+    kind: github
+    repo: CosmoBlk/email-marketing-bible
+    license: MIT
+    copyright: "Copyright (c) 2026 George Hartley"
+    relation: inspired-by
+    fetch: false
+    items: *marketing-group
+  - id: claude-email
+    kind: github
+    repo: AgriciDaniel/claude-email
+    license: MIT
+    copyright: "Copyright (c) 2026 Daniel Agrici"
+    relation: inspired-by
+    fetch: false
+    items: *marketing-group
+  - id: run-book-template
+    kind: github
+    repo: SkeltonThatcher/run-book-template
+    ref: 7014714b602152c5ade6989bca8282d23522dcfc
+    license: NONE
+    relation: inspired-by
+    fetch: false
+    licenseReview:
+      date: 2026-11-09
+      finding: ideas-only
+      evidence: >-
+        Compared run-book-template.md and README.md at the pin with runbook.yaml: no shared
+        4-gram outside the upstream: block. The template is a system operation manual
+        (service overview, hours of operation, backup and restore ...); runbook.yaml's
+        phases (preconditions, triage, steps, observability, validation, rollback,
+        escalation, cleanup) do not follow it.
+    items:
+      - { id: runbook, kind: pipeline, from: null }
+  - id: awesome-sre
+    kind: github
+    repo: dastergon/awesome-sre
+    license: CC0-1.0
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: runbook, kind: pipeline, from: null }
+  - id: awesome-runbook
+    kind: github
+    repo: runbear-io/awesome-runbook
+    license: CC0-1.0
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: runbook, kind: pipeline, from: null }
+  - id: scoutflo-sre-playbooks
+    kind: github
+    repo: Scoutflo/Scoutflo-SRE-Playbooks
+    # b7dd4d90: events-first triage keyed off the failure signature. Ref: HEAD on 2026-06-23.
+    ref: acc55da0224fda5eda580939a15bc60990e8e69f
+    license: MIT
+    copyright: "Copyright (c) 2026 Scoutflo"
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: runbook, kind: pipeline, from: null }
+  - id: coppiegpt
+    kind: github
+    repo: WynterJones/CoppieGPT
+    # The 2026-06-23 audit's "multi-framework variant fan-out"; b7dd4d90 adopted it in
+    # muster-author. Ref: HEAD on 2026-06-23 (last commit 2023-03-20).
+    ref: 96fc78149f031f309e57fcd77632e309e67f979e
+    license: NONE
+    relation: inspired-by
+    fetch: false
+    licenseReview:
+      date: 2026-11-09
+      finding: ideas-only
+      evidence: >-
+        Compared README.md at the pin with muster-author: the only shared 5-grams are
+        framework expansions ("Attention, Interest, Desire, Action"; "Qualify, Understand,
+        Educate, Stimulate, Transition") that name the formulas, not text from it.
+    items:
+      - { id: muster-author, kind: builtin, from: null }
+  - id: boraoztunc-skills
+    kind: github
+    repo: boraoztunc/skills
+    # The 2026-06-23 audit's "dedicated de-slop pass"; b7dd4d90 adopted it in muster-author.
+    ref: c5c5dea7cebaaf801a90a04e1f15123d29de61c1
+    license: Apache-2.0
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: muster-author, kind: builtin, from: null }
+
+  # ===== Works: articles, books, papers, standards, talks, people (never fetched) =====
+  # Each names what an item is based on beyond repositories: the framework's origin when
+  # an item names a framework, and every non-repository source muster's history records
+  # (commit messages, the 2026-06-08 research note, the 2026-06-23 audit, credits).
+  # Muster takes ideas, frameworks or structure from these and carries none of their
+  # text, so they are always inspired-by. URLs were checked on 2026-11-09.
+
+  # --- people and member sites ---
+  - id: nate-b-jones-unlock-ai
+    kind: person
+    title: "Unlock AI: Open Engine and Open Skills"
+    author: Nate B. Jones
+    url: https://unlock-ai.natebjones.com/
+    # Credited 2026-07-06 (9dbf43fd, website/about/credits.md) for mechanism-level
+    # inspiration behind the 0.4.0 sprint cluster: the sprint coordination protocol
+    # (claim / receipt / ledger), the citation guard, the voice / audience / brand
+    # profile system, newsletter signal diff, the assumption checker and the
+    # document-ingestion contract. 7156b697 names an "Open Engine roll". The library is
+    # members-only, so muster's text could not be compared with it (2026-11-09); the
+    # credit states no code, prose or configuration was copied.
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: review-gate, kind: codex-frozen-skill, from: null }
+      - { id: muster-humanizer, kind: builtin, from: null }
+      - { id: muster-image, kind: builtin, from: null }
+      - { id: muster-research, kind: builtin, from: null }
+      - { id: prd, kind: pipeline, from: null }
+      - { id: case-study, kind: pipeline, from: null }
+      - { id: newsletter, kind: pipeline, from: null }
+      - { id: blog-post, kind: pipeline, from: null }
+      - { id: social-post, kind: pipeline, from: null }
+
+  # --- agent design ---
+  - id: building-effective-agents
+    kind: article
+    title: "Building effective agents"
+    author: Erik Schluntz and Barry Zhang (Anthropic)
+    url: https://www.anthropic.com/research/building-effective-agents
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: muster-runner, kind: codex-frozen-agent, from: null }
+  - id: claude-code-subagents-docs
+    kind: article
+    title: "Create custom subagents (Claude Code docs)"
+    author: Anthropic
+    url: https://code.claude.com/docs/en/sub-agents
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: muster-runner, kind: codex-frozen-agent, from: null }
+  - id: llm-blender
+    kind: paper
+    title: "LLM-Blender: Ensembling Large Language Models with Pairwise Ranking and Generative Fusion"
+    author: Dongfu Jiang, Xiang Ren and Bill Yuchen Lin (ACL 2023)
+    url: https://arxiv.org/abs/2306.02561
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: tournament, kind: codex-frozen-skill, from: null }
+
+  # --- prompt engineering (muster-prompt-smith; rule sources cited in src/prompt-lint.js) ---
+  - id: claude-prompting-best-practices
+    kind: article
+    title: "Prompting best practices (Claude Docs)"
+    author: Anthropic
+    url: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: muster-prompt-smith, kind: builtin, from: null }
+  - id: claude-strengthen-guardrails
+    kind: article
+    title: "Reduce hallucinations (Claude Docs, Strengthen guardrails)"
+    author: Anthropic
+    url: https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: muster-prompt-smith, kind: builtin, from: null }
+  - id: claude-develop-tests
+    kind: article
+    title: "Define success criteria and build evaluations (Claude Docs)"
+    author: Anthropic
+    url: https://platform.claude.com/docs/en/test-and-evaluate/develop-tests
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: muster-prompt-smith, kind: builtin, from: null }
+  - id: claude-5-context-engineering
+    kind: article
+    title: "The new rules of context engineering for Claude 5 generation models"
+    author: Anthropic
+    url: https://claude.com/blog/the-new-rules-of-context-engineering-for-claude-5-generation-models
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: muster-prompt-smith, kind: builtin, from: null }
+
+  # --- research and scoring ---
+  - id: llm-cite
+    kind: paper
+    title: "LLM-Cite"
+    # Named in the 2026-06-23 audit as "paper, no repo" and credited in-file by
+    # b7dd4d90; the full citation was not recorded and was not found on 2026-11-09.
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: muster-research, kind: builtin, from: null }
+
+  # --- writing and humanizing ---
+  - id: wikipedia-signs-of-ai-writing
+    kind: article
+    title: "Wikipedia:Signs of AI writing"
+    author: WikiProject AI Cleanup (Wikipedia editors)
+    url: https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing
+    # The page blader/humanizer's pattern taxonomy is built on; muster's taxonomy
+    # reaches it through blader.
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: muster-humanizer, kind: builtin, from: null }
+  - id: aida
+    kind: person
+    title: "AIDA (Attention, Interest, Desire, Action)"
+    author: E. St. Elmo Lewis
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: muster-author, kind: builtin, from: null }
+      - { id: social-post, kind: pipeline, from: null }
+      - { id: lead-magnet, kind: pipeline, from: null }
+  - id: quest-formula
+    kind: article
+    title: "The QUEST copywriting formula"
+    author: Michel Fortin
+    url: https://michelfortin.com/the-quest-copywriting-formula/
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: muster-author, kind: builtin, from: null }
+      - { id: social-post, kind: pipeline, from: null }
+  - id: pastor-formula
+    kind: book
+    title: "How to Write Copy That Sells (the PASTOR framework)"
+    author: Ray Edwards
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: muster-author, kind: builtin, from: null }
+  - id: breakthrough-advertising
+    kind: book
+    title: "Breakthrough Advertising (awareness and sophistication)"
+    author: Eugene M. Schwartz
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: muster-author, kind: builtin, from: null }
+  - id: pas-bab-formulas
+    kind: unknown
+    title: "PAS (Problem-Agitate-Solution) and BAB (Before-After-Bridge) copywriting formulas"
+    note: >-
+      2026-11-09: named in muster-author, social-post, lead-magnet and book. Neither muster's
+      history nor a primary source found on this date names who originated either formula.
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: muster-author, kind: builtin, from: null }
+      - { id: social-post, kind: pipeline, from: null }
+      - { id: lead-magnet, kind: pipeline, from: null }
+      - { id: book, kind: pipeline, from: null }
+  - id: high-signal-sources-2026-06-07
+    kind: unknown
+    title: "The \"high-signal sources\" behind the first content rubrics"
+    note: >-
+      2026-11-09: commit b99599a (2026-06-07) says the blog, social, lead-magnet, newsletter,
+      case-study and runbook rubrics were "grounded in AIDA/PAS/BAB/QUEST + E-E-A-T from
+      high-signal sources" without naming them; no doc was committed with it. The
+      2026-06-08 research note (b122ed9) names later sources for most of these pipelines,
+      recorded here as their own entries; the original set is not recoverable.
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: blog-post, kind: pipeline, from: null }
+      - { id: social-post, kind: pipeline, from: null }
+      - { id: lead-magnet, kind: pipeline, from: null }
+      - { id: newsletter, kind: pipeline, from: null }
+      - { id: case-study, kind: pipeline, from: null }
+      - { id: runbook, kind: pipeline, from: null }
+  - id: google-rater-guidelines
+    kind: standard
+    title: "Search Quality Rater Guidelines (E-E-A-T)"
+    author: Google
+    url: https://guidelines.raterhub.com/searchqualityevaluatorguidelines.pdf
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: muster-author, kind: builtin, from: null }
+      - { id: blog-post, kind: pipeline, from: null }
+  - id: google-helpful-content
+    kind: article
+    title: "Creating helpful, reliable, people-first content"
+    author: Google Search Central
+    url: https://developers.google.com/search/docs/fundamentals/creating-helpful-content
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: blog-post, kind: pipeline, from: null }
+  - id: geo-paper
+    kind: paper
+    title: "GEO: Generative Engine Optimization"
+    author: Pranjal Aggarwal et al. (KDD 2024)
+    url: https://arxiv.org/abs/2311.09735
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: blog-post, kind: pipeline, from: null }
+  - id: aicmo-maxsprompts
+    kind: article
+    title: "AICMO marketing prompt collection; MaxsPrompts"
+    # Named in the 2026-06-08 research note for the sales / marketing / email group; the
+    # note gives no URLs.
+    relation: inspired-by
+    fetch: false
+    items: *marketing-group
+  - id: klue-battlecards
+    kind: article
+    title: "Sales Battlecards 101"
+    author: Klue
+    url: https://klue.com/blog/competitive-battlecards-101
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: competitive-battlecard, kind: pipeline, from: null }
+  - id: crayon-battlecard
+    kind: article
+    title: "Modern battlecard blueprint"
+    author: Crayon
+    # Named in the research note without a URL.
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: competitive-battlecard, kind: pipeline, from: null }
+  - id: case-study-csr
+    kind: article
+    title: "Challenge-Solution-Results case study structure"
+    author: libril.com and geisheker.com
+    # Named in the research note without URLs.
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: case-study, kind: pipeline, from: null }
+  - id: deliverability-guides
+    kind: article
+    title: "Email deliverability guidance"
+    author: Litmus and Validity
+    # Named in the research note without URLs.
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: newsletter, kind: pipeline, from: null }
+  - id: heros-journey
+    kind: book
+    title: "The Hero with a Thousand Faces"
+    author: Joseph Campbell
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: case-study, kind: pipeline, from: null }
+  - id: storybrand
+    kind: book
+    title: "Building a StoryBrand (SB7)"
+    author: Donald Miller
+    url: https://storybrand.com/
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: book, kind: pipeline, from: null }
+      - { id: case-study, kind: pipeline, from: null }
+  - id: pyramid-principle
+    kind: book
+    title: "The Pyramid Principle (SCQA, MECE)"
+    author: Barbara Minto
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: executive-summary, kind: pipeline, from: null }
+      - { id: book, kind: pipeline, from: null }
+  - id: bluf
+    kind: unknown
+    title: "BLUF (bottom line up front)"
+    note: >-
+      2026-11-09: named in executive-summary. A military-correspondence convention; no single
+      originating work was identified on this date.
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: executive-summary, kind: pipeline, from: null }
+  - id: save-the-cat
+    kind: book
+    title: "Save the Cat!"
+    author: Blake Snyder
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: book, kind: pipeline, from: null }
+  - id: story-grid
+    kind: book
+    title: "The Story Grid"
+    author: Shawn Coyne
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: book, kind: pipeline, from: null }
+  - id: scene-sequel
+    kind: book
+    title: "Techniques of the Selling Writer (scene and sequel)"
+    author: Dwight V. Swain
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: book, kind: pipeline, from: null }
+  - id: nonfiction-outline-guides
+    kind: article
+    title: "Chapter Blog nonfiction outline; ProWritingAid non-fiction structure"
+    # Named in the 2026-06-08 research note (concept -> proof -> how -> bridge) without URLs.
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: book, kind: pipeline, from: null }
+
+  # --- product management ---
+  - id: jobs-to-be-done
+    kind: book
+    title: "Competing Against Luck (Jobs to Be Done)"
+    author: Clayton M. Christensen, Taddy Hall, Karen Dillon and David S. Duncan
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: muster-author, kind: builtin, from: null }
+      - { id: prd, kind: pipeline, from: null }
+      - { id: epic, kind: pipeline, from: null }
+  - id: lean-ux
+    kind: book
+    title: "Lean UX (hypothesis statements, proto-personas)"
+    author: Jeff Gothelf and Josh Seiden
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: prd, kind: pipeline, from: null }
+      - { id: epic, kind: pipeline, from: null }
+  - id: story-splitting
+    kind: article
+    title: "The Humanizing Work Guide to Splitting User Stories"
+    author: Richard Lawrence and Peter Green
+    url: https://www.humanizingwork.com/the-humanizing-work-guide-to-splitting-user-stories/
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: epic, kind: pipeline, from: null }
+  - id: user-story-mapping
+    kind: book
+    title: "User Story Mapping"
+    author: Jeff Patton
+    url: https://www.jpattonassociates.com/user-story-mapping/
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: epic, kind: pipeline, from: null }
+  - id: user-stories-applied
+    kind: book
+    title: "User Stories Applied (As a / I want / So that)"
+    author: Mike Cohn
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: user-story, kind: pipeline, from: null }
+  - id: invest
+    kind: article
+    title: "INVEST in Good Stories, and SMART Tasks"
+    author: Bill Wake
+    url: https://xp123.com/invest-in-good-stories-and-smart-tasks/
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: user-story, kind: pipeline, from: null }
+  - id: three-cs
+    kind: article
+    title: "Essential XP: Card, Conversation, Confirmation"
+    author: Ron Jeffries
+    url: https://ronjeffries.com/xprog/articles/expcardconversationconfirmation/
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: user-story, kind: pipeline, from: null }
+  - id: gherkin
+    kind: article
+    title: "Gherkin reference (Given / When / Then)"
+    author: Cucumber
+    url: https://cucumber.io/docs/gherkin/reference/
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: user-story, kind: pipeline, from: null }
+  - id: job-stories
+    kind: article
+    title: "Designing features using job stories"
+    author: Alan Klement (Intercom)
+    url: https://www.intercom.com/blog/using-job-stories-design-features-ui-ux/
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: user-story, kind: pipeline, from: null }
+  - id: working-backwards
+    kind: book
+    title: "Working Backwards (PR/FAQ)"
+    author: Colin Bryar and Bill Carr
+    url: https://workingbackwards.com/
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: launch-plan, kind: pipeline, from: null }
+  - id: semver
+    kind: standard
+    title: "Semantic Versioning 2.0.0"
+    author: Tom Preston-Werner
+    url: https://semver.org/
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: release-notes, kind: pipeline, from: null }
+  - id: measure-what-matters
+    kind: book
+    title: "Measure What Matters (OKRs)"
+    author: John Doerr
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: okrs, kind: pipeline, from: null }
+  - id: high-output-management
+    kind: book
+    title: "High Output Management"
+    author: Andrew S. Grove
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: okrs, kind: pipeline, from: null }
+  - id: rice
+    kind: article
+    title: "RICE: simple prioritization for product managers"
+    author: Sean McBride (Intercom)
+    url: https://www.intercom.com/blog/rice-simple-prioritization-for-product-managers/
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: roadmap, kind: pipeline, from: null }
+      - { id: roadmap-prioritization, kind: skill, from: null }
+  - id: now-next-later
+    kind: article
+    title: "The Now-Next-Later roadmap"
+    author: Janna Bastow (ProdPad)
+    url: https://www.prodpad.com/blog/invented-now-next-later-roadmap/
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: roadmap, kind: pipeline, from: null }
+      - { id: roadmap-prioritization, kind: skill, from: null }
+
+  # --- engineering documents and operations ---
+  - id: documenting-architecture-decisions
+    kind: article
+    title: "Documenting Architecture Decisions"
+    author: Michael Nygard
+    url: https://www.cognitect.com/blog/2011/11/15/documenting-architecture-decisions
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: ai-implementation-spec, kind: pipeline, from: null }
+  - id: iso-29119-3
+    kind: standard
+    title: "ISO/IEC/IEEE 29119-3, Software testing: Test documentation"
+    author: ISO/IEC/IEEE
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: ai-test-plan, kind: pipeline, from: null }
+  - id: ieee-829
+    kind: standard
+    title: "IEEE 829, Standard for Software and System Test Documentation (withdrawn)"
+    author: IEEE
+    url: https://standards.ieee.org/ieee/829/3787/
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: ai-test-plan, kind: pipeline, from: null }
+  - id: sre-book
+    kind: book
+    title: "Site Reliability Engineering (Managing Incidents)"
+    author: Betsy Beyer, Chris Jones, Jennifer Petoff and Niall Richard Murphy (Google)
+    url: https://sre.google/sre-book/managing-incidents/
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: runbook, kind: pipeline, from: null }
+  - id: pagerduty-incident-response
+    kind: article
+    title: "PagerDuty Incident Response documentation"
+    author: PagerDuty
+    url: https://response.pagerduty.com/
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: runbook, kind: pipeline, from: null }
+  - id: runbook-practice-articles
+    kind: article
+    title: "Runbook practice articles (preconditions, observability, escalation, cleanup, idempotency)"
+    author: emmer.dev, The Good Shell and Rootly
+    # Named in the 2026-06-08 research note without URLs.
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: runbook, kind: pipeline, from: null }
+
+  # --- audit hunt-list patterns (each pattern cites its source inline) ---
+  - id: nielsen-heuristics
+    kind: article
+    title: "10 Usability Heuristics for User Interface Design"
+    author: Jakob Nielsen (Nielsen Norman Group)
+    url: https://www.nngroup.com/articles/ten-usability-heuristics/
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: audit-pattern-design-ux, kind: audit-pattern, from: null }
+  - id: google-timeless-documentation
+    kind: article
+    title: "Timeless documentation (Google developer documentation style guide)"
+    author: Google
+    url: https://developers.google.com/style/timeless-documentation
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: audit-pattern-documentation, kind: audit-pattern, from: null }
+  - id: diataxis
+    kind: article
+    title: "Diátaxis"
+    author: Daniele Procida
+    url: https://diataxis.fr/
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: audit-pattern-documentation, kind: audit-pattern, from: null }
+  - id: cognitive-complexity
+    kind: article
+    title: "Cognitive Complexity, Because Testability != Understandability"
+    author: G. Ann Campbell (SonarSource)
+    url: https://www.sonarsource.com/blog/cognitive-complexity-because-testability-understandability/
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: audit-pattern-readability, kind: audit-pattern, from: null }
+  - id: owasp-top-10-a08
+    kind: standard
+    title: "OWASP Top 10:2021 A08, Software and Data Integrity Failures"
+    author: OWASP Foundation
+    url: https://owasp.org/Top10/2021/A08_2021-Software_and_Data_Integrity_Failures/
+    relation: inspired-by
+    fetch: false
+    items:
+      - { id: audit-pattern-security, kind: audit-pattern, from: null }
+
+# Decided exceptions for repositories whose terms give Muster no right to reuse text
+# (NONE, NonCommercial, NoDerivatives, proprietary) yet whose text Muster carries
+# (vendored or adapted). Status permission-granted or accepted-risk; the license gate
+# fails `pending-owner-decision`. A restricted source Muster takes only ideas from has
+# no waiver: its `licenseReview` records the comparison instead. None remain.
+licenseWaivers: []

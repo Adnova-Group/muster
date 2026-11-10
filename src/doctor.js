@@ -26,13 +26,16 @@ const KNOWN_HOOK_EVENTS = new Set([
   "TaskCompleted",
 ]);
 
-// Extract the bare filename (e.g. "pre-tool-use.js") referenced by a hook
-// command string.  Commands shipped by muster follow the pattern:
-//   node "${CLAUDE_PLUGIN_ROOT}/hooks/<file>.js"
-// Return null if the command doesn't match the expected pattern.
-function extractHookFilename(command) {
-  const m = command.match(/\$\{CLAUDE_PLUGIN_ROOT\}\/hooks\/([^\s"]+\.js)/);
-  return m ? m[1] : null;
+// Extract the bare filename (e.g. "pre-tool-use.js") a hook runs. Muster ships exec-form hooks
+// ({"command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/<file>.js"]}); the shell form
+// (node "${CLAUDE_PLUGIN_ROOT}/hooks/<file>.js" in `command`) is still recognized.
+// Return null if neither the command nor any argument matches the expected pattern.
+function extractHookFilename(hook) {
+  for (const value of [hook.command, ...(Array.isArray(hook.args) ? hook.args : [])]) {
+    const m = typeof value === "string" && value.match(/\$\{CLAUDE_PLUGIN_ROOT\}\/hooks\/([^\s"]+\.js)/);
+    if (m) return m[1];
+  }
+  return null;
 }
 
 // Returns a human-readable skip-detail string for the two plugin checks (staleness +
@@ -320,7 +323,7 @@ export async function runDoctor({ root, home, exec, cwd } = {}) {
           for (const group of eventHandlers) {
             for (const hook of (group.hooks || [])) {
               if (typeof hook.command === "string") {
-                const fname = extractHookFilename(hook.command);
+                const fname = extractHookFilename(hook);
                 if (fname) {
                   const fpath = join(hooksDir, fname);
                   if (!(await exists(fpath))) {

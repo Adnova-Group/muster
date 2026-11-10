@@ -1,0 +1,28 @@
+id: roadmap
+domain: pm
+title: Roadmap Prioritization
+match: [roadmap, prioritize, prioritization, roadmap prioritization, product roadmap, backlog prioritization, rice]
+upstream:
+  - kind: article
+    title: "RICE: simple prioritization for product managers"
+    author: Sean McBride (Intercom)
+    url: https://www.intercom.com/blog/rice-simple-prioritization-for-product-managers/
+    relation: inspired-by
+  - kind: article
+    title: The Now-Next-Later roadmap
+    author: Janna Bastow (ProdPad)
+    url: https://www.prodpad.com/blog/invented-now-next-later-roadmap/
+    relation: inspired-by
+phases:
+  - { id: generate,   role: brainstorm,    desc: "surface candidate initiatives from goals/strategy/themes" }
+  - { id: research,   role: docs-research, desc: "gather evidence per initiative: market, competitor, and customer-feedback signals" }
+  - { id: estimate,   role: brainstorm,    desc: "assign RICE factors with rationale (evidence-backed, not vibes); pin canonical scales — Reach = count/quarter, Impact 3/2/1/0.5/0.25, Confidence 100/80/50%, Effort in person-months, score = R×I×C/E" }
+  - { id: prioritize, role: score,         desc: "run the deterministic RICE scorer (muster prioritize) to rank initiatives" }
+  - { id: draft,      role: author,        desc: "now/next/later roadmap doc + RICE score table + sequencing rationale" }
+  - { id: review,     role: code-review,   desc: "adversarial review gate (reuse review-gate)" }
+  - { id: score,      role: score,         desc: "score vs rubric, apply floor principle" }
+  - { id: humanize,   role: humanize,      desc: "final pass: strip AI tells (em-dashes, banned words, robotic cadence) for human delivery" }
+gate:
+  criteria: [coverage, evidence, scoring-rigor, sequencing, outcome-alignment, feasibility]
+  floor: 2
+  pass_total: 14

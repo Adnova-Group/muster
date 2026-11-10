@@ -21,7 +21,7 @@
 import { readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { emit } from "./guidance.js";
-import { classifyAction } from "./action-guard.js";
+import { classifyAction, DESKTOP_HOST_TOOLS } from "./action-guard.js";
 
 const EVENT = "PreToolUse";
 
@@ -93,6 +93,7 @@ try {
   } catch {
     allow();
   }
+  if (DESKTOP_HOST_TOOLS.has(payload.tool_name)) allow();
 
   const cwd = typeof payload.cwd === "string" && payload.cwd.length > 0
     ? payload.cwd

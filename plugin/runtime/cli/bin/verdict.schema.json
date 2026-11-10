@@ -1,0 +1,58 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://muster.dev/schemas/review-gate/verdict.schema.json",
+  "title": "Muster review-gate verdict array",
+  "description": "The single-sourced shape of .muster/verdicts.json (backlog item structured-output-binding): what plugin/skills/review-gate/SKILL.md's reviewer-dispatch instructions write, and what src/review.js's tallyReview reads. Every array element is either an ordinary reviewer verdict (a named reviewer's severity-tagged findings) or a worker-absence entry (PR #82 tally-worker-exhaustion-contract: a reviewer that never produced a real verdict, recorded as a named status instead of synthesized findings) -- never both at once. tallyReview additionally tolerates several shapes OUTSIDE this schema (a missing reviewer name, an unrecognized status/severity value, findings present alongside status) as a defensive parsing fallback for a malformed real-world emission -- see src/review.js's own header comment and the exhaustion-status-producer incident. That runtime tolerance is deliberate and does not loosen what THIS schema defines as a well-formed emission; test/verdict-schema.test.js pins the one-directional coherence (every schema-valid array is accepted by tallyReview, not the reverse).",
+  "type": "array",
+  "items": {
+    "oneOf": [
+      {
+        "type": "object",
+        "description": "An ordinary reviewer verdict: a named reviewer's severity-tagged findings.",
+        "properties": {
+          "reviewer": {
+            "type": "string",
+            "description": "The reviewer's name, as recorded by review-gate/SKILL.md step 1's selection."
+          },
+          "findings": {
+            "type": "array",
+            "description": "Zero or more findings, each severity-tagged per muster-reviewer.md's vocabulary.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "severity": {
+                  "enum": ["blocker", "risk", "nit"],
+                  "description": "The only severities src/review.js's tallyReview tallies into counts/blockers."
+                },
+                "note": {
+                  "type": "string",
+                  "description": "The finding's location, problem, and fix, per muster-reviewer.md's one-line format."
+                }
+              },
+              "required": ["severity", "note"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["reviewer", "findings"],
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "description": "A worker-absence entry (PR #82 tally-worker-exhaustion-contract): the named reviewer's dispatch was killed/exhausted mid-review or never started, so no real verdict exists to record.",
+        "properties": {
+          "reviewer": {
+            "type": "string",
+            "description": "The reviewer's name, as recorded by review-gate/SKILL.md step 1's selection."
+          },
+          "status": {
+            "enum": ["exhausted", "absent"],
+            "description": "\"exhausted\": the dispatch started but was killed/ran out of budget before verdicting. \"absent\": the dispatch never started or never responded."
+          }
+        },
+        "required": ["reviewer", "status"],
+        "additionalProperties": false
+      }
+    ]
+  }
+}

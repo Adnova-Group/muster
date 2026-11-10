@@ -1,0 +1,36 @@
+# Muster-authored built-ins (not vendored — safe from `muster vendor` regeneration).
+- id: muster-author
+  kind: builtin
+  roles: [author]
+  rank: 50
+  provenance: { license: Apache-2.0, upstream: [WynterJones/CoppieGPT, boraoztunc/skills] }
+- id: muster-research
+  kind: builtin
+  roles: [research]
+  rank: 40
+  provenance: { license: Apache-2.0, upstream: [assafelovic/gpt-researcher, mbzuai-nlp/qraft] }
+- id: muster-scorer
+  kind: builtin
+  roles: [score]
+  rank: 50
+  provenance: { license: Apache-2.0, upstream: [felipelobomotta-blip/book-genesis-studio, CSHaitao/Awesome-LLMs-as-Judges, llm-as-a-judge/Awesome-LLM-as-a-judge, microsoft/LLM-Rubric] }
+- id: muster-humanizer
+  kind: builtin
+  roles: [humanize]
+  rank: 50
+  provenance: { license: MIT, upstream: [blader/humanizer, rudra496/StealthHumanizer, conorbronsdon/avoid-ai-writing, jalaalrd/anti-ai-slop-writing, aaaronmiller/humanize-writing, linexjlin/GPTs] }
+- id: muster-prompt-smith
+  kind: builtin
+  roles: [prompt-quality]
+  rank: 50
+  provenance: { license: Apache-2.0, upstream: [hermes-labs-ai/lintlang, promptfoo/promptfoo, shobrook/promptimal, gepa-ai/gepa] }
+- id: muster-image
+  kind: builtin
+  roles: [image]
+  rank: 50
+  provenance: { license: Apache-2.0, upstream: [] }
+- id: muster-video
+  kind: builtin
+  roles: [video]
+  rank: 50
+  provenance: { license: Apache-2.0, upstream: [] }

@@ -441,20 +441,93 @@ function sameDirectoryIdentity(current, prior) {
     current.mtimeNs === prior.mtimeNs;
 }
 
-async function pinnedDirectoryVisit(root, abs, rel, visit) {
-  const ancestorPaths = [root];
-  let ancestor = root;
-  for (const part of rel ? rel.split("/") : []) {
-    ancestor = join(ancestor, part);
-    ancestorPaths.push(ancestor);
-  }
-  const ancestorsBefore = await Promise.all(ancestorPaths.map((path) => lstat(path, { bigint: true })));
-  if (ancestorsBefore.some((info) => info.isSymbolicLink() || !info.isDirectory())) {
-    throw new Error(`unsafe repository directory: ${rel || "."}`);
-  }
-  const namedBefore = await lstat(abs, { bigint: true });
-  if (namedBefore.isSymbolicLink() || !namedBefore.isDirectory() ||
-      !(await resolveContainedRealpath(root, abs))) throw new Error(`unsafe repository directory: ${rel || "."}`);
+// Bounded parallelism for the read-only repository walks (learnProjectProfile spends most of its
+// time waiting on one filesystem call at a time otherwise). Two separate pools so a held pool
+// slot never waits on its own pool: DIRECTORY slots cover one pinned directory window (an open
+// descriptor plus its listing descriptor), IO slots cover single leaf calls (lstat, readlink, one
+// file digest) that never take another slot. A directory window may wait on IO slots; an IO call
+// never waits on a directory slot, so the pools cannot deadlock. Both stay far below the
+// descriptor ceiling test/init.test.js runs the CLI under (ulimit -n 128).
+const WALK_DIRECTORY_CONCURRENCY = 8;
+const WALK_IO_CONCURRENCY = 32;
+// The fingerprint keeps at most this many relevant paths in flight, hashing rows in path order.
+const FINGERPRINT_WINDOW = 64;
+
+function createLimiter(max) {
+  let active = 0;
+  const waiting = [];
+  const release = () => {
+    active--;
+    if (waiting.length) { active++; waiting.shift()(); }
+  };
+  return async (fn) => {
+    if (active < max) active++;
+    else await new Promise((resolveSlot) => waiting.push(resolveSlot));
+    try { return await fn(); } finally { release(); }
+  };
+}
+
+function walkWork(deadline) {
+  return {
+    aborted: false, deadline, entries: 0, snapshotBytes: 0,
+    directories: createLimiter(WALK_DIRECTORY_CONCURRENCY), io: createLimiter(WALK_IO_CONCURRENCY),
+  };
+}
+
+// A sibling's failure stops new work in the same walk; the stopped calls throw this marker, which
+// never wins over a real error (settleInOrder below).
+const WALK_ABORTED = new Error("repository walk aborted");
+
+function abortCheck(work) {
+  if (work.aborted) throw WALK_ABORTED;
+}
+
+// Waits for EVERY promise to settle (no filesystem call outlives the walk that started it), then
+// throws the error of the earliest failed item in item order, skipping abort markers. Item order
+// is start order under the FIFO limiters, so the error matches the one a sequential loop over the
+// same items would have hit first.
+async function settleInOrder(work, promises) {
+  const results = await Promise.all(promises.map((promise) => promise.then(
+    (value) => ({ value }),
+    (error) => { work.aborted = true; return { error }; },
+  )));
+  const failed = results.filter((result) => "error" in result);
+  if (failed.length) throw (failed.find(({ error }) => error !== WALK_ABORTED) ?? failed[0]).error;
+  return results.map(({ value }) => value);
+}
+
+// Promise.all that lets every call settle before rejecting with the first error in item order.
+async function allSettledInOrder(promises) {
+  const results = await Promise.allSettled(promises);
+  const failed = results.find(({ status }) => status === "rejected");
+  if (failed) throw failed.reason;
+  return results.map(({ value }) => value);
+}
+
+function forEachBounded(work, items, fn) {
+  return settleInOrder(work, items.map((item, index) => work.io(async () => {
+    abortCheck(work);
+    return fn(item, index);
+  })));
+}
+
+// Pins one directory for the duration of `visit` (every entry name) and the optional `inside`
+// step (work that must observe the directory while it is pinned, e.g. lstat of every child): the
+// directory, its ancestors and its canonical containment are checked before the descriptor is
+// opened and again after `inside` finishes, so a swap anywhere on the path mid-walk fails closed.
+// The ancestor set excludes `abs` itself, which the named-path checks already cover.
+async function pinnedDirectoryVisit(root, abs, rel, visit, inside) {
+  const parts = rel ? rel.split("/") : [];
+  const ancestorPaths = parts.map((_, index) => join(root, ...parts.slice(0, index)));
+  const unsafe = () => new Error(`unsafe repository directory: ${rel || "."}`);
+  const changed = () => new Error(`repository directory changed: ${rel || "."}`);
+  const [ancestorsBefore, namedBefore, containedBefore] = await allSettledInOrder([
+    allSettledInOrder(ancestorPaths.map((path) => lstat(path, { bigint: true }))),
+    lstat(abs, { bigint: true }),
+    resolveContainedRealpath(root, abs),
+  ]);
+  if (ancestorsBefore.some((info) => info.isSymbolicLink() || !info.isDirectory())) throw unsafe();
+  if (namedBefore.isSymbolicLink() || !namedBefore.isDirectory() || !containedBefore) throw unsafe();
   let handle;
   try {
     handle = await open(
@@ -462,19 +535,23 @@ async function pinnedDirectoryVisit(root, abs, rel, visit) {
       fsConstants.O_RDONLY | (fsConstants.O_DIRECTORY || 0) | (fsConstants.O_NOFOLLOW || 0),
     );
     const heldBefore = await handle.stat({ bigint: true });
-    if (!sameDirectoryIdentity(heldBefore, namedBefore)) throw new Error(`repository directory changed: ${rel || "."}`);
+    if (!sameDirectoryIdentity(heldBefore, namedBefore)) throw changed();
     const descriptorPath = process.platform === "linux" ? `/proc/self/fd/${handle.fd}` :
       process.platform === "win32" ? abs : `/dev/fd/${handle.fd}`;
     for await (const entry of await opendir(descriptorPath, { encoding: "buffer" })) {
       const bytes = Buffer.isBuffer(entry.name) ? entry.name : Buffer.from(entry.name);
       if (await visit(decodePathBytes(bytes, rel || "."), bytes) === false) break;
     }
-    const heldAfter = await handle.stat({ bigint: true });
-    const namedAfter = await lstat(abs, { bigint: true });
-    const ancestorsAfter = await Promise.all(ancestorPaths.map((path) => lstat(path, { bigint: true })));
+    await inside?.();
+    const [heldAfter, namedAfter, ancestorsAfter, containedAfter] = await allSettledInOrder([
+      handle.stat({ bigint: true }),
+      lstat(abs, { bigint: true }),
+      allSettledInOrder(ancestorPaths.map((path) => lstat(path, { bigint: true }))),
+      resolveContainedRealpath(root, abs),
+    ]);
     if (!sameDirectoryIdentity(heldAfter, heldBefore) || !sameDirectoryIdentity(namedAfter, heldBefore) ||
         ancestorsAfter.some((info, index) => !sameDirectoryIdentity(info, ancestorsBefore[index])) ||
-        !(await resolveContainedRealpath(root, abs))) throw new Error(`repository directory changed: ${rel || "."}`);
+        !containedAfter) throw changed();
     return heldBefore;
   } finally {
     await handle?.close();
@@ -511,19 +588,20 @@ async function pinnedFingerprintDirectoryNames(root, abs, rel) {
   return names.sort(utf8Sort);
 }
 
-async function* filesystemRelevantPaths(root, abs = root, prefix = "") {
-  const children = [];
-  for (const name of await pinnedFingerprintDirectoryNames(root, abs, prefix)) {
-    if (!prefix && (name === ".git" || name === ".muster" || name.startsWith(".muster-init-tmp-"))) continue;
+async function* filesystemRelevantPaths(root, abs = root, prefix = "", work = walkWork(Infinity)) {
+  const names = (await pinnedFingerprintDirectoryNames(root, abs, prefix)).filter((name) => (
+    prefix || (name !== ".git" && name !== ".muster" && !name.startsWith(".muster-init-tmp-"))
+  ));
+  const children = await forEachBounded(work, names, async (name) => {
     const rel = prefix ? `${prefix}/${name}` : name;
     const path = join(abs, name);
     const info = await lstat(path);
     const descend = info.isDirectory() && !(await realGitMarker(path));
-    children.push({ descend, key: descend ? `${rel}/` : rel, path, rel });
-  }
+    return { descend, key: descend ? `${rel}/` : rel, path, rel };
+  });
   children.sort((a, b) => utf8Sort(a.key, b.key));
   for (const child of children) {
-    if (child.descend) yield* filesystemRelevantPaths(root, child.path, child.rel);
+    if (child.descend) yield* filesystemRelevantPaths(root, child.path, child.rel, work);
     else yield child.rel;
   }
 }
@@ -532,19 +610,38 @@ function checkFingerprintDeadline(deadline) {
   if (Date.now() > deadline) throw new Error("repository fingerprint deadline exceeded");
 }
 
-async function rejectSpecialEntries(root, abs = root, prefix = "", snapshot = null, work = null) {
-  const top = snapshot === null;
-  snapshot ||= { count: 0, hash: createHash("sha256").update("muster.directory-snapshot.v1\0") };
-  work ||= { deadline: Date.now() + activeLimits.fingerprintDeadlineMs, entries: 0 };
-  work.snapshotBytes ??= 0;
+// Snapshots every directory's identity (pre-order, children in UTF-8 order) and rejects special
+// entries. Sibling subtrees are walked concurrently under the work's pools; the snapshot rows are
+// assembled in the order a sequential walk produces, so the digest is unchanged.
+async function rejectSpecialEntries(root, work) {
+  const tree = await snapshotDirectory(root, root, "", work);
+  const hash = createHash("sha256").update("muster.directory-snapshot.v1\0");
+  let count = 0;
+  const pending = [tree];
+  while (pending.length) {
+    const { row, children } = pending.pop();
+    const length = Buffer.allocUnsafe(8);
+    length.writeBigUInt64BE(BigInt(row.length));
+    hash.update(length).update(row);
+    count++;
+    for (let index = children.length - 1; index >= 0; index--) pending.push(children[index]);
+  }
+  return { count, digest: hash.digest("hex") };
+}
+
+async function snapshotDirectory(root, abs, prefix, work) {
+  abortCheck(work);
+  const names = [];
   const directories = [];
-  const identity = await pinnedDirectoryVisit(root, abs, prefix, async (name) => {
+  const identity = await work.directories(() => pinnedDirectoryVisit(root, abs, prefix, (name) => {
     checkFingerprintDeadline(work.deadline);
     work.entries++;
     if (work.entries > activeLimits.fingerprintEntries) {
       throw new Error("repository fingerprint entry limit exceeded");
     }
     if (!prefix && (name === ".git" || name === ".muster" || name.startsWith(".muster-init-tmp-"))) return;
+    names.push(name);
+  }, () => forEachBounded(work, names, async (name) => {
     const rel = prefix ? `${prefix}/${name}` : name;
     const path = join(abs, name);
     const info = await lstat(path);
@@ -562,21 +659,14 @@ async function rejectSpecialEntries(root, abs = root, prefix = "", snapshot = nu
     } else if (!info.isFile()) {
       throw new Error(`unsupported repository entry type: ${rel}`);
     }
-  });
+  })));
   const row = Buffer.from([
     prefix, identity.dev, identity.ino, identity.mode, identity.nlink,
     identity.ctimeNs, identity.mtimeNs,
   ].join("\0"));
-  const length = Buffer.allocUnsafe(8);
-  length.writeBigUInt64BE(BigInt(row.length));
-  snapshot.hash.update(length).update(row);
-  snapshot.count++;
   directories.sort((a, b) => utf8Sort(a.rel, b.rel));
-  for (const { path, rel } of directories) {
-    await rejectSpecialEntries(root, path, rel, snapshot, work);
-  }
-  if (!top) return snapshot;
-  return { count: snapshot.count, digest: snapshot.hash.digest("hex") };
+  const children = await settleInOrder(work, directories.map(({ path, rel }) => snapshotDirectory(root, path, rel, work)));
+  return { row, children };
 }
 
 function sameDirectorySnapshot(current, prior) {
@@ -653,11 +743,54 @@ function sameFingerprintIdentity(current, prior) {
     current.ctimeNs === prior.ctimeNs && current.mtimeNs === prior.mtimeNs;
 }
 
+// One relevant path's fingerprint row, or null for a tracked-but-deleted Git path. `size` is the
+// byte count the cumulative ceiling charges; `reserve` charges a file's size before it is read.
+async function fingerprintRow(root, rel, learnedDigests, deadline, reserve) {
+  const path = join(root, rel);
+  let info;
+  try { info = await lstat(path, { bigint: true }); }
+  catch (error) {
+    if (error.code === "ENOENT") return null; // tracked-but-deleted Git path
+    throw error;
+  }
+  const learned = info.isFile() ? learnedDigests.get(rel) : undefined;
+  // streamedFileDigest checks the ancestors itself before and after reading, so only the paths
+  // that skip it need the standalone check.
+  if (!info.isFile() || learned) await ensureFingerprintAncestors(root, path, rel);
+  if (info.isDirectory() && await realGitMarker(path)) {
+    let head = null;
+    try {
+      const value = await safeGit(path, ["rev-parse", "--verify", "HEAD^{commit}"]);
+      if (GIT_HEAD.test(value)) head = value;
+    } catch (error) { if (error.invalidGitOutput) throw error; }
+    return { row: Buffer.from(`V\0${rel}\0${head ?? "null"}\n`), size: 0 };
+  } else if (info.isFile()) {
+    if (learned && !sameFingerprintIdentity(info, learned.identity)) throw learningFileChanged(rel);
+    if (info.size > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error("repository fingerprint byte limit exceeded");
+    reserve(Number(info.size));
+    const opened = learned || await streamedFileDigest(root, path, rel, info, deadline);
+    return {
+      row: Buffer.from(`F\0${rel}\0${(opened.mode & 0o111) ? 1 : 0}\0${opened.size}\0${opened.digest}\n`),
+      size: opened.size,
+    };
+  } else if (info.isSymbolicLink()) {
+    const target = await readlink(path, { encoding: "buffer" });
+    if (target.length > activeLimits.symlinkBytes) throw new Error("repository symlink target limit exceeded");
+    const named = await lstat(path, { bigint: true });
+    if (!named.isSymbolicLink() || named.ino !== info.ino || named.dev !== info.dev ||
+        named.ctimeNs !== info.ctimeNs || named.mtimeNs !== info.mtimeNs) {
+      throw new Error(`file changed while reading: ${rel}`);
+    }
+    return { row: Buffer.from(`L\0${rel}\0${sha256(target)}\n`), size: 0 };
+  }
+  throw new Error(`unsupported repository entry type: ${rel}`);
+}
+
 async function repositoryFingerprintPass(root, learnedDigests = new Map(), deadline = Infinity, expectedSnapshot = null) {
   // Git deliberately omits untrackable special entries from `ls-files`.
   // Preserve the previous fail-closed repository walk before hashing only the
   // relevant paths; ignored/generated ordinary files remain unhashed.
-  const directorySnapshot = await rejectSpecialEntries(root, root, "", null, { deadline, entries: 0 });
+  const directorySnapshot = await rejectSpecialEntries(root, walkWork(deadline));
   if (expectedSnapshot && !sameDirectorySnapshot(directorySnapshot, expectedSnapshot)) {
     throw new Error("repository changed while learning");
   }
@@ -665,58 +798,73 @@ async function repositoryFingerprintPass(root, learnedDigests = new Map(), deadl
   let rowCount = 0;
   let visitedPaths = 0;
   let totalBytes = 0;
+  let reservedBytes = 0;
   const add = (row) => {
     const length = Buffer.allocUnsafe(8);
     length.writeBigUInt64BE(BigInt(row.length));
     hash.update(length).update(row);
     rowCount++;
   };
+  // Charged before a file is read, so an over-budget repository fails before the read that would
+  // cross the ceiling; the in-order charge below re-checks the sizes actually digested.
+  const reserve = (size) => {
+    if (size > activeLimits.fingerprintTotalBytes - reservedBytes) {
+      throw new Error("repository fingerprint byte limit exceeded");
+    }
+    reservedBytes += size;
+  };
+  const charge = (result) => {
+    if (!result) return;
+    if (!Number.isSafeInteger(result.size) || result.size > activeLimits.fingerprintTotalBytes - totalBytes) {
+      throw new Error("repository fingerprint byte limit exceeded");
+    }
+    totalBytes += result.size;
+    add(result.row);
+  };
+  // Rows are computed up to FINGERPRINT_WINDOW paths ahead and hashed strictly in path order.
+  // The first failure stops new work, every started read settles before this pass returns, and
+  // the earliest failure in path order is thrown.
+  const work = walkWork(deadline);
+  const settle = (promise) => promise.then((value) => ({ value }), (error) => {
+    work.aborted = true;
+    return { error };
+  });
+  const inflight = [];
+  let headFailure = null;
+  let loopFailure = null;
   const paths = await realGitMarker(root) ? gitRelevantPaths(root) : filesystemRelevantPaths(root);
-  for await (const rel of paths) {
-    checkFingerprintDeadline(deadline);
-    visitedPaths++;
-    if (visitedPaths > activeLimits.fingerprintEntries) throw new Error("repository fingerprint entry limit exceeded");
-    const path = join(root, rel);
-    let info;
-    try { info = await lstat(path, { bigint: true }); }
-    catch (error) {
-      if (error.code === "ENOENT") continue; // tracked-but-deleted Git path
-      throw error;
-    }
-    await ensureFingerprintAncestors(root, path, rel);
-    if (info.isDirectory() && await realGitMarker(path)) {
-      let head = null;
+  try {
+    for await (const rel of paths) {
+      if (work.aborted) break;
+      checkFingerprintDeadline(deadline);
+      visitedPaths++;
+      if (visitedPaths > activeLimits.fingerprintEntries) throw new Error("repository fingerprint entry limit exceeded");
+      inflight.push(settle(work.io(async () => {
+        abortCheck(work);
+        return fingerprintRow(root, rel, learnedDigests, deadline, reserve);
+      })));
+      if (inflight.length < FINGERPRINT_WINDOW) continue;
+      const head = await inflight.shift();
       try {
-        const value = await safeGit(path, ["rev-parse", "--verify", "HEAD^{commit}"]);
-        if (GIT_HEAD.test(value)) head = value;
-      } catch (error) { if (error.invalidGitOutput) throw error; }
-      add(Buffer.from(`V\0${rel}\0${head ?? "null"}\n`));
-    } else if (info.isFile()) {
-      const learned = learnedDigests.get(rel);
-      if (learned && !sameFingerprintIdentity(info, learned.identity)) throw learningFileChanged(rel);
-      if (info.size > BigInt(Number.MAX_SAFE_INTEGER) ||
-          info.size > BigInt(activeLimits.fingerprintTotalBytes - totalBytes)) {
-        throw new Error("repository fingerprint byte limit exceeded");
+        if ("error" in head) throw head.error;
+        charge(head.value);
+      } catch (error) {
+        headFailure = error;
+        break;
       }
-      const opened = learned || await streamedFileDigest(root, path, rel, info, deadline);
-      if (!Number.isSafeInteger(opened.size) || opened.size > activeLimits.fingerprintTotalBytes - totalBytes) {
-        throw new Error("repository fingerprint byte limit exceeded");
-      }
-      totalBytes += opened.size;
-      add(Buffer.from(`F\0${rel}\0${(opened.mode & 0o111) ? 1 : 0}\0${opened.size}\0${opened.digest}\n`));
-    } else if (info.isSymbolicLink()) {
-      const target = await readlink(path, { encoding: "buffer" });
-      if (target.length > activeLimits.symlinkBytes) throw new Error("repository symlink target limit exceeded");
-      const named = await lstat(path, { bigint: true });
-      if (!named.isSymbolicLink() || named.ino !== info.ino || named.dev !== info.dev ||
-          named.ctimeNs !== info.ctimeNs || named.mtimeNs !== info.mtimeNs) {
-        throw new Error(`file changed while reading: ${rel}`);
-      }
-      add(Buffer.from(`L\0${rel}\0${sha256(target)}\n`));
-    } else {
-      throw new Error(`unsupported repository entry type: ${rel}`);
     }
+  } catch (error) {
+    loopFailure = error;
   }
+  if (headFailure || loopFailure) work.aborted = true;
+  const remaining = await Promise.all(inflight);
+  if (headFailure) throw headFailure;
+  for (const settled of remaining) {
+    if (!("error" in settled)) charge(settled.value);
+    else if (settled.error !== WALK_ABORTED) throw settled.error;
+  }
+  if (loopFailure) throw loopFailure;
+  if (work.aborted) throw WALK_ABORTED;
   for (const [rel, learned] of learnedDigests) {
     const path = join(root, rel);
     await ensureLearningAncestors(root, path, rel);
@@ -726,7 +874,7 @@ async function repositoryFingerprintPass(root, learnedDigests = new Map(), deadl
     });
     if (!sameFingerprintIdentity(current, learned.identity)) throw learningFileChanged(rel);
   }
-  const finalDirectorySnapshot = await rejectSpecialEntries(root, root, "", null, { deadline, entries: 0 });
+  const finalDirectorySnapshot = await rejectSpecialEntries(root, walkWork(deadline));
   if (!sameDirectorySnapshot(finalDirectorySnapshot, directorySnapshot)) {
     throw new Error("repository changed while fingerprinting");
   }
@@ -888,41 +1036,63 @@ async function learnFacts(root, deadline = Date.now() + activeLimits.fingerprint
     if (set.has(path) || !reserveEvidence(Buffer.byteLength(JSON.stringify(path)) + 1, path)) return;
     set.add(path);
   };
-  async function walk(abs, prefix, depth) {
-    if (depth > activeLimits.learnDepth) {
+  // Three steps keep the budgets deterministic while the filesystem calls run concurrently:
+  // scan lists and lstats the tree under the walk pools; decide replays it sequentially in the
+  // original depth-first UTF-8 order, so every evidence, parse and byte budget is charged exactly
+  // as a sequential walk charges it; read then digests the chosen metadata files concurrently,
+  // each bound to its scanned identity AND size, so the budgets decided from the scan stay exact.
+  const work = walkWork(deadline);
+  async function scan(abs, prefix, depth) {
+    abortCheck(work);
+    if (depth > activeLimits.learnDepth) return { limit: "depth-limit" };
+    let names;
+    try { names = await work.directories(() => pinnedDirectoryNames(root, abs, prefix)); }
+    catch (error) {
+      if (error.initReason === "directory-limit") return { limit: "directory-limit" };
+      throw error;
+    }
+    checkFingerprintDeadline(deadline);
+    learnedEntries += names.length;
+    if (learnedEntries > activeLimits.fingerprintEntries) {
+      throw new Error("project learning entry limit exceeded");
+    }
+    const entries = await forEachBounded(work, names, async (name) => {
+      checkFingerprintDeadline(deadline);
+      if (!prefix && (name === ".git" || name === ".muster")) return null;
+      const path = join(abs, name);
+      const info = await lstat(path, { bigint: true });
+      const gitMarker = !info.isSymbolicLink() && info.isDirectory() && await realGitMarker(path);
+      return { gitMarker, info, name, path, rel: prefix ? `${prefix}/${name}` : name };
+    });
+    const children = await settleInOrder(work, entries.map((entry) => (
+      entry && !entry.info.isSymbolicLink() && entry.info.isDirectory() && !entry.gitMarker ?
+        scan(entry.path, entry.rel, depth + 1) : Promise.resolve(null)
+    )));
+    return { children, entries };
+  }
+  const reads = [];
+  function decide(node, prefix) {
+    if (node.limit === "depth-limit") {
       addLimitation(prefix, "depth-limit");
       return;
     }
-    let names;
-    try { names = await pinnedDirectoryNames(root, abs, prefix); }
-    catch (error) {
-      if (error.initReason === "directory-limit") {
-        addLimitation(prefix || "project-root", "directory-limit");
-        return;
-      }
-      throw error;
+    if (node.limit === "directory-limit") {
+      addLimitation(prefix || "project-root", "directory-limit");
+      return;
     }
-    for (const name of names) {
-      checkFingerprintDeadline(deadline);
-      learnedEntries++;
-      if (learnedEntries > activeLimits.fingerprintEntries) {
-        throw new Error("project learning entry limit exceeded");
-      }
-      if (!prefix && (name === ".git" || name === ".muster")) continue;
-      const rel = prefix ? `${prefix}/${name}` : name;
-      const path = join(abs, name);
-      const info = await lstat(path, { bigint: true });
-      if (info.isSymbolicLink()) continue;
+    node.entries.forEach((entry, index) => {
+      if (!entry) return;
+      const { info, name, path, rel } = entry;
+      if (info.isSymbolicLink()) return;
       if (info.isDirectory()) {
         if (SOURCE_NAMES.has(name)) addRoot(sourceRoots, rel);
         if (TEST_NAMES.has(name)) addRoot(testRoots, rel);
-        if (await realGitMarker(path)) continue;
-        await walk(path, rel, depth + 1);
+        if (!entry.gitMarker) decide(node.children[index], rel);
       } else if (info.isFile()) {
         const dot = name.lastIndexOf(".");
         const suffix = dot >= 0 ? name.slice(dot).toLowerCase() : null;
         if (LANGUAGE_SUFFIXES.has(suffix)) extensions.add(suffix);
-        if (!MANIFEST_NAMES.has(name) && !INSTRUCTION_NAMES.has(name)) continue;
+        if (!MANIFEST_NAMES.has(name) && !INSTRUCTION_NAMES.has(name)) return;
         if (info.size > BigInt(Number.MAX_SAFE_INTEGER) ||
             info.size > BigInt(activeLimits.fingerprintTotalBytes - learnedBytes)) {
           throw new Error("project learning byte limit exceeded");
@@ -930,25 +1100,33 @@ async function learnFacts(root, deadline = Date.now() + activeLimits.fingerprint
         const factBytes = Buffer.byteLength(JSON.stringify({
           bytes: Number.MAX_SAFE_INTEGER, path: rel, sha256: "0".repeat(64),
         })) + 2;
-        if (!reserveEvidence(factBytes, rel)) continue;
+        if (!reserveEvidence(factBytes, rel)) return;
         const parse = name === "package.json" && info.size <= BigInt(activeLimits.learnFileBytes) &&
           info.size <= BigInt(activeLimits.learnCaptureBytes - capturedBytes);
-        const opened = await readLearningMetadata(root, path, rel, info, parse, deadline, afterLearningOpen);
-        learnedBytes += opened.size;
-        capturedBytes += opened.bytes?.length || 0;
-        digests.set(rel, opened);
+        learnedBytes += Number(info.size);
+        if (parse) capturedBytes += Number(info.size);
         if (name === "package.json" && !parse) addLimitation(rel, "parse-limit");
-        rows.push({
-          bytes: opened.size,
-          content: opened.bytes,
-          instruction: INSTRUCTION_NAMES.has(name),
-          path: rel,
-          sha256: opened.digest,
-        });
+        reads.push({ info, name, parse, path, rel });
       }
-    }
+    });
   }
-  await walk(root, "", 0);
+  decide(await scan(root, "", 0), "");
+  const opened = await forEachBounded(work, reads, async ({ info, parse, path, rel }) => {
+    const result = await readLearningMetadata(root, path, rel, info, parse, deadline, afterLearningOpen);
+    if (result.size !== Number(info.size)) throw learningFileChanged(rel);
+    return result;
+  });
+  reads.forEach(({ name, rel }, index) => {
+    const result = opened[index];
+    digests.set(rel, result);
+    rows.push({
+      bytes: result.size,
+      content: result.bytes,
+      instruction: INSTRUCTION_NAMES.has(name),
+      path: rel,
+      sha256: result.digest,
+    });
+  });
   limitations.sort((a, b) => utf8Sort(a.path, b.path) || utf8Sort(a.reason, b.reason));
   return { digests, extensions, limitations, rows, sourceRoots, testRoots };
 }
@@ -979,7 +1157,7 @@ function boundSerializedProfile(profile) {
 export async function learnProjectProfile(dir, { __afterLearningOpen } = {}) {
   const root = await validateRoot(dir);
   const deadline = Date.now() + activeLimits.fingerprintDeadlineMs;
-  const learningSnapshot = await rejectSpecialEntries(root, root, "", null, { deadline, entries: 0 });
+  const learningSnapshot = await rejectSpecialEntries(root, walkWork(deadline));
   const vcs = await rootVcs(root);
   const owned = await readOwned(root);
   const classification = owned?.receipt.classification ?? await classify(root);

@@ -276,7 +276,9 @@ this eval), **deliberate-none** (out of scope for this eval, with a stated reaso
 
 `init.md` and `design.md` are covered by prompt lint plus their focused contract suites.
 They perform filesystem and context lifecycle work that the no-I/O response grader does
-not model.
+not model. `write-book.md` (2026-11-10) is the same kind of surface: it only sequences the
+`muster:book` Workflow and the `muster book` CLI, graded by `test/book-workflow.test.js`
+(stubbed Workflow globals) and `test/book-ledger.test.js` (the canon ledger).
 
 ### Skill-protocol skills (`plugin/skills/*/SKILL.md`, 22: the 10 below + router + improve + 10 audit-pattern-* hunt-list skills)
 

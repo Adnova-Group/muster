@@ -8,6 +8,9 @@ plugin/builtins/intent-*/** -text
 plugin/builtins/typeui/** -text
 plugin/builtins/pfd/** -text
 plugin/agents/intent-*.md -text
+# Book-authoring craft sources (sepia, creative-writing-skills): verbatim references are their own base copies.
+plugin/builtins/sepia/** -text
+plugin/builtins/cws-*/** -text
 # Generated Claude plugin runtime (scripts/build-plugin-runtime.mjs): stored byte-exact so
 # `npm run check:plugin` can compare it with a fresh build. Never hand-merge it: rebuild it.
 plugin/runtime/cli/** -text -diff linguist-generated=true

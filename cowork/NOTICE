@@ -28,6 +28,23 @@ Per-item detail (upstream path, ref, relation) is in each item's `upstream:` fie
   Copyright (c) 2026 Elaya
 - jakubkrehel/skills @ 72bdd6121cd595f47fd21c9f23e374028c9cbacd (MIT)
   Copyright (c) 2026 Jakub Krehel
+- Nanako0129/sepia @ 0eb11d6c64c962fcc35f596c167c6e38045d6cb8 (MIT)
+  Copyright (c) 2026 Nanako Tsai
+- haowjy/creative-writing-skills @ 15003a6fd5a1ce92ff49a13187d648c426c03080 (Apache-2.0)
+- danjdewhurst/story-skills @ 3c0e0346ee09ded32546d9481ac18ec5324f02c3 (MIT)
+  Copyright (c) 2026 Daniel Dewhurst
+- Calliope-Editor/writing-skills @ 2fad031982cbbcb00c4da14c2fc9712d2daa78da (MIT)
+  Copyright (c) 2026 Rhymenoceros s. r. o. (Calliope)
+- epicsagas/Velith @ 5ddd29675c5fd00e2c5b3bb095b7ac3749a22c90 (Apache-2.0)
+- clutcher/book-writing-skills @ 0bea387d1fe1936667373036e43e9f425cb3415e (MIT)
+  Copyright (c) 2026 Igor Zarvanskyi
+- PenglongHuang/chinese-novelist-skill @ 507d41567925eab520ad459db08fda83813e8051 (MIT)
+  Copyright (c) 2026 PenglongHuang
+- howells/fiction @ 2f256acbfce6a90ba0bcf819fb9dea95663b23cd (NONE)
+- felipelobomotta-blip/book-genesis-studio @ 88e2e0047ad293564b2fae80b6e0043e24fd23b9, a43a429bdec1770232ee64e7de634c5ce5109b80 (MIT)
+  formerly: felipelobomotta-blip/book-genesis-v4
+  Copyright (c) 2026 Philip Stark
+  Copyright (c) 2026 Felipe Lobo
 - open-gsd/gsd-core @ 9385f4618b52ef68ed8a5e8bdd93cfb25bd87765, 1c352d1ea37b010e99b8353905eb5def4f784100 (MIT)
   Copyright (c) 2026 Open GSD
 - nextlevelbuilder/ui-ux-pro-max-skill @ 4f2dbb67e64969a9a30ab00742f2d55d66ddec2b (MIT)
@@ -57,9 +74,6 @@ Per-item detail (upstream path, ref, relation) is in each item's `upstream:` fie
   Copyright (c) 2024 Jonathan Shobrook
 - gepa-ai/gepa @ 92dadfffbe98c8ecf508179a1cab09c1bb85cd32 (MIT)
   Copyright © 2025 Lakshya A Agrawal
-- felipelobomotta-blip/book-genesis-studio @ a43a429bdec1770232ee64e7de634c5ce5109b80 (MIT)
-  formerly: felipelobomotta-blip/book-genesis-v4
-  Copyright (c) 2026 Felipe Lobo
 - NousResearch/autonovel @ d165f267a0ffd34f3b0a70a8a72ac38cb8e4a542 (NONE)
 - CSHaitao/Awesome-LLMs-as-Judges @ d89ed4241b8199ff504aea009920c1cf4dded2f1 (NONE)
 - llm-as-a-judge/Awesome-LLM-as-a-judge @ ad3b4ce1d869129f8527d4c6bcf2a8111582cb98 (NONE)
@@ -108,6 +122,7 @@ Per-item detail (upstream path, ref, relation) is in each item's `upstream:` fie
 Items are also based on the works below. Muster takes ideas, frameworks or structure
 from them and carries none of their text; they are credited, not reproduced.
 
+- How to Write a Novel Using the Snowflake Method, Randy Ingermanson (book)
 - Unlock AI: Open Engine and Open Skills, Nate B. Jones (person)
   https://unlock-ai.natebjones.com/
 - Building effective agents, Erik Schluntz and Barry Zhang (Anthropic) (article)

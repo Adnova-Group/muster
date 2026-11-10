@@ -255,7 +255,7 @@ both numbers on every test run from the live prose tree, so this table cannot si
 stale:
 
 ```
-AskUserQuestion    files=7  mentions=17
+AskUserQuestion    files=8  mentions=18
 dispatch (Agent/Task tool)  files=2  mentions=8
 hook (PreToolUse/SessionStart/UserPromptSubmit)  files=2  mentions=3
 worktree   files=8  mentions=55
@@ -267,6 +267,8 @@ domain-router, review-gate, tournament and coordination skills, the muster-runne
 `TaskCompleted` gate were deleted, and the ten audit-pattern hunt lists moved out of
 `plugin/skills/`. Earlier per-item refresh notes described prose that no longer exists and were
 dropped; the test re-derives every number from the live tree.
+2026-11-10: `write-book.md` (book runs) adds one AskUserQuestion mention (the attended
+clarifying questions before the outline).
 
 Every one of those mentions is accounted for above: AskUserQuestion under Ask; Agent/Task tool
 and `subagent_type` under Dispatch; hook/PreToolUse/SessionStart/UserPromptSubmit under

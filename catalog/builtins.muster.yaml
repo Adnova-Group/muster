@@ -5,6 +5,13 @@
   roles: [author]
   rank: 50
   provenance: { license: Apache-2.0, upstream: [WynterJones/CoppieGPT, boraoztunc/skills] }
+- id: book-run
+  kind: builtin
+  roles: [author]
+  rank: 40
+  keywords: [book, novel, manuscript, chapter, canon, continuity, nonfiction]
+  description: "Book runs: canon ledger, continuity debts, outline methods, POV and tense discipline, nonfiction structure."
+  provenance: { license: Apache-2.0, upstream: [danjdewhurst/story-skills, Calliope-Editor/writing-skills, epicsagas/Velith, clutcher/book-writing-skills, NousResearch/autonovel] }
 - id: muster-research
   kind: builtin
   roles: [research]

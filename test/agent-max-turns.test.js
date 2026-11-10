@@ -58,6 +58,9 @@ const CLASS_MAP = {
     // intent UX agents that produce artifacts: experience design and the build handoff.
     "intent-wren",
     "intent-rune",
+    // book workflow seats that write: chapter drafts and fixes, in-place line edits.
+    "book-writer",
+    "book-line-editor",
   ],
   // review/strategy -- gates other work (verdicts, architecture, retrospectives);
   // needs headroom for a deep re-read plus re-verification, coherent with Codex's
@@ -78,6 +81,10 @@ const CLASS_MAP = {
     "intent-noor",
     "intent-vigil",
     "intent-sage",
+    // book workflow seats that judge a whole chapter or manuscript (read-only, deep re-reads).
+    "book-continuity-checker",
+    "book-developmental-editor",
+    "book-beta-reader",
   ],
   // security -- the one rare, high-consequence xhigh lane, coherent with Codex's
   // own 14-heartbeat wsh-security-auditor-specific extension ceiling (PR #83).

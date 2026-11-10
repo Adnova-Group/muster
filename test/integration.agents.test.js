@@ -60,7 +60,9 @@ test("the ladder prefers installed external agent > muster agent > skill", async
 // from plugin/workflows/*.js, never through capability routing, and they have no Codex
 // profile (Workflow is a Claude Code primitive). So they carry no catalog entry; the
 // executor and reviewer seats replace routable agents and keep theirs.
-const WORKFLOW_ONLY_SEATS = ["muster-planner", "muster-plan-checker", "muster-verifier"];
+// The book-* seats are dispatched the same way, by plugin/workflows/book.js only.
+const WORKFLOW_ONLY_SEATS = ["muster-planner", "muster-plan-checker", "muster-verifier",
+  "book-writer", "book-continuity-checker", "book-developmental-editor", "book-line-editor", "book-beta-reader"];
 
 test("every plugin/agents/*.md has a catalog entry and every agent entry has a file", async () => {
   const catalog = await loadCatalog(CATALOG);

@@ -542,7 +542,9 @@ test("C2c: collectScanFiles excludes files inside .agents (codex build-staging m
 // 3-way-merged adaptations, so rewriting them to satisfy muster's linter would turn verbatim
 // files into adapted ones and make every upstream update conflict. Muster-authored prompts and
 // the adapted gsd lifecycle seats stay in scope.
-const UPSTREAM_PROMPT_SOURCES = new Set(["uupm", "intent", "typeui", "pfd"]);
+// The book-authoring craft sources (sepia, creative-writing-skills; 2026-11-10) are the same kind
+// of merge-tracked upstream text, read by path by the book-* agents.
+const UPSTREAM_PROMPT_SOURCES = new Set(["uupm", "intent", "typeui", "pfd", "sepia", "creative-writing-skills"]);
 async function upstreamPromptFiles(repoRoot) {
   const manifest = parseYaml(await readFile(path.join(repoRoot, "vendor", "manifest.yaml"), "utf8"));
   return new Set(manifest.sources.filter((s) => UPSTREAM_PROMPT_SOURCES.has(s.id))

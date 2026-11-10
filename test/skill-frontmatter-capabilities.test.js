@@ -69,6 +69,7 @@ const EXPECTED_ARGUMENT_HINTS = {
   go: "<outcome | backlog ref>",
   init: "[dir]",
   plan: "<outcome | backlog ref>",
+  "write-book": "<brief | --run id>",
 };
 
 test("every plugin/commands/*.md file carries argument-hint, matching the Usage string already in its description", async () => {

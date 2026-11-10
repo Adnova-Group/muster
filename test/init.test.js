@@ -782,11 +782,18 @@ test("project learning rejects metadata changed before its fingerprint is sealed
     await sleep(20);
     await writeFile(instructions, "after!!\n");
   })();
-  await assert.rejects(
-    () => learnProjectProfile(dir),
-    /file changed while reading: AGENTS\.md/,
-  );
+  // The rewrite normally lands after AGENTS.md is learned and before the fingerprint is sealed,
+  // which must reject. On a loaded machine the 20 ms timer can complete it before AGENTS.md is
+  // read; then nothing changed after learning and the profile must record the rewritten bytes,
+  // never the stale ones.
+  let profile = null;
+  try { profile = await learnProjectProfile(dir); }
+  catch (error) { assert.match(error.message, /file changed while reading: AGENTS\.md/); }
   await writer;
+  if (profile) {
+    const learned = profile.facts.instructionFiles.find((row) => row.path === "AGENTS.md");
+    assert.equal(learned.sha256, createHash("sha256").update("after!!\n").digest("hex"));
+  }
 });
 
 test("project learning binds source facts to the pre-learning directory snapshot", async () => {

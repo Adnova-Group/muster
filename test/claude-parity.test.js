@@ -1564,6 +1564,7 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // the passing prefix of waves (whole-result checks still refuse everything), records
   // merge-refusal.json for `next --run`, and build-args takes --from-wave N for the rebuild; the
   // bundled runtime is rebuilt, go.md steps 6-7 and its resume map report a partial merge, and
-  // the orchestrator's escalation rule names it. Deliberate, not drift.
-  assert.equal(hash.digest("hex"), "62988a33a008d4d0a66614ccdaa1ed8861d930cb4a4906d34e26d3af719f53e5");
+  // the orchestrator's escalation rule names it; the workflows name a rebuilt wave by its plan
+  // number in halted and progress text. Deliberate, not drift.
+  assert.equal(hash.digest("hex"), "50756b3bee5f4862fde94e37ea30d9dd295811758ef028a3a3b2e75872d76f96");
 });

@@ -148,7 +148,7 @@ const USAGE = [
   // manifest + waves: validate, order, and drive a plan
   "manifest validate <file> [--work]|wave <file>|next <manifest.json> [--done a,b]|",
   // stage-2 run steps: one-call preflight, deterministic wave merge, run position
-  "preflight <outcome> [--json] [--run <id>] [--model <model>]|build-args <runId> [--base <sha>]|pipeline-args <runId> [--pipeline <id>] [--out <path>] [--with <phase,...>]|merge-wave <runId> --result <build-result.json>|next --run <id>|plan-lint <PLAN.md> [--json] [--root <dir>]|spec-lint <SPEC.md> [--intent] [--json] [--root <dir>]|spec-context <runId> [--spec <path>]|spec-clarify <SPEC.md> [--date <YYYY-MM-DD>]|spec-trace <runId> [--accept <IDs>] [--coverage] [--json]|book <init|args|record|amend|close|status> <runId> ...|",
+  "preflight <outcome> [--json] [--run <id>] [--model <model>]|build-args <runId> [--base <sha>] [--from-wave <n>]|pipeline-args <runId> [--pipeline <id>] [--out <path>] [--with <phase,...>]|merge-wave <runId> --result <build-result.json>|next --run <id>|plan-lint <PLAN.md> [--json] [--root <dir>]|spec-lint <SPEC.md> [--intent] [--json] [--root <dir>]|spec-context <runId> [--spec <path>]|spec-clarify <SPEC.md> [--date <YYYY-MM-DD>]|spec-trace <runId> [--accept <IDs>] [--coverage] [--json]|book <init|args|record|amend|close|status> <runId> ...|",
   // performance pass + gate helpers
   "resolve-cli|gate-cadence <manifest.json> [--changed-lines N]|wave-dispatch [--agent-teams|--no-agent-teams]|codex-wave <wave.json> --fence-file <action-fence.json> --repository-root <repo> --base-sha <sha>|codex-wave-resume <receipt-id> --review-state <file>|worktree-isolation --harness <claude-code|claude-desktop|hermes|codex>|plan-surface <runtime>|codex-plan <outcome> [--cwd <dir>]|desktop-harness <chatgpt-desktop|codex-desktop|gpt-work>|fast-path <outcome> [--capabilities <file>]|review-brief --reviewer-count <n> [--diff-files <file>] [--diff-text-file <file>]|",
   // sprint waves, review tally, tournament pick/fuse, advisor
@@ -1532,8 +1532,16 @@ async function handleRunCommand(cmd, rest) {
     if (!report.ok) process.exit(1);
     return true;
   } else if (cmd === "build-args") {
-    const runId = rest.find((a, i) => !a.startsWith("-") && rest[i - 1] !== "--base");
-    if (!runId) fail("build-args <runId> [--base <sha>]: missing runId");
+    const usage = "build-args <runId> [--base <sha>] [--from-wave <n>]";
+    const runId = rest.find((a, i) => !a.startsWith("-") && rest[i - 1] !== "--base" && rest[i - 1] !== "--from-wave");
+    if (!runId) fail(`${usage}: missing runId`);
+    // --from-wave N: rebuild only waves N and later after a partial merge-wave (`next --run` names N).
+    let fromWave = null;
+    if (rest.includes("--from-wave")) {
+      const raw = flagValue(rest, "--from-wave");
+      fromWave = /^[1-9][0-9]*$/.test(raw || "") ? Number(raw) : null;
+      if (fromWave === null) fail(`${usage}: --from-wave needs a wave number (1, 2, ...)`);
+    }
     let base = flagValue(rest, "--base");
     if (!base) {
       // No trusted git (or no repo): build without a base; merge-wave still checks every commit.
@@ -1549,7 +1557,7 @@ async function handleRunCommand(cmd, rest) {
       const b = spawnSync(assertTrustedGitCommand(), ["symbolic-ref", "--quiet", "--short", "HEAD"], { encoding: "utf8" });
       branch = b.status === 0 ? b.stdout.trim() || null : null;
     } catch { branch = null; }
-    const report = await writeBuildArgs({ cwd: process.cwd(), runId, base, branch });
+    const report = await writeBuildArgs({ cwd: process.cwd(), runId, base, branch, fromWave });
     out(report);
     if (!report.ok) process.exit(1);
     return true;

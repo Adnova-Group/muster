@@ -720,6 +720,9 @@ async function runTeam(cfg) {
   const pre = cfg.labelPrefix || ''
   const top = topologyOf(cfg)
   const waves = Array.isArray(cfg.waves) ? cfg.waves.map(list) : []
+  // A --from-wave N rebuild starts at plan wave N: human-facing text uses plan numbering; the
+  // per-task `wave` field stays relative (merge-wave offsets it by the committed fromWave).
+  const planWave = (w) => w + (Number.isInteger(cfg.fromWave) && cfg.fromWave > 1 ? cfg.fromWave : 1)
   const tasks = []
   const integration = []
   const prior = []
@@ -731,7 +734,7 @@ async function runTeam(cfg) {
       for (const t of wave) tasks.push({ ...emptyExec(t, 'blocked', `skipped: ${halted}`), title: t.title || '', wave: w + 1, verify: list(t.verify), red: null, seats: [], review: null })
       continue
     }
-    log(`${pre}wave ${w + 1}/${waves.length}: ${wave.length} task(s), ${wave.filter((t) => isTdd(top, t)).length} test-first`)
+    log(`${pre}wave ${planWave(w)}/${planWave(waves.length - 1)}: ${wave.length} task(s), ${wave.filter((t) => isTdd(top, t)).length} test-first`)
     const before = prior.slice()
     const results = await pipeline(
       wave,
@@ -748,7 +751,7 @@ async function runTeam(cfg) {
     }
     tasks.push(...done)
     const bad = done.filter((r) => !passed(r))
-    if (bad.length && !halted) halted = `wave ${w + 1} did not pass (${bad.map((r) => r.taskId).join(', ')})`
+    if (bad.length && !halted) halted = `wave ${planWave(w)} did not pass (${bad.map((r) => r.taskId).join(', ')})`
     if (!halted) prior.push(...done.map((r) => ({ taskId: r.taskId, commit: r.commit })))
   }
   if (halted) log(`${pre}halted: ${halted}`)

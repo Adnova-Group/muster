@@ -68,6 +68,12 @@ function happy(label, prompt) {
 // ---- build / backlog / team ----------------------------------------------------------------
 
 for (const name of ["build.js", "team.js"]) {
+  test(`${name}: a --from-wave rebuild names the halted wave by its plan number; task records stay relative`, async () => {
+    const { result } = await run(name, { runId: "r1", fromWave: 2, waves: [[task("A")]] }, (label, prompt, opts) => (label === "build A" ? turnLimited() : happy(label, prompt, opts)));
+    assert.match(result.halted, /wave 2 did not pass \(A\)/);
+    assert.equal(result.tasks[0].wave, 1, "merge-wave offsets the relative wave by the committed fromWave");
+  });
+
   test(`${name}: a turn-limited builder is status error with reason max_turns, never retried in a fresh worktree, and halts the run`, async () => {
     const { result, labels } = await run(name, { runId: "r1", waves: [[task("A")], [task("B")]] }, (label, prompt, opts) => {
       if (label === "build A") return turnLimited();

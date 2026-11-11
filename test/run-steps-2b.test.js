@@ -114,6 +114,44 @@ test("build-args CLI exits 1 with problems and 0 with the report", async () => {
   assert.equal(JSON.parse(ok.stdout).path, ".muster/runs/r1/build-args.json");
 });
 
+test("build-args --from-wave N keeps waves N and later for a rebuild after a partial merge-wave", async () => {
+  const { args, problems } = buildArgsFromPlan(PLAN, { runId: "r1", base: "abc", fromWave: 2 });
+  assert.deepEqual(problems, []);
+  assert.equal(args.fromWave, 2, "merge-wave numbers the remaining waves as the plan does");
+  assert.deepEqual(args.waves.map((w) => w.map((t) => t.taskId)), [["02"]]);
+  assert.deepEqual(taskLines(args), ["W2 02 · muster-executor · -"]);
+  assert.equal(buildArgsFromPlan(PLAN, { runId: "r1", fromWave: 1 }).args.fromWave, undefined, "wave 1 is the whole plan");
+  assert.match(buildArgsFromPlan(PLAN, { runId: "r1", fromWave: 3 }).problems.join(";"), /--from-wave 3 is not a wave of PLAN\.md \(it has 2\)/);
+
+  const root = await trackedMkdtemp(join(tmpdir(), "muster-build-args-from-wave-"));
+  await mkdir(join(root, ".muster/runs/r1"), { recursive: true });
+  await writeFile(join(root, ".muster/runs/r1/PLAN.md"), PLAN);
+  const r = cli(root, ["build-args", "r1", "--from-wave", "2", "--base", "abc"]);
+  assert.equal(r.status, 0, r.stderr);
+  const report = JSON.parse(r.stdout);
+  assert.deepEqual([report.fromWave, report.waves, report.tasks], [2, [["02"]], ["W2 02 · muster-executor · -"]]);
+  const file = JSON.parse(await readFile(join(root, ".muster/runs/r1/build-args.json"), "utf8"));
+  assert.equal(file.digests.args, argsDigest(file), "fromWave is digested with the rest of the args");
+  assert.equal(file.digests.plan, planDigest(PLAN), "the plan is unchanged");
+  assert.equal(cli(root, ["build-args", "r1", "--from-wave", "0"]).status, 1);
+  assert.equal(cli(root, ["build-args", "r1", "--from-wave", "9", "--base", "abc"]).status, 1);
+});
+
+test("a runs/.gitignore an older muster wrote gains merge-refusal.json; a user's own stays as it is", async () => {
+  const { ensureRunDir, RUNS_GITIGNORE } = await import("../src/run-dir.js");
+  const root = await trackedMkdtemp(join(tmpdir(), "muster-runs-ignore-"));
+  await mkdir(join(root, ".muster/runs"), { recursive: true });
+  const old = "# Written by muster: machine-local run files, never committed.\n.gitignore\n*/preflight.json\n*/build-result.json\n";
+  await writeFile(join(root, ".muster/runs/.gitignore"), old);
+  await ensureRunDir(root, "r1");
+  assert.equal(await readFile(join(root, ".muster/runs/.gitignore"), "utf8"), RUNS_GITIGNORE);
+  await ensureRunDir(root, "r1");
+  assert.equal(await readFile(join(root, ".muster/runs/.gitignore"), "utf8"), RUNS_GITIGNORE, "idempotent");
+  await writeFile(join(root, ".muster/runs/.gitignore"), "mine\n");
+  await ensureRunDir(root, "r1");
+  assert.equal(await readFile(join(root, ".muster/runs/.gitignore"), "utf8"), "mine\n");
+});
+
 test("build-args stdout carries the task lines, the workflow and the exact args, so the session never re-reads the file", async () => {
   // Run 1 (first live e2e) spent three turns re-reading build-args.json: twice to print the
   // task lines go.md asks for, once to pass the file verbatim to the build Workflow.

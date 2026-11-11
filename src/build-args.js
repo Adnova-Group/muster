@@ -1,4 +1,4 @@
-// `muster build-args <runId> [--base <sha>]`: derive the exact `muster:build` Workflow args
+// `muster build-args <runId> [--base <sha>] [--from-wave <n>]`: derive the exact `muster:build` Workflow args
 // from the run's approved PLAN.md (docs/strategy/stage-2-contracts.md, amendment 1). The main
 // thread commits the written file before building; merge-wave trusts only that committed copy
 // for merge order, titles and the verify commands it re-runs. Deterministic: one Bash call
@@ -30,7 +30,10 @@ function verifyCommands(verifyBody) {
 // `pins` ([{id, role?, path}], src/skill-pins.js) are the project's pinned skills: each is
 // appended to every task it applies to (all tasks, or the tasks carrying its role).
 // `cli` is the absolute CLI prefix (src/specialists.js musterCli) for bound skills that run it.
-export function buildArgsFromPlan(planText, { runId, base = null, branch = null, models = null, catalog = specialistCatalog(), pins = [], cli = null } = {}) {
+// `fromWave` N (a rebuild after a partial merge-wave: waves before N are already merged) keeps
+// only waves N and later and records `fromWave: N`, so merge-wave numbers them as the plan does.
+// N counts the plan's waves in order, from 1: the W<n> of taskLines.
+export function buildArgsFromPlan(planText, { runId, base = null, branch = null, models = null, catalog = specialistCatalog(), pins = [], cli = null, fromWave = null } = {}) {
   const plan = parsePlan(planText);
   const problems = [];
   const humanNeeded = [];
@@ -68,9 +71,13 @@ export function buildArgsFromPlan(planText, { runId, base = null, branch = null,
     if (!byWave.has(t.wave)) byWave.set(t.wave, []);
     byWave.get(t.wave).push(task);
   }
-  const waves = [...byWave.keys()].sort((a, b) => a - b).map((w) => byWave.get(w));
+  let waves = [...byWave.keys()].sort((a, b) => a - b).map((w) => byWave.get(w));
   if (!waves.length) problems.push("PLAN.md has no buildable tasks");
-  const args = { runId, ...(base ? { base } : {}), ...(branch ? { branch } : {}), ...(models ? { models } : {}), ...(cli ? { cli } : {}), waves };
+  const from = fromWave === null || fromWave === undefined ? 1 : fromWave;
+  if (!Number.isInteger(from) || from < 1 || (waves.length && from > waves.length)) {
+    problems.push(`--from-wave ${fromWave} is not a wave of PLAN.md (it has ${waves.length})`);
+  } else waves = waves.slice(from - 1);
+  const args = { runId, ...(base ? { base } : {}), ...(branch ? { branch } : {}), ...(models ? { models } : {}), ...(cli ? { cli } : {}), ...(from > 1 ? { fromWave: from } : {}), waves };
   return { args, humanNeeded, problems };
 }
 
@@ -91,7 +98,8 @@ export const workflowFor = (args) => (args.waves.some((w) => w.length > 1 || w.s
 // One line per task, exactly what go.md tells the session to print:
 // `<taskId> · <agent_hint or muster-executor> · <skills or ->` (+ ` · tdd`).
 export function taskLines(args) {
-  return args.waves.flatMap((w, i) => w.map((t) => `W${i + 1} ${t.taskId} · ${t.agentHint || "muster-executor"} · ${(t.skills || []).map((k) => k.id).join(", ") || "-"}${t.tdd ? " · tdd" : ""}`));
+  const first = Number.isInteger(args.fromWave) ? args.fromWave : 1;
+  return args.waves.flatMap((w, i) => w.map((t) => `W${first + i} ${t.taskId} · ${t.agentHint || "muster-executor"} · ${(t.skills || []).map((k) => k.id).join(", ") || "-"}${t.tdd ? " · tdd" : ""}`));
 }
 
 async function readJsonOrNull(path) {
@@ -102,7 +110,7 @@ async function readJsonOrNull(path) {
 // report that carries everything go.md steps 4-5 need (the task lines to print, the workflow to
 // run and the exact args to pass), so the session never re-reads the file. ok:false leaves no
 // file behind.
-export async function writeBuildArgs({ cwd, runId, base = null, branch = null }) {
+export async function writeBuildArgs({ cwd, runId, base = null, branch = null, fromWave = null }) {
   const dir = runDir(cwd, runId);
   let planText;
   try { planText = await readFile(join(dir, "PLAN.md"), "utf8"); } catch {
@@ -112,13 +120,14 @@ export async function writeBuildArgs({ cwd, runId, base = null, branch = null })
   const catalog = specialistCatalog();
   let pinned = { pins: [], warnings: [] };
   try { pinned = resolvePins(cwd, catalog); } catch (e) { pinned.warnings.push(e.message); }
-  const { args, humanNeeded, problems } = buildArgsFromPlan(planText, { runId, base, branch, models, catalog, pins: pinned.pins, cli: musterCli() });
+  const { args, humanNeeded, problems } = buildArgsFromPlan(planText, { runId, base, branch, models, catalog, pins: pinned.pins, cli: musterCli(), fromWave });
   const rel = `.muster/runs/${runId}/build-args.json`;
   if (problems.length) return { ok: false, runId, problems, humanNeeded };
   args.digests = { plan: planDigest(planText), args: argsDigest(args) };
   await writeContainedFile(cwd, join(dir, "build-args.json"), JSON.stringify(args, null, 2) + "\n");
   return {
     ok: true, runId, path: rel, base: args.base || null,
+    ...(args.fromWave ? { fromWave: args.fromWave } : {}),
     waves: args.waves.map((w) => w.map((t) => t.taskId)),
     tasks: taskLines(args),
     workflow: workflowFor(args),

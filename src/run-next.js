@@ -3,7 +3,7 @@
 // derived head of STATE.md. The `## Log` section that merge-wave appends is preserved.
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { readState, runDir, writeStateHead } from "./run-dir.js";
+import { MERGE_REFUSAL, mergeInputs, readState, runDir, sameMergeInputs, writeStateHead } from "./run-dir.js";
 import { parsePlan } from "./plan-lint.js";
 
 // The Workflow tool returns `{summary, agentCount, logs, result}`; the main thread may save that
@@ -52,6 +52,23 @@ export function planCheckRecord(text) {
   return { verdict: escalated && verdict === "PASS" ? "ISSUES" : verdict, escalated, blockers };
 }
 
+// merge-refusal.json (src/merge-wave.js). Anything unreadable is a refusal, never a pass.
+export function mergeRefusalRecord(text) {
+  let j;
+  try { j = JSON.parse(text || ""); } catch { j = null; }
+  if (!j || typeof j !== "object") return { kind: "refused", problems: [`${MERGE_REFUSAL} is unreadable`], wavesMerged: [], failedWave: null, unreadable: true };
+  const problems = (Array.isArray(j.problems) ? j.problems : []).map(String);
+  const failedWave = Number.isInteger(j.failedWave) && j.failedWave > 0 ? j.failedWave : null;
+  return {
+    kind: j.kind === "partial" && failedWave ? "partial" : "refused",
+    problems, failedWave,
+    wavesMerged: Array.isArray(j.wavesMerged) ? j.wavesMerged.filter(Number.isInteger) : [],
+    resultDigest: j.resultDigest ?? null, digests: j.digests ?? null,
+  };
+}
+
+const clip = (s, n = 900) => (s.length > n ? `${s.slice(0, n)}...` : s);
+
 function mergedTasks(state) {
   const ids = new Set();
   for (const m of state.matchAll(/merge-wave: merged (\S+) /g)) ids.add(m[1]);
@@ -82,6 +99,15 @@ export async function nextForRun({ cwd, runId }) {
   // plan that never passed the checker (live e2e 2026-11-10, runs 2 and 3).
   const planCheck = has("plan-check.json") ? planCheckRecord(await readOrNull(join(dir, "plan-check.json"))) : null;
   const rel = `.muster/runs/${runId}`;
+  // merge-wave's refusal record binds only while the build result and build-args digests it
+  // judged are unchanged: re-running merge-wave on the same inputs can only fail the same way.
+  // A partial merge stays open until a new build result arrives: new build args alone (the
+  // `--from-wave` rebuild's, before its build ran) still leave the failed waves to build, and
+  // re-running build-args then is harmless.
+  const refusal = has(MERGE_REFUSAL) ? mergeRefusalRecord(await readOrNull(join(dir, MERGE_REFUSAL))) : null;
+  const refusalInputs = refusal && !refusal.unreadable ? await mergeInputs(cwd, runId) : null;
+  const refusalCurrent = !!refusal && (refusal.unreadable || sameMergeInputs(refusal, refusalInputs) ||
+    (refusal.kind === "partial" && refusal.resultDigest === refusalInputs.resultDigest));
 
   // Content runs (muster:pipeline) have pipeline-args.json instead of PLAN.md.
   let pipelineVerdict = null;
@@ -100,6 +126,12 @@ export async function nextForRun({ cwd, runId }) {
     [position, action, why] = ["new", "discuss: run the interview to write CONTEXT.md (or plan directly when preflight says the outcome is clear)", "no CONTEXT.md and no PLAN.md"];
   } else if (!plan) {
     [position, action, why] = ["discussed", `plan: Workflow({name:"muster:make-plan", args:{runId:"${runId}", contextPath:"${rel}/CONTEXT.md", ...}})`, "CONTEXT.md exists, PLAN.md does not"];
+  } else if (refusalCurrent && refusal.kind === "refused") {
+    [position, action, why] = ["merge-refused", `escalate: merge-wave refused the whole build result; show these problems to the user and stop (re-run merge-wave only after a new build result or new build-args digests): ${clip(refusal.problems.join("; "))}`, `${rel}/${MERGE_REFUSAL} records a refusal, and build-result.json and the build-args digests are unchanged since`];
+  } else if (refusalCurrent) {
+    const n = refusal.failedWave;
+    const done = refusal.wavesMerged.length ? `wave(s) ${refusal.wavesMerged.join(", ")} merged` : "no wave merged";
+    [position, action, why] = ["merge-partial", `rebuild: muster build-args ${runId} --from-wave ${n}, commit it (go step 4), then build and merge-wave; ${done}, so verification is not PASS until wave ${n} and later merge`, `${rel}/${MERGE_REFUSAL}: wave ${n} not merged: ${clip(refusal.problems.join("; "))}`];
   } else if (built.some((t) => !merged.includes(t))) {
     [position, action, why] = ["built", `merge: muster merge-wave ${runId} --result ${rel}/build-result.json`, `build-result.json has unmerged tasks: ${built.filter((t) => !merged.includes(t)).join(", ")}`];
   } else if (!has("build-args.json") && !has("build-result.json") && !summarized.length && !merged.length && planCheck?.verdict !== "PASS") {
@@ -128,8 +160,10 @@ export async function nextForRun({ cwd, runId }) {
 
   const report = {
     runId, position, next: action, why,
+    ...(refusalCurrent ? { problems: refusal.problems, ...(refusal.kind === "partial" ? { wavesMerged: refusal.wavesMerged, failedWave: refusal.failedWave } : {}) } : {}),
     artifacts: {
       context: has("CONTEXT.md"), plan: !!plan, planCheck: planCheck ? planCheck.verdict : null, summaries: summarized, buildResult: has("build-result.json"),
+      mergeRefusal: refusal ? (refusalCurrent ? refusal.kind : "superseded") : null,
       verification: verdict, paused: has("continue-here.md"), pipeline: has("pipeline-args.json") ? (pipelineVerdict || "pending") : null,
     },
     tasks: { planned, summarized, merged },
@@ -143,6 +177,7 @@ export async function nextForRun({ cwd, runId }) {
       `- next: ${action}`,
       `- why: ${why}`,
       `- tasks: ${planned.length} planned, ${summarized.length} summarized, ${merged.length} merged`,
+      ...(refusalCurrent ? [`- verification: not PASS: ${refusal.kind === "partial" ? `partial merge, wave ${refusal.failedWave} and later not merged` : "merge-wave refused the build result"}`] : []),
     ].join("\n");
     await writeStateHead(cwd, runId, head);
   }

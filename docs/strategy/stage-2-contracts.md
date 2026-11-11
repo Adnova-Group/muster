@@ -131,12 +131,20 @@ re-runs `testsRun` before merging, through `muster merge-wave`.
      records `digests` of PLAN.md and of its own args, both must match at HEAD, and the build
      result's `argsDigest` must equal the recorded args digest. `--result` may be the Workflow
      tool's output file; merge-wave keeps a copy as `build-result.json`;
-  2. merge the branches in manifest order (`--no-ff`);
+  2. merge the branches in manifest order (`--no-ff`), wave by wave;
   3. re-run each task's `verify` / `testsRun`;
   4. remove the worktrees and branches;
   5. append to `.muster/runs/<id>/STATE.md`.
 
-  Exits non-zero on any mismatch.
+  Exits non-zero on any mismatch. The checks in step 1 that are about the whole result (a
+  malformed result, a dirty tree, the digests, the args digest, result tasks that do not match the
+  args, a branch that edits the run inputs) refuse everything. A per-task problem, a failed
+  integration check, a merge conflict or a failed verify fails only its wave (amendment
+  2026-11-10): the earlier waves stay merged, that wave and later ones do not, and the result says
+  `partial: true` with `wavesMerged` and `failedWave`. Either way merge-wave writes the
+  machine-local `merge-refusal.json`, which `next --run` turns into an escalation (refused) or
+  `muster build-args <id> --from-wave N` (partial) until a new build result or new build-args
+  digests supersede it; a merge-wave that merges everything removes it.
 - `muster next --run <id>`: derives position from files on disk (which of CONTEXT, PLAN, SUMMARY-*,
   VERIFICATION exist) and prints the next action.
 - `muster plan-lint <PLAN.md>`: deterministic gates ported from gsd (failing-direction, verify

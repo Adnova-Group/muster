@@ -1560,5 +1560,10 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // Write), turn-limit handling and omitClaudeMd seats, trimmed always-on descriptions, and
   // impeccable/hallmark/simple-english/jakubkrehel upstream updates; a verification-only task
   // (no files changed) is not a turn-limited result. Deliberate, not drift.
-  assert.equal(hash.digest("hex"), "bab8d46fff3543794b9daeb40afaa1388fc9f6bf0aa7dac37bdaced225688c6e");
+  // Re-pin 2026-11-10b (merge path, content-only, file count unchanged at 917): merge-wave lands
+  // the passing prefix of waves (whole-result checks still refuse everything), records
+  // merge-refusal.json for `next --run`, and build-args takes --from-wave N for the rebuild; the
+  // bundled runtime is rebuilt, go.md steps 6-7 and its resume map report a partial merge, and
+  // the orchestrator's escalation rule names it. Deliberate, not drift.
+  assert.equal(hash.digest("hex"), "62988a33a008d4d0a66614ccdaa1ed8861d930cb4a4906d34e26d3af719f53e5");
 });

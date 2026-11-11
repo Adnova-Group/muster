@@ -44,7 +44,10 @@ workflow would take over `/muster:<name>`.
    Re-scope / Abort, when any of these happen:
    - `muster:make-plan` returns `escalated` (`cap`, `stall`, `conflict`) or `verdict: ERROR`; a
      `conflict` means a checker issue contradicts a D-NN decision, which only the user decides;
-   - `merge-wave` exits non-zero (show its `problems`);
+   - `merge-wave` exits non-zero (show its `problems`). A `partial: true` result kept the waves
+     before `failedWave` merged and is never a PASS; `next --run` then names the rebuild of that
+     wave and later ones (`build-args --from-wave N`). A whole-result refusal merged nothing;
+     `next` escalates on it until a new build result or new build args;
    - a wave halts: a task `blocked`/`error`, a self-check FAILED, or a reviewer FAIL after the
      2-round fix cap;
    - the verifier returns GAPS or ABSTAIN (the branch is kept; GAPS become a re-plan outcome).

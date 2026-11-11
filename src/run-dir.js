@@ -1,7 +1,7 @@
 // Shared helpers for the stage-2 run directory `.muster/runs/<runId>/`
 // (docs/strategy/stage-2-contracts.md). Used by preflight, merge-wave and `next --run`.
 import { join } from "node:path";
-import { createContainedFile, ensureContainedDirectory, readContainedFile, updateContainedFile } from "./fs-safe.js";
+import { createContainedFile, ensureContainedDirectory, readContainedFile, sha256, updateContainedFile } from "./fs-safe.js";
 
 const RUN_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$/;
 
@@ -26,15 +26,51 @@ export function slugRunId(outcome, date = new Date()) {
 // that does not ignore .muster/, that file alone made the tree dirty. This file hides the two
 // machine-local run files and itself (the same patterns as muster's own .gitignore); the run
 // record (CONTEXT.md, PLAN.md, STATE.md...) still shows and is committed with the branch.
-// Created once, never overwritten.
-export const RUNS_GITIGNORE = "# Written by muster: machine-local run files, never committed.\n.gitignore\n*/preflight.json\n*/build-result.json\n";
+// Created once and never overwritten, except that a copy muster wrote (its first line) gains the
+// patterns added since; a user's own file is left alone.
+const RUNS_GITIGNORE_HEADER = "# Written by muster: machine-local run files, never committed.\n";
+const RUNS_GITIGNORE_PATTERNS = [".gitignore", "*/preflight.json", "*/build-result.json", "*/merge-refusal.json"];
+export const RUNS_GITIGNORE = `${RUNS_GITIGNORE_HEADER}${RUNS_GITIGNORE_PATTERNS.join("\n")}\n`;
 
 export async function ensureRunDir(cwd, runId) {
   const dir = runDir(cwd, runId);
   await ensureContainedDirectory(cwd, dir);
-  await createContainedFile(cwd, join(cwd, ".muster", "runs", ".gitignore"), RUNS_GITIGNORE);
+  const ignore = join(cwd, ".muster", "runs", ".gitignore");
+  if (!(await createContainedFile(cwd, ignore, RUNS_GITIGNORE))) {
+    await updateContainedFile(cwd, ignore, (current) => {
+      const text = current ? current.toString("utf8") : "";
+      if (!text.startsWith(RUNS_GITIGNORE_HEADER)) return current || "";
+      const lines = new Set(text.split(/\r?\n/));
+      const missing = RUNS_GITIGNORE_PATTERNS.filter((p) => !lines.has(p));
+      return missing.length ? `${text.replace(/\n*$/, "\n")}${missing.join("\n")}\n` : current;
+    });
+  }
   return dir;
 }
+
+// merge-wave's record of a refused or partial merge (src/merge-wave.js). Machine-local like the
+// build-result.json it judged: it names task branches and worktrees that exist only here.
+// `next --run` acts on it only while the inputs it judged are unchanged: the bytes of the run's
+// build-result.json and the digests in its build-args.json.
+export const MERGE_REFUSAL = "merge-refusal.json";
+
+export async function mergeInputs(cwd, runId) {
+  const dir = runDir(cwd, runId);
+  const read = (f) => readContainedFile(cwd, join(dir, f), { allowMissing: true }).catch(() => null);
+  const result = await read("build-result.json");
+  const argsBytes = await read("build-args.json");
+  let digests = null;
+  try { digests = JSON.parse(argsBytes ? argsBytes.toString("utf8") : "null")?.digests ?? null; } catch { digests = null; }
+  return {
+    resultDigest: result ? sha256(result) : null,
+    digests: digests && typeof digests === "object" ? { plan: digests.plan ?? null, args: digests.args ?? null } : null,
+  };
+}
+
+export const sameMergeInputs = (a, b) =>
+  (a?.resultDigest ?? null) === (b?.resultDigest ?? null) &&
+  (a?.digests?.plan ?? null) === (b?.digests?.plan ?? null) &&
+  (a?.digests?.args ?? null) === (b?.digests?.args ?? null);
 
 // Run ids never start with a dot, so `.gitignore` (above) is not a run.
 export const isRunId = (name) => RUN_ID_RE.test(name) && !name.includes("..");

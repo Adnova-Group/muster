@@ -15,11 +15,11 @@ stop only for an unclear outcome (attended), an escalation, or the merge decisio
 `M` below means `sh "${CLAUDE_PLUGIN_ROOT}/runtime/muster.sh"` (repeat it in every Bash call;
 shell variables do not persist). First invoke the `muster:orchestrator` skill (Skill tool): its
 rules survive compaction only once invoked. No `Workflow` tool: follow its prose fallback
-instead of steps 3-6. After a compaction, `M next --run <runId>` says where you are.
+instead of steps 3-6.
 
 **Continuing a run** (`--run <runId>`): write the step-2 fence files, run
 `M next --run <runId>`, resume at the step its `next` names
-(`plan` -> 3, `build` -> 4, `merge` -> 6, `verify`/`done` -> 7, `pipeline` -> Content step 2,
+(`plan` -> 3, `build` -> 4, `rebuild` -> 4 with its `--from-wave`, `merge` -> 6, `verify`/`done` -> 7, `pipeline` -> Content step 2,
 `escalate` -> stop).
 Never re-plan an approved run.
 
@@ -41,7 +41,7 @@ Never re-plan an approved run.
    Unattended (no AskUserQuestion): never ask in plain text; write the gaps as assumptions. Then in one Bash call: refuse a dirty tree,
    `git switch -c muster/<runId>`, write CONTEXT.md if any (spec: `M spec-context`), write `<runId>` to `.muster/run-active`
    and `send sign submit publish purchase delete-remote` (one per line) to
-   `.muster/forbidden-actions`. The action fence reads both (gitignored).
+   `.muster/forbidden-actions` (read by the action fence).
 3. **Plan.** `Workflow({name:"muster:make-plan", args:{runId, outcome, contextPath, specPath, candidates, skills, pins, skillRoot, cli, models}})`
    (`contextPath` if CONTEXT.md exists; `specPath` for a spec). Save the result as the
    run's `plan-check.json` at once. `PASS`: continue. `ISSUES` with `escalated` (`cap`, `stall`,
@@ -53,22 +53,22 @@ Never re-plan an approved run.
    keep `workflow`, `args`, `humanNeeded`.
 5. **Build.** `Workflow({name:"muster:build", args:<its args>})`, or `muster:team` when its
    `workflow` says so. Interrupted? Same session: `{name:"muster:build", resumeFromRunId:"<workflow run id>"}`;
-   else `/muster:go --run <runId>` (idempotent). Under `-p`, background or Remote
+   else `/muster:go --run <runId>`. Under `-p`, background or Remote
    Control a usage limit fails agents (`usageLimitDenial`; tasks `reason: no_result`): skip
    step 6; after the reset run `/muster:go --run <runId>`.
 6. **Merge the waves (1 call).** From the main checkout: `M merge-wave <runId> --result <f>`,
    `<f>` = the output file the build's completion names (merge-wave saves `build-result.json`;
    never read it), else the returned JSON saved as the run's `build-result.json`. Then
    `M next --run <runId>` and commit the run record: `git add -f .muster/runs/<runId>` minus
-   `preflight.json` and `build-result.json`, `git commit -m "chore(muster): record <runId>"`. A
-   non-zero merge-wave is an escalation: show its `problems` and stop; never merge task branches
+   `preflight.json`, `build-result.json`, `merge-refusal.json`; `git commit -m "chore(muster): record <runId>"`.
+   Non-zero is an escalation: show its `problems`, do step 7 and stop; never merge task branches
    by hand, and never edit PLAN.md or `build-args.json` to get past a merge-wave failure.
-7. **Verification result.** Report the result's `summary` and verdict: PASS, GAPS (list them),
+7. **Verification result.** A `partial` merge-wave is never PASS: report `wavesMerged`,
+   `failedWave` and its problems. Else the result's `summary` and verdict: PASS, GAPS (list them),
    HUMAN_NEEDED (zero gaps; its `human` items go to the merge decision), or ABSTAIN (it could not
    run; say what was missing). A halted wave, a reviewer FAIL past the fix cap, or a
    task `blocked`/`error` is reported with its task id and evidence, as is `skillsMissing`.
-   `reason: max_turns`: out of turns (raise `maxTurns` or split the task). Never restate an
-   agent verdict you did not see.
+   `reason: max_turns`: out of turns (raise `maxTurns` or split the task).
 8. **Merge decision.** Remove `.muster/run-active` and `.muster/forbidden-actions`. Attended:
    AskUserQuestion with the work branch and base, each with its HEAD sha, the verdict, its `human`
    items and `humanNeeded`: **Merge locally** (`git switch <base> && git merge --no-ff muster/<runId>`)
@@ -100,15 +100,14 @@ given file) and take the unticked items in file order, at most 5 per run unless 
    each item's fields from its build-args `args`.
 5. `M merge-wave <runId> --result <f>` (step 6's file) per item in backlog order;
    stop at the first refusal. Tick each merged item `- [x]` with `{merge: <its merge-wave sha>}`
-   (the receipt CI checks is release-reachable), only through `M backlog-publish <backlog file>
-   --expect <sha256>` (the complete edited file on stdin; on a changed-file refusal, reread and
+   (CI checks it is release-reachable), only through `M backlog-publish <backlog file> --expect <sha256>` (the complete edited file on stdin; on a changed-file refusal, reread and
    redo), then commit.
 6. Report per item, then one merge decision for the whole branch (step 8 above).
 
 ## Long and unattended runs
 
 - Keep a long attended run alive with `/goal finish /muster:go --run <runId> to the merge
-  decision`; `--run` resumes from disk after any stop.
+  decision`.
 - `claude -p` stops background workflows 10 minutes after its last turn unless
   `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0`; add `--permission-prompts none` and the
   orchestrator's `Workflow(muster:*)` rules.

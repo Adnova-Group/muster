@@ -28,12 +28,14 @@ const cli = (cwd, args, env = {}) => spawnSync(process.execPath, [CLI, ...args],
 
 // A repo with two task branches in kept worktrees, as build.js leaves them, and the
 // approved build args committed at HEAD (the trusted source of order and verify commands).
-async function repoWithTasks({ verify = {}, edits = {} } = {}) {
+// `layout` groups task ids into waves (default: one wave of A and B).
+async function repoWithTasks({ verify = {}, edits = {}, layout = [["A", "B"]] } = {}) {
   const root = await trackedMkdtemp(join(tmpdir(), "muster-merge-wave-"));
   git(root, "init", "-q", "-b", "main");
   await writeFile(join(root, "README.md"), "base\n");
   await writeFile(join(root, ".gitignore"), ".claude/worktrees/\n");
-  const waves = [["A", "B"].map((id) => ({ taskId: id, title: `task ${id}`, files: [`${id}.txt`], verify: verify[id] || [`grep -q ${id} ${id}.txt`] }))];
+  const waves = layout.map((ids) => ids.map((id) => ({ taskId: id, title: `task ${id}`, files: [`${id}.txt`], verify: verify[id] || [`grep -q ${id} ${id}.txt`] })));
+  const waveOf = (id) => layout.findIndex((ids) => ids.includes(id)) + 1;
   await mkdir(join(root, ".muster/runs/r1"), { recursive: true });
   // Digested exactly as `muster build-args` does.
   const args = { runId: "r1", waves };
@@ -45,7 +47,7 @@ async function repoWithTasks({ verify = {}, edits = {} } = {}) {
   git(root, "commit", "-q", "-m", "base");
   const base = git(root, "rev-parse", "HEAD");
   const tasks = [];
-  for (const id of ["A", "B"]) {
+  for (const id of layout.flat()) {
     const wt = join(root, ".claude", "worktrees", `wf_${id}`);
     git(root, "worktree", "add", "-q", "-b", `worktree-wf_${id}`, wt, base);
     await writeFile(join(wt, `${id}.txt`), `${id}\n`);
@@ -57,7 +59,7 @@ async function repoWithTasks({ verify = {}, edits = {} } = {}) {
     git(wt, "commit", "-q", "-m", `task ${id} [r1/${id}]`);
     const commit = git(wt, "rev-parse", "HEAD");
     tasks.push({
-      taskId: id, title: `task ${id}`, wave: 1, status: "done", branch: `worktree-wf_${id}`, commit, worktree: wt,
+      taskId: id, title: `task ${id}`, wave: waveOf(id), status: "done", branch: `worktree-wf_${id}`, commit, worktree: wt,
       filesChanged: [`${id}.txt`], testsRun: [`grep -q ${id} ${id}.txt`], testsPassed: true, selfCheck: "PASSED", deviations: [],
       verify: [`grep -q ${id} ${id}.txt`],
       review: { taskId: id, verdict: "PASS", commitReviewed: commit, findings: [], testsRun: [], testsPassed: true },
@@ -189,7 +191,10 @@ test("merge-wave CLI: a missing commit is refused before anything merges", async
   assert.match(report.problems.join("\n"), /B: commit ffffffffff does not exist/);
   assert.equal(git(root, "rev-parse", "HEAD"), base, "HEAD must not move");
   assert.equal(hasBranch(root, "worktree-wf_A"), true);
-  assert.match(await readFile(join(root, ".muster/runs/r1/STATE.md"), "utf8"), /merge-wave: REFUSED: B: commit ffffffffff does not exist/);
+  // A per-task problem in the only wave: nothing merges, and the record says which wave to rebuild.
+  assert.equal(report.partial, true);
+  assert.deepEqual([report.wavesMerged, report.failedWave], [[], 1]);
+  assert.match(await readFile(join(root, ".muster/runs/r1/STATE.md"), "utf8"), /merge-wave: PARTIAL: merged waves none; wave 1 and later not merged; verification cannot PASS until they merge: B: commit ffffffffff does not exist/);
 });
 
 test("merge-wave: a failing planned verify rolls every merge back and keeps the worktrees", async () => {
@@ -296,7 +301,148 @@ test("merge-wave: accepts a backlog.js result and picks the item by runId", asyn
   const { root, result } = await repoWithTasks();
   const report = await mergeWave({ cwd: root, runId: "r1", result: { items: [{ itemId: "x", runId: "other", tasks: [] }, { itemId: "I1", ...result }] }, now: NOW });
   assert.equal(report.ok, true, JSON.stringify(report.problems));
-  await assert.rejects(mergeWave({ cwd: root, runId: "nope", result, now: NOW }), /result is for run r1/);
+  // A result for another run is malformed for this one: a whole-result refusal, recorded.
+  const other = await mergeWave({ cwd: root, runId: "nope", result, now: NOW });
+  assert.equal(other.ok, false);
+  assert.match(other.problems.join("\n"), /the build result is malformed: result is for run r1/);
+  assert.equal(JSON.parse(await readFile(join(root, ".muster/runs/nope/merge-refusal.json"), "utf8")).kind, "refused");
+});
+
+// The build result saved outside the run dir, as the Workflow tool's output file is.
+async function resultFileFor(result) {
+  const file = join(await trackedMkdtemp(join(tmpdir(), "muster-wf-output-")), "task.output");
+  await writeFile(file, JSON.stringify(result));
+  return file;
+}
+const refusalPath = (root) => join(root, ".muster/runs/r1/merge-refusal.json");
+
+test("merge-wave lands the passing prefix: wave 1 merges, a failing wave 2 does not, and next says rebuild wave 2", async () => {
+  // Live run: wave 1 passed review and integration, a wave-2 task failed, and nothing merged.
+  const { root, base, result } = await repoWithTasks({ layout: [["A"], ["B", "C"]] });
+  result.tasks[1].review.verdict = "FAIL";
+  const r = cli(root, ["merge-wave", "r1", "--result", await resultFileFor(result)]);
+  assert.equal(r.status, 1, "a partial merge exits non-zero");
+  const report = JSON.parse(r.stdout);
+  assert.equal(report.ok, false);
+  assert.equal(report.partial, true);
+  assert.deepEqual([report.wavesMerged, report.failedWave], [[1], 2]);
+  assert.deepEqual(report.merged.map((m) => m.taskId), ["A"]);
+  assert.match(report.problems.join("\n"), /B: review verdict is FAIL, not PASS/);
+  assert.deepEqual(git(root, "log", "--first-parent", "--format=%s", `${base}..HEAD`).split("\n"), ["merge(r1): A task A"]);
+  assert.ok(existsSync(join(root, "A.txt")));
+  assert.equal(existsSync(join(root, "C.txt")), false, "C passed alone, but its wave failed: a wave is the integration unit");
+  // Merged wave cleaned up; the failed wave's worktrees and branches stay for the rebuild.
+  assert.equal(hasBranch(root, "worktree-wf_A"), false);
+  assert.equal(existsSync(result.tasks[0].worktree), false);
+  for (const t of result.tasks.slice(1)) assert.ok(hasBranch(root, t.branch) && existsSync(t.worktree), `${t.taskId} kept`);
+  assert.ok(existsSync(join(root, ".muster/runs/r1/SUMMARY-A.md")));
+  assert.equal(existsSync(join(root, ".muster/runs/r1/SUMMARY-B.md")), false);
+
+  const record = JSON.parse(await readFile(refusalPath(root), "utf8"));
+  assert.deepEqual([record.kind, record.wavesMerged, record.failedWave, record.tasksMerged], ["partial", [1], 2, ["A"]]);
+  assert.match(record.problems.join("\n"), /B: review verdict is FAIL/);
+  assert.doesNotMatch(git(root, "status", "--porcelain", "-uall"), /merge-refusal/, "the record is machine-local, like build-result.json");
+  const state = await readFile(join(root, ".muster/runs/r1/STATE.md"), "utf8");
+  assert.match(state, /merge-wave: merged A [\s\S]*merge-wave: PARTIAL: merged waves 1; wave 2 and later not merged; verification cannot PASS until they merge: B: review verdict is FAIL/);
+
+  const next = await nextForRun({ cwd: root, runId: "r1" });
+  assert.equal(next.position, "merge-partial");
+  assert.match(next.next, /^rebuild: muster build-args r1 --from-wave 2, /);
+  assert.doesNotMatch(next.next, /merge-wave r1 --result/, "never re-run merge-wave on the same inputs");
+  assert.deepEqual([next.wavesMerged, next.failedWave], [[1], 2]);
+  assert.match(await readFile(join(root, ".muster/runs/r1/STATE.md"), "utf8"), /- position: merge-partial\n[\s\S]*- verification: not PASS: partial merge, wave 2 and later not merged\n/);
+});
+
+// What `muster build-args r1 --from-wave <n>` commits for a rebuild: only the remaining waves.
+async function commitRebuildArgs(root, waves, fromWave) {
+  const args = { runId: "r1", base: git(root, "rev-parse", "HEAD"), fromWave, waves };
+  args.digests = { plan: planDigest("# PLAN r1\n"), args: argsDigest(args) };
+  await writeFile(join(root, ".muster/runs/r1/build-args.json"), JSON.stringify(args));
+  git(root, "add", ".muster/runs/r1/build-args.json");
+  git(root, "commit", "-q", "-m", "chore(muster): plan r1");
+  return args;
+}
+
+test("a rebuild of the failed waves merges with --from-wave numbering, and that success clears the record", async () => {
+  const { root, result } = await repoWithTasks({ layout: [["A"], ["B"]] });
+  result.tasks[1].status = "blocked";
+  const first = await mergeWave({ cwd: root, runId: "r1", resultFile: await resultFileFor(result), now: NOW });
+  assert.deepEqual([first.partial, first.wavesMerged, first.failedWave], [true, [1], 2]);
+
+  const args = await commitRebuildArgs(root, [[{ taskId: "B", title: "task B", files: ["B.txt"], verify: ["grep -q B2 B.txt"] }]], 2);
+  // New build args, old build result: the rebuild has not run, so the rebuild is still next.
+  const pending = await nextForRun({ cwd: root, runId: "r1" });
+  assert.equal(pending.position, "merge-partial");
+  assert.match(pending.next, /^rebuild: muster build-args r1 --from-wave 2, /);
+  assert.equal(pending.artifacts.mergeRefusal, "partial");
+
+  const head = git(root, "rev-parse", "HEAD");
+  const wt = join(root, ".claude", "worktrees", "wf_B2");
+  git(root, "worktree", "add", "-q", "-b", "worktree-wf_B2", wt, head);
+  await writeFile(join(wt, "B.txt"), "B2\n");
+  git(wt, "add", "B.txt");
+  git(wt, "commit", "-q", "-m", "task B [r1/B]");
+  const commit = git(wt, "rev-parse", "HEAD");
+  const task = { ...result.tasks[1], status: "done", wave: 1, branch: "worktree-wf_B2", commit, worktree: wt, testsRun: ["grep -q B2 B.txt"], review: { ...result.tasks[1].review, commitReviewed: commit } };
+  const rebuilt = await mergeWave({ cwd: root, runId: "r1", resultFile: await resultFileFor({ runId: "r1", base: head, argsDigest: args.digests.args, tasks: [task] }), now: NOW });
+  assert.equal(rebuilt.ok, true, JSON.stringify(rebuilt.problems));
+  assert.deepEqual(rebuilt.merged.map((m) => m.taskId), ["B"]);
+  assert.equal(existsSync(refusalPath(root)), false, "a later success clears the record");
+  const next = await nextForRun({ cwd: root, runId: "r1" });
+  assert.equal(next.artifacts.mergeRefusal, null);
+  assert.notEqual(next.position, "merge-partial");
+
+  // A failure in a --from-wave build is numbered as the plan's wave, so the next rebuild is right.
+  const again = await commitRebuildArgs(root, [[{ taskId: "Z", title: "z", files: [], verify: ["true"] }]], 3);
+  const z = await mergeWave({ cwd: root, runId: "r1", result: { runId: "r1", argsDigest: again.digests.args, tasks: [{ taskId: "Z", status: "error" }] }, now: NOW });
+  assert.deepEqual([z.partial, z.wavesMerged, z.failedWave], [true, [], 3]);
+});
+
+test("merge-wave: a wave-2 verify failure or integration FAIL rolls back only that wave", async () => {
+  const verifyFail = await repoWithTasks({ layout: [["A"], ["B"]], verify: { B: ["test -f does-not-exist.txt"] } });
+  const v = await mergeWave({ cwd: verifyFail.root, runId: "r1", result: verifyFail.result, now: NOW });
+  assert.deepEqual([v.ok, v.wavesMerged, v.failedWave], [false, [1], 2]);
+  assert.match(v.problems.join("\n"), /B: verify failed after merge/);
+  assert.equal(git(verifyFail.root, "log", "-1", "--format=%s"), "merge(r1): A task A", "B's merge is rolled back, A's kept");
+  assert.equal(hasBranch(verifyFail.root, "worktree-wf_B"), true);
+
+  // muster:team: each task passed review, but the wave did not wire together.
+  const integration = await repoWithTasks({ layout: [["A"], ["B", "C"]] });
+  integration.result.integration = [{ wave: 2, verdict: "FAIL", reason: "integration blockers survived the fix round" }];
+  const i = await mergeWave({ cwd: integration.root, runId: "r1", result: integration.result, now: NOW });
+  assert.deepEqual([i.ok, i.wavesMerged, i.failedWave], [false, [1], 2]);
+  assert.match(i.problems.join("\n"), /wave 2: the integration check failed \(integration blockers survived the fix round\)/);
+  assert.equal(existsSync(join(integration.root, "B.txt")), false);
+});
+
+test("a whole-result refusal merges nothing, even from passing waves, and next escalates until the inputs change", async () => {
+  const { root, base, result } = await repoWithTasks({ layout: [["A"], ["B"]] });
+  const file = await resultFileFor({ ...result, argsDigest: "0".repeat(64) });
+  const r = cli(root, ["merge-wave", "r1", "--result", file]);
+  assert.equal(r.status, 1);
+  const report = JSON.parse(r.stdout);
+  assert.equal(report.partial, undefined);
+  assert.match(report.problems.join("\n"), /the build ran with args digest 0000000000/);
+  assert.equal(git(root, "rev-parse", "HEAD"), base, "wave 1 passed every per-task check but nothing merges");
+  const record = JSON.parse(await readFile(refusalPath(root), "utf8"));
+  assert.deepEqual([record.kind, record.wavesMerged, record.failedWave], ["refused", [], null]);
+
+  const next = await nextForRun({ cwd: root, runId: "r1" });
+  assert.equal(next.position, "merge-refused");
+  assert.match(next.next, /^escalate: merge-wave refused the whole build result; show these problems to the user and stop .*the build ran with args digest 0000000000/);
+  assert.match(next.problems.join("\n"), /args digest 0000000000/);
+  // Same inputs again: still the escalation, never "re-run merge-wave".
+  assert.equal(cli(root, ["merge-wave", "r1", "--result", file]).status, 1);
+  assert.equal((await nextForRun({ cwd: root, runId: "r1" })).position, "merge-refused");
+  // A new build result supersedes the record: merging it is the next step again.
+  await writeFile(join(root, ".muster/runs/r1/build-result.json"), JSON.stringify(result));
+  const fresh = await nextForRun({ cwd: root, runId: "r1" });
+  assert.equal(fresh.position, "built");
+  assert.equal(fresh.artifacts.mergeRefusal, "superseded");
+  // And merging it clears the record.
+  const ok = await mergeWave({ cwd: root, runId: "r1", resultFile: join(root, ".muster/runs/r1/build-result.json"), now: NOW });
+  assert.equal(ok.ok, true, JSON.stringify(ok.problems));
+  assert.equal(existsSync(refusalPath(root)), false);
 });
 
 

@@ -1,5 +1,6 @@
 // Shared helpers for the stage-2 run directory `.muster/runs/<runId>/`
 // (docs/strategy/stage-2-contracts.md). Used by preflight, merge-wave and `next --run`.
+import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { createContainedFile, ensureContainedDirectory, readContainedFile, sha256, updateContainedFile } from "./fs-safe.js";
 
@@ -23,13 +24,14 @@ export function slugRunId(outcome, date = new Date()) {
 }
 
 // Preflight writes preflight.json before plan/go's "refuse a dirty tree" check. In a project
-// that does not ignore .muster/, that file alone made the tree dirty. This file hides the two
-// machine-local run files and itself (the same patterns as muster's own .gitignore); the run
+// that does not ignore .muster/, that file alone made the tree dirty. This file hides the
+// machine-local run files (preflight detail, build results and their earlier attempts, the merge
+// refusal) and itself (the same patterns as muster's own .gitignore); the run
 // record (CONTEXT.md, PLAN.md, STATE.md...) still shows and is committed with the branch.
 // Created once and never overwritten, except that a copy muster wrote (its first line) gains the
 // patterns added since; a user's own file is left alone.
 const RUNS_GITIGNORE_HEADER = "# Written by muster: machine-local run files, never committed.\n";
-const RUNS_GITIGNORE_PATTERNS = [".gitignore", "*/preflight.json", "*/build-result.json", "*/merge-refusal.json"];
+const RUNS_GITIGNORE_PATTERNS = [".gitignore", "*/preflight.json", "*/build-result.json", "*/merge-refusal.json", "*/attempts/"];
 export const RUNS_GITIGNORE = `${RUNS_GITIGNORE_HEADER}${RUNS_GITIGNORE_PATTERNS.join("\n")}\n`;
 
 export async function ensureRunDir(cwd, runId) {
@@ -53,6 +55,30 @@ export async function ensureRunDir(cwd, runId) {
 // `next --run` acts on it only while the inputs it judged are unchanged: the bytes of the run's
 // build-result.json and the digests in its build-args.json.
 export const MERGE_REFUSAL = "merge-refusal.json";
+
+// An earlier build attempt's result, moved aside by `muster build-args` when it starts a new
+// attempt (a `--from-wave` rebuild or any re-run): left in place, the next build's verifier read
+// it as the current attempt's record (live partial-merge run 7). Machine-local, like the result.
+export const ATTEMPTS_DIR = "attempts";
+
+// Moves the run's build-result.json to attempts/build-result-<k>.json (k counts from 1) and
+// returns that run-relative path, or null when there is none. merge-refusal.json stays: it is
+// the run's merge state (`next --run` and merge-wave's cleanup of superseded attempts read it).
+export async function archiveBuildResult(cwd, runId) {
+  const dir = runDir(cwd, runId);
+  const from = join(dir, "build-result.json");
+  const bytes = await readContainedFile(cwd, from, { allowMissing: true });
+  if (!bytes) return null;
+  await ensureRunDir(cwd, runId);
+  for (let k = 1; k < 10000; k++) {
+    const rel = `${ATTEMPTS_DIR}/build-result-${k}.json`;
+    if (await createContainedFile(cwd, join(dir, rel), bytes)) {
+      await rm(from);
+      return rel;
+    }
+  }
+  throw new Error(`.muster/runs/${runId}/${ATTEMPTS_DIR}/ has no free build-result-<k>.json name`);
+}
 
 export async function mergeInputs(cwd, runId) {
   const dir = runDir(cwd, runId);

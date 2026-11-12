@@ -60,7 +60,7 @@ Never re-plan an approved run.
    `<f>` = the output file the build's completion names (merge-wave saves `build-result.json`;
    never read it), else the returned JSON saved as the run's `build-result.json`. Then
    `M next --run <runId>` and commit the run record: `git add -f .muster/runs/<runId>` minus
-   `preflight.json`, `build-result.json`, `merge-refusal.json`; `git commit -m "chore(muster): record <runId>"`.
+   `preflight.json`, `build-result.json`, `merge-refusal.json`, `attempts/`; `git commit -m "chore(muster): record <runId>"`.
    Non-zero is an escalation: show its `problems`, do step 7 and stop; never merge task branches
    by hand, and never edit PLAN.md or `build-args.json` to get past a merge-wave failure.
 7. **Verification result.** A `partial` merge-wave is never PASS: report `wavesMerged`,

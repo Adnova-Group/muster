@@ -141,6 +141,19 @@ test("team: tests that do not fail as expected block the task before any impleme
   assert.match(result.halted, /wave 1 did not pass/);
 });
 
+// Live run 7: a blocked wave-2 executor returned selfCheck PASSED.
+test("team: a blocked builder's selfCheck PASSED is corrected to FAILED with a deviation, plain and test-first", async () => {
+  const blocked = (label, prompt) => (label === "build B" ? exec("B", 1, { status: "blocked" }) : happy(label, prompt));
+  const { result } = await run("team.js", { runId: "t7", waves: [[task("A")], [task("B")]] }, blocked);
+  const b = result.tasks.find((t) => t.taskId === "B");
+  assert.deepEqual([b.status, b.selfCheck, b.review], ["blocked", "FAILED", null]);
+  assert.match(b.deviations.join("\n"), /\[muster\] selfCheck PASSED corrected to FAILED: status is blocked/);
+  const { result: tdd } = await run("team.js", { runId: "t7", waves: [[task("B", { tdd: true })]] }, blocked);
+  assert.equal(tdd.tasks[0].selfCheck, "FAILED", "the green phase result is settled the same way");
+  const { calls } = await run("team.js", { runId: "t7", fromWave: 2, waves: [[task("B")]] }, happy);
+  assert.match(calls.find((c) => c.opts.label === "verify t7").prompt, /Never read the run folder's build-result\.json, attempts\/ or merge-refusal\.json/);
+});
+
 test("team: a green specialist builder gets the executor contract and bound skills; a reported [TestEdit] reaches the reviewer", async () => {
   const t = task("A", { tdd: true, agentType: "muster:frontend-mobile-development-frontend-developer", agentHint: "wsh-frontend-developer", skills: [{ id: "x", path: "/p/x/SKILL.md" }] });
   const { calls } = await run("team.js", { runId: "t3", cli: 'sh "/p/runtime/muster.sh"', waves: [[t]] }, (label, prompt) =>

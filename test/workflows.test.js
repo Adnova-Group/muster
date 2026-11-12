@@ -272,6 +272,27 @@ test("build: self-check FAILED skips review; ABSTAIN review does not trigger a f
   assert.equal(result.tasks[1].review.verdict, "ABSTAIN");
 });
 
+// Live run 7: a blocked executor returned selfCheck PASSED, which the contract forbids.
+test("build and backlog: a non-done executor result never keeps selfCheck PASSED; the correction is a deviation", async () => {
+  const blocked = (label, prompt, opts) => (label.endsWith("build B") ? exec("B", 1, { status: "blocked", deviations: ["fixture missing"] }) : happy(label.replace(/^I1 /, ""), prompt, opts));
+  const { result } = await run("build.js", { runId: "r7", waves: [[task("A"), task("B")]] }, blocked);
+  const b = result.tasks.find((t) => t.taskId === "B");
+  assert.deepEqual([b.status, b.selfCheck, b.review], ["blocked", "FAILED", null]);
+  assert.equal(result.tasks.find((t) => t.taskId === "A").review.verdict, "PASS");
+  assert.deepEqual(b.deviations, ["fixture missing", "[muster] selfCheck PASSED corrected to FAILED: status is blocked, and PASSED needs done"]);
+  assert.equal(result.tasks.find((t) => t.taskId === "A").selfCheck, "PASSED", "a done task keeps its own self-check");
+  const { result: items } = await run("backlog.js", { items: [{ itemId: "I1", runId: "r7", waves: [[task("A"), task("B")]] }] }, blocked);
+  assert.equal(items.items[0].tasks.find((t) => t.taskId === "B").selfCheck, "FAILED");
+});
+
+// Live run 7: the rebuild's verifier read attempt A's build-result.json and merge-refusal.json.
+test("build: the verifier brief names this attempt's commits and keeps it off earlier attempts' run files", async () => {
+  const { calls } = await run("build.js", { runId: "r7", base: "base7", fromWave: 2, waves: [[task("B")]] }, happy);
+  const brief = calls.find((c) => c.opts.label === "verify r7").prompt;
+  assert.match(brief, new RegExp(exec("B").commit));
+  assert.match(brief, /Never read the run folder's build-result\.json, attempts\/ or merge-refusal\.json/);
+});
+
 // Run 1 (first live e2e): every must-have verified, zero gaps, one judgment-checked prohibition
 // left for a human; the verifier mapped human_needed to ABSTAIN and the run kept its branch.
 const p05 = "P-05 (prohibition, judgment): no --json on any command other than report and stats";

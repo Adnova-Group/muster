@@ -19,7 +19,12 @@
 //   merge-wave). The build result echoes the args digest it ran with, so args regenerated after
 //   the build are refused too. The legitimate path after a re-plan is build-args, then the build.
 // - A worktree is removed only when it is under <root>/.claude/worktrees/, has the merged
-//   task branch checked out, and is clean; branches are deleted with `branch -d` only.
+//   task branch checked out, and is clean; branches are deleted with `branch -d` only. The one
+//   exception is an earlier attempt's branch that merge-refusal.json recorded, as git saw it,
+//   when that attempt's task did not merge: once the same task merges from a rebuild, its
+//   unchanged branch and clean worktree are superseded and removed (removeSuperseded).
+// - A task's files are its own commits' files, from git: an executor that merged its
+//   dependencies' commits into its worktree reported their files as its own (live run 7).
 // Any mismatch rolls HEAD back to the last fully merged wave, records merge-refusal.json for
 // `next --run`, and the CLI exits non-zero.
 import { spawnSync } from "node:child_process";
@@ -27,7 +32,7 @@ import { readFileSync, realpathSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import { MERGE_REFUSAL, appendStateLog, assertRunId, ensureRunDir, mergeInputs } from "./run-dir.js";
-import { createContainedFile, inspectContainedPath, writeContainedFile } from "./fs-safe.js";
+import { createContainedFile, inspectContainedPath, readContainedFile, writeContainedFile } from "./fs-safe.js";
 import { argsDigest, planDigest } from "./build-args.js";
 
 const VERIFY_TIMEOUT_MS = 10 * 60 * 1000;
@@ -75,7 +80,7 @@ function plannedTasks(root, runId) {
   const first = Number.isInteger(own.fromWave) && own.fromWave > 1 ? own.fromWave : 1;
   const waves = own.waves.map((w, i) => ({
     wave: first + i,
-    tasks: (Array.isArray(w) ? w : []).map((t) => ({ taskId: t?.taskId, title: t?.title || "", verify: list(t?.verify), wave: first + i })),
+    tasks: (Array.isArray(w) ? w : []).map((t) => ({ taskId: t?.taskId, title: t?.title || "", verify: list(t?.verify), files: list(t?.files), wave: first + i })),
   }));
   return { waves, tasks: waves.flatMap((w) => w.tasks), args: own };
 }
@@ -171,6 +176,28 @@ function testsRunNotes(plan, task) {
   return notes;
 }
 
+// The files a task's own commits change: its non-merge commits that neither HEAD (the base and
+// every wave merged before) nor the earlier waves' commits carry. The reviewer brief scopes its
+// diff the same way. null when git cannot answer.
+function ownFiles(root, commit, exclude) {
+  const r = git(root, ["log", "--no-merges", "--no-renames", "--format=", "--name-only", commit, "--not", "HEAD", ...exclude]);
+  return r.ok ? [...new Set(r.out.split("\n").filter(Boolean))].sort() : null;
+}
+
+const inPlan = (file, planned) => planned.some((p) => file === p || file.startsWith(p.endsWith("/") ? p : `${p}/`));
+
+// Agent-reported filesChanged is evidence only: report where it differs from the task's own
+// commits, and the own files outside the task's planned list (the run dir excepted: merge-wave
+// writes SUMMARY files there).
+function filesNotes(plan, task, own, runPrefix) {
+  const notes = [];
+  const borrowed = list(task.filesChanged).filter((f) => !own.includes(f));
+  if (borrowed.length) notes.push(`${plan.taskId}: agent-reported filesChanged not in the task's own commits (merged from a dependency, or never committed): ${borrowed.join(", ")}; its own files: ${own.join(", ") || "none"}`);
+  const outside = plan.files.length ? own.filter((f) => !f.startsWith(runPrefix) && !inPlan(f, plan.files)) : [];
+  if (outside.length) notes.push(`${plan.taskId}: its own commits change files outside its planned list: ${outside.join(", ")}`);
+  return notes;
+}
+
 function runCommand(root, cmd) {
   const r = spawnSync("sh", ["-c", cmd], { cwd: root, encoding: "utf8", timeout: VERIFY_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024 });
   return { cmd, ok: r.status === 0, status: r.status, output: tail(`${r.stdout || ""}${r.stderr || ""}`.trim()) };
@@ -214,9 +241,81 @@ function cleanup(root, task, refs) {
   return done;
 }
 
+// The executor branch namespaces (muster-executor.md's branch guard). Only a branch in them, and
+// checked out nowhere but under .claude/worktrees/, is ever recorded as an unmerged attempt.
+const AGENT_BRANCH_RE = /^((worktree-)?agent-|worktree-wf_)[A-Za-z0-9._/-]{1,200}$/;
+const SHA_RE = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
+const worktreesDir = (root) => join(realOrNull(root) || root, ".claude", "worktrees") + sep;
+const checkedOutAt = (refs, branch) => [...refs].filter(([, ref]) => ref === `refs/heads/${branch}`).map(([path]) => path);
+
+// The worktrees and branches of the result's tasks this call did not merge, as git sees them now
+// (never as the result claims them): kept for the rebuild and recorded in merge-refusal.json, so
+// the merge-wave that later merges the same task from a rebuild can remove them.
+function unmergedAttempts(root, tasks, mergedIds, refs) {
+  const out = [];
+  for (const t of tasks) {
+    if (!t || typeof t.taskId !== "string" || mergedIds.has(t.taskId) || !AGENT_BRANCH_RE.test(String(t.branch || ""))) continue;
+    const tip = git(root, ["rev-parse", "--verify", "--quiet", `refs/heads/${t.branch}`]);
+    if (!tip.ok) continue;
+    const at = checkedOutAt(refs, t.branch);
+    if (at.length > 1 || at.some((p) => !p.startsWith(worktreesDir(root)))) continue;
+    out.push({ taskId: t.taskId, branch: t.branch, tip: tip.out, worktree: at[0] || null });
+  }
+  return out;
+}
+
+// The unmerged attempts an earlier merge-wave of this run recorded; malformed entries are dropped.
+async function recordedAttempts(root, runId) {
+  let j = null;
+  try { j = JSON.parse((await readContainedFile(root, join(root, ".muster", "runs", runId, MERGE_REFUSAL), { allowMissing: true }))?.toString("utf8") || "null"); } catch { j = null; }
+  return (Array.isArray(j?.unmerged) ? j.unmerged : []).filter((s) => s && typeof s.taskId === "string" &&
+    AGENT_BRANCH_RE.test(String(s.branch || "")) && SHA_RE.test(String(s.tip || "")) && (s.worktree === null || typeof s.worktree === "string"));
+}
+
+// Removes a superseded attempt: the task merged from another branch, so the recorded branch is
+// deleted (`-D`: it is merged into nothing) only while it still points at the recorded tip, and
+// its worktree only while it is the recorded one, under .claude/worktrees/, and clean. Returns
+// the cleanup lines and whether anything was kept (a kept attempt stays recorded).
+function removeSuperseded(root, s, refs) {
+  const what = `superseded attempt of ${s.taskId}`;
+  const tip = git(root, ["rev-parse", "--verify", "--quiet", `refs/heads/${s.branch}`]);
+  if (!tip.ok) return { lines: [`${what}: branch ${s.branch} is already gone`], kept: false };
+  if (tip.out !== s.tip) return { lines: [`kept ${what}: branch ${s.branch} moved from the recorded ${short(s.tip)} to ${short(tip.out)}`], kept: true };
+  const lines = [];
+  for (const path of checkedOutAt(refs, s.branch)) {
+    if (path !== s.worktree || !path.startsWith(worktreesDir(root))) return { lines: [...lines, `kept ${what}: ${s.branch} is checked out at ${path}, not the recorded worktree`], kept: true };
+    const status = git(path, ["status", "--porcelain"]);
+    if (!status.ok || status.out) return { lines: [...lines, `kept ${what}: worktree ${path} has uncommitted or untracked changes`], kept: true };
+    const rm = git(root, ["worktree", "remove", path]);
+    if (!rm.ok) return { lines: [...lines, `kept ${what}: ${rm.err}`], kept: true };
+    lines.push(`removed ${what}: worktree ${path}`);
+  }
+  const del = git(root, ["branch", "-D", s.branch]);
+  if (!del.ok) return { lines: [...lines, `kept ${what}: branch ${s.branch}: ${del.err}`], kept: true };
+  return { lines: [...lines, `removed ${what}: branch ${s.branch} at ${short(s.tip)}`], kept: false };
+}
+
+// Settles the recorded attempts against this call: one of a task merged now is superseded and
+// removed; the others (and any removal that kept something) stay recorded, along with this call's
+// own unmerged tasks. Returns the entries the next record carries.
+function settleAttempts(root, earlier, tasks, mergedIds, report) {
+  const refs = worktreeRefs(root);
+  const current = new Set(tasks.map((t) => t?.branch).filter(Boolean));
+  const carried = [];
+  for (const s of earlier) {
+    if (current.has(s.branch)) continue; // this result's own task: recorded afresh below, or merged and cleaned up
+    if (!mergedIds.has(s.taskId)) { carried.push(s); continue; }
+    const { lines, kept } = removeSuperseded(root, s, refs);
+    report.cleanup.push(...lines);
+    if (kept) carried.push(s);
+  }
+  git(root, ["worktree", "prune"]);
+  return [...unmergedAttempts(root, tasks, mergedIds, worktreeRefs(root)), ...carried];
+}
+
 // Executors cannot always write SUMMARY files (Claude Code steers subagents away from report
 // files), so merge-wave records one per merged task unless the branch brought its own.
-async function writeSummary(root, runId, plan, task, merged, runs) {
+async function writeSummary(root, runId, plan, task, merged, runs, own) {
   const dir = await ensureRunDir(root, runId);
   const body = [
     `# SUMMARY ${plan.taskId}: ${plan.title}`,
@@ -225,7 +324,7 @@ async function writeSummary(root, runId, plan, task, merged, runs) {
     "",
     `- commit: ${task.commit}`,
     `- merged as: ${merged}`,
-    `- files: ${list(task.filesChanged).join(", ") || "-"}`,
+    `- files: ${(own || list(task.filesChanged)).join(", ") || "-"}`,
     ...(task.agentType ? [`- builder: ${task.agentType}`] : []),
     ...(Array.isArray(task.skillsApplied) ? task.skillsApplied : []).filter((k) => k && k.id).map((k) => `- skill ${String(k.id).trim()}: ${String(k.how || "").trim()}`),
     ...(list(task.skillsMissing).length ? [`- skills without evidence: ${list(task.skillsMissing).join(", ")}`] : []),
@@ -239,7 +338,7 @@ async function writeSummary(root, runId, plan, task, merged, runs) {
 
 // What merge-wave leaves in the run dir for `next --run` (src/run-dir.js MERGE_REFUSAL): written on
 // a refusal or a partial merge, removed by a merge-wave that merges everything.
-async function recordOutcome(root, runId, report, stamp) {
+async function recordOutcome(root, runId, report, stamp, unmerged) {
   const path = join(root, ".muster", "runs", runId, MERGE_REFUSAL);
   if (report.ok) {
     if (await inspectContainedPath(root, path)) await rm(path);
@@ -251,6 +350,9 @@ async function recordOutcome(root, runId, report, stamp) {
     wavesMerged: report.wavesMerged ?? [],
     failedWave: report.failedWave ?? null,
     tasksMerged: report.merged.map((m) => m.taskId),
+    // The unmerged tasks' branches and worktrees (this attempt's and still-kept earlier ones):
+    // the merge-wave that merges the same task from a rebuild removes them (settleAttempts).
+    unmerged,
     // The inputs this judgment is about; `next` ignores the record once either changes.
     ...(await mergeInputs(root, runId)),
   };
@@ -270,7 +372,9 @@ async function recordOutcome(root, runId, report, stamp) {
 //   order; each wave whose tasks all pass merges and is verified as a unit. At the first failing
 //   wave (a pre-merge problem, a merge conflict or a failed verify) merge-wave rolls that wave
 //   back, merges nothing from it or any later wave, keeps their worktrees and branches for the
-//   rebuild, and exits non-zero with `partial: true`, `wavesMerged` and `failedWave`.
+//   rebuild (recorded in merge-refusal.json `unmerged`), and exits non-zero with `partial: true`,
+//   `wavesMerged` and `failedWave`. A later merge-wave that merges those tasks from the rebuild
+//   removes the recorded worktrees and branches they superseded.
 export async function mergeWave({ cwd, runId, result, resultFile, now = () => new Date() }) {
   assertRunId(runId);
   const top = git(cwd, ["rev-parse", "--show-toplevel"]);
@@ -280,8 +384,13 @@ export async function mergeWave({ cwd, runId, result, resultFile, now = () => ne
     return { ok: false, runId, problems: [`refusing to run inside a .claude/worktrees/ checkout (${root}); run merge-wave from the main checkout`] };
   }
   const report = { ok: false, runId, merged: [], verify: [], cleanup: [], notes: [], problems: [] };
+  const earlier = await recordedAttempts(root, runId);
+  let resultTasks = [];
   const finish = async (ok) => {
     report.ok = ok;
+    const unmerged = settleAttempts(root, earlier, resultTasks, new Set(report.merged.map((m) => m.taskId)), report);
+    // A full merge removes the record, so name what it still held for the user to remove by hand.
+    if (ok) for (const s of unmerged) report.cleanup.push(`left ${s.branch}${s.worktree ? ` (worktree ${s.worktree})` : ""}: an earlier attempt of ${s.taskId}, not removed above; review it, then remove it by hand`);
     const stamp = now().toISOString();
     const merges = report.merged.map((m) => `${stamp} merge-wave: merged ${m.taskId} ${short(m.commit)} as ${short(m.merge)}; verify ${m.passed}/${m.commands} passed`);
     const lines = ok ? merges
@@ -289,7 +398,7 @@ export async function mergeWave({ cwd, runId, result, resultFile, now = () => ne
         ? [...merges, `${stamp} merge-wave: PARTIAL: merged waves ${report.wavesMerged.join(", ") || "none"}; wave ${report.failedWave} and later not merged; verification cannot PASS until they merge: ${report.problems.join("; ")}`]
         : [`${stamp} merge-wave: REFUSED: ${report.problems.join("; ")}`];
     await appendStateLog(root, runId, lines);
-    await recordOutcome(root, runId, report, stamp);
+    await recordOutcome(root, runId, report, stamp, unmerged);
     return report;
   };
 
@@ -302,6 +411,7 @@ export async function mergeWave({ cwd, runId, result, resultFile, now = () => ne
     return finish(false);
   }
   const { tasks, base } = found;
+  resultTasks = tasks.filter((t) => t && typeof t === "object");
   const runPrefix = `.muster/runs/${runId}/`;
   const dirty = git(root, ["status", "--porcelain", "--untracked-files=no"]).out
     .split("\n").filter(Boolean).filter((l) => !l.slice(3).startsWith(runPrefix));
@@ -332,6 +442,27 @@ export async function mergeWave({ cwd, runId, result, resultFile, now = () => ne
   if (!planned.tasks.length) report.problems.push("the approved build args have no tasks");
   for (const plan of planned.tasks) report.problems.push(...inputEditProblems(root, runId, plan, byId.get(plan.taskId)));
   if (report.problems.length) return finish(false);
+
+  // Each task's own files, against HEAD and the earlier waves' commits it may have merged in.
+  report.files = {};
+  const own = new Map();
+  const sha = (c) => (c ? git(root, ["rev-parse", "--verify", "--quiet", `${c}^{commit}`]) : { ok: false });
+  const priorCommits = [];
+  for (const w of planned.waves) {
+    const here = [];
+    for (const plan of w.tasks) {
+      const task = byId.get(plan.taskId);
+      const c = sha(task?.commit);
+      if (!c.ok) continue;
+      here.push(c.out);
+      const files = ownFiles(root, c.out, priorCommits);
+      if (!files) continue;
+      own.set(plan.taskId, files);
+      report.files[plan.taskId] = files;
+      report.notes.push(...filesNotes(plan, task, files, runPrefix));
+    }
+    priorCommits.push(...here);
+  }
 
   // ---- Per-task checks: a problem fails its wave and stops the merge there. ----
   const waveProblems = planned.waves.map((w, i) => [
@@ -368,7 +499,7 @@ export async function mergeWave({ cwd, runId, result, resultFile, now = () => ne
         why = `${plan.taskId}: verify failed after merge: ${failed.map((f) => `\`${f.cmd}\` exited ${f.status}`).join(", ")}`;
         break;
       }
-      waveSummaries.push([plan, task, mergeSha, runs]);
+      waveSummaries.push([plan, task, mergeSha, runs, own.get(plan.taskId)]);
     }
     if (why) {
       // The wave is the integration unit: roll back every merge of this wave, keep the earlier ones.

@@ -292,5 +292,5 @@ Re-derive every field from git and exit codes, never narrate:
 `{taskId, status: "done"|"blocked"|"error", branch, commit, worktree, filesChanged:[string], testsRun:[string], testsPassed:boolean, selfCheck:"PASSED"|"FAILED", deviations:[string]}`
 - `branch` `git rev-parse --abbrev-ref HEAD`; `commit` full `git rev-parse HEAD`; `worktree` `pwd`; `filesChanged` `git log --no-merges --name-only --format= HEAD --not <base> <prior commits> | sort -u`; `testsRun` the exact commands.
 - `deviations`: one line each, `[Rule N - Type] <what> (<files>, <commit>)`, `[Deferred] ...`, `[Stub] <file>:<line> <reason>` (a stub defeating `<done>` means not done), `[Threat] <surface absent from <threat_model>>`, and any blocking reason.
-- `done` only with tests green and self-check PASSED; `blocked` per the steps above; `error` for tool failure or failed self-check.
+- `done` only with tests green and self-check PASSED; `blocked` (selfCheck FAILED) per the steps above; `error` for tool failure or failed self-check.
 Under Workflow `agent({schema})` return the object; otherwise end with one fenced `json` block.

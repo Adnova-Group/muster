@@ -137,6 +137,36 @@ test("build-args --from-wave N keeps waves N and later for a rebuild after a par
   assert.equal(cli(root, ["build-args", "r1", "--from-wave", "9", "--base", "abc"]).status, 1);
 });
 
+// Live run 7: the rebuild's verifier read attempt A's build-result.json as the current record.
+test("build-args starts a new attempt: the previous build-result.json leaves the path the verifier reads, the partial record stays", async () => {
+  const root = await trackedMkdtemp(join(tmpdir(), "muster-build-args-attempts-"));
+  const run = join(root, ".muster/runs/r1");
+  await mkdir(run, { recursive: true });
+  await writeFile(join(run, "PLAN.md"), PLAN);
+  const attemptA = JSON.stringify({ runId: "r1", tasks: [{ taskId: "02", status: "blocked", commit: "b98d3d8", review: null }] });
+  await writeFile(join(run, "build-result.json"), attemptA);
+  await writeFile(join(run, "merge-refusal.json"), JSON.stringify({ runId: "r1", kind: "partial", problems: ["02: status is blocked, not done"], wavesMerged: [1], failedWave: 2, tasksMerged: ["01"], unmerged: [] }));
+  const r = cli(root, ["build-args", "r1", "--from-wave", "2", "--base", "abc"]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(JSON.parse(r.stdout).archived, ".muster/runs/r1/attempts/build-result-1.json");
+  assert.equal(existsSync(join(run, "build-result.json")), false, "the verifier can no longer mistake it for this attempt's");
+  assert.equal(await readFile(join(run, "attempts/build-result-1.json"), "utf8"), attemptA);
+  assert.ok(existsSync(join(run, "merge-refusal.json")), "the partial record is run state, not the attempt's");
+  assert.equal(JSON.parse(cli(root, ["build-args", "r1", "--from-wave", "2", "--base", "abc"]).stdout).archived, undefined, "nothing to move twice");
+  // A later attempt's result gets the next number; earlier ones are never overwritten.
+  await writeFile(join(run, "build-result.json"), "{}");
+  assert.equal(JSON.parse(cli(root, ["build-args", "r1", "--from-wave", "2", "--base", "abc"]).stdout).archived, ".muster/runs/r1/attempts/build-result-2.json");
+  assert.equal(await readFile(join(run, "attempts/build-result-1.json"), "utf8"), attemptA);
+  // The rebuild has not run: next still says rebuild, and still says verification is not PASS.
+  const next = await nextForRun({ cwd: root, runId: "r1" });
+  assert.equal(next.position, "merge-partial");
+  assert.deepEqual([next.wavesMerged, next.failedWave], [[1], 2]);
+  // The moved copies are machine-local like the result itself.
+  spawnSync("git", ["init", "-q"], { cwd: root });
+  const ignored = spawnSync("git", ["check-ignore", "-q", ".muster/runs/r1/attempts/build-result-1.json"], { cwd: root });
+  assert.equal(ignored.status, 0, "runs/.gitignore covers attempts/");
+});
+
 test("a runs/.gitignore an older muster wrote gains merge-refusal.json; a user's own stays as it is", async () => {
   const { ensureRunDir, RUNS_GITIGNORE } = await import("../src/run-dir.js");
   const root = await trackedMkdtemp(join(tmpdir(), "muster-runs-ignore-"));

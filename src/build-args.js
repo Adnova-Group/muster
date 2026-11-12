@@ -6,7 +6,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { decodeEntityAmps, parsePlan } from "./plan-lint.js";
-import { runDir } from "./run-dir.js";
+import { archiveBuildResult, runDir } from "./run-dir.js";
 import { sha256, writeContainedFile } from "./fs-safe.js";
 import { agentTypeFor, musterCli, specialistCatalog } from "./specialists.js";
 import { pinApplies, resolvePins, taskRoles } from "./skill-pins.js";
@@ -109,7 +109,8 @@ async function readJsonOrNull(path) {
 // Reads PLAN.md (and the seat models preflight computed), writes build-args.json and returns a
 // report that carries everything go.md steps 4-5 need (the task lines to print, the workflow to
 // run and the exact args to pass), so the session never re-reads the file. ok:false leaves no
-// file behind.
+// file behind. New args start a new build attempt, so the previous attempt's build-result.json
+// moves to attempts/ (src/run-dir.js archiveBuildResult) before the build can run.
 export async function writeBuildArgs({ cwd, runId, base = null, branch = null, fromWave = null }) {
   const dir = runDir(cwd, runId);
   let planText;
@@ -124,9 +125,11 @@ export async function writeBuildArgs({ cwd, runId, base = null, branch = null, f
   const rel = `.muster/runs/${runId}/build-args.json`;
   if (problems.length) return { ok: false, runId, problems, humanNeeded };
   args.digests = { plan: planDigest(planText), args: argsDigest(args) };
+  const archived = await archiveBuildResult(cwd, runId);
   await writeContainedFile(cwd, join(dir, "build-args.json"), JSON.stringify(args, null, 2) + "\n");
   return {
     ok: true, runId, path: rel, base: args.base || null,
+    ...(archived ? { archived: `.muster/runs/${runId}/${archived}` } : {}),
     ...(args.fromWave ? { fromWave: args.fromWave } : {}),
     waves: args.waves.map((w) => w.map((t) => t.taskId)),
     tasks: taskLines(args),

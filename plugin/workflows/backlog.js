@@ -222,6 +222,13 @@ function emptyExec(t, status, why) {
   return { taskId: t.taskId, status, branch: '', commit: '', worktree: '', filesChanged: [], testsRun: [], testsPassed: false, selfCheck: 'FAILED', deviations: [why] }
 }
 
+// selfCheck PASSED needs every verify command passed, so any status but done reads FAILED, with a
+// deviation saying so (live run 7: a blocked executor returned selfCheck PASSED).
+function settleSelfCheck(ex) {
+  if (!ex || ex.status === 'done' || ex.selfCheck === 'FAILED') return ex
+  return { ...ex, selfCheck: 'FAILED', deviations: [...list(ex.deviations), `[muster] selfCheck ${ex.selfCheck || '(none)'} corrected to FAILED: status is ${ex.status}, and PASSED needs done`] }
+}
+
 function execBrief(cfg, t, prior) {
   const tag = `[${cfg.runId}/${t.taskId}]`
   const specialist = builderType(t) !== EXECUTOR
@@ -290,6 +297,7 @@ function verifyBrief(cfg, tasks) {
     `Verify run ${cfg.runId} goal-backward against .muster/runs/${cfg.runId}/PLAN.md (and CONTEXT.md when present).`,
     `The work is not merged yet. Integrate it in a scratch worktree: git worktree add --detach ${wt} ${cfg.base || 'HEAD'} (reuse it if it already exists), then inside it run git merge --no-ff --no-edit for each commit in order: ${tasks.map((t) => t.commit).join(' ')}`,
     `Check every must-have against that tree and run the verify commands there: ${tasks.flatMap((t) => list(t.verify)).join(' ; ') || '(see PLAN.md)'}`,
+    `This brief is the current build attempt's record. Never read the run folder's build-result.json, attempts/ or merge-refusal.json: they describe earlier attempts and merge-wave's state, not these commits.`,
     `Write your report to .muster/runs/${cfg.runId}/VERIFICATION.md relative to your starting directory (the main checkout, not the scratch worktree), then remove the scratch worktree with git worktree remove --force ${wt}.`,
     'ABSTAIN when you cannot gather the evidence; never guess PASS.',
   ].join('\n')
@@ -356,6 +364,7 @@ async function finishTask(cfg, t, w, ex, prior) {
   const missing = boundSkills(t).map((k) => k.id).filter((id) => !proven.has(id))
   if (missing.length) base.skillsMissing = missing
   if (!ex || ex.status === 'error') return { ...emptyExec(t, 'error', (ex && ex.error) || 'executor failed'), reason: (ex && ex.reason) || 'no_result', ...base, review: null }
+  ex = settleSelfCheck(ex)
   if (ex.status !== 'done' || ex.selfCheck !== 'PASSED') return { ...ex, taskId: t.taskId, ...base, review: null }
   const { current, reviews } = await reviewLoop(cfg, t, ex, prior)
   return { ...current, ...base, review: reviews[reviews.length - 1], reviewRounds: reviews.length, fixRounds: reviews.length - 1 }

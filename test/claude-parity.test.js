@@ -1566,5 +1566,12 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // bundled runtime is rebuilt, go.md steps 6-7 and its resume map report a partial merge, and
   // the orchestrator's escalation rule names it; the workflows name a rebuilt wave by its plan
   // number in halted and progress text. Deliberate, not drift.
-  assert.equal(hash.digest("hex"), "50756b3bee5f4862fde94e37ea30d9dd295811758ef028a3a3b2e75872d76f96");
+  // Re-pin 2026-11-12 (live partial-merge run 7 fixes, content-only, file count unchanged at 917):
+  // the bundled runtime is rebuilt (merge-wave removes superseded attempts' worktrees and
+  // branches recorded in merge-refusal.json and derives each task's files from its own commits;
+  // build-args moves an earlier build-result.json to attempts/); build, team and backlog force
+  // selfCheck FAILED for any status but done and keep the verifier off earlier attempts' run
+  // files; go.md excludes attempts/ from the run-record commit; the executor's return contract
+  // says blocked means selfCheck FAILED. Deliberate, not drift.
+  assert.equal(hash.digest("hex"), "af9cb89335239222683b3af5dfef306a69faddbdaff9011dfb86c1272922414b");
 });

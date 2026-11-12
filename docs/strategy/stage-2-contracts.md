@@ -144,7 +144,14 @@ re-runs `testsRun` before merging, through `muster merge-wave`.
   `partial: true` with `wavesMerged` and `failedWave`. Either way merge-wave writes the
   machine-local `merge-refusal.json`, which `next --run` turns into an escalation (refused) or
   `muster build-args <id> --from-wave N` (partial) until a new build result or new build-args
-  digests supersede it; a merge-wave that merges everything removes it.
+  digests supersede it; a merge-wave that merges everything removes it. The record's `unmerged`
+  lists the kept task branches and worktrees as git saw them; once a later merge-wave merges the
+  same task from a rebuild, it removes the superseded branch (only at its recorded tip) and its
+  clean worktree (amendment 2026-11-12, live run 7). `muster build-args` moves an earlier
+  attempt's `build-result.json` to `attempts/build-result-<k>.json`, so the next build's verifier
+  never reads it as the current attempt's. Each task's `files` in the report (and its SUMMARY)
+  come from its own non-merge commits, not the agent's `filesChanged`, which named files merged
+  in from dependencies.
 - `muster next --run <id>`: derives position from files on disk (which of CONTEXT, PLAN, SUMMARY-*,
   VERIFICATION exist) and prints the next action.
 - `muster plan-lint <PLAN.md>`: deterministic gates ported from gsd (failing-direction, verify

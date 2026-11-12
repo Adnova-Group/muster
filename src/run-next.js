@@ -103,11 +103,12 @@ export async function nextForRun({ cwd, runId }) {
   // judged are unchanged: re-running merge-wave on the same inputs can only fail the same way.
   // A partial merge stays open until a new build result arrives: new build args alone (the
   // `--from-wave` rebuild's, before its build ran) still leave the failed waves to build, and
-  // re-running build-args then is harmless.
+  // re-running build-args then is harmless. build-args moves the judged build-result.json to
+  // attempts/, so no build result at all also means the rebuild has not run yet.
   const refusal = has(MERGE_REFUSAL) ? mergeRefusalRecord(await readOrNull(join(dir, MERGE_REFUSAL))) : null;
   const refusalInputs = refusal && !refusal.unreadable ? await mergeInputs(cwd, runId) : null;
   const refusalCurrent = !!refusal && (refusal.unreadable || sameMergeInputs(refusal, refusalInputs) ||
-    (refusal.kind === "partial" && refusal.resultDigest === refusalInputs.resultDigest));
+    (refusal.kind === "partial" && (refusalInputs.resultDigest === null || refusal.resultDigest === refusalInputs.resultDigest)));
 
   // Content runs (muster:pipeline) have pipeline-args.json instead of PLAN.md.
   let pipelineVerdict = null;

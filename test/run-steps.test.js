@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -396,6 +396,93 @@ test("a rebuild of the failed waves merges with --from-wave numbering, and that 
   const again = await commitRebuildArgs(root, [[{ taskId: "Z", title: "z", files: [], verify: ["true"] }]], 3);
   const z = await mergeWave({ cwd: root, runId: "r1", result: { runId: "r1", argsDigest: again.digests.args, tasks: [{ taskId: "Z", status: "error" }] }, now: NOW });
   assert.deepEqual([z.partial, z.wavesMerged, z.failedWave], [true, [], 3]);
+});
+
+// A rebuilt task's fresh worktree and branch, committed from HEAD, and its passing result.
+async function rebuiltTask(root, id, name, body) {
+  const head = git(root, "rev-parse", "HEAD");
+  const wt = join(root, ".claude", "worktrees", `wf_${name}`);
+  git(root, "worktree", "add", "-q", "-b", `worktree-wf_${name}`, wt, head);
+  await writeFile(join(wt, `${id}.txt`), body);
+  git(wt, "add", `${id}.txt`);
+  git(wt, "commit", "-q", "-m", `task ${id} [r1/${id}]`);
+  const commit = git(wt, "rev-parse", "HEAD");
+  return {
+    taskId: id, title: `task ${id}`, wave: 1, status: "done", branch: `worktree-wf_${name}`, commit, worktree: wt,
+    filesChanged: [`${id}.txt`], testsRun: [], testsPassed: true, selfCheck: "PASSED", deviations: [],
+    review: { taskId: id, verdict: "PASS", commitReviewed: commit, findings: [], testsRun: [], testsPassed: true },
+  };
+}
+
+// Live run 7: the failed attempt's worktree and branch outlived the rebuild that merged the task.
+test("partial, rebuild, partial again, full merge: every superseded attempt's worktree and branch is gone, nothing else", async () => {
+  const { archiveBuildResult } = await import("../src/run-dir.js");
+  const { root, base, result } = await repoWithTasks({ layout: [["A"], ["B", "C"]] });
+  const [, oldB, oldC] = result.tasks;
+  oldB.status = "blocked";
+  const stray = join(root, ".claude", "worktrees", "wf_stray");
+  git(root, "worktree", "add", "-q", "-b", "worktree-wf_stray", stray, base); // a harness branch no record names
+  const first = await mergeWave({ cwd: root, runId: "r1", resultFile: await resultFileFor(result), now: NOW });
+  assert.deepEqual([first.partial, first.failedWave], [true, 2]);
+  const record = JSON.parse(await readFile(refusalPath(root), "utf8"));
+  assert.deepEqual(record.unmerged, [
+    { taskId: "B", branch: "worktree-wf_B", tip: oldB.commit, worktree: realpathSync(oldB.worktree) },
+    { taskId: "C", branch: "worktree-wf_C", tip: oldC.commit, worktree: realpathSync(oldC.worktree) },
+  ], "the failed wave's branches and worktrees, as git sees them");
+
+  // Attempt 2 (build-args --from-wave 2 moves attempt 1's result aside): B fails again.
+  assert.equal(await archiveBuildResult(root, "r1"), "attempts/build-result-1.json");
+  let args = await commitRebuildArgs(root, [[{ taskId: "B", title: "task B", files: ["B.txt"], verify: ["grep -q B B.txt"] }, { taskId: "C", title: "task C", files: ["C.txt"], verify: ["grep -q C C.txt"] }]], 2);
+  const b2 = { ...(await rebuiltTask(root, "B", "B2", "B2\n")), status: "blocked" };
+  const c2 = await rebuiltTask(root, "C", "C2", "C2\n");
+  const second = await mergeWave({ cwd: root, runId: "r1", resultFile: await resultFileFor({ runId: "r1", argsDigest: args.digests.args, tasks: [b2, c2] }), now: NOW });
+  assert.deepEqual([second.partial, second.failedWave], [true, 2]);
+  assert.deepEqual(JSON.parse(await readFile(refusalPath(root), "utf8")).unmerged.map((s) => s.branch), ["worktree-wf_B2", "worktree-wf_C2", "worktree-wf_B", "worktree-wf_C"], "earlier attempts stay recorded");
+  // Someone commits on attempt 1's C branch after the record: it is no longer what was recorded.
+  await writeFile(join(oldC.worktree, "note.txt"), "keep me\n");
+  git(oldC.worktree, "add", "note.txt");
+  git(oldC.worktree, "commit", "-q", "-m", "a later commit");
+
+  // Attempt 3 merges B and C.
+  await archiveBuildResult(root, "r1");
+  args = await commitRebuildArgs(root, args.waves, 2);
+  const b3 = await rebuiltTask(root, "B", "B3", "B3\n");
+  const c3 = await rebuiltTask(root, "C", "C3", "C3\n");
+  const done = await mergeWave({ cwd: root, runId: "r1", resultFile: await resultFileFor({ runId: "r1", argsDigest: args.digests.args, tasks: [b3, c3] }), now: NOW });
+  assert.equal(done.ok, true, JSON.stringify(done.problems));
+  for (const [branch, wt] of [["worktree-wf_B", oldB.worktree], ["worktree-wf_B2", b2.worktree], ["worktree-wf_C2", c2.worktree], ["worktree-wf_B3", b3.worktree], ["worktree-wf_C3", c3.worktree]]) {
+    assert.equal(hasBranch(root, branch), false, `${branch} deleted`);
+    assert.equal(existsSync(wt), false, `${wt} removed`);
+  }
+  const cleanup = done.cleanup.join("\n");
+  assert.match(cleanup, /removed superseded attempt of B: worktree .*wf_B\n[\s\S]*removed superseded attempt of B: branch worktree-wf_B at /);
+  assert.match(cleanup, /kept superseded attempt of C: branch worktree-wf_C moved from the recorded [0-9a-f]{10} to /);
+  assert.match(cleanup, /left worktree-wf_C \(worktree .*wf_C\): an earlier attempt of C/);
+  assert.ok(hasBranch(root, "worktree-wf_C") && existsSync(join(oldC.worktree, "note.txt")), "a moved branch is never deleted");
+  assert.ok(hasBranch(root, "worktree-wf_stray") && existsSync(stray), "an unrecorded branch merged into nothing is never deleted");
+  assert.deepEqual(git(root, "branch", "--format=%(refname:short)").split("\n").sort(), ["main", "worktree-wf_C", "worktree-wf_stray"]);
+  assert.equal(existsSync(refusalPath(root)), false);
+});
+
+// Live run 7: a wave-2 executor merged wave 1's commit and listed wave 1's files as its own.
+test("merge-wave: a task's files are its own commits' files, not its merged dependencies'; out-of-plan files are named", async () => {
+  const { root, result } = await repoWithTasks({ layout: [["A"], ["B"]] });
+  const [a, b] = result.tasks;
+  git(b.worktree, "merge", "--no-ff", "--no-edit", a.commit);
+  await writeFile(join(b.worktree, "extra.txt"), "x\n");
+  git(b.worktree, "add", "extra.txt");
+  git(b.worktree, "commit", "-q", "-m", "more B [r1/B]");
+  b.commit = git(b.worktree, "rev-parse", "HEAD");
+  b.review.commitReviewed = b.commit;
+  b.filesChanged = ["A.txt", "B.txt", "extra.txt"];
+  const report = await mergeWave({ cwd: root, runId: "r1", result, now: NOW });
+  assert.equal(report.ok, true, JSON.stringify(report.problems));
+  assert.deepEqual(report.files, { A: ["A.txt"], B: ["B.txt", "extra.txt"] });
+  assert.deepEqual(report.notes.filter((n) => /files/.test(n)), [
+    "B: agent-reported filesChanged not in the task's own commits (merged from a dependency, or never committed): A.txt; its own files: B.txt, extra.txt",
+    "B: its own commits change files outside its planned list: extra.txt",
+  ]);
+  assert.match(await readFile(join(root, ".muster/runs/r1/SUMMARY-B.md"), "utf8"), /\n- files: B\.txt, extra\.txt\n/);
 });
 
 test("merge-wave: a wave-2 verify failure or integration FAIL rolls back only that wave", async () => {

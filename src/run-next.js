@@ -1,6 +1,7 @@
 // `muster next --run <id>`: derive a run's position from which files exist in
 // .muster/runs/<id>/ (gsd's next.md routing table: derive, don't narrate) and rewrite the
 // derived head of STATE.md. The `## Log` section that merge-wave appends is preserved.
+import { spawnSync } from "node:child_process";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { MERGE_REFUSAL, mergeInputs, readState, runDir, sameMergeInputs, writeStateHead } from "./run-dir.js";
@@ -73,6 +74,39 @@ function mergedTasks(state) {
   const ids = new Set();
   for (const m of state.matchAll(/merge-wave: merged (\S+) /g)) ids.add(m[1]);
   return [...ids];
+}
+
+// A backlog-origin run (build-args.json `backlogItem`, written by `build-args --item`) whose work
+// is merged and verified names its backlog tick, so a `--run` resume ticks the item too (live
+// run 8: a resumed item merged and verified but stayed `- [ ]`; only go.md Backlog step 5 ticked).
+// The receipt is the run's last merge-wave merge, resolved to the full sha CI checks. Null when
+// the run has no item, the item is already ticked or missing, or git cannot resolve the merge.
+const ITEM_LINE_RE = /^- \[( |x|X)\] (.*)$/;
+const SAFE_BACKLOG_RE = /^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[A-Za-z0-9._\/-]{1,200}\.md$/;
+
+export function backlogLine(text, id) {
+  const lines = String(text).split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(ITEM_LINE_RE);
+    if (!m) continue;
+    const ann = m[2].match(/\{\s*id\s*:\s*([^}]*?)\s*\}/);
+    if ((ann ? ann[1] : `item-${i + 1}`) === id) return { line: i + 1, ticked: m[1] !== " " };
+  }
+  return null;
+}
+
+async function backlogTick(cwd, dir, state) {
+  let item;
+  try { item = JSON.parse(await readFile(join(dir, "build-args.json"), "utf8"))?.backlogItem; } catch { return null; }
+  if (!item || typeof item.id !== "string" || typeof item.file !== "string" || !SAFE_BACKLOG_RE.test(item.file)) return null;
+  const text = await readOrNull(join(cwd, item.file));
+  const found = text === null ? null : backlogLine(text, item.id);
+  if (!found || found.ticked) return null;
+  const merges = [...state.matchAll(/merge-wave: merged \S+ \S+ as ([0-9a-f]{7,40})\b/g)];
+  if (!merges.length) return null;
+  const r = spawnSync("git", ["rev-parse", "--verify", "--quiet", `${merges[merges.length - 1][1]}^{commit}`], { cwd, encoding: "utf8" });
+  const merge = r.status === 0 ? r.stdout.trim() : "";
+  return /^[0-9a-f]{40}$/.test(merge) ? { file: item.file, id: item.id, line: found.line, merge } : null;
 }
 
 export async function nextForRun({ cwd, runId }) {
@@ -159,8 +193,12 @@ export async function nextForRun({ cwd, runId }) {
     [position, action, why] = ["inconclusive", "ask the human: the verifier abstained", "VERIFICATION.md verdict ABSTAIN"];
   }
 
+  // Done (merged, verified PASS or HUMAN_NEEDED): a backlog item still unticked is ticked first.
+  const tick = (position === "verified" || position === "human_needed") && plan ? await backlogTick(cwd, dir, state) : null;
+  if (tick) action = `tick backlog item ${tick.id} first: mark line ${tick.line} of ${tick.file} "- [x]" with {merge: ${tick.merge}} through backlog-publish (go.md Backlog step 5), commit it; then ${action}`;
   const report = {
     runId, position, next: action, why,
+    ...(tick ? { backlog: tick } : {}),
     ...(refusalCurrent ? { problems: refusal.problems, ...(refusal.kind === "partial" ? { wavesMerged: refusal.wavesMerged, failedWave: refusal.failedWave } : {}) } : {}),
     artifacts: {
       context: has("CONTEXT.md"), plan: !!plan, planCheck: planCheck ? planCheck.verdict : null, summaries: summarized, buildResult: has("build-result.json"),

@@ -1573,5 +1573,15 @@ test("Claude orchestration surface remains byte-identical outside release metada
   // selfCheck FAILED for any status but done and keep the verifier off earlier attempts' run
   // files; go.md excludes attempts/ from the run-record commit; the executor's return contract
   // says blocked means selfCheck FAILED. Deliberate, not drift.
-  assert.equal(hash.digest("hex"), "af9cb89335239222683b3af5dfef306a69faddbdaff9011dfb86c1272922414b");
+  // Re-pin 2026-11-14 (live run 8 fixes, content-only, file count unchanged at 917): the bundled
+  // runtime is rebuilt (build-args records the project's instruction files and skills as
+  // `project`, carries PLAN.md `review_seats` as `reviewSeats` and `--item` as `backlogItem`;
+  // merge-wave excludes same-wave siblings' commits from a task's files; `next --run` names the
+  // backlog tick of a merged, verified backlog-origin run); build, team and backlog briefs name the
+  // project rules and a review PASS must list them in `consulted`; team seats accept project
+  // agents, and the integration fixer stays inside its task's planned files; go, plan, diagnose,
+  // pm, audit, write-book and the orchestrator say invoking the command is the Workflow opt-in
+  // (the orchestrator's prose fallback names the project files too);
+  // planner and plan-checker list `review_seats`. Deliberate, not drift.
+  assert.equal(hash.digest("hex"), "46440d7670a4db2c3fec8c43a3fc4b666f1f869907d4bc2144fbc387f1d78e44");
 });

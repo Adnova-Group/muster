@@ -57,6 +57,7 @@ const REVIEW_RESULT = {
     },
     testsRun: strList,
     testsPassed: { type: 'boolean' },
+    consulted: strList,
   },
   required: ['taskId', 'verdict', 'commitReviewed', 'findings', 'testsRun', 'testsPassed'],
 }
@@ -203,6 +204,33 @@ function skillLines(t, cfg) {
   ]
 }
 
+// Project policy (live run 8: the reviewer skipped CLAUDE.md and .claude/skills, and a file that
+// broke a documented project rule merged; executors were never told to read project skills).
+// build-args records the project's instruction files and skills as args.project; every builder,
+// fixer and reviewer brief names them, and a review PASS must list them in consulted.
+const SAFE_REL = /^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[A-Za-z0-9._\/-]{1,200}$/
+const oneLine = (s) => String(s || '').replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200)
+
+function projectFiles(cfg) {
+  const p = cfg.project && typeof cfg.project === 'object' ? cfg.project : {}
+  const instructions = list(p.instructions).filter((f) => typeof f === 'string' && SAFE_REL.test(f))
+  const skills = list(p.skills).filter((k) => k && typeof k.path === 'string' && SAFE_REL.test(k.path))
+  return { instructions, skills, paths: [...instructions, ...skills.map((k) => k.path)] }
+}
+
+function projectLines(cfg, role) {
+  const p = projectFiles(cfg)
+  if (!p.paths.length) return []
+  const files = [...p.instructions, ...p.skills.map((k) => (oneLine(k.about) ? `${k.path} (${oneLine(k.about)})` : k.path))].join('; ')
+  if (role === 'review') {
+    return [
+      `PROJECT RULES: before reviewing, Read each of these project files and check the diff against every rule in them: ${files}.`,
+      'A broken project rule is a finding at the severity the rule sets (a rule that calls a violation a blocker makes it a blocker). Set consulted to the paths you read, exactly as listed here.',
+    ]
+  }
+  return [`PROJECT RULES: before working, Read each of these project files and follow them like PLAN.md (a conflict with the plan goes in deviations): ${files}.`]
+}
+
 // Specialist agents (wsh-*, surgeon) do not carry muster-executor's protocol, so the brief does.
 function contractLines(tag) {
   return [
@@ -242,6 +270,7 @@ function execBrief(cfg, t, prior) {
     t.agentHint && !specialist ? `Domain lens for this task: ${t.agentHint}.` : '',
     ...(specialist ? contractLines(tag) : []),
     ...skillLines(t, cfg),
+    ...projectLines(cfg, 'build'),
     `Files in scope: ${list(t.files).join(', ') || '(see PLAN.md)'}`,
     `Verify commands: ${list(t.verify).join(' ; ') || '(see PLAN.md)'}`,
     ISOLATION_LINE,
@@ -274,6 +303,7 @@ function reviewBrief(cfg, t, ex, prior) {
       `The builder reports skillsApplied: ${used.join('; ') || '(none)'}.`,
       'Not following a bound skill is a FAIL finding (cite the rule); so is a bound skill missing from skillsApplied.',
     ] : []),
+    ...projectLines(cfg, 'review'),
     'Read only: do not edit files or commit.',
     `Set taskId to ${t.taskId} and commitReviewed to the full sha you reviewed (it must be ${ex.commit}).`,
     'verdict PASS only when no blocker remains; FAIL with one finding per problem; ABSTAIN when you cannot review.',
@@ -291,6 +321,7 @@ function fixBrief(cfg, t, ex, review, round) {
     ...findings,
     `3. Re-run the verify commands (${list(t.verify).join(' ; ') || 'see PLAN.md'}) and commit with a message containing ${tag}.`,
     boundSkills(t).length ? `The task is bound to these skills; keep the fix consistent with them: ${boundSkills(t).map((k) => `${k.id} (${k.path})`).join(', ')}` : '',
+    ...projectLines(cfg, 'build'),
     'Return the ExecResult for the new HEAD (same branch and worktree).',
   ].filter(Boolean).join('\n')
 }
@@ -305,6 +336,26 @@ function verifyBrief(cfg, tasks) {
     `Write your report to .muster/runs/${cfg.runId}/VERIFICATION.md relative to your starting directory (the main checkout, not the scratch worktree), then remove the scratch worktree with git worktree remove --force ${wt}.`,
     'ABSTAIN when you cannot gather the evidence; never guess PASS.',
   ].join('\n')
+}
+
+// A review PASS must show the project files were read (consulted). One retry names the unread
+// ones; a PASS that still leaves one unread becomes ABSTAIN: no PASS on unread project rules.
+function unreadRules(cfg, r) {
+  const want = projectFiles(cfg).paths
+  if (!want.length || !r || r.verdict !== 'PASS') return []
+  const got = list(r.consulted).map((c) => String(c).trim().replace(/\\/g, '/'))
+  return want.filter((f) => !got.some((g) => g === f || g === `./${f}` || g.endsWith(`/${f}`)))
+}
+
+async function reviewCall(cfg, prompt, opts) {
+  const r = await call(prompt, opts)
+  const unread = unreadRules(cfg, r)
+  if (!unread.length) return r
+  log(`${opts.label}: PASS without consulting ${unread.join(', ')}; retrying once`)
+  const again = await call(`${prompt}\nYour previous review returned PASS without listing these project files in consulted: ${unread.join(', ')}. Read each one now, check the diff against its rules, and list every file you read in consulted.`, { ...opts, label: `${opts.label} rules` })
+  const still = unreadRules(cfg, again)
+  if (!still.length) return again
+  return { ...again, verdict: 'ABSTAIN', findings: [...list(again.findings), { severity: 'blocker', file: still[0], summary: `review returned PASS without reading the project rules in ${still.join(', ')}` }] }
 }
 
 // One verifier per run. ABSTAIN means the verification could not run (a halted build, no
@@ -388,6 +439,10 @@ const seatGap = (r) => (r.verdict === 'PASS' ? gapOf(r, ['commitReviewed'], 'PAS
 const MAX_SEATS = 4
 const TEST_WRITER = 'muster:muster-test-writer'
 const REVIEWER = 'muster:muster-reviewer'
+// A seat's agent type: a plugin agent (muster:prt-pr-test-analyzer) or a bare project or user
+// agent (house-style-reviewer, from .claude/agents/). A safe name charset only: the value becomes
+// the agent() call's agentType, never brief text (src/plan-lint.js REVIEW_SEAT_RE matches it).
+const SEAT_AGENT_RE = /^(?:[a-z0-9][a-z0-9-]{0,62}:)?[a-z0-9][a-z0-9-]{0,80}$/
 
 // Specialist review seats, chosen by path/title pattern: the script has no diff text, so it
 // matches the builder's filesChanged, the task's files and its title. First matching rules
@@ -436,6 +491,7 @@ function redBrief(cfg, t, prior) {
     `The task is defined in .muster/runs/${cfg.runId}/PLAN.md (its <behavior> and <done>); that file is the source of truth.`,
     `Files the implementation will touch (read-only for you): ${list(t.files).join(', ') || '(see PLAN.md)'}`,
     `Verify commands the implementer will run: ${list(t.verify).join(' ; ') || '(see PLAN.md)'}`,
+    ...projectLines(cfg, 'build'),
     ISOLATION_LINE,
     'You are in a fresh, isolated git worktree. This brief may be replayed after a crash, so:',
     `1. Check git state first: git status --short; git log --oneline ${cfg.base || 'HEAD~20'}..HEAD. If a commit whose message contains ${tag} already exists and the tree is clean, do not redo it: re-run the tests and report that commit.`,
@@ -459,6 +515,7 @@ function greenBrief(cfg, t, red) {
     t.agentHint && !specialist ? `Domain lens for this task: ${t.agentHint}.` : '',
     ...(specialist ? contractLines(tag) : []),
     ...skillLines(t, cfg),
+    ...projectLines(cfg, 'build'),
     `Work in the test writer's worktree ${red.worktree}: prefix every shell command with cd ${red.worktree} && . Do not create a new worktree or branch.`,
     `Failing tests are committed at the red commit ${red.commit} (${list(red.testFiles).join(', ') || 'see git show --stat'}). They are the spec: make them pass. Never edit, delete, skip or loosen them; if one is wrong, return "blocked" naming it.`,
     `Files in scope: ${list(t.files).join(', ') || '(see PLAN.md)'}`,
@@ -504,7 +561,9 @@ function seatBrief(cfg, t, ex, prior, s) {
 
 // Scoped re-review (superpowers subagent-driven-development, fix-loop.md): the reviewer judges
 // each open finding ADDRESSED / NOT ADDRESSED from the fix diff only, plus new breakage in it.
-function rereviewBrief(cfg, t, ex, prevCommit, open, round, red) {
+// `boundary` ({files, cross}) scopes an integration fix to the task's own planned files.
+function rereviewBrief(cfg, t, ex, prevCommit, open, round, red, boundary) {
+  const rules = projectFiles(cfg).paths
   return [
     `Re-review task ${t.taskId} of run ${cfg.runId} after fix round ${round} (scoped re-review): ${t.title || ''}`,
     'Open findings from the last review:',
@@ -512,11 +571,26 @@ function rereviewBrief(cfg, t, ex, prevCommit, open, round, red) {
     `Fix diff: cd ${ex.worktree} && git log -p --no-merges ${prevCommit}..${ex.commit}`,
     `Re-run the verify commands inside the worktree: ${list(t.verify).join(' ; ') || '(see PLAN.md)'}`,
     'For each open finding decide ADDRESSED or NOT ADDRESSED from the fix diff, and report any new breakage the fix diff introduces. Do not re-review unchanged code.',
+    rules.length ? `Project rules apply to the fix diff too (${rules.join(', ')}): a fix that breaks one is a new finding.` : '',
+    ...(boundary ? boundaryLines(ex, prevCommit, boundary) : []),
     ...redGuard(red),
     'Read only: do not edit files or commit.',
     `Set taskId to ${t.taskId} and commitReviewed to ${ex.commit}.`,
     'verdict PASS only when every open finding is addressed and the fix adds no blocker; FAIL with one finding per NOT ADDRESSED item or new problem; ABSTAIN when you cannot review.',
-  ].join('\n')
+  ].filter(Boolean).join('\n')
+}
+
+// An integration fix stays inside its own task (live run 8: the fixer for 02 merged sibling 01
+// into its branch and edited 01's test file, and the scoped re-review passed it). The fixer edits
+// only the task's planned files or declares the crossing as [CrossTask]; the re-review counts a
+// sibling merge, a file outside the plan or a declared crossing as a blocker.
+const CROSS_RE = /^\[CrossTask\]/
+
+function boundaryLines(ex, prevCommit, boundary) {
+  return [
+    `This is an integration fix. The task's planned files are: ${boundary.files.join(', ') || '(see PLAN.md)'}. Run cd ${ex.worktree} && git log --merges --oneline ${prevCommit}..${ex.commit} and cd ${ex.worktree} && git diff --name-only ${prevCommit} ${ex.commit}: a merge commit (a sibling task merged in) or a changed file outside the planned files (.muster/runs/ excepted) is a blocker finding; the integration checker merges the wave itself.`,
+    boundary.cross.length ? `The fixer declared these cross-task edits; each is a blocker finding: ${boundary.cross.join('; ')}` : '',
+  ].filter(Boolean)
 }
 
 function integrateFixBrief(cfg, t, ex, findings) {
@@ -527,6 +601,8 @@ function integrateFixBrief(cfg, t, ex, findings) {
     `1. Check git state first: git rev-parse --abbrev-ref HEAD must print ${ex.branch}, otherwise return status "blocked". If git log --oneline ${ex.commit}..HEAD already shows a commit containing ${tag}, do not redo it: re-run the verify commands and report it.`,
     '2. Address exactly these findings on your side of the connection, nothing else:',
     ...findings.map(findingLine),
+    `Stay inside this task: edit only its planned files (${list(t.files).join(', ') || 'see PLAN.md'}). Never merge, cherry-pick or copy a sibling task's commits or files into this branch: the integration checker merges the wave again after your fix. Leave undone any part of a finding that needs another task's files, and record it as the deviation "[Deferred] <file>: <what>"; if no part of the findings lies in your files, return status "blocked". Editing a file outside the planned list anyway needs the deviation "[CrossTask] <file>: <why>", which the re-review counts as a blocker.`,
+    ...projectLines(cfg, 'build'),
     `3. Re-run the verify commands (${list(t.verify).join(' ; ') || 'see PLAN.md'}) and commit with a message containing ${tag}.`,
     'Return the ExecResult for the new HEAD (same branch and worktree).',
   ].join('\n')
@@ -542,19 +618,20 @@ function integrateBrief(cfg, w, tasks, prior, round) {
     `Scratch worktree: git worktree add --detach ${wt} ${cfg.base || 'HEAD'} (reuse it if it exists), then inside it git merge --no-ff --no-edit, in order: ${[...prior.map((p) => p.commit), ...tasks.map((r) => r.commit)].join(' ')}`,
     `Run every verify command and the project's full test suite there: ${tasks.flatMap((r) => list(r.verify)).join(' ; ') || '(see PLAN.md)'}`,
     `Remove the scratch worktree with git worktree remove --force ${wt} before returning.`,
-    'Read only on source. verdict PASS only when no blocker remains; every blocker names in taskIds the task(s) whose commit must change; ABSTAIN when you cannot build the merged tree.',
+    'Read only on source. verdict PASS only when no blocker remains; every blocker names in taskIds the task(s) whose commit must change, and each task\'s fixer may edit only that task\'s planned files, so split a fix that spans two tasks\' files into one finding per task; ABSTAIN when you cannot build the merged tree.',
   ].join('\n')
 }
 
-// Seats for one task: an explicit t.reviewSeats list (seat names or agent types) wins;
-// otherwise the first rules whose pattern matches a changed file, a task file or the title.
+// Seats for one task: an explicit t.reviewSeats list (seat names or agent types, from PLAN.md's
+// review_seats) wins; otherwise the first rules whose pattern matches a changed file, a task file
+// or the title. A listed agent no rule names reviews by its own instructions.
 function selectSeats(top, t, ex, tdd) {
   if (top.seats === 'off' || top.maxSeats === 0) return []
   const rules = top.seatRules
   const exclude = new Set([REVIEWER, builderType(t)])
   let chosen
   if (Array.isArray(t.reviewSeats)) {
-    chosen = t.reviewSeats.map((s) => rules.find((r) => r.seat === s || r.agentType === s) || { seat: String(s), agentType: String(s), focus: 'your specialty' })
+    chosen = t.reviewSeats.map((s) => rules.find((r) => r.seat === s || r.agentType === s) || { seat: String(s), agentType: String(s), focus: 'the rules and the specialty your own agent instructions define' })
   } else {
     const hay = [...list(ex.filesChanged), ...list(t.files), String(t.title || '')]
     chosen = rules.filter((r) => {
@@ -565,7 +642,7 @@ function selectSeats(top, t, ex, tdd) {
     })
   }
   const seen = new Set()
-  return chosen.filter((r) => AGENT_TYPE_RE.test(String(r.agentType)) && !exclude.has(r.agentType) && !seen.has(r.agentType) && seen.add(r.agentType)).slice(0, top.maxSeats)
+  return chosen.filter((r) => SEAT_AGENT_RE.test(String(r.agentType)) && !exclude.has(r.agentType) && !seen.has(r.agentType) && seen.add(r.agentType)).slice(0, top.maxSeats)
 }
 
 // The primary reviewer decides; a seat adds its blocker-grade findings only when it reviewed
@@ -598,7 +675,7 @@ async function teamReviewLoop(cfg, top, t, ex, prior, red) {
     if (round === 0) {
       const chosen = selectSeats(top, t, current, !!red)
       const [primary, ...seatRvs] = await parallel([
-        () => call(teamReviewBrief(cfg, t, current, prior, red), {
+        () => reviewCall(cfg, teamReviewBrief(cfg, t, current, prior, red), {
           label: `${pre}review ${t.taskId} r0`, phase: 'Review', schema: REVIEW_RESULT, agentType: REVIEWER, ...seat(cfg, 'reviewer'),
         }),
         ...chosen.map((s) => () => call(seatBrief(cfg, t, current, prior, s), {
@@ -703,9 +780,13 @@ async function integrateWave(cfg, top, w, waveTasks, done, prior) {
     })
     if (fx.status !== 'done') return { taskId: r.taskId, ok: false, why: fx.error || fx.status }
     const next = { ...fx, taskId: r.taskId, branch: r.branch, worktree: r.worktree, skillsApplied: r.skillsApplied }
-    const rv = await call(rereviewBrief(cfg, t, next, r.commit, mine, 1, r.red), {
+    const files = list(t.files)
+    const cross = list(fx.deviations).filter((d) => CROSS_RE.test(String(d)))
+    const rv = await call(rereviewBrief(cfg, t, next, r.commit, mine, 1, r.red, { files, cross }), {
       label: `${pre}review ${r.taskId} integrate`, phase: 'Integrate', schema: REVIEW_RESULT, agentType: REVIEWER, ...seat(cfg, 'reviewer'),
     })
+    // A declared crossing fails the fix whatever the re-review says.
+    if (rv.verdict === 'PASS' && cross.length) return { taskId: r.taskId, ok: false, next, review: rv, why: `cross-task edit: ${cross.join('; ')}` }
     return { taskId: r.taskId, ok: rv.verdict === 'PASS', next, review: rv, why: rv.verdict === 'PASS' ? null : `re-review ${rv.verdict || rv.error}` }
   }))
   for (const f of fixes) {

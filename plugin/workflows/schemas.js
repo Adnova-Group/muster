@@ -45,6 +45,9 @@ export const REVIEW_RESULT = {
     },
     testsRun: strList,
     testsPassed: { type: "boolean" },
+    // The project instruction files and skills the reviewer read (build-args `project`); a PASS
+    // must list every one the brief named.
+    consulted: strList,
   },
   required: ["taskId", "verdict", "commitReviewed", "findings", "testsRun", "testsPassed"],
 };

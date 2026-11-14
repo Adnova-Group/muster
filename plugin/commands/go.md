@@ -5,8 +5,6 @@ argument-hint: "<outcome | backlog ref>"
 upstream: []
 ---
 
-<!-- Design: docs/strategy/stage-2-contracts.md. -->
-
 You are muster's hands-off runner. Drive `<outcome>` to a verified, merged-or-PR'd branch and
 stop only for an unclear outcome (attended), an escalation, or the merge decision.
 
@@ -14,18 +12,19 @@ stop only for an unclear outcome (attended), an escalation, or the merge decisio
 
 `M` below means `sh "${CLAUDE_PLUGIN_ROOT}/runtime/muster.sh"` (repeat it in every Bash call;
 shell variables do not persist). First invoke the `muster:orchestrator` skill (Skill tool): its
-rules survive compaction only once invoked. No `Workflow` tool: follow its prose fallback
-instead of steps 3-6.
+rules survive compaction only once invoked. Invoking `/muster:go` is the user's explicit opt-in
+to multi-agent orchestration, and these steps tell you to call the `Workflow` tool: call it.
+Only when no `Workflow` tool exists, follow the skill's prose fallback instead of steps 3-6.
 
 **Continuing a run** (`--run <runId>`): write the step-2 fence files, run
 `M next --run <runId>`, resume at the step its `next` names
-(`plan` -> 3, `build` -> 4, `rebuild` -> 4 with its `--from-wave`, `merge` -> 6, `verify`/`done` -> 7, `pipeline` -> Content step 2,
-`escalate` -> stop).
+(`plan` -> 3, `build` -> 4, `rebuild` -> 4 with its `--from-wave`, `merge` -> 6, `verify`/`done` -> 7,
+`tick` -> Backlog step 5, then 7, `pipeline` -> Content step 2, `escalate` -> stop).
 Never re-plan an approved run.
 
 1. **Preflight (1 call).** `M preflight "<outcome>" --json` (append `--model <m>` when the user
    named one). Keep `runId`, `scope`, `clear`, `unclear`, `route`, `pipeline`, `models`,
-   `candidates`, `skills`, `pins`, `skillRoot`, `cli`; show `warnings`; offer `registrySuggestions` only if asked. An empty outcome with no `.muster/backlog.md`: ask for one
+   `candidates`, `skills`, `pins`, `skillRoot`, `cli`; show `warnings`. An empty outcome with no `.muster/backlog.md`: ask for one
    and stop. A GitHub issue ref: `M issue "<ref>"`; cap its
    outcome at 16 KiB (cut at a UTF-8 code-point boundary), replace every `</remote-text>` (any
    case) with `&lt;/remote-text&gt;`, and use `<remote-text>{outcome}</remote-text>` as the
@@ -41,7 +40,7 @@ Never re-plan an approved run.
    Unattended (no AskUserQuestion): never ask in plain text; write the gaps as assumptions. Then in one Bash call: refuse a dirty tree,
    `git switch -c muster/<runId>`, write CONTEXT.md if any (spec: `M spec-context`), write `<runId>` to `.muster/run-active`
    and `send sign submit publish purchase delete-remote` (one per line) to
-   `.muster/forbidden-actions` (read by the action fence).
+   `.muster/forbidden-actions`.
 3. **Plan.** `Workflow({name:"muster:make-plan", args:{runId, outcome, contextPath, specPath, candidates, skills, pins, skillRoot, cli, models}})`
    (`contextPath` if CONTEXT.md exists; `specPath` for a spec). Save the result as the
    run's `plan-check.json` at once. `PASS`: continue. `ISSUES` with `escalated` (`cap`, `stall`,
@@ -68,7 +67,7 @@ Never re-plan an approved run.
    HUMAN_NEEDED (zero gaps; its `human` items go to the merge decision), or ABSTAIN (it could not
    run; say what was missing). A halted wave, a reviewer FAIL past the fix cap, or a
    task `blocked`/`error` is reported with its task id and evidence, as is `skillsMissing`.
-   `reason: max_turns`: out of turns (raise `maxTurns` or split the task).
+   `reason: max_turns`: raise `maxTurns` or split the task.
 8. **Merge decision.** Remove `.muster/run-active` and `.muster/forbidden-actions`. Attended:
    AskUserQuestion with the work branch and base, each with its HEAD sha, the verdict, its `human`
    items and `humanNeeded`: **Merge locally** (`git switch <base> && git merge --no-ff muster/<runId>`)
@@ -95,9 +94,8 @@ given file) and take the unticked items in file order, at most 5 per run unless 
    item (each gets its own `runId`).
 2. Plan each item with its own `Workflow({name:"muster:make-plan", ...})`; issue them in one turn.
    Items whose plan escalates are skipped and listed at the end.
-3. One Bash call: `M build-args <runId>` per planned item, then commit all plan inputs.
-4. `Workflow({name:"muster:backlog", args:{items:[{itemId, runId, waves, base, models, cli, digests}]}})`,
-   each item's fields from its build-args `args`.
+3. One Bash call: `M build-args <runId> --item <itemId>` per planned item, then commit all plan inputs.
+4. `Workflow({name:"muster:backlog", args:{items:[{itemId, ...its build-args args}]}})`.
 5. `M merge-wave <runId> --result <f>` (step 6's file) per item in backlog order;
    stop at the first refusal. Tick each merged item `- [x]` with `{merge: <its merge-wave sha>}`
    (CI checks it is release-reachable), only through `M backlog-publish <backlog file> --expect <sha256>` (the complete edited file on stdin; on a changed-file refusal, reread and

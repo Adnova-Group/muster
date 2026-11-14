@@ -40,3 +40,41 @@ test("plan and go ride the native Workflow tool and name the prose fallback for 
   assert.match(orchestrator, /## Prose fallback \(no Workflow tool\)/);
   assert.match(orchestrator, /isolation: "worktree"/, "the fallback rides the Agent tool's native worktree isolation");
 });
+
+// Live run 8 (run8a-1, turn 4): with the Workflow tool present, /muster:go took the prose
+// fallback. The tool's description allows a call only when the user opted into multi-agent
+// orchestration or invoked a command whose instructions say to call Workflow; no command said so.
+test("every command that drives a muster workflow says its invocation is the opt-in and to call Workflow", async () => {
+  const commands = {
+    "plugin/commands/go.md": "/muster:go",
+    "plugin/commands/plan.md": "/muster:plan",
+    "plugin/commands/diagnose.md": "/muster:diagnose",
+    "plugin/commands/pm.md": "/muster:pm run",
+    "plugin/commands/audit.md": "/muster:audit",
+    "plugin/commands/write-book.md": "/muster:write-book",
+  };
+  const { readdir } = await import("node:fs/promises");
+  const callers = [];
+  for (const f of await readdir(new URL("../plugin/commands/", import.meta.url))) {
+    if (/Workflow\(\{name:"muster:/.test(await read(`plugin/commands/${f}`))) callers.push(`plugin/commands/${f}`);
+  }
+  assert.deepEqual(callers.sort(), Object.keys(commands).sort(), "a new workflow-driving command needs the opt-in sentence too");
+  for (const [f, cmd] of Object.entries(commands)) {
+    const text = (await read(f)).replace(/\s+/g, " ");
+    assert.ok(text.includes(`Invoking \`${cmd}\` is the user's explicit opt-in to multi-agent orchestration`) || text.includes(`invoking \`${cmd}\` is the user's explicit opt-in to multi-agent orchestration`), `${f} must say invoking ${cmd} is the opt-in`);
+    assert.match(text, /call (it|the `Workflow` tool)/, `${f} must say to call the Workflow tool`);
+  }
+  const go = (await read("plugin/commands/go.md")).replace(/\s+/g, " ");
+  assert.match(go, /Only when no `Workflow` tool exists, follow the skill's prose fallback instead of steps 3-6/);
+  const orchestrator = (await read("plugin/skills/orchestrator/SKILL.md")).replace(/\s+/g, " ");
+  assert.match(orchestrator, /Invoking a muster command is the user's explicit opt-in to multi-agent orchestration/);
+  assert.match(orchestrator, /never because of the tool's opt-in rule, which the command met/);
+});
+
+// Live run 8 (scenario C): a resumed backlog item was never ticked.
+test("go links backlog items to their runs and ticks a resumed item when next names it", async () => {
+  const go = (await read("plugin/commands/go.md")).replace(/\s+/g, " ");
+  assert.match(go, /`M build-args <runId> --item <itemId>` per planned item/);
+  assert.match(go, /`tick` -> Backlog step 5, then 7/);
+  assert.match(go, /Workflow\(\{name:"muster:backlog", args:\{items:\[\{itemId, \.\.\.its build-args args\}\]\}\}\)/);
+});

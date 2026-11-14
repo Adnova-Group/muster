@@ -674,3 +674,26 @@ test("preflight: compact summary under 2 KB, full detail on disk, gsd detected",
   assert.match(text.stdout, /\ndetail \.muster\/runs\/pf2\/preflight\.json\n$/);
   assert.equal(cli(cwd, ["preflight"]).status, 1);
 });
+
+// Live run 8 (scenario B): the integration fixer for 02 merged its same-wave sibling 01 into 02's
+// branch, and merge-wave listed 01's files as 02's own (and SUMMARY-02 repeated them).
+test("merge-wave: a same-wave sibling merged into a task's branch does not count as the task's own files", async () => {
+  const { root, result } = await repoWithTasks({ layout: [["A", "B"]] });
+  const [a, b] = result.tasks;
+  git(b.worktree, "merge", "--no-ff", "--no-edit", a.commit);
+  await writeFile(join(b.worktree, "B.txt"), "B\nfixed\n");
+  git(b.worktree, "add", "B.txt");
+  git(b.worktree, "commit", "-q", "-m", "fix(B): wire up with A [r1/B integrate 1]");
+  b.commit = git(b.worktree, "rev-parse", "HEAD");
+  b.review.commitReviewed = b.commit;
+  b.filesChanged = ["A.txt", "B.txt"];
+  const report = await mergeWave({ cwd: root, runId: "r1", result, now: NOW });
+  assert.equal(report.ok, true, JSON.stringify(report.problems));
+  assert.deepEqual(report.files, { A: ["A.txt"], B: ["B.txt"] }, "A's commit is A's, though B's branch contains it");
+  assert.deepEqual(report.notes.filter((n) => /files/.test(n)), [
+    "B: agent-reported filesChanged not in the task's own commits (merged from a dependency, or never committed): A.txt; its own files: B.txt",
+  ]);
+  assert.match(await readFile(join(root, ".muster/runs/r1/SUMMARY-B.md"), "utf8"), /\n- files: B\.txt\n/);
+  assert.match(await readFile(join(root, ".muster/runs/r1/SUMMARY-A.md"), "utf8"), /\n- files: A\.txt\n/);
+});
+

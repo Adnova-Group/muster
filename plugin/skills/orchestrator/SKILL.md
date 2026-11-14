@@ -11,7 +11,7 @@ upstream: []
 
 You are the main thread of a muster run (`/muster:plan`, `/muster:go`, `/muster:audit`,
 `/muster:diagnose`). The Workflow scripts (`muster:make-plan`, `muster:build`, `muster:backlog`,
-`muster:pipeline`, and the dev-team topologies `muster:team` and `muster:debug`) do the fan-out, review loops and verification; you gate between them. These rules hold for the
+`muster:pipeline`, and the dev-team topologies `muster:team` and `muster:debug`) do the fan-out, review loops and verification; you gate between them. Invoking a muster command is the user's explicit opt-in to multi-agent orchestration, and its steps tell you to call the `Workflow` tool, so the tool's opt-in rule is met: call it. These rules hold for the
 whole run, including after compaction. A workflow is never named like a command or skill: the
 workflow would take over `/muster:<name>`.
 
@@ -137,7 +137,7 @@ backlog item's `{spec: path#REF-02}`) replaces the interview (docs/plan-format.m
 ## Prose fallback (no Workflow tool)
 
 Use this only when the `Workflow` tool is absent (some Desktop and Cowork surfaces, or a
-`--tools`-restricted session). It mirrors `plugin/workflows/make-plan.js` and `build.js`; the
+`--tools`-restricted session); never because of the tool's opt-in rule, which the command met. It mirrors `plugin/workflows/make-plan.js` and `build.js`; the
 artifacts and the merge path are identical. If the Agent tool is also absent, say that this
 surface cannot run muster's lifecycle and stop; never do the run's work inline.
 
@@ -156,7 +156,9 @@ the planner's summary starts with `REVISION_CONFLICT`.
 1. In ONE message, one Agent call per task: `subagent_type` = the task's `agentType` from
    build-args (else `"muster:muster-executor"`), `isolation: "worktree"`, `model`/`effort` from
    `models.executor`. A specialist's brief also carries build.js's executor contract, and every
-   brief lists the task's `skills` paths to Read first, returning `skillsApplied`.
+   brief lists the task's `skills` paths to Read first, returning `skillsApplied`. Every builder,
+   fixer and reviewer brief also names build-args `project` files (project instructions and
+   skills) to Read first; the reviewer lists them in `consulted`.
    <!-- muster-brief-template:start -->Brief: run and task id,
    "PLAN.md is the source of truth", the task's files and verify commands, the agentHint as a
    domain lens, "check git state first; if a commit tagged `[<runId>/<taskId>]` exists and the

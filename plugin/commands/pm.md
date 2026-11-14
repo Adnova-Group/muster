@@ -83,8 +83,10 @@ under the document's Assumptions (an intent tags it `[ASSUMPTION]`), and never s
    reports its replacement; run that verb instead.
 2. One Bash call: `M preflight "<outcome, or the pipeline title>" --json`, then
    `M pipeline-args <runId> --pipeline <id>` (add `--out <path>` when the outcome names a file).
-3. `Workflow({name:"muster:pipeline", args:<the exact contents of pipeline-args.json>})`. No
-   Workflow tool: invoke the `muster:orchestrator` skill and follow its Content section.
+3. `Workflow({name:"muster:pipeline", args:<the exact contents of pipeline-args.json>})`:
+   invoking `/muster:pm run` is the user's explicit opt-in to multi-agent orchestration, so call
+   the `Workflow` tool. Only when it does not exist: invoke the `muster:orchestrator` skill and
+   follow its Content section.
 4. Save the result to `.muster/runs/<runId>/pipeline-result.json`. Report `verdict`, the score
    against the gate, `halted`, each phase's `skillsApplied`, and the artifact path, uncommitted.
    For `roadmap`, then make the offers in `${CLAUDE_PLUGIN_ROOT}/builtins/muster-roadmap/SKILL.md`

@@ -5,11 +5,16 @@
 // instead of the model hand-copying tasks out of PLAN.md.
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { decodeEntityAmps, parsePlan } from "./plan-lint.js";
+import { decodeEntityAmps, parsePlan, REVIEW_SEAT_RE } from "./plan-lint.js";
 import { archiveBuildResult, runDir } from "./run-dir.js";
 import { sha256, writeContainedFile } from "./fs-safe.js";
 import { agentTypeFor, musterCli, specialistCatalog } from "./specialists.js";
 import { pinApplies, resolvePins, taskRoles } from "./skill-pins.js";
+import { projectContext } from "./project-context.js";
+
+// A backlog item id (src/sprint-waves.js ID_TOKEN_RE) and its backlog file, relative to the repo.
+const ITEM_ID_RE = /^[a-z0-9][a-z0-9-]{0,80}$/i;
+const BACKLOG_FILE_RE = /^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[A-Za-z0-9._\/-]{1,200}\.md$/;
 
 const AUTOMATED_RE = /<automated[^>]{0,200}>([\s\S]*?)<\/automated>/g;
 
@@ -33,7 +38,11 @@ function verifyCommands(verifyBody) {
 // `fromWave` N (a rebuild after a partial merge-wave: waves before N are already merged) keeps
 // only waves N and later and records `fromWave: N`, so merge-wave numbers them as the plan does.
 // N counts the plan's waves in order, from 1: the W<n> of taskLines.
-export function buildArgsFromPlan(planText, { runId, base = null, branch = null, models = null, catalog = specialistCatalog(), pins = [], cli = null, fromWave = null } = {}) {
+// A task's `review_seats` become `reviewSeats` (muster:team's specialist seats: seat names or
+// agent types, project agents included). `project` (src/project-context.js) names the project's
+// instruction files and skills every brief tells its agent to read; `backlogItem` {id, file}
+// links a backlog-origin run to its item so `next --run` can name the tick on completion.
+export function buildArgsFromPlan(planText, { runId, base = null, branch = null, models = null, catalog = specialistCatalog(), pins = [], cli = null, fromWave = null, project = null, backlogItem = null } = {}) {
   const plan = parsePlan(planText);
   const problems = [];
   const humanNeeded = [];
@@ -59,6 +68,11 @@ export function buildArgsFromPlan(planText, { runId, base = null, branch = null,
     // tdd="true" or type="tdd" selects muster:team's test-first split (muster-test-writer, then
     // the builder); muster:build ignores the flag.
     if (t.tdd === "true" || t.type === "tdd") task.tdd = true;
+    if (t.reviewSeatsDeclared) {
+      const bad = t.reviewSeats.filter((s) => !REVIEW_SEAT_RE.test(s));
+      if (bad.length) problems.push(`task ${t.id} has malformed review seat(s): ${bad.join(", ")}`);
+      task.reviewSeats = [...new Set(t.reviewSeats.filter((s) => REVIEW_SEAT_RE.test(s)))];
+    }
     if (pins.length) {
       const roles = taskRoles(t, catalog);
       const add = pins.filter((p) => pinApplies(p, roles) && !(task.skills || []).some((k) => k.id === p.id));
@@ -77,7 +91,11 @@ export function buildArgsFromPlan(planText, { runId, base = null, branch = null,
   if (!Number.isInteger(from) || from < 1 || (waves.length && from > waves.length)) {
     problems.push(`--from-wave ${fromWave} is not a wave of PLAN.md (it has ${waves.length})`);
   } else waves = waves.slice(from - 1);
-  const args = { runId, ...(base ? { base } : {}), ...(branch ? { branch } : {}), ...(models ? { models } : {}), ...(cli ? { cli } : {}), ...(from > 1 ? { fromWave: from } : {}), waves };
+  if (backlogItem && !(ITEM_ID_RE.test(String(backlogItem.id || "")) && BACKLOG_FILE_RE.test(String(backlogItem.file || "")))) {
+    problems.push(`backlog item ${JSON.stringify(backlogItem.id)} in ${JSON.stringify(backlogItem.file)} is not a backlog item id ({id: token}) in a relative .md file`);
+  }
+  const item = backlogItem && !problems.length ? { id: backlogItem.id, file: backlogItem.file } : null;
+  const args = { runId, ...(base ? { base } : {}), ...(branch ? { branch } : {}), ...(models ? { models } : {}), ...(cli ? { cli } : {}), ...(from > 1 ? { fromWave: from } : {}), ...(project ? { project } : {}), ...(item ? { backlogItem: item } : {}), waves };
   return { args, humanNeeded, problems };
 }
 
@@ -92,14 +110,16 @@ export function argsDigest(args) {
   return sha256(JSON.stringify(rest));
 }
 
-// muster:team when any task is test-first or any wave runs 2+ tasks (go.md step 5).
-export const workflowFor = (args) => (args.waves.some((w) => w.length > 1 || w.some((t) => t.tdd)) ? "muster:team" : "muster:build");
+// muster:team when any task is test-first, declares review seats (only muster:team runs seats) or
+// any wave runs 2+ tasks (go.md step 5).
+export const workflowFor = (args) => (args.waves.some((w) => w.length > 1 || w.some((t) => t.tdd || Array.isArray(t.reviewSeats))) ? "muster:team" : "muster:build");
 
 // One line per task, exactly what go.md tells the session to print:
-// `<taskId> · <agent_hint or muster-executor> · <skills or ->` (+ ` · tdd`).
+// `<taskId> · <agent_hint or muster-executor> · <skills or ->` (+ ` · tdd`, + ` · seats <list>`).
 export function taskLines(args) {
   const first = Number.isInteger(args.fromWave) ? args.fromWave : 1;
-  return args.waves.flatMap((w, i) => w.map((t) => `W${first + i} ${t.taskId} · ${t.agentHint || "muster-executor"} · ${(t.skills || []).map((k) => k.id).join(", ") || "-"}${t.tdd ? " · tdd" : ""}`));
+  const seats = (t) => (Array.isArray(t.reviewSeats) ? ` · seats ${t.reviewSeats.join(", ") || "none"}` : "");
+  return args.waves.flatMap((w, i) => w.map((t) => `W${first + i} ${t.taskId} · ${t.agentHint || "muster-executor"} · ${(t.skills || []).map((k) => k.id).join(", ") || "-"}${t.tdd ? " · tdd" : ""}${seats(t)}`));
 }
 
 async function readJsonOrNull(path) {
@@ -111,7 +131,9 @@ async function readJsonOrNull(path) {
 // run and the exact args to pass), so the session never re-reads the file. ok:false leaves no
 // file behind. New args start a new build attempt, so the previous attempt's build-result.json
 // moves to attempts/ (src/run-dir.js archiveBuildResult) before the build can run.
-export async function writeBuildArgs({ cwd, runId, base = null, branch = null, fromWave = null }) {
+// `item` ({id, file}, from `--item`) links a backlog item; a rewrite without it (a `--from-wave`
+// rebuild on resume) keeps the link the previous build-args.json recorded.
+export async function writeBuildArgs({ cwd, runId, base = null, branch = null, fromWave = null, item = null }) {
   const dir = runDir(cwd, runId);
   let planText;
   try { planText = await readFile(join(dir, "PLAN.md"), "utf8"); } catch {
@@ -121,7 +143,8 @@ export async function writeBuildArgs({ cwd, runId, base = null, branch = null, f
   const catalog = specialistCatalog();
   let pinned = { pins: [], warnings: [] };
   try { pinned = resolvePins(cwd, catalog); } catch (e) { pinned.warnings.push(e.message); }
-  const { args, humanNeeded, problems } = buildArgsFromPlan(planText, { runId, base, branch, models, catalog, pins: pinned.pins, cli: musterCli(), fromWave });
+  const backlogItem = item || (await readJsonOrNull(join(dir, "build-args.json")))?.backlogItem || null;
+  const { args, humanNeeded, problems } = buildArgsFromPlan(planText, { runId, base, branch, models, catalog, pins: pinned.pins, cli: musterCli(), fromWave, project: projectContext(cwd), backlogItem });
   const rel = `.muster/runs/${runId}/build-args.json`;
   if (problems.length) return { ok: false, runId, problems, humanNeeded };
   args.digests = { plan: planDigest(planText), args: argsDigest(args) };
@@ -137,6 +160,7 @@ export async function writeBuildArgs({ cwd, runId, base = null, branch = null, f
     humanNeeded,
     ...(pinned.pins.length ? { pinned: args.waves.flat().filter((t) => t.pinned).map((t) => `${t.taskId}: ${t.pinned.join(", ")}`) } : {}),
     ...(pinned.warnings.length ? { warnings: pinned.warnings } : {}),
+    ...(args.project ? { project: [...args.project.instructions, ...args.project.skills.map((k) => k.path)] } : {}),
     args,
   };
 }

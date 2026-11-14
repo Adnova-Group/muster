@@ -177,8 +177,8 @@ function testsRunNotes(plan, task) {
 }
 
 // The files a task's own commits change: its non-merge commits that neither HEAD (the base and
-// every wave merged before) nor the earlier waves' commits carry. The reviewer brief scopes its
-// diff the same way. null when git cannot answer.
+// every wave merged before), the earlier waves' commits nor its same-wave siblings' commits
+// carry. The reviewer brief scopes its diff the same way. null when git cannot answer.
 function ownFiles(root, commit, exclude) {
   const r = git(root, ["log", "--no-merges", "--no-renames", "--format=", "--name-only", commit, "--not", "HEAD", ...exclude]);
   return r.ok ? [...new Set(r.out.split("\n").filter(Boolean))].sort() : null;
@@ -443,25 +443,26 @@ export async function mergeWave({ cwd, runId, result, resultFile, now = () => ne
   for (const plan of planned.tasks) report.problems.push(...inputEditProblems(root, runId, plan, byId.get(plan.taskId)));
   if (report.problems.length) return finish(false);
 
-  // Each task's own files, against HEAD and the earlier waves' commits it may have merged in.
+  // Each task's own files, against HEAD, the earlier waves' commits and its same-wave siblings'
+  // commits, any of which it may have merged in (live run 8: an integration fixer merged sibling
+  // 01 into 02's branch, and 01's files were reported, and summarized, as 02's). A sibling whose
+  // commit already contains this task's commit merged this task, not the other way round, so it
+  // is not excluded: that would erase the task's own files.
   report.files = {};
   const own = new Map();
   const sha = (c) => (c ? git(root, ["rev-parse", "--verify", "--quiet", `${c}^{commit}`]) : { ok: false });
   const priorCommits = [];
   for (const w of planned.waves) {
-    const here = [];
-    for (const plan of w.tasks) {
-      const task = byId.get(plan.taskId);
-      const c = sha(task?.commit);
-      if (!c.ok) continue;
-      here.push(c.out);
-      const files = ownFiles(root, c.out, priorCommits);
+    const here = w.tasks.map((plan) => ({ plan, task: byId.get(plan.taskId), c: sha(byId.get(plan.taskId)?.commit) })).filter((x) => x.c.ok);
+    for (const { plan, task, c } of here) {
+      const siblings = here.filter((x) => x.c.out !== c.out && !git(root, ["merge-base", "--is-ancestor", c.out, x.c.out]).ok).map((x) => x.c.out);
+      const files = ownFiles(root, c.out, [...priorCommits, ...siblings]);
       if (!files) continue;
       own.set(plan.taskId, files);
       report.files[plan.taskId] = files;
       report.notes.push(...filesNotes(plan, task, files, runPrefix));
     }
-    priorCommits.push(...here);
+    priorCommits.push(...here.map((x) => x.c.out));
   }
 
   // ---- Per-task checks: a problem fails its wave and stops the merge there. ----

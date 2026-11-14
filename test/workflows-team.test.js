@@ -413,3 +413,81 @@ test("team: the result leads with summary and verdict, keeps HUMAN_NEEDED items,
   const a = result.tasks.find((t) => t.taskId === "A");
   assert.deepEqual(a.red, { status: "done", commit: red("A").commit, testFiles: ["test/A.test.js"], failingAsExpected: true });
 });
+
+// ---- live run 8 fixes --------------------------------------------------------------------
+const PROJECT = { instructions: ["CLAUDE.md"], skills: [{ path: ".claude/skills/house-style/SKILL.md", about: "House rules: new src files need an SPDX header" }] };
+const consulted = (r) => ({ ...r, consulted: ["CLAUDE.md", ".claude/skills/house-style/SKILL.md"] });
+
+test("team: project rules reach the test writer, the green builder and the reviewer; a PASS that skipped them is re-asked once", async () => {
+  const { result, calls } = await run("team.js", { runId: "p1", project: PROJECT, waves: [[task("A", { tdd: true })]] }, (label, prompt) => {
+    // Live run 8: the reviewer returned PASS after 4 tool calls without reading any project file.
+    if (label === "review A r0") return review("A", "PASS", mustBe(prompt));
+    if (label === "review A r0 rules") return consulted(review("A", "PASS", mustBe(prompt)));
+    return happy(label, prompt);
+  });
+  for (const label of ["red A", "build A"]) {
+    const c = calls.find((x) => x.opts.label === label);
+    assert.match(c.prompt, /PROJECT RULES: before working, Read each of these project files/, label);
+    assert.match(c.prompt, /\.claude\/skills\/house-style\/SKILL\.md \(House rules: new src files need an SPDX header\)/, label);
+  }
+  const r0 = calls.find((x) => x.opts.label === "review A r0");
+  assert.match(r0.prompt, /PROJECT RULES: before reviewing/);
+  assert.match(r0.prompt, /Set consulted to the paths you read/);
+  const again = calls.find((x) => x.opts.label === "review A r0 rules");
+  assert.ok(again, "the review is re-asked once");
+  assert.match(again.prompt, /without listing these project files in consulted: CLAUDE\.md, \.claude\/skills\/house-style\/SKILL\.md/);
+  assert.equal(result.tasks[0].review.verdict, "PASS");
+});
+
+test("team: a project-agent review seat from PLAN.md review_seats runs by its own instructions and its blocker drives the fix loop", async () => {
+  const plan = [
+    "<tasks>",
+    '<task id="01" wave="1" review_seats="house-style-reviewer, muster:prt-pr-test-analyzer, Bad;Seat"><name>a</name><files>src/a.js</files><action>x</action><verify><automated>npm test</automated></verify><done>d</done></task>',
+    "</tasks>",
+  ].join("\n");
+  const bad = buildArgsFromPlan(plan, { runId: "r" });
+  assert.ok(bad.problems.some((p) => /malformed review seat\(s\): Bad;Seat/.test(p)), bad.problems.join("; "));
+  const { args, problems } = buildArgsFromPlan(plan.replace(", Bad;Seat", ""), { runId: "r" });
+  assert.deepEqual(problems, []);
+  assert.deepEqual(args.waves[0][0].reviewSeats, ["house-style-reviewer", "muster:prt-pr-test-analyzer"]);
+
+  const t = { ...task("01"), reviewSeats: [...args.waves[0][0].reviewSeats, "x;rm -rf", "UPPER"] };
+  const { result, calls } = await run("team.js", { runId: "p2", waves: [[t]] }, (label, prompt) => {
+    if (label === "seat house-style-reviewer 01") return review("01", "FAIL", mustBe(prompt), [{ severity: "blocker", file: "src/01.js", line: 1, summary: "missing SPDX header" }]);
+    return happy(label, prompt);
+  });
+  const seats = calls.filter((c) => c.opts.label.startsWith("seat "));
+  assert.deepEqual(seats.map((c) => c.opts.agentType), ["house-style-reviewer", "muster:prt-pr-test-analyzer"], "a bare project agent is a seat; unsafe names never reach agent()");
+  assert.match(seats[0].prompt, /Review ONLY for the rules and the specialty your own agent instructions define/);
+  assert.match(calls.find((c) => c.opts.label === "fix 01 r1").prompt, /\[house-style-reviewer\] missing SPDX header/);
+  assert.equal(result.tasks[0].review.verdict, "PASS");
+  assert.deepEqual(result.tasks[0].seats.map((s) => [s.seat, s.verdict, s.counted]), [["house-style-reviewer", "FAIL", true], ["tests", "PASS", false]]);
+});
+
+test("team: an integration fixer stays inside its task; a declared [CrossTask] edit fails the fix even when the re-review passes", async () => {
+  const fail = { verdict: "FAIL", commitsChecked: [], findings: [{ severity: "blocker", taskIds: ["B"], file: "src/B.js", line: 2, summary: "export name mismatch" }], testsRun: ["npm test"], testsPassed: false };
+  let checks = 0;
+  const respond = (cross) => (label, prompt) => {
+    if (label.startsWith("integrate w1")) return ++checks === 1 ? fail : integPass;
+    if (label === "integrate-fix B") return exec("B", 3, cross ? { deviations: ["[CrossTask] test/A.test.js: added the CLI-level test the checker asked for"] } : {});
+    return happy(label, prompt);
+  };
+  const ok = await run("team.js", { runId: "x1", waves: [[task("A"), task("B")]] }, respond(false));
+  const integ = ok.calls.find((c) => c.opts.label === "integrate w1 r0");
+  assert.match(integ.prompt, /split a fix that spans two tasks' files into one finding per task/);
+  const fix = ok.calls.find((c) => c.opts.label === "integrate-fix B");
+  assert.match(fix.prompt, /Stay inside this task: edit only its planned files \(src\/B\.js\)/);
+  assert.match(fix.prompt, /Never merge, cherry-pick or copy a sibling task's commits or files into this branch/);
+  assert.match(fix.prompt, /"\[CrossTask\] <file>: <why>", which the re-review counts as a blocker/);
+  const rv = ok.calls.find((c) => c.opts.label === "review B integrate");
+  assert.match(rv.prompt, /The task's planned files are: src\/B\.js/);
+  assert.match(rv.prompt, new RegExp(`git log --merges --oneline ${sha("B", 1)}\\.\\.${sha("B", 3)}`));
+  assert.equal(ok.result.halted, null);
+
+  checks = 0;
+  const crossed = await run("team.js", { runId: "x2", waves: [[task("A"), task("B")]] }, respond(true));
+  assert.match(crossed.calls.find((c) => c.opts.label === "review B integrate").prompt, /The fixer declared these cross-task edits; each is a blocker finding: \[CrossTask\] test\/A\.test\.js/);
+  assert.deepEqual(crossed.result.integration[0].fixed, [{ taskId: "B", ok: false, why: "cross-task edit: [CrossTask] test/A.test.js: added the CLI-level test the checker asked for" }]);
+  assert.equal(crossed.result.integration[0].verdict, "FAIL");
+  assert.match(crossed.result.halted, /failed the integration check \(integration fix round did not pass\)/);
+});

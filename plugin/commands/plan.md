@@ -18,8 +18,9 @@ does not say something, write "not stated in the plan" instead of guessing.
 
 `M` below means `sh "${CLAUDE_PLUGIN_ROOT}/runtime/muster.sh"` (repeat it in every Bash call;
 shell variables do not persist). First invoke the `muster:orchestrator` skill (Skill tool): its
-rules survive compaction only once invoked. No `Workflow` tool: follow its prose fallback for
-the planning half. **Native plan mode** blocks every write planning needs (preflight's file,
+rules survive compaction only once invoked. Invoking `/muster:plan` is the user's explicit opt-in
+to multi-agent orchestration, and step 3 tells you to call the `Workflow` tool: call it. Only when
+no `Workflow` tool exists, follow its prose fallback for the planning half. **Native plan mode** blocks every write planning needs (preflight's file,
 the branch, CONTEXT.md, PLAN.md): if the session is in plan mode, first call ExitPlanMode with
 "Run /muster:plan: preflight, branch, write and check PLAN.md, then stop for approval"; on a
 refusal, tell the user to leave plan mode and stop.

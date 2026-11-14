@@ -291,3 +291,76 @@ test("preflight leaves a clean tree clean in a repo that does not ignore .muster
   assert.equal(JSON.parse(cli(root, ["next"]).stdout).runId, "r2");
   assert.match((await runStateCheck(root)).detail, /2 run directories/);
 });
+
+// Live run 8: project policy never reached the briefs. build-args records the project's
+// instruction files and skills (paths and one-line descriptions only) as args.project.
+test("build-args records the project's instruction files and skills as args.project, digested with the rest", async () => {
+  const { projectContext, MAX_PROJECT_SKILLS } = await import("../src/project-context.js");
+  const root = await trackedMkdtemp(join(tmpdir(), "muster-build-args-project-"));
+  assert.equal(projectContext(root), null, "no instruction files and no skills: no project block");
+  await mkdir(join(root, ".muster/runs/r1"), { recursive: true });
+  await writeFile(join(root, ".muster/runs/r1/PLAN.md"), PLAN);
+  const before = JSON.parse(cli(root, ["build-args", "r1", "--base", "abc"]).stdout);
+  assert.equal(before.args.project, undefined);
+  await writeFile(join(root, "CLAUDE.md"), "@AGENTS.md\n");
+  await writeFile(join(root, "AGENTS.md"), "# Agents\n");
+  await mkdir(join(root, ".claude/skills/house-style"), { recursive: true });
+  await writeFile(join(root, ".claude/skills/house-style/SKILL.md"), "---\nname: house-style\ndescription: House rules for new src files: SPDX header required.\n  A violation is a blocker.\n---\n# body is never copied\n");
+  await mkdir(join(root, ".claude/skills/no-skill-file"), { recursive: true });
+  await mkdir(join(root, ".claude/skills/.hidden"), { recursive: true });
+  await writeFile(join(root, ".claude/skills/.hidden/SKILL.md"), "---\ndescription: hidden\n---\n");
+  const r = cli(root, ["build-args", "r1", "--base", "abc"]);
+  assert.equal(r.status, 0, r.stderr);
+  const report = JSON.parse(r.stdout);
+  assert.deepEqual(report.args.project, {
+    instructions: ["CLAUDE.md", "AGENTS.md"],
+    skills: [{ path: ".claude/skills/house-style/SKILL.md", about: "House rules for new src files: SPDX header required. A violation is a blocker." }],
+  });
+  assert.deepEqual(report.project, ["CLAUDE.md", "AGENTS.md", ".claude/skills/house-style/SKILL.md"], "stdout names the files the briefs will carry");
+  const file = JSON.parse(await readFile(join(root, ".muster/runs/r1/build-args.json"), "utf8"));
+  assert.equal(file.digests.args, argsDigest(file), "project is part of the digested args");
+  for (let i = 0; i < MAX_PROJECT_SKILLS + 2; i++) {
+    await mkdir(join(root, `.claude/skills/s${String(i).padStart(2, "0")}`), { recursive: true });
+    await writeFile(join(root, `.claude/skills/s${String(i).padStart(2, "0")}/SKILL.md`), "no frontmatter\n");
+  }
+  const capped = projectContext(root);
+  assert.equal(capped.skills.length, MAX_PROJECT_SKILLS);
+  assert.equal(capped.omitted, 3);
+  assert.equal(capped.skills[0].path, ".claude/skills/house-style/SKILL.md");
+  assert.equal(capped.skills[1].about, "", "a skill without frontmatter still lists its path");
+});
+
+// Live run 8: per-task review seats never reached the workflow.
+test("build-args carries PLAN.md review_seats into reviewSeats, routes the run to muster:team and prints them", () => {
+  const plan = PLAN.replace('<task id="02" wave="2" depends_on="01">', '<task id="02" wave="2" depends_on="01" review_seats="house-style-reviewer security house-style-reviewer">');
+  const { args, problems } = buildArgsFromPlan(plan, { runId: "r1" });
+  assert.deepEqual(problems, []);
+  assert.equal(args.waves[0][0].reviewSeats, undefined, "a task without review_seats keeps the automatic seat rules");
+  assert.deepEqual(args.waves[1][0].reviewSeats, ["house-style-reviewer", "security"]);
+  assert.equal(workflowFor(args), "muster:team", "only muster:team runs review seats");
+  assert.deepEqual(taskLines(args), ["W1 01 · wsh-test-automator · -", "W2 02 · muster-executor · - · seats house-style-reviewer, security"]);
+  const none = buildArgsFromPlan(PLAN.replace('<task id="02" wave="2" depends_on="01">', '<task id="02" wave="2" depends_on="01" review_seats="">'), { runId: "r1" });
+  assert.deepEqual(none.args.waves[1][0].reviewSeats, [], 'review_seats="" runs no seat');
+  for (const bad of ["Upper-Case", "a;b", "../x", "x:y:z"]) {
+    const r = buildArgsFromPlan(PLAN.replace('<task id="02" wave="2" depends_on="01">', `<task id="02" wave="2" depends_on="01" review_seats="${bad}">`), { runId: "r1" });
+    assert.ok(r.problems.some((p) => p.startsWith("task 02 has malformed review seat(s)")), `${bad}: ${r.problems.join("; ")}`);
+  }
+});
+
+// Live run 8: a backlog item resumed with --run merged and verified but was never ticked.
+test("build-args --item links the run to its backlog item and a --from-wave rebuild keeps the link", async () => {
+  const root = await trackedMkdtemp(join(tmpdir(), "muster-build-args-item-"));
+  await mkdir(join(root, ".muster/runs/r1"), { recursive: true });
+  await writeFile(join(root, ".muster/runs/r1/PLAN.md"), PLAN);
+  const r = cli(root, ["build-args", "r1", "--item", "range", "--base", "abc"]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(JSON.parse(r.stdout).args.backlogItem, { id: "range", file: ".muster/backlog.md" });
+  const again = JSON.parse(cli(root, ["build-args", "r1", "--from-wave", "2", "--base", "abc"]).stdout);
+  assert.deepEqual(again.args.backlogItem, { id: "range", file: ".muster/backlog.md" }, "the resume's rebuild keeps the item");
+  const other = JSON.parse(cli(root, ["build-args", "r1", "--item", "counts", "--backlog", "docs/todo.md", "--base", "abc"]).stdout);
+  assert.deepEqual(other.args.backlogItem, { id: "counts", file: "docs/todo.md" });
+  assert.equal(cli(root, ["build-args", "r1", "--item", "bad id!", "--base", "abc"]).status, 1);
+  assert.equal(cli(root, ["build-args", "r1", "--item", "ok", "--backlog", "../escape.md", "--base", "abc"]).status, 1);
+  assert.equal(cli(root, ["build-args", "r1", "--backlog", "x.md", "--base", "abc"]).status, 1, "--backlog needs --item");
+  assert.equal(cli(root, ["build-args", "r1", "--item"]).status, 1);
+});

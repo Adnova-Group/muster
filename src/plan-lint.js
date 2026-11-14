@@ -57,6 +57,9 @@ export const MAX_PLAN_BYTES = 2 * 1024 * 1024;
 const TASK_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const AGENT_HINT_RE = /^[A-Za-z0-9][A-Za-z0-9:._/-]{0,127}$/;
 const SKILL_ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
+// A review seat: a seat name or an agent type, bare (a project or user agent) or plugin-prefixed.
+// The same charset muster:team accepts (plugin/workflows/team.js SEAT_AGENT_RE).
+export const REVIEW_SEAT_RE = /^(?:[a-z0-9][a-z0-9-]{0,62}:)?[a-z0-9][a-z0-9-]{0,80}$/;
 // A preflight skill candidate "scored highly" at this score (an id-token hit plus one more);
 // it must also match the task's own text before a skill-less task is flagged.
 export const HIGH_SKILL_SCORE = 4;
@@ -240,6 +243,10 @@ export function parsePlan(rawText) {
       skills: splitList(tagAttribute(openTag, "skills")),
       skillsDeclared: /(?:^|\s)skills\s*=\s*["']/i.test(openTag),
       tdd: tagAttribute(openTag, "tdd"),
+      // `review_seats="security, house-style-reviewer"`: muster:team's specialist seats for this
+      // task (seat names or agent types; `review_seats=""` runs no seat).
+      reviewSeats: splitList(tagAttribute(openTag, "review_seats")),
+      reviewSeatsDeclared: /(?:^|\s)review_seats\s*=\s*["']/i.test(openTag),
       covers: splitList(tagAttribute(openTag, "covers")),
       name: collapseWhitespace(elementBody(block, "name")),
       hasName: /<name[\s>]/i.test(block),
@@ -904,6 +911,9 @@ export function lintPlan(rawText, options = {}) {
     for (const id of t.skills) {
       if (!SKILL_ID_RE.test(id)) add(DIMENSIONS.TASK_COMPLETENESS, SEVERITY.BLOCKER, "`skills` lists builtin skill ids", `${label(t)} has a malformed skill id ${quote(id)}`);
       else if (catalog && !catalog.skills.has(id)) add(DIMENSIONS.TASK_COMPLETENESS, SEVERITY.BLOCKER, "`skills` lists builtin skill ids", `${label(t)} binds unknown skill ${quote(id)}; use an id from plugin/builtins/ or drop it`);
+    }
+    for (const s of t.reviewSeats) {
+      if (!REVIEW_SEAT_RE.test(s)) add(DIMENSIONS.TASK_COMPLETENESS, SEVERITY.BLOCKER, "`review_seats` lists seat names or agent types", `${label(t)} has a malformed review seat ${quote(s)}; use a seat name (security, tests, ...) or an agent name such as house-style-reviewer or muster:prt-pr-test-analyzer`);
     }
     if (t.kind === "checkpoint") {
       const need = (has, el) => { if (!has) add(DIMENSIONS.TASK_COMPLETENESS, SEVERITY.BLOCKER, `A \`${t.type}\` task has \`<${el}>\``, `${label(t)} is missing <${el}>`); };

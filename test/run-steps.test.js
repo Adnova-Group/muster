@@ -674,3 +674,72 @@ test("preflight: compact summary under 2 KB, full detail on disk, gsd detected",
   assert.match(text.stdout, /\ndetail \.muster\/runs\/pf2\/preflight\.json\n$/);
   assert.equal(cli(cwd, ["preflight"]).status, 1);
 });
+
+// Live run 8 (scenario B): the integration fixer for 02 merged its same-wave sibling 01 into 02's
+// branch, and merge-wave listed 01's files as 02's own (and SUMMARY-02 repeated them).
+test("merge-wave: a same-wave sibling merged into a task's branch does not count as the task's own files", async () => {
+  const { root, result } = await repoWithTasks({ layout: [["A", "B"]] });
+  const [a, b] = result.tasks;
+  git(b.worktree, "merge", "--no-ff", "--no-edit", a.commit);
+  await writeFile(join(b.worktree, "B.txt"), "B\nfixed\n");
+  git(b.worktree, "add", "B.txt");
+  git(b.worktree, "commit", "-q", "-m", "fix(B): wire up with A [r1/B integrate 1]");
+  b.commit = git(b.worktree, "rev-parse", "HEAD");
+  b.review.commitReviewed = b.commit;
+  b.filesChanged = ["A.txt", "B.txt"];
+  const report = await mergeWave({ cwd: root, runId: "r1", result, now: NOW });
+  assert.equal(report.ok, true, JSON.stringify(report.problems));
+  assert.deepEqual(report.files, { A: ["A.txt"], B: ["B.txt"] }, "A's commit is A's, though B's branch contains it");
+  assert.deepEqual(report.notes.filter((n) => /files/.test(n)), [
+    "B: agent-reported filesChanged not in the task's own commits (merged from a dependency, or never committed): A.txt; its own files: B.txt",
+  ]);
+  assert.match(await readFile(join(root, ".muster/runs/r1/SUMMARY-B.md"), "utf8"), /\n- files: B\.txt\n/);
+  assert.match(await readFile(join(root, ".muster/runs/r1/SUMMARY-A.md"), "utf8"), /\n- files: A\.txt\n/);
+});
+
+// Live run 8 (scenario C): `/muster:go --run <id>` merged and verified a backlog item, which
+// stayed `- [ ]`: only go.md's Backlog step 5 ticked, and the resume did not know the item.
+test("next --run names the backlog tick of a merged, verified backlog-origin run until the item is ticked", async () => {
+  const { root, result } = await repoWithTasks({ layout: [["A"]] });
+  const dir = join(root, ".muster/runs/r1");
+  const args = JSON.parse(await readFile(join(dir, "build-args.json"), "utf8"));
+  args.backlogItem = { id: "range", file: ".muster/backlog.md" };
+  args.digests.args = argsDigest(args);
+  await writeFile(join(dir, "build-args.json"), JSON.stringify(args));
+  await writeFile(join(dir, "PLAN.md"), '<task id="A">a</task>\n');
+  args.digests.plan = planDigest('<task id="A">a</task>\n');
+  args.digests.args = argsDigest(args);
+  await writeFile(join(dir, "build-args.json"), JSON.stringify(args));
+  const backlog = "# Backlog\n\n- [x] counts {id: counts} {merge: " + "a".repeat(40) + "}\n- [ ] Add --from/--to {id: range} {deps: none}\n";
+  await writeFile(join(root, ".muster/backlog.md"), backlog);
+  git(root, "add", "-f", ".muster");
+  git(root, "commit", "-q", "-m", "plan");
+  const report = await mergeWave({ cwd: root, runId: "r1", result: { ...result, argsDigest: args.digests.args }, now: NOW });
+  assert.equal(report.ok, true, JSON.stringify(report.problems));
+  const merge = report.merged[0].merge;
+  await writeFile(join(dir, "VERIFICATION.md"), "---\nstatus: passed\n---\n");
+  const next = await nextForRun({ cwd: root, runId: "r1" });
+  assert.equal(next.position, "verified");
+  assert.deepEqual(next.backlog, { file: ".muster/backlog.md", id: "range", line: 4, merge });
+  assert.match(next.next, new RegExp(`^tick backlog item range first: mark line 4 of \\.muster/backlog\\.md "- \\[x\\]" with \\{merge: ${merge}\\} through backlog-publish \\(go\\.md Backlog step 5\\), commit it; then done: `));
+  assert.match(await readFile(join(dir, "STATE.md"), "utf8"), /- next: tick backlog item range first/);
+  // Ticked: the hint is gone.
+  await writeFile(join(root, ".muster/backlog.md"), backlog.replace("- [ ] Add --from/--to {id: range} {deps: none}", `- [x] Add --from/--to {id: range} {deps: none} {merge: ${merge}}`));
+  const done = await nextForRun({ cwd: root, runId: "r1" });
+  assert.equal(done.backlog, undefined);
+  assert.match(done.next, /^done: /);
+  // A run that is not a backlog item never names a tick.
+  delete args.backlogItem;
+  await writeFile(join(dir, "build-args.json"), JSON.stringify(args));
+  await writeFile(join(root, ".muster/backlog.md"), backlog);
+  assert.equal((await nextForRun({ cwd: root, runId: "r1" })).backlog, undefined);
+});
+
+test("next --run helpers: backlogLine finds an item by {id} or its synthetic item-<line> id", async () => {
+  const { backlogLine } = await import("../src/run-next.js");
+  const text = "# B\n- [ ] first\n- [X] second {id: two}\n- [ ] third {deps: none} {id:three}\n";
+  assert.deepEqual(backlogLine(text, "item-2"), { line: 2, ticked: false });
+  assert.deepEqual(backlogLine(text, "two"), { line: 3, ticked: true });
+  assert.deepEqual(backlogLine(text, "three"), { line: 4, ticked: false });
+  assert.equal(backlogLine(text, "four"), null);
+});

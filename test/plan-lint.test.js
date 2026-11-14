@@ -933,3 +933,18 @@ describe("agent_hint and skills against the catalog (src/specialists.js)", () =>
     assert.ok(out.issues.some(i => /preflight ranked "sp-debug"/.test(i.summary)), r.stdout);
   });
 });
+
+// ─── Live run 8: review_seats (muster:team seats, project agents included) ───
+
+describe("review_seats", () => {
+  const completeness = r => r.issues.filter(i => i.dimension === DIMENSIONS.TASK_COMPLETENESS);
+  const lint = tasks => lintPlan(planDoc({ tasks }), { projectRoot: fixtureRoot("seats") });
+
+  test("seat names and agent types, bare or plugin-prefixed, pass; a malformed entry is a blocker", () => {
+    assert.deepEqual(completeness(lint([autoTask("01", 1, ' review_seats="security, house-style-reviewer muster:prt-pr-test-analyzer"')])), []);
+    assert.deepEqual(completeness(lint([autoTask("01", 1, ' review_seats=""')])), []);
+    const bad = completeness(lint([autoTask("01", 1, ' review_seats="House_Style"')]));
+    assert.deepEqual(bad.map(i => i.severity), ["blocker"]);
+    assert.match(bad[0].summary, /malformed review seat "House_Style"/);
+  });
+});

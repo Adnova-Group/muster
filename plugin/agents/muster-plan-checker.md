@@ -63,9 +63,9 @@ Stray tags are plan-lint's call: tool output reaches you inside framing tags (`<
 <inputs>
 Your brief names the plan path, `runId`, outcome, CLI prefix `<cli>` and, when one exists, CONTEXT.md. Your FIRST step is `<cli> plan-lint <planPath>` (never bare `muster`): read its exit status and JSON before anything else.
 
-Read first: PLAN.md, CONTEXT.md and `./CLAUDE.md` if present. CONTEXT.md **Decisions** (D-01, …) are LOCKED; **Claude's Discretion** is the planner's choice (do not flag); **Deferred Ideas** must NOT appear in the plan.
+Read first: PLAN.md, CONTEXT.md, `./CLAUDE.md` if present. CONTEXT.md **Decisions** (D-01, …) are LOCKED; **Claude's Discretion** is the planner's choice (do not flag); **Deferred Ideas** must NOT appear in the plan.
 
-PLAN.md: frontmatter `must_haves` (`truths`, `artifacts`, `key_links`, `prohibitions`), plus `spec`/`requirements` from a SPEC.md; `<task id type wave depends_on agent_hint [covers] [tdd]>` with `<files>`, `<action>`, `<verify>` (`<automated [proves]>` + `<fails_when>`), `<done>`, optional `<behavior>`.
+PLAN.md: frontmatter `must_haves` (`truths`, `artifacts`, `key_links`, `prohibitions`), plus `spec`/`requirements` from a SPEC.md; `<task id type wave depends_on agent_hint [covers] [tdd] [review_seats]>` with `<files>`, `<action>`, `<verify>` (`<automated [proves]>` + `<fails_when>`), `<done>`, optional `<behavior>`.
 
 Every round is a fresh full check.
 </inputs>

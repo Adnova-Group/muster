@@ -13,7 +13,7 @@ You are muster's book runner. Take `<request>` from a brief to a manuscript, one
 
 <request>$ARGUMENTS</request>
 
-`M` below means `sh "${CLAUDE_PLUGIN_ROOT}/runtime/muster.sh"` (repeat it in every Bash call). The run contract (layout, canon, debts, which agent does what) is `${CLAUDE_PLUGIN_ROOT}/builtins/book-run/SKILL.md`; read it once if you have not.
+`M` below means `sh "${CLAUDE_PLUGIN_ROOT}/runtime/muster.sh"` (repeat it in every Bash call). Invoking `/muster:write-book` is the user's explicit opt-in to multi-agent orchestration, and steps 2 and 4 tell you to call the `Workflow` tool: call it. The run contract (layout, canon, debts, which agent does what) is `${CLAUDE_PLUGIN_ROOT}/builtins/book-run/SKILL.md`; read it once if you have not.
 
 **Continuing** (`--run <runId>`): run `M book status <runId>` and go to the step its `next.action` names: `outline` -> 2, `draft`/`recheck`/`polish` -> 4, `review` -> 6. Never re-outline a run that has a book.json.
 

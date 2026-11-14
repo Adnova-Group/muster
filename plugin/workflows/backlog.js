@@ -53,6 +53,7 @@ const REVIEW_RESULT = {
     },
     testsRun: strList,
     testsPassed: { type: 'boolean' },
+    consulted: strList,
   },
   required: ['taskId', 'verdict', 'commitReviewed', 'findings', 'testsRun', 'testsPassed'],
 }
@@ -199,6 +200,33 @@ function skillLines(t, cfg) {
   ]
 }
 
+// Project policy (live run 8: the reviewer skipped CLAUDE.md and .claude/skills, and a file that
+// broke a documented project rule merged; executors were never told to read project skills).
+// build-args records the project's instruction files and skills as args.project; every builder,
+// fixer and reviewer brief names them, and a review PASS must list them in consulted.
+const SAFE_REL = /^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[A-Za-z0-9._\/-]{1,200}$/
+const oneLine = (s) => String(s || '').replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200)
+
+function projectFiles(cfg) {
+  const p = cfg.project && typeof cfg.project === 'object' ? cfg.project : {}
+  const instructions = list(p.instructions).filter((f) => typeof f === 'string' && SAFE_REL.test(f))
+  const skills = list(p.skills).filter((k) => k && typeof k.path === 'string' && SAFE_REL.test(k.path))
+  return { instructions, skills, paths: [...instructions, ...skills.map((k) => k.path)] }
+}
+
+function projectLines(cfg, role) {
+  const p = projectFiles(cfg)
+  if (!p.paths.length) return []
+  const files = [...p.instructions, ...p.skills.map((k) => (oneLine(k.about) ? `${k.path} (${oneLine(k.about)})` : k.path))].join('; ')
+  if (role === 'review') {
+    return [
+      `PROJECT RULES: before reviewing, Read each of these project files and check the diff against every rule in them: ${files}.`,
+      'A broken project rule is a finding at the severity the rule sets (a rule that calls a violation a blocker makes it a blocker). Set consulted to the paths you read, exactly as listed here.',
+    ]
+  }
+  return [`PROJECT RULES: before working, Read each of these project files and follow them like PLAN.md (a conflict with the plan goes in deviations): ${files}.`]
+}
+
 // Specialist agents (wsh-*, surgeon) do not carry muster-executor's protocol, so the brief does.
 function contractLines(tag) {
   return [
@@ -238,6 +266,7 @@ function execBrief(cfg, t, prior) {
     t.agentHint && !specialist ? `Domain lens for this task: ${t.agentHint}.` : '',
     ...(specialist ? contractLines(tag) : []),
     ...skillLines(t, cfg),
+    ...projectLines(cfg, 'build'),
     `Files in scope: ${list(t.files).join(', ') || '(see PLAN.md)'}`,
     `Verify commands: ${list(t.verify).join(' ; ') || '(see PLAN.md)'}`,
     ISOLATION_LINE,
@@ -270,6 +299,7 @@ function reviewBrief(cfg, t, ex, prior) {
       `The builder reports skillsApplied: ${used.join('; ') || '(none)'}.`,
       'Not following a bound skill is a FAIL finding (cite the rule); so is a bound skill missing from skillsApplied.',
     ] : []),
+    ...projectLines(cfg, 'review'),
     'Read only: do not edit files or commit.',
     `Set taskId to ${t.taskId} and commitReviewed to the full sha you reviewed (it must be ${ex.commit}).`,
     'verdict PASS only when no blocker remains; FAIL with one finding per problem; ABSTAIN when you cannot review.',
@@ -287,6 +317,7 @@ function fixBrief(cfg, t, ex, review, round) {
     ...findings,
     `3. Re-run the verify commands (${list(t.verify).join(' ; ') || 'see PLAN.md'}) and commit with a message containing ${tag}.`,
     boundSkills(t).length ? `The task is bound to these skills; keep the fix consistent with them: ${boundSkills(t).map((k) => `${k.id} (${k.path})`).join(', ')}` : '',
+    ...projectLines(cfg, 'build'),
     'Return the ExecResult for the new HEAD (same branch and worktree).',
   ].filter(Boolean).join('\n')
 }
@@ -301,6 +332,26 @@ function verifyBrief(cfg, tasks) {
     `Write your report to .muster/runs/${cfg.runId}/VERIFICATION.md relative to your starting directory (the main checkout, not the scratch worktree), then remove the scratch worktree with git worktree remove --force ${wt}.`,
     'ABSTAIN when you cannot gather the evidence; never guess PASS.',
   ].join('\n')
+}
+
+// A review PASS must show the project files were read (consulted). One retry names the unread
+// ones; a PASS that still leaves one unread becomes ABSTAIN: no PASS on unread project rules.
+function unreadRules(cfg, r) {
+  const want = projectFiles(cfg).paths
+  if (!want.length || !r || r.verdict !== 'PASS') return []
+  const got = list(r.consulted).map((c) => String(c).trim().replace(/\\/g, '/'))
+  return want.filter((f) => !got.some((g) => g === f || g === `./${f}` || g.endsWith(`/${f}`)))
+}
+
+async function reviewCall(cfg, prompt, opts) {
+  const r = await call(prompt, opts)
+  const unread = unreadRules(cfg, r)
+  if (!unread.length) return r
+  log(`${opts.label}: PASS without consulting ${unread.join(', ')}; retrying once`)
+  const again = await call(`${prompt}\nYour previous review returned PASS without listing these project files in consulted: ${unread.join(', ')}. Read each one now, check the diff against its rules, and list every file you read in consulted.`, { ...opts, label: `${opts.label} rules` })
+  const still = unreadRules(cfg, again)
+  if (!still.length) return again
+  return { ...again, verdict: 'ABSTAIN', findings: [...list(again.findings), { severity: 'blocker', file: still[0], summary: `review returned PASS without reading the project rules in ${still.join(', ')}` }] }
 }
 
 // One verifier per run. ABSTAIN means the verification could not run (a halted build, no
@@ -340,7 +391,7 @@ async function reviewLoop(cfg, t, ex, prior) {
   let current = ex
   const reviews = []
   for (let round = 0; ; round++) {
-    const rv = await call(reviewBrief(cfg, t, current, prior), {
+    const rv = await reviewCall(cfg, reviewBrief(cfg, t, current, prior), {
       label: `${pre}review ${t.taskId} r${round}`, phase: 'Review', schema: REVIEW_RESULT, agentType: 'muster:muster-reviewer', ...seat(cfg, 'reviewer'),
     })
     reviews.push(rv)
